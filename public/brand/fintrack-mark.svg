@@ -1,0 +1,12 @@
+<svg width="512" height="512" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="ft-mark-bg" x1="4" y1="4" x2="68" y2="68" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0f766e"/>
+      <stop offset="0.55" stop-color="#0ea5a3"/>
+      <stop offset="1" stop-color="#0369a1"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="64" height="64" rx="18" fill="url(#ft-mark-bg)"/>
+  <path d="M23 19H49M23 32H41M23 45H37M23 19V53" stroke="rgba(255,255,255,0.95)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M43 45L50 38M50 38H44M50 38V44" stroke="#bbf7d0" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

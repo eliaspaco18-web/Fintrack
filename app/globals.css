@@ -1,0 +1,611 @@
+/* =============================================================================
+   app/globals.css
+   Estilos globales de la aplicación.
+   Tailwind base + variables CSS del tema + keyframes + utilidades custom.
+   ============================================================================= */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── VARIABLES GLOBALES ──────────────────────────────────────────────────────── */
+
+:root {
+  /* Tipografía */
+  --font-display: 'Syne', sans-serif;
+  --font-body:    'Instrument Sans', sans-serif;
+
+  /* Colores del tema (dark-first) */
+  --color-bg:          #070b10;
+  --color-surface:     #0d1219;
+  --color-surface-2:   #111820;
+  --color-sidebar-bg:  #090d14;
+  --color-topbar-bg:   rgba(7, 11, 16, 0.90);
+  --color-modal-bg:    #0f1520;
+  --color-overlay:     rgba(2, 6, 23, 0.72);
+  --color-shadow:      rgba(2, 6, 23, 0.55);
+  --color-border:      rgba(255, 255, 255, 0.06);
+  --color-border-hover: rgba(255, 255, 255, 0.12);
+
+  /* Acento */
+  --color-accent:       #10b981;
+  --color-accent-hover: #34d399;
+  --color-accent-muted: rgba(16, 185, 129, 0.12);
+
+  /* Texto */
+  --color-text:        rgba(255, 255, 255, 0.85);
+  --color-text-muted:  rgba(255, 255, 255, 0.40);
+  --color-text-faint:  rgba(255, 255, 255, 0.20);
+  --color-on-accent:   #06120d;
+
+  /* Sidebar */
+  --sidebar-width-expanded:  220px;
+  --sidebar-width-collapsed:  68px;
+  --topbar-height:            52px;
+}
+
+:root[data-theme='light'] {
+  --color-bg:            #d7e1ee;
+  --color-surface:       #f7fbff;
+  --color-surface-2:     #eaf1f9;
+  --color-sidebar-bg:    #d1dcea;
+  --color-topbar-bg:     rgba(247, 251, 255, 0.95);
+  --color-modal-bg:      #f8fcff;
+  --color-overlay:       rgba(15, 23, 42, 0.50);
+  --color-shadow:        rgba(15, 23, 42, 0.22);
+  --color-border:        rgba(16, 34, 56, 0.24);
+  --color-border-hover:  rgba(16, 34, 56, 0.42);
+  --color-accent:        #0f766e;
+  --color-accent-hover:  #0d9488;
+  --color-accent-muted:  rgba(15, 118, 110, 0.18);
+  --color-text:          rgba(10, 23, 38, 0.98);
+  --color-text-muted:    rgba(30, 49, 73, 0.86);
+  --color-text-faint:    rgba(58, 78, 106, 0.70);
+  --color-on-accent:     #ffffff;
+}
+
+/* Compatibilidad temporal para clases legacy dark-first en modo claro */
+:root[data-theme='light'] .text-white {
+  color: var(--color-text) !important;
+}
+
+:root[data-theme='light'] [class*='text-white/'] {
+  color: color-mix(in srgb, var(--color-text) 90%, transparent) !important;
+}
+
+:root[data-theme='light'] [class*='text-white/85'],
+:root[data-theme='light'] [class*='text-white/80'] {
+  color: color-mix(in srgb, var(--color-text) 98%, transparent) !important;
+}
+
+:root[data-theme='light'] [class*='text-white/75'],
+:root[data-theme='light'] [class*='text-white/70'],
+:root[data-theme='light'] [class*='text-white/65'],
+:root[data-theme='light'] [class*='text-white/60'] {
+  color: color-mix(in srgb, var(--color-text) 92%, transparent) !important;
+}
+
+:root[data-theme='light'] [class*='text-white/55'],
+:root[data-theme='light'] [class*='text-white/50'],
+:root[data-theme='light'] [class*='text-white/45'],
+:root[data-theme='light'] [class*='text-white/40'] {
+  color: color-mix(in srgb, var(--color-text) 84%, transparent) !important;
+}
+
+:root[data-theme='light'] [class*='text-white/35'],
+:root[data-theme='light'] [class*='text-white/30'],
+:root[data-theme='light'] [class*='text-white/25'],
+:root[data-theme='light'] [class*='text-white/20'] {
+  color: color-mix(in srgb, var(--color-text) 80%, transparent) !important;
+}
+
+:root[data-theme='light'] [class*='text-white/15'],
+:root[data-theme='light'] [class*='text-white/10'] {
+  color: color-mix(in srgb, var(--color-text) 70%, transparent) !important;
+}
+
+:root[data-theme='light'] [class*='bg-white/'] {
+  background-color: color-mix(in srgb, var(--color-surface-2) 78%, var(--color-surface) 22%) !important;
+}
+
+:root[data-theme='light'] [class*='bg-white/['] {
+  background-color: color-mix(in srgb, var(--color-surface-2) 82%, var(--color-surface) 18%) !important;
+}
+
+:root[data-theme='light'] [class*='bg-white/[0.03]'],
+:root[data-theme='light'] [class*='bg-white/[0.04]'],
+:root[data-theme='light'] [class*='bg-white/[0.05]'],
+:root[data-theme='light'] [class*='bg-white/[0.06]'],
+:root[data-theme='light'] [class*='bg-white/[0.07]'] {
+  background-color: color-mix(in srgb, var(--color-surface-2) 74%, var(--color-bg) 26%) !important;
+}
+
+:root[data-theme='light'] [class*='border-white/'] {
+  border-color: var(--color-border) !important;
+}
+
+:root[data-theme='light'] [class*='border-white/['] {
+  border-color: var(--color-border) !important;
+}
+
+:root[data-theme='light'] [class*='hover:text-white/']:hover {
+  color: var(--color-text) !important;
+}
+
+:root[data-theme='light'] [class*='hover:bg-white/[']:hover {
+  background-color: color-mix(in srgb, var(--color-surface) 88%, var(--color-surface-2)) !important;
+}
+
+:root[data-theme='light'] [class*='hover:border-white/[']:hover {
+  border-color: var(--color-border-hover) !important;
+}
+
+/* ── RESET / BASE ────────────────────────────────────────────────────────────── */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+  font-size: 15px;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.5;
+  /* Noise texture sutil para evitar fondo completamente plano */
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  transition: background-color var(--transition-base, 150ms ease-out), color var(--transition-base, 150ms ease-out);
+}
+
+:root[data-theme='light'] body {
+  background-image:
+    radial-gradient(circle at 4% -8%, rgba(15, 118, 110, 0.23), transparent 38%),
+    radial-gradient(circle at 98% -4%, rgba(37, 99, 235, 0.19), transparent 40%),
+    linear-gradient(180deg, #e2eaf4 0%, #d4dfed 55%, #c8d5e7 100%);
+}
+
+:root[data-theme='light'] .fin-sidebar,
+:root[data-theme='light'] .fin-topbar,
+:root[data-theme='light'] .surface,
+:root[data-theme='light'] .glass-card {
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.12), 0 2px 8px rgba(15, 23, 42, 0.06);
+}
+
+:root[data-theme='light'] .dashboard-hero {
+  background: linear-gradient(
+    132deg,
+    rgba(15, 118, 110, 0.24),
+    rgba(250, 253, 255, 0.95),
+    rgba(37, 99, 235, 0.20)
+  ) !important;
+  border-color: rgba(24, 41, 66, 0.26) !important;
+}
+
+/* Scrollbar personalizado */
+::-webkit-scrollbar {
+  width:  5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: color-mix(in srgb, var(--color-text-muted) 55%, transparent); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--color-text) 45%, transparent); }
+
+/* Focus visible global */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+:focus:not(:focus-visible) { outline: none; }
+
+/* Input autofill — evita el fondo azul del browser */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 100px var(--color-surface-2) inset;
+  -webkit-text-fill-color: var(--color-text);
+  caret-color: var(--color-text);
+}
+
+/* Superficies clave para layout/auth */
+.fin-shell {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+.fin-sidebar,
+.fin-mobile-drawer {
+  background-color: var(--color-sidebar-bg) !important;
+  border-color: var(--color-border) !important;
+}
+
+.fin-topbar {
+  background-color: var(--color-topbar-bg) !important;
+  border-color: var(--color-border) !important;
+}
+
+.fin-auth-bg {
+  background-color: var(--color-bg) !important;
+}
+
+.fin-auth-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+}
+
+/* ── TIPOGRAFÍA ──────────────────────────────────────────────────────────────── */
+
+.font-display { font-family: var(--font-display); }
+.font-body    { font-family: var(--font-body); }
+
+@layer base {
+  h1, h2, h3, h4, h5, h6 {
+    letter-spacing: -0.012em;
+    line-height: 1.2;
+    color: var(--color-text);
+  }
+
+  p, li, td, th, label, input, select, textarea, button {
+    line-height: 1.4;
+  }
+}
+
+/* Números tabulares por defecto para cantidades financieras */
+.tabular-nums,
+[data-tabular] {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* ── KEYFRAMES ───────────────────────────────────────────────────────────────── */
+
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+@keyframes spin-once {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ── UTILIDADES CUSTOM ───────────────────────────────────────────────────────── */
+
+/* Truncate con fade en el borde — más elegante que el ellipsis brusco */
+.truncate-fade {
+  overflow: hidden;
+  white-space: nowrap;
+  mask-image: linear-gradient(to right, black 80%, transparent 100%);
+}
+
+/* Glass card */
+.glass-card {
+  background:  rgba(255, 255, 255, 0.025);
+  border:      1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  backdrop-filter: blur(8px);
+}
+
+/* Glow de acento para elementos importantes */
+.accent-glow {
+  box-shadow: 0 0 20px -4px rgba(16, 185, 129, 0.25);
+}
+
+/* ── TAILWIND LAYER: componentes base ────────────────────────────────────────── */
+
+@layer components {
+  /* Superficie elevada */
+  .surface {
+    @apply rounded-xl;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+  }
+
+  /* Campo de formulario base */
+  .field-base {
+    @apply w-full px-3 py-2 rounded-lg text-[13px] font-medium
+           focus:outline-none focus:ring-2 focus:ring-emerald-500/20
+           focus:border-emerald-500/40
+           transition-all duration-150;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+  }
+
+  .field-base::placeholder {
+    color: var(--color-text-faint);
+  }
+
+  .field-base:hover {
+    border-color: var(--color-border-hover);
+  }
+
+  /* Campos compactos dentro de modales complejos (ej: Créditos) */
+  .credits-modal-body .field-base {
+    @apply px-3 py-2 text-[13px] rounded-md;
+    line-height: 1.25;
+  }
+
+  .credits-modal-body textarea.field-base {
+    @apply py-2;
+  }
+
+  /* Botón primario */
+  .btn-primary {
+    @apply flex items-center justify-center gap-2
+           px-3.5 py-2 rounded-lg text-[13px] font-bold tracking-wide
+           bg-emerald-500 hover:bg-emerald-400
+           shadow-lg shadow-emerald-500/20
+           transition-all duration-150
+           disabled:opacity-50 disabled:cursor-not-allowed;
+    color: var(--color-on-accent);
+  }
+
+  /* Botón secundario */
+  .btn-secondary {
+    @apply flex items-center justify-center gap-2
+           px-3.5 py-2 rounded-lg text-[13px] font-semibold
+           transition-all duration-150;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+  }
+
+  /* Densidad global compacta para todo el shell autenticado */
+  .density-compact .field-base {
+    @apply px-2.5 py-1.5 text-[12px] rounded-md;
+  }
+
+  .density-compact textarea.field-base {
+    @apply py-1.5;
+  }
+
+  .density-compact .btn-primary,
+  .density-compact .btn-secondary {
+    @apply px-3 py-1.5 text-[12px] rounded-md;
+  }
+
+  .density-compact table th,
+  .density-compact table td {
+    line-height: 1.25;
+  }
+
+  .density-compact table th {
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+  }
+
+  .density-compact table td {
+    padding-top: 0.45rem !important;
+    padding-bottom: 0.45rem !important;
+  }
+
+  .btn-secondary:hover {
+    background: var(--color-surface);
+    border-color: var(--color-border-hover);
+    color: var(--color-text);
+  }
+
+  /* Badge de estado */
+  .status-badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5
+           rounded-full text-[10px] font-bold uppercase tracking-wide;
+  }
+}
+/* =============================================================================
+   ADICIONES A app/globals.css — polish final
+   Añadir al final del archivo globals.css existente.
+   ============================================================================= */
+
+/* ── FOCUS STATES GLOBALES ────────────────────────────────────────────────────
+   Todos los elementos interactivos deben tener un estado de foco visible.
+   El outline usa emerald para elementos activos y white/30 para neutros.
+   Se usa :focus-visible (solo teclado, no click) para no molestar usuarios mouse. */
+
+:focus-visible {
+  outline:        2px solid color-mix(in srgb, var(--color-accent) 70%, transparent);
+  outline-offset: 2px;
+  border-radius:  4px;
+}
+
+/* Botones de cierre, icónicos y destructivos: foco en rojo */
+[data-variant="danger"]:focus-visible {
+  outline-color: rgba(239, 68, 68, 0.6);
+}
+
+/* ── MOBILE: TAP HIGHLIGHT ────────────────────────────────────────────────────
+   Elimina el flash azul en iOS/Android al tocar elementos interactivos. */
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Conservar foco visible en móvil para accesibilidad */
+@media (hover: none) {
+  :focus-visible {
+    outline: 2px solid rgba(16, 185, 129, 0.4);
+  }
+}
+
+/* ── MOBILE: TOUCH TARGETS ────────────────────────────────────────────────────
+   Elementos interactivos pequeños tienen min 44x44px de área táctil.
+   Se logra con padding invisible usando ::before / ::after cuando el
+   elemento visual es más pequeño. */
+
+.touch-target {
+  position: relative;
+}
+.touch-target::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+
+/* ── SELECTION ────────────────────────────────────────────────────────────────
+   Selección de texto personalizada. */
+
+::selection {
+  background-color: rgba(16, 185, 129, 0.25);
+  color:            white;
+}
+
+/* ── MICROINTERACCIONES ───────────────────────────────────────────────────────
+   Reglas de transición globales para elementos interactivos.
+   Se aplican vía clases de Tailwind (transition-all, duration-150)
+   pero aquí se establecen las variables CSS de timing. */
+
+:root {
+  --transition-fast:   100ms ease-out;
+  --transition-base:   150ms ease-out;
+  --transition-slow:   300ms ease-out;
+  --transition-spring: 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Hover en filas de tabla — solo si el dispositivo soporta hover */
+@media (hover: hover) {
+  tr.group\/row:hover td {
+    background-color: color-mix(in srgb, var(--color-text) 4%, transparent);
+  }
+}
+
+/* ── SCROLLBAR EN CONTENEDORES INTERNOS ───────────────────────────────────────
+   Para contenedores con overflow-y: auto (ej: lista de cuotas). */
+
+.scroll-thin::-webkit-scrollbar       { width: 3px; }
+.scroll-thin::-webkit-scrollbar-track { background: transparent; }
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-text-muted) 50%, transparent);
+  border-radius: 999px;
+}
+
+/* ── KEYFRAMES ADICIONALES ────────────────────────────────────────────────────
+   Complementan los ya definidos en globals.css base. */
+
+@keyframes pulse-once {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes bounce-in {
+  0%   { transform: scale(0.9); opacity: 0; }
+  60%  { transform: scale(1.02); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* ── REDUCIR MOVIMIENTO ───────────────────────────────────────────────────────
+   Respetar la preferencia del usuario. */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration:   0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration:  0.01ms !important;
+    scroll-behavior:      auto !important;
+  }
+}
+
+/* ── PRINT ────────────────────────────────────────────────────────────────────
+   Para impresión básica (estado de cuenta, etc.). */
+
+@media print {
+  body {
+    background: white;
+    color: #111;
+  }
+  .no-print { display: none !important; }
+  nav, aside, header { display: none !important; }
+  main { width: 100% !important; }
+}
+
+/* ── UTILIDADES FINALES ────────────────────────────────────────────────────────
+   Clases de utilidad adicionales para el sistema de diseño. */
+
+@layer utilities {
+  /* Animación de entrada para cards y modales */
+  .animate-scale-in {
+    animation: scale-in 150ms ease-out forwards;
+  }
+  .animate-bounce-in {
+    animation: bounce-in 300ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  }
+
+  /* Texto con números tabulares — para cantidades financieras */
+  .financial {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum", "lnum";
+  }
+
+  /* Card surface hover */
+  .card-hover {
+    @apply transition-all duration-200;
+    border-color: var(--color-border);
+  }
+
+  .card-hover:hover {
+    border-color: var(--color-border-hover);
+    background-color: color-mix(in srgb, var(--color-surface-2) 72%, transparent);
+  }
+
+  /* Estado activo para nav items (complementa Tailwind) */
+  .nav-active {
+    @apply text-emerald-400 bg-emerald-500/10;
+  }
+
+  /* Contenedor centrado con ancho máximo */
+  .page-container {
+    @apply max-w-[1400px] mx-auto px-4 md:px-6 lg:px-8;
+  }
+
+  /* Encabezado de sección de página */
+  .page-header {
+    @apply flex items-center justify-between mb-6;
+  }
+  .page-title {
+    @apply text-xl font-bold tracking-tight;
+    color: var(--color-text);
+  }
+  .page-subtitle {
+    @apply text-[12px] mt-0.5;
+    color: var(--color-text-muted);
+  }
+
+  /* Escala tipográfica consistente para microtexto financiero */
+  .text-\[10px\] {
+    font-size: 0.72rem;
+    line-height: 1rem;
+  }
+
+  .text-\[11px\] {
+    font-size: 0.79rem;
+    line-height: 1.08rem;
+  }
+
+  .text-\[12px\] {
+    line-height: 1.16rem;
+  }
+}
