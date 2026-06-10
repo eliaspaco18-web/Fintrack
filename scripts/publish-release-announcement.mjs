@@ -235,7 +235,7 @@ async function markReleaseEmailsSent(releaseId) {
 
 async function sendEmails({ release, releaseId, profilesById }) {
   const pending = await fetchPendingEmails(releaseId)
-  if (pending.length === 0) return { sent: 0, skipped: 0 }
+  if (pending.length === 0) return { sent: 0, skipped: 0, failed: 0, failures: [] }
 
   let sent = 0
   let skipped = 0
@@ -279,12 +279,11 @@ async function sendEmails({ release, releaseId, profilesById }) {
     }
   }
 
-  if (failures.length > 0) {
-    throw new Error(`Falló el envío a ${failures.length} usuario(s): ${failures.join(' | ')}`)
+  if (failures.length === 0) {
+    await markReleaseEmailsSent(releaseId)
   }
 
-  await markReleaseEmailsSent(releaseId)
-  return { sent, skipped }
+  return { sent, skipped, failed: failures.length, failures }
 }
 
 async function main() {
@@ -301,8 +300,14 @@ async function main() {
   })
 
   console.log(
-    `[publish-release-announcement] ${release.version} publicado. Correos enviados: ${result.sent}. Omitidos: ${result.skipped}.`,
+    `[publish-release-announcement] ${release.version} publicado. Correos enviados: ${result.sent}. Omitidos: ${result.skipped}. Fallidos: ${result.failed}.`,
   )
+
+  if (result.failures.length > 0) {
+    console.warn(
+      `[publish-release-announcement] Advertencia: quedaron correos pendientes para reintento. Detalle: ${result.failures.join(' | ')}`,
+    )
+  }
 }
 
 main().catch((error) => {
