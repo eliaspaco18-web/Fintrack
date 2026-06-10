@@ -69,6 +69,12 @@ jobs:
       - name: Setup Playwright
         run: npx playwright install --with-deps chromium
 
+      - name: Pull Vercel project settings
+        run: npx vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Pull Vercel production env
+        run: npx vercel env pull .env.local --yes --environment=production --token="$VERCEL_TOKEN"
+
       - name: Build
         run: npm run build
 
@@ -90,10 +96,6 @@ jobs:
       - name: Push Supabase migrations
         if: ${{ inputs.apply_migrations }}
         run: supabase db push --linked --include-all
-
-      - name: Pull Vercel project settings
-        if: ${{ inputs.deploy_vercel }}
-        run: npx vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
 
       - name: Build Vercel artifact
         if: ${{ inputs.deploy_vercel }}
