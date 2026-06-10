@@ -205,8 +205,11 @@ En `Settings > Secrets and variables > Actions`:
 
 #### Repository secrets
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `RESEND_API_KEY`
+- `RESEND_FROM_EMAIL`
 - `SUPABASE_ACCESS_TOKEN`
 - `SUPABASE_DB_PASSWORD`
+- `SUPABASE_SERVICE_ROLE_KEY`
 - `VERCEL_TOKEN`
 
 ### Como se usa
@@ -219,6 +222,7 @@ npm run release:production -- "release: descripcion corta"
 Ese comando:
 - genera automaticamente la siguiente version disponible a partir del manifiesto actual,
 - genera automaticamente el titulo, resumen y highlights visibles para usuarios,
+- redacta los highlights por modulo, indicando que cambio y donde lo van a notar,
 - corre checks locales,
 - hace `git add -A`,
 - crea commit si hay cambios,
@@ -241,18 +245,25 @@ RELEASE_SERIES=1.2.0 npm run release:production -- "release: descripcion corta"
 RELEASE_INTERACTIVE=true npm run release:production -- "release: descripcion corta"
 ```
 
+- Si alguna vez quieres forzar highlights manuales sin entrar al modo interactivo, usa:
+
+```bash
+RELEASE_HIGHLIGHTS="Portafolio|improve|Acciones mas claras en cuentas|Ahora editar y revisar cuentas es mas estable.||Configuracion|fix|Seguridad mas confiable|Se corrigieron acciones sensibles de la cuenta." npm run release:production -- "release: descripcion corta"
+```
+
 ### Como se enteran los usuarios
 En cada release exitoso:
 1. Se envia un correo con:
    - version publicada,
    - titulo del release,
    - resumen corto,
-   - mejoras o correcciones clave.
+   - mejoras o correcciones clave explicadas por modulo.
 2. Dentro de la app aparece un mensaje modal solo la primera vez que cada usuario entra despues de esa actualizacion.
 3. La version actual queda visible dentro de la interfaz.
 
 ### Estilo de comunicacion del release
-- El correo se arma con un bloque hero, tarjeta de version y highlights con iconos visuales de `Novedad`, `Mejora` y `Corrección`.
+- El correo se arma con un bloque hero, tarjeta de version y highlights con iconos visuales de `Nuevo`, `Mejorado` y `Corregido`.
+- Cada highlight muestra el modulo afectado, un titulo corto y una explicacion entendible para usuario final.
 - El popup in-app usa badges, iconos y tarjetas visuales para que el usuario sí lea el cambio y no lo cierre por inercia.
 
 Si no tienes `gh`, el push queda hecho y solo tendrás que lanzar manualmente el workflow `Production Release` desde la pestaña `Actions`.

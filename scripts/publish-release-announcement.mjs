@@ -35,6 +35,33 @@ const supabase = createClient(supabaseUrl, serviceRoleKey, {
 })
 const resend = new Resend(resendApiKey)
 
+const HIGHLIGHT_TONES = {
+  new: {
+    label: 'Nuevo',
+    icon: '&#10024;',
+    chipBg: '#ecfeff',
+    chipText: '#155e75',
+    iconBg: '#ccfbf1',
+    iconText: '#0f766e',
+  },
+  improve: {
+    label: 'Mejorado',
+    icon: '&#9881;',
+    chipBg: '#eff6ff',
+    chipText: '#1d4ed8',
+    iconBg: '#dbeafe',
+    iconText: '#1e40af',
+  },
+  fix: {
+    label: 'Corregido',
+    icon: '&#10003;',
+    chipBg: '#f0fdf4',
+    chipText: '#166534',
+    iconBg: '#dcfce7',
+    iconText: '#15803d',
+  },
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll('&', '&amp;')
@@ -48,40 +75,56 @@ function subjectForRelease(release) {
   return `FinTrack ${release.version} ya está disponible`
 }
 
+function normalizeHighlight(item, index) {
+  if (typeof item === 'string') {
+    const detail = item.trim()
+    if (!detail) return null
+    return {
+      module: 'General',
+      type: index === 0 ? 'new' : index === 1 ? 'improve' : 'fix',
+      title: 'Actualización de FinTrack',
+      detail,
+    }
+  }
+
+  if (!item || typeof item !== 'object') return null
+
+  const module = typeof item.module === 'string' && item.module.trim() ? item.module.trim() : 'General'
+  const type = item.type === 'new' || item.type === 'improve' || item.type === 'fix' ? item.type : 'improve'
+  const title = typeof item.title === 'string' && item.title.trim() ? item.title.trim() : 'Actualización de FinTrack'
+  const detail = typeof item.detail === 'string' && item.detail.trim()
+    ? item.detail.trim()
+    : (typeof item.summary === 'string' && item.summary.trim() ? item.summary.trim() : title)
+
+  return { module, type, title, detail }
+}
+
+function normalizeHighlights(items) {
+  if (!Array.isArray(items)) return []
+  return items
+    .map((item, index) => normalizeHighlight(item, index))
+    .filter(Boolean)
+}
+
 function htmlForRelease({ fullName, release }) {
   const safeName = escapeHtml(fullName || 'Hola')
   const safeTitle = escapeHtml(release.title)
   const safeSummary = escapeHtml(release.summary)
   const safeVersion = escapeHtml(release.version)
-  const tones = [
-    {
-      label: 'Novedad',
-      icon: '&#10024;',
-      chipBg: '#ecfeff',
-      chipText: '#155e75',
-      iconBg: '#ccfbf1',
-      iconText: '#0f766e',
-    },
-    {
-      label: 'Mejora',
-      icon: '&#9881;',
-      chipBg: '#eff6ff',
-      chipText: '#1d4ed8',
-      iconBg: '#dbeafe',
-      iconText: '#1e40af',
-    },
-    {
-      label: 'Corrección',
-      icon: '&#10003;',
-      chipBg: '#f0fdf4',
-      chipText: '#166534',
-      iconBg: '#dcfce7',
-      iconText: '#15803d',
-    },
-  ]
+  const highlightsData = normalizeHighlights(release.highlights)
+  const modules = Array.from(new Set(highlightsData.map(item => item.module))).slice(0, 4)
+  const moduleChips = modules
+    .map((module) => `
+      <span style="display:inline-block;border:1px solid #d1d5db;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#475569;background:#f8fafc;margin:0 8px 8px 0;">
+        ${escapeHtml(module)}
+      </span>
+    `)
+    .join('')
   const highlights = release.highlights
     .map((item, index) => {
-      const tone = tones[index % tones.length]
+      const normalized = normalizeHighlight(item, index)
+      if (!normalized) return ''
+      const tone = HIGHLIGHT_TONES[normalized.type]
       return `
       <tr>
         <td style="padding:0 0 12px 0;">
@@ -96,11 +139,19 @@ function htmlForRelease({ fullName, release }) {
                       </div>
                     </td>
                     <td style="vertical-align:top;">
-                      <div style="display:inline-block;border-radius:999px;background:${tone.chipBg};color:${tone.chipText};font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 9px;margin-bottom:8px;">
-                        ${tone.label}
+                      <div style="margin-bottom:8px;">
+                        <span style="display:inline-block;border-radius:999px;background:${tone.chipBg};color:${tone.chipText};font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 9px;margin:0 8px 6px 0;">
+                          ${tone.label}
+                        </span>
+                        <span style="display:inline-block;border-radius:999px;background:#f8fafc;color:#475569;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 9px;margin-bottom:6px;border:1px solid #dbe1e8;">
+                          ${escapeHtml(normalized.module)}
+                        </span>
                       </div>
-                      <div style="font-size:14px;line-height:1.7;color:#1f2937;">
-                        ${escapeHtml(item)}
+                      <div style="font-size:15px;line-height:1.5;color:#111827;font-weight:700;margin-bottom:4px;">
+                        ${escapeHtml(normalized.title)}
+                      </div>
+                      <div style="font-size:14px;line-height:1.7;color:#475569;">
+                        ${escapeHtml(normalized.detail)}
                       </div>
                     </td>
                   </tr>
@@ -142,8 +193,10 @@ function htmlForRelease({ fullName, release }) {
         </table>
 
         <p style="margin:0 0 18px 0;font-size:15px;line-height:1.7;color:#374151;">
-          ${safeName}, ya publicamos una nueva actualización de FinTrack. Aquí tienes las mejoras más importantes para que las aproveches desde tu próxima entrada.
+          ${safeName}, ya publicamos una nueva actualización de FinTrack. Aquí te resumimos, en lenguaje simple, qué mejoró y en qué módulos lo vas a notar.
         </p>
+
+        ${moduleChips ? `<div style="margin:0 0 18px 0;">${moduleChips}</div>` : ''}
 
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 24px 0;">
           ${highlights}
@@ -160,7 +213,11 @@ function htmlForRelease({ fullName, release }) {
 
 async function readManifest() {
   const raw = await fs.readFile(manifestPath, 'utf8')
-  return JSON.parse(raw)
+  const manifest = JSON.parse(raw)
+  return {
+    ...manifest,
+    highlights: normalizeHighlights(manifest.highlights),
+  }
 }
 
 async function upsertRelease(release) {

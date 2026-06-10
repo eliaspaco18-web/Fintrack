@@ -12,6 +12,69 @@ const manifestPath = path.join(rootDir, 'lib', 'release', 'current-release.json'
 const commitMessage = process.argv.slice(2).join(' ').trim()
 const interactiveMode = process.env.RELEASE_INTERACTIVE === 'true'
 
+const MODULE_COPY = {
+  'Portafolio': {
+    type: 'improve',
+    title: 'Gestión de cuentas más clara y estable',
+    detail: 'Mejoramos las acciones de tus cuentas para que editar, revisar y operar en Portafolio sea más confiable.',
+  },
+  'Movimientos': {
+    type: 'improve',
+    title: 'Registro de movimientos más consistente',
+    detail: 'Ajustamos el flujo de Movimientos para que registrar operaciones y revisar información sea más claro en el día a día.',
+  },
+  'Presupuestos': {
+    type: 'improve',
+    title: 'Control de presupuestos más fácil de seguir',
+    detail: 'Refinamos el módulo de Presupuestos para que entiendas mejor tus límites, avance y acciones disponibles.',
+  },
+  'Créditos': {
+    type: 'fix',
+    title: 'Seguimiento de créditos más confiable',
+    detail: 'Corregimos comportamientos del módulo Créditos para que sus acciones y detalles respondan con mayor consistencia.',
+  },
+  'Activos': {
+    type: 'improve',
+    title: 'Administración de activos más ordenada',
+    detail: 'Mejoramos el módulo Activos para que registrar, revisar y dar seguimiento a tus bienes sea más fluido.',
+  },
+  'Por pagar': {
+    type: 'fix',
+    title: 'Cuentas por pagar con mejor estabilidad',
+    detail: 'Ajustamos el módulo Por pagar para que las acciones y el seguimiento de pendientes sean más confiables.',
+  },
+  'Por cobrar': {
+    type: 'fix',
+    title: 'Cuentas por cobrar con seguimiento más claro',
+    detail: 'Mejoramos el módulo Por cobrar para que revisar saldos pendientes y su origen sea más simple y estable.',
+  },
+  'Alertas': {
+    type: 'improve',
+    title: 'Alertas más visibles y oportunas',
+    detail: 'Refinamos los avisos para que identifiques mejor recordatorios, eventos y pendientes importantes.',
+  },
+  'Bancos': {
+    type: 'fix',
+    title: 'Gestión de bancos y entidades más estable',
+    detail: 'Corregimos el catálogo de entidades bancarias para que crear y usar bancos dentro de la app sea más confiable.',
+  },
+  'Configuración': {
+    type: 'improve',
+    title: 'Configuración y seguridad más comprensibles',
+    detail: 'Mejoramos Configuración para que administrar tu cuenta y tus preferencias resulte más claro.',
+  },
+  'Importaciones': {
+    type: 'new',
+    title: 'Base reforzada para futuras importaciones',
+    detail: 'Preparamos el módulo de Importaciones para que la migración de información sea más robusta y guiada.',
+  },
+  'Plataforma': {
+    type: 'improve',
+    title: 'Publicaciones y operación más confiables',
+    detail: 'Fortalecimos la plataforma para que las actualizaciones de FinTrack sean más estables y transparentes para todos.',
+  },
+}
+
 function normalizeSeries(value) {
   const trimmed = String(value ?? '').trim().replace(/^V/i, '')
   if (!/^\d+\.\d+\.\d+$/.test(trimmed)) {
@@ -77,32 +140,34 @@ function buildAutomaticCopy({ files, commitMessage, current }) {
   const modules = detectModules(files)
   const primary = modules.slice(0, 3)
   const title = primary.length > 0
-    ? `Mejoras en ${primary.join(', ')}`
+    ? `Actualización en ${primary.join(', ')}`
     : titleFromCommit(commitMessage) || current.title
 
   const summary = primary.length > 0
-    ? `Esta versión mejora ${primary.join(', ').toLowerCase()} para dejar la operación más estable y fluida en producción.`
+    ? `Esta versión trae cambios en ${primary.join(', ')} para que tus tareas diarias dentro de FinTrack sean más claras, estables y fáciles de seguir.`
     : commitMessage || current.summary || title
 
   const highlights = []
 
   for (const module of primary) {
-    if (module === 'Portafolio') highlights.push('Correcciones y mejoras operativas en Portafolio y cuentas.')
-    else if (module === 'Movimientos') highlights.push('Ajustes en Movimientos para un registro más estable y consistente.')
-    else if (module === 'Presupuestos') highlights.push('Mejoras en Presupuestos para revisar y controlar tus límites con más claridad.')
-    else if (module === 'Créditos') highlights.push('Optimización en Créditos para acciones y seguimiento más confiables.')
-    else if (module === 'Activos') highlights.push('Ajustes en Activos para una gestión más clara y sin fricciones.')
-    else if (module === 'Por pagar') highlights.push('Mejoras en Por pagar para seguimiento y acciones más estables.')
-    else if (module === 'Por cobrar') highlights.push('Mejoras en Por cobrar para un control más confiable del flujo pendiente.')
-    else if (module === 'Alertas') highlights.push('Refuerzo en Alertas y avisos para que la información importante sea más visible.')
-    else if (module === 'Bancos') highlights.push('Ajustes en Bancos y entidades para un manejo más estable del catálogo financiero.')
-    else if (module === 'Configuración') highlights.push('Mejoras en Configuración y seguridad para una administración más clara.')
-    else if (module === 'Importaciones') highlights.push('Mejoras en Importaciones para preparar una migración de datos más robusta.')
-    else if (module === 'Plataforma') highlights.push('Mejoras internas de plataforma para hacer más confiable el despliegue y la operación.')
+    const copy = MODULE_COPY[module]
+    if (copy) {
+      highlights.push({
+        module,
+        type: copy.type,
+        title: copy.title,
+        detail: copy.detail,
+      })
+    }
   }
 
   if (highlights.length === 0) {
-    highlights.push(summary)
+    highlights.push({
+      module: 'General',
+      type: 'improve',
+      title: 'Actualización general de la plataforma',
+      detail: summary,
+    })
   }
 
   return {
@@ -140,18 +205,39 @@ async function promptInteractive(current) {
 
     const highlights = []
     output.write('\nIngresa hasta 3 mejoras o correcciones clave.\n')
-    output.write('Deja vacío y presiona Enter para terminar.\n\n')
+    output.write('Formato recomendado: Modulo | tipo(new/improve/fix) | titulo | detalle\n')
+    output.write('Si escribes solo una frase, la guardaremos como mensaje general.\n\n')
 
     for (let index = 0; index < 3; index += 1) {
       const answer = await rl.question(`Highlight ${index + 1}${index === 0 ? ' (recomendado)' : ''}: `)
       const normalized = answer.trim()
       if (!normalized) {
         if (index === 0) {
-          highlights.push(summary)
+          highlights.push({
+            module: 'General',
+            type: 'improve',
+            title: 'Actualización de FinTrack',
+            detail: summary,
+          })
         }
         break
       }
-      highlights.push(normalized)
+      const parts = normalized.split('|').map(part => part.trim())
+      if (parts.length >= 4) {
+        highlights.push({
+          module: parts[0] || 'General',
+          type: ['new', 'improve', 'fix'].includes(parts[1]) ? parts[1] : 'improve',
+          title: parts[2] || 'Actualización de FinTrack',
+          detail: parts.slice(3).join(' | ') || parts[2] || 'Actualización de FinTrack',
+        })
+      } else {
+        highlights.push({
+          module: 'General',
+          type: index === 0 ? 'new' : index === 1 ? 'improve' : 'fix',
+          title: 'Actualización de FinTrack',
+          detail: normalized,
+        })
+      }
     }
 
     return {
@@ -180,6 +266,24 @@ function buildNonInteractive(current) {
     .split('||')
     .map(item => item.trim())
     .filter(Boolean)
+    .map((item, index) => {
+      const parts = item.split('|').map(part => part.trim())
+      if (parts.length >= 4) {
+        return {
+          module: parts[0] || 'General',
+          type: ['new', 'improve', 'fix'].includes(parts[1]) ? parts[1] : 'improve',
+          title: parts[2] || 'Actualización de FinTrack',
+          detail: parts.slice(3).join(' | ') || parts[2] || 'Actualización de FinTrack',
+        }
+      }
+
+      return {
+        module: 'General',
+        type: index === 0 ? 'new' : index === 1 ? 'improve' : 'fix',
+        title: 'Actualización de FinTrack',
+        detail: item,
+      }
+    })
 
   const highlights = highlightsFromEnv.length > 0 ? highlightsFromEnv.slice(0, 3) : autoCopy.highlights
 

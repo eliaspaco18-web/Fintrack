@@ -1,6 +1,6 @@
 import { createClient, createServiceClient } from '@/lib/supabase.server'
 import { apiError, apiOk, apiUnauthorized, getSessionUserId } from '@/lib/api/response'
-import { CURRENT_RELEASE, releaseHighlights } from '@/lib/release/current-release'
+import { CURRENT_RELEASE, normalizeReleaseHighlights, type ReleaseHighlight } from '@/lib/release/current-release'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -10,7 +10,7 @@ interface ReleasePayload {
   version: string
   title: string
   summary: string
-  highlights: string[]
+  highlights: ReleaseHighlight[]
   deployed_at: string
 }
 
@@ -31,7 +31,7 @@ async function getLatestRelease() {
     version: data.version,
     title: data.title,
     summary: data.summary,
-    highlights: releaseHighlights(data.highlights),
+    highlights: normalizeReleaseHighlights(data.highlights),
     deployed_at: data.deployed_at,
   } satisfies ReleasePayload
 }
