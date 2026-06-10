@@ -28,6 +28,7 @@ jobs:
     environment: production
     env:
       CI: true
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -108,4 +109,8 @@ jobs:
         run: npx vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
 
       - name: Publish release version and user announcement
-        run: node scripts/publish-release-announcement.mjs
+        run: |
+          set -a
+          source .env.local
+          set +a
+          node scripts/publish-release-announcement.mjs
