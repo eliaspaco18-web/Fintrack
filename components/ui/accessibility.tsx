@@ -36,8 +36,8 @@ export function SkipToContent() {
         sr-only focus:not-sr-only
         fixed top-4 left-4 z-[200]
         px-4 py-2 rounded-xl
-        bg-emerald-500 text-black font-bold text-sm
-        focus:outline-none focus:ring-2 focus:ring-emerald-300
+        bg-[var(--c-primary)] text-black font-bold text-sm
+        focus:outline-none focus:ring-2 focus:ring-[rgba(14,79,70,0.30)]
         transition-all
       "
     >
@@ -165,7 +165,7 @@ export function useAppKeyboardShortcuts() {
     {
       key:    'n',
       label:  'Nueva transacción',
-      action: () => router?.push('/transactions/new'),
+      action: () => router?.push('/transactions?new=transaction'),
     },
     {
       key:    'd',

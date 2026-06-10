@@ -55,7 +55,7 @@ interface EditFormValues {
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 const TYPE_LABELS = {
-  INCOME:   { label: 'Ingreso',       color: '#10b981', prefix: '+' },
+  INCOME:   { label: 'Ingreso',       color: 'var(--c-primary)', prefix: '+' },
   EXPENSE:  { label: 'Egreso',        color: '#ef4444', prefix: '−' },
   TRANSFER: { label: 'Transferencia', color: '#3b82f6', prefix: '⇄' },
 }
@@ -90,8 +90,8 @@ function InlineEditForm({ tx, onSave, onCancel }: InlineEditFormProps) {
   const fieldClass = `
     w-full px-3 py-2 rounded-lg text-sm bg-white/[0.05] border
     border-white/[0.09] text-white/80 placeholder:text-white/20
-    focus:outline-none focus:ring-1 focus:ring-emerald-500/30
-    focus:border-emerald-500/30 transition-all
+    focus:outline-none focus:ring-1 focus:ring-[rgba(14,79,70,0.25)]
+    focus:border-[var(--c-primary-border)] transition-all
   `
 
   const onSubmit = handleSubmit(async (values) => {
@@ -173,7 +173,7 @@ function InlineEditForm({ tx, onSave, onCancel }: InlineEditFormProps) {
           type="submit"
           disabled={loading}
           className="px-4 py-2 rounded-xl text-sm font-bold
-            bg-emerald-500 hover:bg-emerald-400 text-black
+            bg-[var(--c-primary)] hover:bg-[var(--c-primary-hover)] text-black
             disabled:opacity-40 transition-all"
         >
           {loading ? 'Guardando…' : 'Guardar cambios'}

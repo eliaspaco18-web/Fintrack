@@ -1,18 +1,16 @@
 // =============================================================================
 // app/(dashboard)/dashboard/page.tsx
 // Server Component del dashboard.
-// Carga los datos iniciales del servidor y los pasa al DashboardClient.
-// El cliente los usa como fallbackData en useDashboard() — cero flash.
+// Fase 11.4: integra DashboardWorkspace con SSR mínimo.
 // =============================================================================
 
-import { redirect }              from 'next/navigation'
 import type { Metadata }         from 'next'
-import { createClient }          from '@/lib/supabase.server'
-import { DashboardService }      from '@/modules/dashboard/dashboard.service'
+import { resolveLiveUsdPenExchangeRate } from '@/lib/server/exchange-rate'
 import { DashboardClient }       from '@/components/dashboard/DashboardClient'
 
 export const metadata: Metadata = {
-  title: 'Dashboard',
+  title: 'Dashboard | FinTrack',
+  description: 'Panel financiero integral con KPIs, flujo de dinero y vencimientos próximos.',
 }
 
 // ─── REVALIDACIÓN ────────────────────────────────────────────────────────────
@@ -24,17 +22,10 @@ export const revalidate = 60
 // ─── PAGE ─────────────────────────────────────────────────────────────────────
 
 export default async function DashboardPage() {
-  const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
-
-  const service = new DashboardService(supabase)
-  const result  = await service.getSummary(user.id)
-
-  // Si falla la carga inicial, pasamos null y el cliente muestra el error
-  const initialData = result.ok ? result.data : null
+  // SSR mínimo: solo tipo de cambio (el resto se resuelve en cliente con fetch paralelo).
+  const exchangeRateSnapshot = await resolveLiveUsdPenExchangeRate()
 
   return (
-    <DashboardClient initialData={initialData}/>
+    <DashboardClient initialExchangeRate={exchangeRateSnapshot.rate} />
   )
 }

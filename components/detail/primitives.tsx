@@ -8,8 +8,10 @@
 
 import Link                          from 'next/link'
 import { useRouter }                 from 'next/navigation'
-import { type ReactNode, useId, useState }  from 'react'
-import { FocusTrap }                 from '@/components/ui/accessibility'
+import { type ReactNode, useState }  from 'react'
+import { Button } from '@/components/ui/Button'
+
+export { ConfirmDialog } from '@/components/finance'
 
 // ─── BACK LINK ────────────────────────────────────────────────────────────────
 
@@ -157,117 +159,42 @@ interface ActionButtonProps {
 }
 
 const VARIANTS = {
-  primary:   'bg-emerald-500 hover:bg-emerald-400 text-black font-bold shadow-md shadow-emerald-500/20',
-  secondary: 'bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.08] text-white/65 hover:text-white/85',
-  danger:    'bg-red-500/10 hover:bg-red-500/15 border border-red-500/20 text-red-400',
-  ghost:     'text-white/35 hover:text-white/65 hover:bg-white/[0.05]',
-}
+  primary: 'primary',
+  secondary: 'secondary',
+  danger: 'danger',
+  ghost: 'ghost',
+} as const
 
 export function ActionButton({
   label, onClick, href, variant = 'secondary', disabled, loading, icon, testId,
 }: ActionButtonProps) {
-  const classes = `
-    inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm
-    transition-all duration-150
-    disabled:opacity-40 disabled:cursor-not-allowed
-    ${VARIANTS[variant]}
-  `
-
   if (href) {
     return (
-      <Link href={href} className={classes} data-testid={testId}>
-        {icon}
+      <Button
+        href={href}
+        testId={testId}
+        variant={VARIANTS[variant]}
+        size="md"
+        leadingIcon={icon}
+      >
         {label}
-      </Link>
+      </Button>
     )
   }
 
   return (
-    <button onClick={onClick} disabled={disabled || loading} className={classes} data-testid={testId}>
-      {loading
-        ? <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-        : icon
-      }
+    <Button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      loading={loading}
+      testId={testId}
+      variant={VARIANTS[variant]}
+      size="md"
+      leadingIcon={icon}
+    >
       {loading ? 'Procesando…' : label}
-    </button>
-  )
-}
-
-// ─── CONFIRM DIALOG ───────────────────────────────────────────────────────────
-
-interface ConfirmDialogProps {
-  open:      boolean
-  title:     string
-  message:   string
-  onConfirm: () => void
-  onCancel:  () => void
-  loading?:  boolean
-  danger?:   boolean
-  testId?:   string
-  cancelTestId?: string
-  confirmTestId?: string
-}
-
-export function ConfirmDialog({
-  open, title, message, onConfirm, onCancel, loading, danger, testId, cancelTestId, confirmTestId,
-}: ConfirmDialogProps) {
-  const titleId = useId()
-  const descriptionId = useId()
-
-  if (!open) return null
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" data-testid={testId}>
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onCancel}
-      />
-      {/* Dialog */}
-      <FocusTrap
-        active={open}
-        onEscape={() => {
-          if (!loading) onCancel()
-        }}
-      >
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby={titleId}
-          aria-describedby={descriptionId}
-          className="relative z-10 w-full max-w-sm rounded-2xl border border-white/[0.09]
-            bg-[#0f1520] shadow-2xl shadow-black/60 p-6"
-        >
-          <h3 id={titleId} className="text-base font-bold text-white/85 mb-2">{title}</h3>
-          <p id={descriptionId} className="text-sm text-white/45 leading-relaxed mb-6">{message}</p>
-          <div className="flex gap-3 justify-end">
-            <button
-              onClick={onCancel}
-              data-testid={cancelTestId}
-              className="px-4 py-2 rounded-xl text-sm text-white/45 hover:text-white/65
-                bg-white/[0.05] hover:bg-white/[0.08] transition-all"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={onConfirm}
-              disabled={loading}
-              data-testid={confirmTestId}
-              className={`
-                px-4 py-2 rounded-xl text-sm font-semibold transition-all
-                disabled:opacity-40
-                ${danger
-                  ? 'bg-red-500 hover:bg-red-400 text-white'
-                  : 'bg-emerald-500 hover:bg-emerald-400 text-black font-bold'
-                }
-              `}
-            >
-              {loading ? 'Procesando…' : 'Confirmar'}
-            </button>
-          </div>
-        </div>
-      </FocusTrap>
-    </div>
+    </Button>
   )
 }
 

@@ -1,7 +1,8 @@
 // =============================================================================
 // components/layout/Sidebar.tsx
-// Sidebar de navegación principal.
-// Modos: expanded (desktop) | collapsed (tablet) | drawer (mobile overlay)
+// Sidebar — Redesign v3: Warm Neutral + Teal Accent
+// Active: tinted bg + teal text + left indicator (no full-green fill)
+// Shadow: sm (not lg) — borders handle separation in dark mode
 // =============================================================================
 
 'use client'
@@ -23,52 +24,29 @@ import { BrandMark, BrandWordmark }       from './Brand'
 
 function SidebarLogo({ collapsed }: { collapsed: boolean }) {
   return (
-    <Link href="/dashboard" className="flex items-center gap-3 group min-w-0">
+    <Link
+      href="/dashboard"
+      aria-label="Ir al dashboard"
+      className="group flex min-w-0 items-center gap-2.5 rounded-[var(--sidebar-control-radius)] outline-none transition-[background-color,box-shadow] duration-150 ease-[var(--ease-out)] focus-visible:shadow-[var(--sidebar-focus-ring)]"
+    >
       <BrandMark
-        size={collapsed ? 34 : 40}
-        className="shrink-0 transition-transform duration-200 group-hover:scale-[1.03]"
+        size={collapsed ? 30 : 32}
+        variant="default"
+        className="shrink-0 transition-[box-shadow,opacity] duration-150 ease-[var(--ease-out)] group-hover:opacity-95"
       />
-
-      {/* Wordmark — oculto en collapsed */}
       <div
-        className={`overflow-hidden transition-all duration-300 ease-out whitespace-nowrap ${
-          collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'
+        className={`overflow-hidden whitespace-nowrap transition-[max-width,opacity,transform] duration-180 ease-[var(--ease-out)] ${
+          collapsed
+            ? 'max-w-0 -translate-x-1 opacity-0'
+            : 'max-w-[160px] translate-x-0 opacity-100'
         }`}
       >
         <BrandWordmark
-          titleClassName="text-[20px]"
-          subtitleClassName="text-[9px] tracking-[0.15em]"
-          subtitle="Money OS"
+          titleClassName="text-[16px] font-semibold tracking-[-0.018em] text-[var(--sidebar-brand-text)]"
+          variant="default"
         />
       </div>
     </Link>
-  )
-}
-
-// ─── TOGGLE DE COLAPSO (solo desktop) ────────────────────────────────────────
-
-function CollapseToggle({
-  collapsed,
-  onToggle,
-}: {
-  collapsed: boolean
-  onToggle:  () => void
-}) {
-  return (
-    <button
-      onClick={onToggle}
-      aria-label={collapsed ? 'Expandir sidebar' : 'Colapsar sidebar'}
-      className="flex items-center justify-center w-8 h-8 rounded-full
-        border border-[color:var(--color-border)] bg-[var(--color-surface)]
-        text-[var(--color-text-muted)] shadow-lg shadow-black/30
-        hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] hover:border-[color:var(--color-border-hover)]
-        transition-all duration-150"
-    >
-      {collapsed
-        ? <IconChevronRight size={14}/>
-        : <IconChevronLeft  size={14}/>
-      }
-    </button>
   )
 }
 
@@ -79,60 +57,136 @@ interface SidebarProfileProps {
   collapsed: boolean
 }
 
+function SidebarSectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="px-2 pb-1.5 pt-2 text-[11px] font-medium leading-none text-[var(--sidebar-section-text)]">
+      {children}
+    </p>
+  )
+}
+
+function SidebarNavigation({
+  mode,
+  badges,
+}: {
+  mode: SidebarMode | 'drawer'
+  badges: Partial<Record<string, number>>
+}) {
+  const collapsed = mode === 'collapsed'
+
+  return (
+    <nav
+      className="flex-1 overflow-y-auto overflow-x-visible px-2 py-3"
+      aria-label="Navegación principal"
+    >
+      {!collapsed && <SidebarSectionLabel>Principal</SidebarSectionLabel>}
+      <ul className="space-y-1">
+        {NAV_MAIN.map(item => (
+          <NavItem
+            key={item.key}
+            item={item}
+            mode={mode}
+            badge={badges[item.key]}
+          />
+        ))}
+      </ul>
+
+      <div className="mx-2 my-3 h-px bg-gradient-to-r from-transparent via-[var(--sidebar-panel-border)] to-transparent" />
+
+      {!collapsed && <SidebarSectionLabel>Sistema</SidebarSectionLabel>}
+      <ul className="space-y-1">
+        {NAV_SECONDARY.map(item => (
+          <NavItem
+            key={item.key}
+            item={item}
+            mode={mode}
+            badge={badges[item.key]}
+          />
+        ))}
+      </ul>
+    </nav>
+  )
+}
+
 function SidebarProfile({ user, collapsed }: SidebarProfileProps) {
-  const router    = useRouter()
-  const supabase  = createClient()
+  const router   = useRouter()
+  const supabase = createClient()
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
     router.push('/login')
   }
 
-  const avatarSrc = resolveUserAvatar(user.avatar, user.email || user.name)
+  const avatarSrc   = resolveUserAvatar(user.avatar, user.email || user.name)
   const displayName = (() => {
     const candidate = (user.name ?? '').trim()
     if (!candidate || candidate.includes('@')) return 'Usuario'
     return candidate
   })()
 
+  if (collapsed) {
+    return (
+      <div className="flex flex-col items-center gap-2">
+        <button
+          type="button"
+          className="sidebar-avatar-button"
+          aria-label={`Cuenta de ${displayName}`}
+          title={displayName}
+        >
+          <Image
+            src={avatarSrc}
+            alt="Avatar de usuario"
+            width={30}
+            height={30}
+            unoptimized
+            className="h-[30px] w-[30px] rounded-[10px] object-cover shadow-[inset_0_0_0_1px_var(--sidebar-avatar-border)]"
+          />
+        </button>
+
+        <button
+          type="button"
+          onClick={handleSignOut}
+          aria-label="Cerrar sesión"
+          title="Cerrar sesión"
+          className="sidebar-icon-button"
+        >
+          <IconLogOut size={14} />
+        </button>
+      </div>
+    )
+  }
+
   return (
-    <div className={`flex items-center gap-3 ${collapsed ? 'justify-center' : ''}`}>
-      {/* Avatar */}
-      <div className="flex-shrink-0 w-7 h-7 rounded-lg overflow-hidden
-        bg-[var(--color-surface-2)] border border-[color:var(--color-border)]
-        flex items-center justify-center text-[11px] font-bold text-[var(--color-text-muted)]">
+    <div className="sidebar-account-card">
+      <div className="flex-shrink-0 rounded-[10px] bg-white/40 p-[1px] dark:bg-white/[0.03]">
         <Image
           src={avatarSrc}
           alt="Avatar de usuario"
-          width={28}
-          height={28}
+          width={32}
+          height={32}
           unoptimized
-          className="w-full h-full object-cover"
+          className="sidebar-account-avatar"
         />
       </div>
 
-      {/* Info */}
-      {!collapsed && (
-        <>
-          <div className="flex-1 min-w-0">
-            <p className="text-[12px] font-semibold text-[var(--color-text)] truncate leading-tight">
-              {displayName}
-            </p>
-            <p className="text-[10px] text-[var(--color-text-muted)] truncate">{user.email}</p>
-          </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[12.5px] font-semibold leading-tight text-[var(--sidebar-account-name)]">
+          {displayName}
+        </p>
+        <p className="mt-0.5 truncate text-[11px] leading-tight text-[var(--sidebar-account-email)]">
+          {user.email}
+        </p>
+      </div>
 
-          {/* Logout */}
-          <button
-            onClick={handleSignOut}
-            title="Cerrar sesión"
-            className="flex-shrink-0 p-1.5 rounded-lg text-[var(--color-text-muted)]
-              hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]
-              transition-all duration-150"
-          >
-            <IconLogOut size={14}/>
-          </button>
-        </>
-      )}
+      <button
+        type="button"
+        onClick={handleSignOut}
+        title="Cerrar sesión"
+        aria-label="Cerrar sesión"
+        className="sidebar-icon-button"
+      >
+        <IconLogOut size={14} />
+      </button>
     </div>
   )
 }
@@ -151,66 +205,36 @@ export function StaticSidebar({ mode, user, badges = {} }: StaticSidebarProps) {
 
   return (
     <aside
-      className={`
-        fin-sidebar
-        hidden md:flex flex-col
-        h-screen sticky top-0
-        bg-[var(--color-sidebar-bg)] border-r border-[color:var(--color-border)]
-        transition-all duration-300 ease-out
-        ${collapsed ? 'w-[68px]' : 'w-[220px]'}
-      `}
+      className="fin-sidebar sticky top-0 hidden h-screen flex-col p-[var(--sidebar-shell-gap)] transition-[width] duration-300 ease-[var(--ease-out)] md:flex"
+      style={{
+        width: collapsed
+          ? 'var(--sidebar-width-collapsed)'
+          : 'var(--sidebar-width-expanded)',
+      }}
     >
-      {/* Header: logo */}
-      <div className={`
-        relative flex items-center gap-3 px-4 py-5
-        border-b border-[color:var(--color-border)]
-        ${collapsed ? 'justify-center' : 'justify-start'}
-      `}>
-        <SidebarLogo collapsed={collapsed}/>
-      </div>
+      <div className="relative flex h-full flex-col overflow-visible rounded-[var(--sidebar-panel-radius)] border border-[var(--sidebar-panel-border)] bg-[var(--sidebar-panel-bg)] shadow-[var(--sidebar-panel-shadow)]">
+        <div className="relative flex h-[var(--sidebar-header-height)] items-center border-b border-[var(--sidebar-panel-border)] px-3">
+          <div className={collapsed ? 'mx-auto' : 'min-w-0 flex-1 pr-10'}>
+            <SidebarLogo collapsed={collapsed} />
+          </div>
 
-      {/* Toggle flotante siempre visible en el borde del sidebar */}
-      <div className="absolute right-[-14px] top-1/2 -translate-y-1/2 z-30 hidden md:block">
-        <CollapseToggle collapsed={collapsed} onToggle={toggleUserCollapse}/>
-      </div>
+          <button
+            onClick={toggleUserCollapse}
+            aria-label={collapsed ? 'Expandir sidebar' : 'Colapsar sidebar'}
+            title={collapsed ? 'Expandir' : 'Colapsar'}
+            className="sidebar-collapse-button absolute right-3 top-1/2 -translate-y-1/2"
+          >
+            {collapsed ? <IconChevronRight size={13} /> : <IconChevronLeft size={13} />}
+          </button>
+        </div>
 
-      {/* Nav principal */}
-      <nav className={`flex-1 overflow-y-auto overflow-x-hidden py-3 ${
-        collapsed ? 'px-2' : 'px-2.5'
-      }`}>
-        <ul className="space-y-0.5">
-          {NAV_MAIN.map(item => (
-            <NavItem
-              key={item.key}
-              item={item}
-              mode={mode}
-              badge={badges[item.key]}
-            />
-          ))}
-        </ul>
+        <SidebarNavigation mode={mode} badges={badges} />
 
-        {/* Separador */}
-        <div className={`my-3 ${collapsed ? 'mx-2' : 'mx-1'} h-px bg-[var(--color-border)]`}/>
-
-        {/* Nav secundaria */}
-        <ul className="space-y-0.5">
-          {NAV_SECONDARY.map(item => (
-            <NavItem
-              key={item.key}
-              item={item}
-              mode={mode}
-              badge={badges[item.key]}
-            />
-          ))}
-        </ul>
-      </nav>
-
-      {/* Footer: perfil */}
-      <div className={`
-        border-t border-[color:var(--color-border)] px-3 py-3
-        ${collapsed ? 'flex flex-col items-center gap-2' : ''}
-      `}>
-        <SidebarProfile user={user} collapsed={collapsed}/>
+        <div className={`border-t border-[var(--sidebar-panel-border)] px-3 py-3 ${
+          collapsed ? 'flex flex-col items-center gap-2' : ''
+        }`}>
+          <SidebarProfile user={user} collapsed={collapsed} />
+        </div>
       </div>
     </aside>
   )
@@ -228,75 +252,46 @@ interface MobileDrawerProps {
 export function MobileDrawer({ open, onClose, user, badges = {} }: MobileDrawerProps) {
   return (
     <>
-      {/* Backdrop */}
       <div
         className={`
           md:hidden fixed inset-0 z-40
-          bg-black/60 backdrop-blur-[2px]
-          transition-opacity duration-300
+          bg-[var(--c-overlay)] backdrop-blur-[4px]
+          transition-opacity duration-[220ms] ease-[var(--ease-out)]
           ${open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}
         `}
         onClick={onClose}
         aria-hidden
       />
 
-      {/* Drawer panel */}
       <aside
         className={`
           fin-mobile-drawer
           md:hidden fixed inset-y-0 left-0 z-50
-          w-[260px] flex flex-col
-          bg-[var(--color-sidebar-bg)] border-r border-[color:var(--color-border)]
-          shadow-2xl shadow-black/60
-          transition-transform duration-300 ease-out
+          w-[286px] p-[var(--sidebar-shell-gap)] flex flex-col
+          bg-transparent
+          transition-transform duration-300 ease-[var(--ease-out)]
           ${open ? 'translate-x-0' : '-translate-x-full'}
         `}
         aria-label="Menú de navegación"
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-5
-          border-b border-[color:var(--color-border)]">
-          <SidebarLogo collapsed={false}/>
-          <button
-            onClick={onClose}
-            aria-label="Cerrar menú"
-            className="p-1.5 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)]
-              hover:bg-[var(--color-surface-2)] transition-all duration-150"
-          >
-            <IconX size={16}/>
-          </button>
-        </div>
+        <div className="flex h-full flex-col overflow-visible rounded-[var(--sidebar-panel-radius)] border border-[var(--sidebar-panel-border)] bg-[var(--sidebar-panel-bg)] shadow-[var(--sidebar-panel-shadow)]">
+          <div className="flex h-[var(--sidebar-header-height)] items-center justify-between border-b border-[var(--sidebar-panel-border)] px-3">
+            <SidebarLogo collapsed={false} />
+            <button
+              onClick={onClose}
+              aria-label="Cerrar menú"
+              title="Cerrar menú"
+              className="sidebar-icon-button"
+            >
+              <IconX size={16} />
+            </button>
+          </div>
 
-        {/* Nav */}
-        <nav className="flex-1 overflow-y-auto py-3 px-2.5">
-          <ul className="space-y-0.5">
-            {NAV_MAIN.map(item => (
-              <NavItem
-                key={item.key}
-                item={item}
-                mode="drawer"
-                badge={badges[item.key]}
-                onClick={onClose}
-              />
-            ))}
-          </ul>
-          <div className="my-3 mx-1 h-px bg-[var(--color-border)]"/>
-          <ul className="space-y-0.5">
-            {NAV_SECONDARY.map(item => (
-              <NavItem
-                key={item.key}
-                item={item}
-                mode="drawer"
-                badge={badges[item.key]}
-                onClick={onClose}
-              />
-            ))}
-          </ul>
-        </nav>
+          <SidebarNavigation mode="drawer" badges={badges} />
 
-        {/* Profile */}
-        <div className="border-t border-[color:var(--color-border)] px-3 py-3">
-          <SidebarProfile user={user} collapsed={false}/>
+          <div className="border-t border-[var(--sidebar-panel-border)] px-3 py-3">
+            <SidebarProfile user={user} collapsed={false} />
+          </div>
         </div>
       </aside>
     </>

@@ -1,43 +1,63 @@
-// =============================================================================
-// PÁGINAS DE SECCIÓN — cada bloque va en su propio archivo
-// =============================================================================
+import { redirect } from 'next/navigation'
+import type { Metadata } from 'next'
+import { createClient } from '@/lib/supabase.server'
+import { withTimeout } from '@/lib/server/promise-timeout'
+import {
+  getTransactionFormOptions,
+  resolveTransactionInitialValues,
+  type TransactionSearchParamMap,
+} from '@/lib/server/transaction-form-options'
+import { TransactionsWorkspace } from '@/components/transactions/TransactionsWorkspace'
 
-// ─────────────────────────────────────────────────────────────────────────────
-// app/(dashboard)/transactions/page.tsx
-// ─────────────────────────────────────────────────────────────────────────────
-import type { Metadata }       from 'next'
-import Link                    from 'next/link'
-import { TransactionTable }    from '@/components/tables/TransactionTable'
-import { ScreenHero }          from '@/components/ui/ScreenHero'
+const SERVER_QUERY_TIMEOUT_MS = 4_000
 
-export const metadata: Metadata = { title: 'Transacciones' }
+export const metadata: Metadata = {
+  title: 'Movimientos | FinTrack',
+  description: 'Registra y gestiona tus ingresos, egresos, transferencias y más.',
+}
 
-export default function TransactionsPage() {
+export default async function TransactionsPage({
+  searchParams,
+}: {
+  searchParams?: TransactionSearchParamMap
+}) {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
+  const optionsResult = await Promise.allSettled([
+    withTimeout(getTransactionFormOptions(user.id), SERVER_QUERY_TIMEOUT_MS),
+  ])
+
+  const options =
+    optionsResult[0]?.status === 'fulfilled'
+      ? optionsResult[0].value
+      : {
+          accounts: [],
+          creditCards: [],
+          creditors: [],
+          debtors: [],
+          assetTypes: [],
+          categories: { income: [], expense: [] },
+          currencies: [
+            { value: 'PEN', label: 'PEN — Soles peruanos' },
+            { value: 'USD', label: 'USD — Dólares americanos' },
+          ],
+        }
+
+  const initialValuesResult = await Promise.allSettled([
+    withTimeout(resolveTransactionInitialValues(searchParams, user.id, options), SERVER_QUERY_TIMEOUT_MS),
+  ])
+
+  const initialValues =
+    initialValuesResult[0]?.status === 'fulfilled'
+      ? initialValuesResult[0].value
+      : {}
+
   return (
-    <div className="space-y-6">
-      <ScreenHero
-        label="Movimientos"
-        title="Transacciones"
-        subtitle="Ingresos, egresos y transferencias"
-        icon={
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M7 16V4m0 0-4 4m4-4 4 4"/>
-            <path d="M17 8v12m0 0-4-4m4 4 4-4"/>
-          </svg>
-        }
-        actions={
-          <Link
-            href="/transactions/new"
-            className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-bold text-black shadow-lg shadow-emerald-500/25 transition-all hover:bg-emerald-400"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <path d="M12 5v14M5 12h14"/>
-            </svg>
-            Nueva transacción
-          </Link>
-        }
-      />
-      <TransactionTable/>
-    </div>
+    <TransactionsWorkspace
+      options={options}
+      initialValues={initialValues}
+    />
   )
 }

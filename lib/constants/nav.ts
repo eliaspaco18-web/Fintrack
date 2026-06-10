@@ -22,9 +22,11 @@ export type NavIconKey =
   | 'portfolio'
   | 'transactions'
   | 'credits'
+  | 'budgets'
   | 'assets'
   | 'receivables'
   | 'payables'
+  | 'recurring'
   | 'alerts'
   | 'admin'
   | 'settings'
@@ -36,7 +38,7 @@ export const NAV_ITEMS: NavItem[] = [
     href:        '/dashboard',
     icon:        'dashboard',
     exact:       true,
-    description: 'Resumen financiero y métricas',
+    description: 'Vista general de saldos, flujo y alertas clave',
     section:     'main',
   },
   {
@@ -44,15 +46,15 @@ export const NAV_ITEMS: NavItem[] = [
     label:       'Portafolio',
     href:        '/portfolio',
     icon:        'portfolio',
-    description: 'Cuentas y bancos',
+    description: 'Cuentas bancarias, tarjetas y productos financieros',
     section:     'main',
   },
   {
     key:         'transactions',
-    label:       'Transacciones',
+    label:       'Movimientos',
     href:        '/transactions',
     icon:        'transactions',
-    description: 'Ingresos, egresos y transferencias',
+    description: 'Registro de ingresos, egresos y transferencias',
     section:     'main',
   },
   {
@@ -60,7 +62,15 @@ export const NAV_ITEMS: NavItem[] = [
     label:       'Créditos',
     href:        '/credits',
     icon:        'credits',
-    description: 'Tarjetas de crédito y préstamos',
+    description: 'Control de tarjetas, préstamos y cuotas',
+    section:     'main',
+  },
+  {
+    key:         'budgets',
+    label:       'Presupuestos',
+    href:        '/budgets',
+    icon:        'budgets',
+    description: 'Límites de gasto por categoría y período',
     section:     'main',
   },
   {
@@ -68,7 +78,7 @@ export const NAV_ITEMS: NavItem[] = [
     label:       'Activos',
     href:        '/assets',
     icon:        'assets',
-    description: 'Bienes y propiedades',
+    description: 'Patrimonio, bienes e inversiones',
     section:     'main',
   },
   {
@@ -76,7 +86,7 @@ export const NAV_ITEMS: NavItem[] = [
     label:       'Por cobrar',
     href:        '/receivables',
     icon:        'receivables',
-    description: 'Cuentas por cobrar',
+    description: 'Seguimiento de dinero pendiente por cobrar',
     section:     'main',
   },
   {
@@ -84,7 +94,15 @@ export const NAV_ITEMS: NavItem[] = [
     label:       'Por pagar',
     href:        '/payables',
     icon:        'payables',
-    description: 'Cuentas por pagar',
+    description: 'Seguimiento de deudas y pagos pendientes',
+    section:     'main',
+  },
+  {
+    key:         'recurring',
+    label:       'Recurrentes',
+    href:        '/recurring',
+    icon:        'recurring',
+    description: 'Plantillas para movimientos automáticos',
     section:     'main',
   },
   {
@@ -92,7 +110,7 @@ export const NAV_ITEMS: NavItem[] = [
     label:       'Alertas',
     href:        '/alerts',
     icon:        'alerts',
-    description: 'Riesgos y recomendaciones',
+    description: 'Riesgos, vencimientos y recomendaciones',
     section:     'main',
   },
   {
@@ -100,7 +118,7 @@ export const NAV_ITEMS: NavItem[] = [
     label:       'Administración',
     href:        '/admin',
     icon:        'admin',
-    description: 'Categorías y parámetros',
+    description: 'Catálogos base y parámetros del sistema',
     section:     'secondary',
   },
   {
@@ -108,7 +126,7 @@ export const NAV_ITEMS: NavItem[] = [
     label:       'Configuración',
     href:        '/settings',
     icon:        'settings',
-    description: 'Perfil y preferencias',
+    description: 'Perfil, seguridad y preferencias',
     section:     'secondary',
   },
 ]

@@ -22,9 +22,9 @@ export const TYPE_CONFIG: Record<TxType, TypeConfig> = {
   INCOME: {
     label:       'Ingreso',
     description: 'Dinero que entra a tu cuenta',
-    activeClass: 'bg-emerald-500/12 border-emerald-500/30 text-emerald-400',
-    dotColor:    'bg-emerald-500',
-    accentColor: '#10b981',
+    activeClass: 'bg-[var(--c-primary-soft)] border-[var(--c-primary-border)] text-[var(--c-primary)]',
+    dotColor:    'bg-[var(--c-primary)]',
+    accentColor: 'var(--c-primary)',
   },
   EXPENSE: {
     label:       'Egreso',
@@ -46,11 +46,12 @@ interface TypeSelectorProps {
   value:    TxType
   onChange: (type: TxType) => void
   disabled?: boolean
+  compact?:  boolean
 }
 
-export function TypeSelector({ value, onChange, disabled }: TypeSelectorProps) {
+export function TypeSelector({ value, onChange, disabled, compact }: TypeSelectorProps) {
   return (
-    <div className="grid grid-cols-3 gap-2 p-1 rounded-xl bg-[var(--color-surface)] border border-[color:var(--color-border)]">
+    <div className={`grid grid-cols-3 gap-2 ${compact ? 'p-0.5' : 'p-1'} rounded-xl bg-[var(--c-surface)] border border-[var(--c-border)]`}>
       {(Object.entries(TYPE_CONFIG) as [TxType, TypeConfig][]).map(([type, cfg]) => {
         const active = value === type
         return (
@@ -61,12 +62,12 @@ export function TypeSelector({ value, onChange, disabled }: TypeSelectorProps) {
             onClick={() => onChange(type)}
             className={`
               relative flex flex-col items-center justify-center
-              px-2 py-3 rounded-lg border
+              px-2 ${compact ? 'py-1.5' : 'py-3'} rounded-lg border
               text-center transition-all duration-200
               disabled:opacity-40 disabled:cursor-not-allowed
               ${active
                 ? cfg.activeClass
-                : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]'
+                : 'border-transparent text-[var(--c-text-muted)] hover:text-[var(--c-text)] hover:bg-[var(--c-surface-2)]'
               }
             `}
           >
@@ -76,12 +77,14 @@ export function TypeSelector({ value, onChange, disabled }: TypeSelectorProps) {
               />
             )}
             <span className="text-xs font-bold tracking-wide">{cfg.label}</span>
-            <span className={`
-              text-[10px] mt-0.5 leading-tight hidden sm:block
-              ${active ? 'opacity-60' : 'opacity-0'}
-            `}>
-              {cfg.description}
-            </span>
+            {!compact && (
+              <span className={`
+                text-[10px] mt-0.5 leading-tight hidden sm:block
+                ${active ? 'opacity-60' : 'opacity-0'}
+              `}>
+                {cfg.description}
+              </span>
+            )}
           </button>
         )
       })}

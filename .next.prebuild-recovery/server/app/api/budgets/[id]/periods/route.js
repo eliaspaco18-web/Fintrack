@@ -1,0 +1,43 @@
+"use strict";(()=>{var e={};e.id=7250,e.ids=[7250],e.modules={72934:e=>{e.exports=require("next/dist/client/components/action-async-storage.external.js")},54580:e=>{e.exports=require("next/dist/client/components/request-async-storage.external.js")},45869:e=>{e.exports=require("next/dist/client/components/static-generation-async-storage.external.js")},20399:e=>{e.exports=require("next/dist/compiled/next-server/app-page.runtime.prod.js")},30517:e=>{e.exports=require("next/dist/compiled/next-server/app-route.runtime.prod.js")},71228:(e,t,r)=>{r.r(t),r.d(t,{originalPathname:()=>y,patchFetch:()=>h,requestAsyncStorage:()=>R,routeModule:()=>m,serverHooks:()=>f,staticGenerationAsyncStorage:()=>v});var s={};r.r(s),r.d(s,{POST:()=>g});var o=r(49303),n=r(88716),a=r(60670),i=r(15717),u=r(6906);function d(e){return new Date(`${e}T12:00:00Z`)}function c(e){return e.toISOString().slice(0,10)}function p(e,t){let r=new Date(e);return r.setUTCDate(r.getUTCDate()+t),r}function l(e,t){return c(p(function(e,t){let r=new Date(e);return"WEEKLY"===t?r.setUTCDate(r.getUTCDate()+7):"MONTHLY"===t?r.setUTCMonth(r.getUTCMonth()+1):"QUARTERLY"===t?r.setUTCMonth(r.getUTCMonth()+3):r.setUTCFullYear(r.getUTCFullYear()+1),r}(d(e),t),-1))}function _(e){return e.end_date??l(e.start_date,e.period_type)}async function g(e,{params:t}){let r=(0,i.eI)(),s=await (0,u.bN)(r);if(!s)return(0,u.Yv)();let{data:o,error:n}=await r.from("budgets").select(`
+      id,
+      series_id,
+      name,
+      description,
+      category_id,
+      amount,
+      currency,
+      period_type,
+      start_date,
+      end_date,
+      is_active,
+      notes
+    `).eq("id",t.id).eq("user_id",s).single();if(n||!o)return(0,u.qF)({code:"NOT_FOUND",message:"Presupuesto no encontrado"});if(!o.is_active)return(0,u.qF)({code:"BUSINESS_RULE_ERROR",message:"Solo puedes continuar una serie desde un presupuesto activo."});let{data:a,error:g}=await r.from("budgets").select(`
+      id,
+      series_id,
+      name,
+      description,
+      category_id,
+      amount,
+      currency,
+      period_type,
+      start_date,
+      end_date,
+      is_active,
+      notes
+    `).eq("user_id",s).eq("series_id",o.series_id);if(g)return(0,u.qF)({code:"DATABASE_ERROR",message:g.message});let m=(a??[]).sort((e,t)=>_(e).localeCompare(_(t))).at(-1);if(!m)return(0,u.qF)({code:"NOT_FOUND",message:"No se encontr\xf3 una serie v\xe1lida para continuar."});let R=c(p(d(_(m)),1)),v=l(R,o.period_type),{data:f,error:y}=await r.from("budgets").insert({user_id:s,series_id:o.series_id,name:o.name,description:o.description,category_id:o.category_id,amount:o.amount,currency:o.currency,period_type:o.period_type,start_date:R,end_date:v,is_active:!0,notes:o.notes}).select(`
+      id,
+      series_id,
+      name,
+      description,
+      amount,
+      currency,
+      period_type,
+      start_date,
+      end_date,
+      is_active,
+      notes,
+      created_at,
+      updated_at,
+      category_id,
+      category:categories(id,name,scope,icon,color)
+    `).single();return y||!f?(0,u.qF)({code:"DATABASE_ERROR",message:y?.message??"No se pudo crear el siguiente per\xedodo"}):(0,u.Gu)(f)}let m=new o.AppRouteRouteModule({definition:{kind:n.x.APP_ROUTE,page:"/api/budgets/[id]/periods/route",pathname:"/api/budgets/[id]/periods",filename:"route",bundlePath:"app/api/budgets/[id]/periods/route"},resolvedPagePath:"/Users/eliasgustavopacopauccara/Documents/Fintrack_v1/fintrack/app/api/budgets/[id]/periods/route.ts",nextConfigOutput:"",userland:s}),{requestAsyncStorage:R,staticGenerationAsyncStorage:v,serverHooks:f}=m,y="/api/budgets/[id]/periods/route";function h(){return(0,a.patchFetch)({serverHooks:f,staticGenerationAsyncStorage:v})}},6906:(e,t,r)=>{r.d(t,{Gu:()=>n,N9:()=>o,QM:()=>d,Yv:()=>c,bN:()=>l,l:()=>p,qF:()=>u,y3:()=>a});var s=r(87070);function o(e,t=200){return s.NextResponse.json({ok:!0,data:e},{status:t})}function n(e){return s.NextResponse.json({ok:!0,data:e},{status:201})}function a(){return new s.NextResponse(null,{status:204})}let i={NOT_FOUND:404,UNAUTHORIZED:401,VALIDATION_ERROR:422,BUSINESS_RULE_ERROR:422,DATABASE_ERROR:500,ATOMICITY_FAILURE:500};function u(e){let t=i[e.code]??500;return s.NextResponse.json({ok:!1,error:{code:e.code,message:e.message,detail:e.detail}},{status:t})}function d(e){let t={};for(let r of e.issues){let e=r.path.join(".");t[e]||(t[e]=[]),t[e].push(r.message)}let r=e.issues[0],o=r?.path.join(".")||"dato",n=r?.message?`Campo "${o}": ${r.message}`:void 0;return s.NextResponse.json({ok:!1,error:{code:"VALIDATION_ERROR",message:"Los datos enviados no son v\xe1lidos",detail:n,fields:t}},{status:422})}function c(e="No autorizado"){return s.NextResponse.json({ok:!1,error:{code:"UNAUTHORIZED",message:e}},{status:401})}function p(e,t){return e.ok?o(e.data,t??200):u(e.error)}async function l(e){let{data:{user:t}}=await e.auth.getUser();return t?.id??null}},15717:(e,t,r)=>{r.d(t,{eI:()=>n,mq:()=>a});var s=r(72728),o=r(71615);function n(){let e=(0,o.cookies)();return(0,s.createServerClient)("https://yahocagtrxvevqhhlkln.supabase.co","sb_publishable_nxnr2DPKy2_DxjHQAn2Gyg_l81Qaspk",{cookies:{get:t=>e.get(t)?.value,set(t,r,s){try{e.set({name:t,value:r,...s})}catch{}},remove(t,r){try{e.set({name:t,value:"",...r})}catch{}}}})}function a(){return(0,s.createServerClient)("https://yahocagtrxvevqhhlkln.supabase.co",process.env.SUPABASE_SERVICE_ROLE_KEY,{cookies:{get:()=>void 0,set:()=>{},remove:()=>{}},auth:{persistSession:!1,autoRefreshToken:!1}})}}};var t=require("../../../../../webpack-runtime.js");t.C(e);var r=e=>t(t.s=e),s=t.X(0,[9276,3637,5972],()=>r(71228));module.exports=s})();

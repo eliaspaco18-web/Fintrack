@@ -29,13 +29,19 @@ import type { Credit, Asset,
 
 // ─── INSTALLMENT LIST ─────────────────────────────────────────────────────────
 
-function InstallmentRow({ inst }: { inst: Installment }) {
+function InstallmentRow({
+  inst,
+  currency,
+}: {
+  inst: Installment
+  currency: 'PEN' | 'USD'
+}) {
   const isOverdue = inst.status === 'OVERDUE'
   const isPaid    = inst.status === 'PAID'
 
   const statusStyles = {
     PENDING: 'text-white/35',
-    PAID:    'text-emerald-400',
+    PAID:    'text-[var(--c-primary)]',
     OVERDUE: 'text-red-400',
     PARTIAL: 'text-amber-400',
   }
@@ -48,7 +54,7 @@ function InstallmentRow({ inst }: { inst: Installment }) {
       <div className={`
         w-6 h-6 rounded-full border flex items-center justify-center
         text-[10px] font-bold flex-shrink-0
-        ${isPaid    ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+        ${isPaid    ? 'bg-[var(--c-primary-soft)] border-[var(--c-primary-border)] text-[var(--c-primary)]'
         : isOverdue ? 'bg-red-500/15 border-red-500/30 text-red-400'
         :             'bg-white/[0.05] border-white/[0.08] text-white/30'}
       `}>
@@ -68,11 +74,11 @@ function InstallmentRow({ inst }: { inst: Installment }) {
       </div>
       <div className="text-right">
         <p className={`text-[12px] font-bold tabular-nums ${statusStyles[inst.status] ?? 'text-white/40'}`}>
-          {formatCurrency(inst.total_amount, 'PEN')}
+          {formatCurrency(inst.total_amount, currency)}
         </p>
         {inst.interest_amount > 0 && (
           <p className="text-[10px] text-white/20 tabular-nums">
-            Int. {formatCurrency(inst.interest_amount, 'PEN')}
+            Int. {formatCurrency(inst.interest_amount, currency)}
           </p>
         )}
       </div>
@@ -144,7 +150,7 @@ export function CreditDetail({ credit, installments = [], transaction }: CreditD
                 <h1 className="text-lg font-bold text-white/85 mt-2">{credit.name}</h1>
               </div>
               <div className="text-right">
-                <p className="text-2xl font-bold tabular-nums text-emerald-400">
+                <p className="text-2xl font-bold tabular-nums text-[var(--c-primary)]">
                   {formatCurrency(format(credit.available_amount ?? 0), preferred)}
                 </p>
                 <p className="text-[11px] text-white/25">disponible</p>
@@ -158,7 +164,7 @@ export function CreditDetail({ credit, installments = [], transaction }: CreditD
               </div>
               <ProgressBar
                 value={utilPct}
-                color={utilPct >= 90 ? '#ef4444' : utilPct >= 70 ? '#f97316' : '#10b981'}
+                color={utilPct >= 90 ? '#ef4444' : utilPct >= 70 ? '#f97316' : 'var(--c-primary)'}
                 height={6}
               />
             </div>
@@ -200,7 +206,7 @@ export function CreditDetail({ credit, installments = [], transaction }: CreditD
               </div>
               <div className="max-h-[400px] overflow-y-auto">
                 {installments.map(inst => (
-                  <InstallmentRow key={inst.id} inst={inst}/>
+                  <InstallmentRow key={inst.id} inst={inst} currency={credit.currency as 'PEN' | 'USD'}/>
                 ))}
               </div>
             </div>
@@ -256,10 +262,10 @@ export function AssetDetail({ asset, transaction }: AssetDetailProps) {
               <h3 className="text-[11px] font-bold uppercase tracking-[0.1em] text-white/25 mb-3">
                 Variación de valor
               </h3>
-              <p className={`text-2xl font-bold tabular-nums ${gainPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              <p className={`text-2xl font-bold tabular-nums ${gainPct >= 0 ? 'text-[var(--c-primary)]' : 'text-red-400'}`}>
                 {formatPercent(gainPct, { fractionDigits: 1, signed: true })}
               </p>
-              <p className={`text-[12px] tabular-nums mt-0.5 ${gainPct >= 0 ? 'text-emerald-400/60' : 'text-red-400/60'}`}>
+              <p className={`text-[12px] tabular-nums mt-0.5 ${gainPct >= 0 ? 'text-[var(--c-primary)]/60' : 'text-red-400/60'}`}>
                 {gainPct >= 0 ? '+' : ''}{formatCurrency(format(gainPen), preferred)}
               </p>
             </DetailCard>

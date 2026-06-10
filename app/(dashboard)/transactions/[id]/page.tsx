@@ -7,10 +7,12 @@
 import { notFound, redirect }     from 'next/navigation'
 import type { Metadata }          from 'next'
 import { createClient }           from '@/lib/supabase.server'
+import { withTimeout } from '@/lib/server/promise-timeout'
 import { TransactionService }     from '@/modules/transactions/transaction.service'
 import { TransactionDetailClient } from '@/components/detail/TransactionDetailClient'
 
 interface Props { params: { id: string } }
+const SERVER_QUERY_TIMEOUT_MS = 4_000
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return { title: 'Transacción' }
@@ -22,28 +24,58 @@ export default async function TransactionDetailPage({ params }: Props) {
   if (!user) redirect('/login')
 
   const service = new TransactionService(supabase)
-  const result  = await service.getTransactionById(user.id, params.id)
+  const result  = await withTimeout(service.getTransactionById(user.id, params.id), SERVER_QUERY_TIMEOUT_MS)
   if (!result.ok) notFound()
 
   // Cargar módulos derivados vinculados a esta transacción
-  const [
-    { data: asset },
-    { data: credit },
-    { data: loan },
-    { data: receivable },
-    { data: payable },
-  ] = await Promise.all([
-    supabase.from('assets').select('id,name,asset_type,current_value,status')
-      .eq('transaction_id', params.id).maybeSingle(),
-    supabase.from('credits').select('id,name,credit_type,available_amount,status')
-      .eq('transaction_id', params.id).maybeSingle(),
-    supabase.from('loans').select('id,creditor_name,total_installments,paid_installments,status')
-      .eq('transaction_id', params.id).maybeSingle(),
-    supabase.from('accounts_receivable').select('id,debtor_name,amount,status')
-      .eq('transaction_id', params.id).maybeSingle(),
-    supabase.from('accounts_payable').select('id,creditor_name,amount,status')
-      .eq('transaction_id', params.id).maybeSingle(),
+  const [assetResult, creditResult, loanResult, receivableResult, payableResult] = await Promise.allSettled([
+    withTimeout(
+      supabase.from('assets').select('id,name,asset_type,current_value,status')
+        .eq('transaction_id', params.id).maybeSingle(),
+      SERVER_QUERY_TIMEOUT_MS,
+    ),
+    withTimeout(
+      supabase.from('credits').select('id,name,credit_type,available_amount,status')
+        .eq('transaction_id', params.id).maybeSingle(),
+      SERVER_QUERY_TIMEOUT_MS,
+    ),
+    withTimeout(
+      supabase.from('loans').select('id,creditor_name,total_installments,paid_installments,status')
+        .eq('transaction_id', params.id).maybeSingle(),
+      SERVER_QUERY_TIMEOUT_MS,
+    ),
+    withTimeout(
+      supabase.from('accounts_receivable').select('id,debtor_name,amount,status')
+        .eq('transaction_id', params.id).maybeSingle(),
+      SERVER_QUERY_TIMEOUT_MS,
+    ),
+    withTimeout(
+      supabase.from('accounts_payable').select('id,creditor_name,amount,status')
+        .eq('transaction_id', params.id).maybeSingle(),
+      SERVER_QUERY_TIMEOUT_MS,
+    ),
   ])
+
+  const asset =
+    assetResult.status === 'fulfilled' && !assetResult.value.error
+      ? assetResult.value.data
+      : null
+  const credit =
+    creditResult.status === 'fulfilled' && !creditResult.value.error
+      ? creditResult.value.data
+      : null
+  const loan =
+    loanResult.status === 'fulfilled' && !loanResult.value.error
+      ? loanResult.value.data
+      : null
+  const receivable =
+    receivableResult.status === 'fulfilled' && !receivableResult.value.error
+      ? receivableResult.value.data
+      : null
+  const payable =
+    payableResult.status === 'fulfilled' && !payableResult.value.error
+      ? payableResult.value.data
+      : null
 
   return (
     <TransactionDetailClient

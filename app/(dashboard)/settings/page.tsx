@@ -1,20 +1,104 @@
-// =============================================================================
-// app/(dashboard)/settings/page.tsx
-// =============================================================================
-
-import { redirect }      from 'next/navigation'
 import type { Metadata } from 'next'
-import { createClient }  from '@/lib/supabase.server'
-import Link              from 'next/link'
+import { redirect } from 'next/navigation'
+import { AccountsPanel } from '@/components/settings/AccountsPanel'
+import {
+  getSettingsTabValue,
+  type SettingsTab,
+} from '@/components/settings/config'
+import { ExportPanel } from '@/components/settings/ExportPanel'
+import { NotificationsPanel } from '@/components/settings/NotificationsPanel'
+import { PreferencesPanel } from '@/components/settings/PreferencesPanel'
 import { ProfileSettingsForm } from '@/components/settings/ProfileSettingsForm'
+import { SecuritySettingsPanel } from '@/components/settings/SecuritySettingsPanel'
+import { SettingsSidebar } from '@/components/settings/SettingsSidebar'
+import { SupportPanel } from '@/components/settings/SupportPanel'
+import {
+  ModuleHeader,
+  PageLayout,
+} from '@/components/finance/primitives'
+import { createClient } from '@/lib/supabase.server'
+import { withTimeout } from '@/lib/server/promise-timeout'
 
-export const metadata: Metadata = { title: 'Configuración' }
+const SERVER_QUERY_TIMEOUT_MS = 4_000
 
-type SettingsTab = 'profile' | 'preferences' | 'security' | 'accounts'
+export const metadata: Metadata = {
+  title: 'Configuración | FinTrack',
+  description: 'Perfil, seguridad, notificaciones y preferencias de la cuenta.',
+}
 
-function getTabValue(input?: string): SettingsTab {
-  if (input === 'preferences' || input === 'security' || input === 'accounts') return input
-  return 'profile'
+function renderPanel({
+  activeTab,
+  profilePayload,
+  accountRows,
+  totalPen,
+  totalUsd,
+  email,
+  currentTheme,
+}: {
+  activeTab: SettingsTab
+  profilePayload: {
+    id: string
+    email: string
+    full_name: string | null
+    avatar_url: string | null
+    default_currency: 'PEN' | 'USD'
+  }
+  accountRows: Array<{
+    id: string
+    name: string
+    type: string
+    currency: string
+    balance: number
+    color?: string | null
+    icon?: string | null
+  }>
+  totalPen: number
+  totalUsd: number
+  email: string
+  currentTheme: 'dark' | 'light'
+}) {
+  if (activeTab === 'profile') {
+    return (
+      <ProfileSettingsForm
+        initialProfile={profilePayload}
+        accountCount={accountRows.length}
+      />
+    )
+  }
+
+  if (activeTab === 'security') {
+    return <SecuritySettingsPanel email={email} />
+  }
+
+  if (activeTab === 'preferences') {
+    return (
+      <PreferencesPanel
+        initialTheme={currentTheme}
+        initialCurrency={profilePayload.default_currency}
+        initialPrivateMode={false}
+      />
+    )
+  }
+
+  if (activeTab === 'notifications') {
+    return <NotificationsPanel />
+  }
+
+  if (activeTab === 'accounts') {
+    return (
+      <AccountsPanel
+        accounts={accountRows}
+        totalPen={totalPen}
+        totalUsd={totalUsd}
+      />
+    )
+  }
+
+  if (activeTab === 'export') {
+    return <ExportPanel />
+  }
+
+  return <SupportPanel />
 }
 
 export default async function SettingsPage({
@@ -23,22 +107,36 @@ export default async function SettingsPage({
   searchParams?: { tab?: string }
 }) {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
   if (!user) redirect('/login')
 
-  const [{ data: profile }, { data: accounts }] = await Promise.all([
-    supabase.from('profiles').select('*').eq('id', user.id).single(),
-    supabase.from('accounts').select('*').eq('user_id', user.id).order('name'),
+  const [profileResult, accountsResult] = await Promise.allSettled([
+    withTimeout(supabase.from('profiles').select('*').eq('id', user.id).single(), SERVER_QUERY_TIMEOUT_MS),
+    withTimeout(supabase.from('accounts').select('*').eq('user_id', user.id).order('name'), SERVER_QUERY_TIMEOUT_MS),
   ])
 
-  const activeTab = getTabValue(searchParams?.tab)
+  const profile =
+    profileResult.status === 'fulfilled' && !profileResult.value.error
+      ? profileResult.value.data
+      : null
+  const accounts =
+    accountsResult.status === 'fulfilled' && !accountsResult.value.error
+      ? accountsResult.value.data
+      : []
+
+  const activeTab = getSettingsTabValue(searchParams?.tab)
   const accountRows = accounts ?? []
+
   const totalPen = accountRows
-    .filter(acc => acc.currency === 'PEN')
-    .reduce((sum, acc) => sum + Number(acc.balance ?? 0), 0)
+    .filter(account => account.currency === 'PEN')
+    .reduce((sum, account) => sum + Number(account.balance ?? 0), 0)
   const totalUsd = accountRows
-    .filter(acc => acc.currency === 'USD')
-    .reduce((sum, acc) => sum + Number(acc.balance ?? 0), 0)
+    .filter(account => account.currency === 'USD')
+    .reduce((sum, account) => sum + Number(account.balance ?? 0), 0)
+
   const email = profile?.email ?? user.email ?? '—'
   const profilePayload = {
     id: user.id,
@@ -48,166 +146,68 @@ export default async function SettingsPage({
     default_currency: (profile?.default_currency ?? 'PEN') as 'PEN' | 'USD',
   }
 
-  const tabClass = (tab: SettingsTab) =>
-    `px-3 py-2 rounded-xl text-xs font-semibold border transition-colors ${
-      activeTab === tab
-        ? 'bg-emerald-500/12 border-emerald-500/28 text-emerald-300'
-        : 'bg-[var(--color-surface-2)] border-[color:var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[color:var(--color-border-hover)]'
-    }`
+  const currentTheme = (profile as { theme?: string } | null)?.theme === 'light' ? 'light' : 'dark'
+  const profileState = profilePayload.full_name && profilePayload.avatar_url ? 'Completo' : 'En revisión'
 
   return (
-    <div className="max-w-4xl space-y-6">
-      <section className="rounded-2xl border border-[color:var(--color-border)] p-5 md:p-6
-        bg-[linear-gradient(145deg,rgba(16,185,129,0.15),rgba(17,24,39,0.78),rgba(59,130,246,0.14))]">
-        <p className="text-[10px] uppercase tracking-[0.1em] text-[var(--color-text-muted)]">Centro de cuenta</p>
-        <h1 className="mt-1 text-2xl font-bold text-[var(--color-text)] tracking-tight">Configuración y perfil</h1>
-        <p className="text-[12px] text-[var(--color-text-muted)] mt-1.5">
-          Gestiona tu información personal, seguridad, preferencias y datos financieros.
-        </p>
-
-        <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2.5">
-            <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Cuentas activas</p>
-            <p className="text-lg font-bold text-[var(--color-text)] tabular-nums mt-0.5">{accountRows.length}</p>
-          </div>
-          <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2.5">
-            <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Total PEN</p>
-            <p className="text-lg font-bold text-[var(--color-text)] tabular-nums mt-0.5">
-              {new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' }).format(totalPen)}
-            </p>
-          </div>
-          <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2.5">
-            <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Total USD</p>
-            <p className="text-lg font-bold text-[var(--color-text)] tabular-nums mt-0.5">
-              {new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'USD' }).format(totalUsd)}
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <div className="flex flex-wrap gap-2">
-        <Link href="/settings?tab=profile" className={tabClass('profile')}>Perfil</Link>
-        <Link href="/settings?tab=preferences" className={tabClass('preferences')}>Preferencias</Link>
-        <Link href="/settings?tab=security" className={tabClass('security')}>Seguridad</Link>
-        <Link href="/settings?tab=accounts" className={tabClass('accounts')}>Cuentas</Link>
-      </div>
-
-      {activeTab === 'profile' && (
-        <ProfileSettingsForm
-          initialProfile={profilePayload}
-          accountCount={accountRows.length}
-        />
-      )}
-
-      {activeTab === 'preferences' && (
-        <section className="rounded-2xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-6">
-          <h2 className="text-[11px] font-bold uppercase tracking-[0.1em] text-[var(--color-text-muted)] mb-4">
-            Preferencias
-          </h2>
-          <div className="space-y-3">
-            <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-[var(--color-text)]">Tema visual</p>
-                <p className="text-[12px] text-[var(--color-text-muted)]">Puedes alternar entre claro y oscuro desde la barra superior.</p>
-              </div>
-              <span className="text-[11px] font-semibold text-[var(--color-text-muted)] bg-[var(--color-surface)] px-2 py-1 rounded-lg">
-                Dinámico
-              </span>
-            </div>
-            <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-[var(--color-text)]">Moneda principal</p>
-                <p className="text-[12px] text-[var(--color-text-muted)]">Define la moneda principal para reportes y tarjetas.</p>
-              </div>
-              <span className="text-[11px] font-semibold text-[var(--color-text-muted)] bg-[var(--color-surface)] px-2 py-1 rounded-lg">
-                {profile?.default_currency ?? 'PEN'}
-              </span>
-            </div>
-            <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3">
-              <p className="text-sm font-semibold text-[var(--color-text)]">Notificaciones</p>
-              <p className="text-[12px] text-[var(--color-text-muted)] mt-1">
-                Próximamente podrás gestionar alertas por correo para cuotas vencidas y movimientos críticos.
+    <PageLayout
+      className="max-w-[1440px] gap-5 pb-12"
+      header={(
+        <ModuleHeader
+          eyebrow="Cuenta y acceso"
+          title="Configuración"
+          description="Perfil, seguridad, preferencias y datos de FinTrack en un solo flujo operativo."
+          mode="content"
+          actions={(
+            <div className="min-w-0 text-left md:text-right">
+              <p className="text-[11px] font-medium text-[var(--c-text-faint)]">
+                Cuenta activa
               </p>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {activeTab === 'security' && (
-        <section className="rounded-2xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-6">
-          <h2 className="text-[11px] font-bold uppercase tracking-[0.1em] text-[var(--color-text-muted)] mb-4">
-            Seguridad y soporte
-          </h2>
-          <div className="space-y-3">
-            <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3">
-              <p className="text-sm font-semibold text-[var(--color-text)]">Autenticación</p>
-              <p className="text-[12px] text-[var(--color-text-muted)] mt-1">
-                Cuenta protegida con credenciales de Supabase. Recomendado: contraseña única y robusta.
+              <p
+                className="mt-1 truncate text-sm font-medium text-[var(--c-text)]"
+                title={email}
+              >
+                {email}
               </p>
-            </div>
-            <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 flex flex-wrap items-center gap-2">
-              <Link
-                href="/login"
-                className="inline-flex items-center rounded-lg bg-emerald-500 px-3 py-2 text-[12px] font-semibold text-black hover:bg-emerald-400 transition-colors"
-              >
-                Gestionar acceso
-              </Link>
-              <a
-                href="mailto:soporte@fintrack.app?subject=Soporte%20FinTrack"
-                className="inline-flex items-center rounded-lg border border-[color:var(--color-border)] px-3 py-2 text-[12px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[color:var(--color-border-hover)] transition-colors"
-              >
-                Contactar soporte
-              </a>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {activeTab === 'accounts' && (
-        <section className="rounded-2xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-[11px] font-bold uppercase tracking-[0.1em] text-[var(--color-text-muted)]">
-              Cuentas ({accountRows.length})
-            </h2>
-            <Link
-              href="/portfolio"
-              className="text-[11px] font-semibold text-emerald-300 hover:text-emerald-200"
-            >
-              Ir a portafolio →
-            </Link>
-          </div>
-          {accountRows.length === 0 ? (
-            <p className="text-sm text-[var(--color-text-muted)]">
-              Crea tu primera cuenta desde Portafolio para comenzar a registrar movimientos.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {accountRows.map(acc => (
-                <div key={acc.id}
-                  className="flex items-center justify-between py-2.5
-                    border-b border-[color:var(--color-border)] last:border-0">
-                  <div className="flex items-center gap-3">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: acc.color }}
-                    />
-                    <div>
-                      <p className="text-sm text-[var(--color-text)] font-medium">{acc.name}</p>
-                      <p className="text-[10px] text-[var(--color-text-muted)]">{acc.type} · {acc.currency}</p>
-                    </div>
-                  </div>
-                  <span className="text-sm font-bold tabular-nums text-[var(--color-text)]">
-                    {new Intl.NumberFormat('es-PE', {
-                      style: 'currency', currency: acc.currency,
-                      minimumFractionDigits: 2,
-                    }).format(acc.balance)}
-                  </span>
-                </div>
-              ))}
+              <p className="mt-2 inline-flex items-center gap-2 text-[12px] text-[var(--c-text-muted)] md:justify-end">
+                <span
+                  aria-hidden="true"
+                  className={`h-2 w-2 rounded-full ${
+                    profileState === 'Completo'
+                      ? 'bg-[var(--c-success)]'
+                      : 'bg-[var(--c-warning)]'
+                  }`}
+                />
+                Perfil {profileState.toLowerCase()}
+              </p>
             </div>
           )}
-        </section>
+        />
       )}
-    </div>
+    >
+      <div className="border-b border-[var(--c-border)] pb-4 lg:hidden">
+        <SettingsSidebar activeTab={activeTab} mode="mobile" />
+      </div>
+
+      <div className="lg:grid lg:grid-cols-[248px_minmax(0,1fr)] lg:items-start lg:gap-6">
+        <aside className="hidden lg:block">
+          <div className="sticky top-[calc(var(--topbar-height)+24px)]">
+            <SettingsSidebar activeTab={activeTab} mode="desktop" />
+          </div>
+        </aside>
+
+        <main id="settings-content" className="min-w-0">
+          {renderPanel({
+            activeTab,
+            profilePayload,
+            accountRows,
+            totalPen,
+            totalUsd,
+            email,
+            currentTheme,
+          })}
+        </main>
+      </div>
+    </PageLayout>
   )
 }

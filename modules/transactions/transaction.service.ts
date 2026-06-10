@@ -29,6 +29,7 @@ import type {
   AccountReceivable,
   AccountPayable,
   Account,
+  BudgetPeriod,
 }                                       from '@/types/database.types'
 import type {
   CreateTransactionInput,
@@ -51,12 +52,93 @@ import { PayableRepository }            from '@/modules/payables/payable.reposit
 import {
   validateCreateTransactionInput,
   validateSourceAccount,
+  validateSourceAccountAgainstTransaction,
   validateDestinationAccount,
   validateSufficientBalance,
 }                                       from './transaction.validations'
 import { type Result, Errors, ok }      from '@/modules/shared/result.types'
 
 type DbClient = SupabaseClient<Database>
+
+type BudgetEligibilityRow = {
+  id: string
+  name: string
+  category_id: string | null
+  currency: 'PEN' | 'USD'
+  period_type: BudgetPeriod
+  start_date: string
+  end_date: string | null
+  is_active: boolean
+}
+
+function parseBudgetISODate(date: string): Date {
+  return new Date(`${date}T12:00:00Z`)
+}
+
+function toBudgetISODate(date: Date): string {
+  return date.toISOString().slice(0, 10)
+}
+
+function addBudgetDays(date: Date, days: number): Date {
+  const next = new Date(date)
+  next.setUTCDate(next.getUTCDate() + days)
+  return next
+}
+
+function addBudgetPeriod(date: Date, period: BudgetPeriod): Date {
+  const next = new Date(date)
+  if (period === 'WEEKLY') {
+    next.setUTCDate(next.getUTCDate() + 7)
+    return next
+  }
+
+  if (period === 'MONTHLY') {
+    next.setUTCMonth(next.getUTCMonth() + 1)
+    return next
+  }
+
+  if (period === 'QUARTERLY') {
+    next.setUTCMonth(next.getUTCMonth() + 3)
+    return next
+  }
+
+  next.setUTCFullYear(next.getUTCFullYear() + 1)
+  return next
+}
+
+function resolveBudgetWindowAtDate(
+  budget: BudgetEligibilityRow,
+  anchorDate: string,
+): { start: string; end: string } | null {
+  const anchor = parseBudgetISODate(anchorDate)
+  const budgetStart = parseBudgetISODate(budget.start_date)
+  if (anchor.getTime() < budgetStart.getTime()) return null
+
+  const budgetEnd = budget.end_date ? parseBudgetISODate(budget.end_date) : null
+  if (budgetEnd && anchor.getTime() > budgetEnd.getTime()) return null
+
+  let cycleStart = budgetStart
+  let cycleNext = addBudgetPeriod(cycleStart, budget.period_type)
+
+  while (cycleNext.getTime() <= anchor.getTime()) {
+    cycleStart = cycleNext
+    cycleNext = addBudgetPeriod(cycleStart, budget.period_type)
+  }
+
+  let cycleEnd = addBudgetDays(cycleNext, -1)
+  if (budgetEnd && cycleEnd.getTime() > budgetEnd.getTime()) {
+    cycleEnd = budgetEnd
+  }
+
+  if (anchor.getTime() < cycleStart.getTime() || anchor.getTime() > cycleEnd.getTime()) {
+    return null
+  }
+
+  return {
+    start: toBudgetISODate(cycleStart),
+    end: toBudgetISODate(cycleEnd),
+  }
+}
 
 export class TransactionService {
   private readonly txRepo:          TransactionRepository
@@ -110,6 +192,9 @@ export class TransactionService {
     if (!sourceAccountResult.ok) return sourceAccountResult
     const sourceAccount = sourceAccountResult.data
 
+    const sourceAccountBusinessValidation = validateSourceAccountAgainstTransaction(input, sourceAccount)
+    if (!sourceAccountBusinessValidation.ok) return sourceAccountBusinessValidation
+
     const expenseInput = input.type === 'EXPENSE'
       ? (input as CreateExpenseInput)
       : null
@@ -157,6 +242,7 @@ export class TransactionService {
     }
 
     // ── PASO 3: Verificar cuenta destino (solo TRANSFER) ────────────────────
+    let destinationAccount: Account | null = null
     if (input.type === 'TRANSFER') {
       const destResult = await this.fetchAndValidateAccount(
         input.destination_account_id,
@@ -169,13 +255,26 @@ export class TransactionService {
         destResult.data
       )
       if (!destValidation.ok) return destValidation
+
+      destinationAccount = destResult.data
+    }
+
+    const preparedInput = this.prepareCreateInput(
+      input,
+      sourceAccount,
+      destinationAccount
+    )
+
+    if (preparedInput.type === 'EXPENSE') {
+      const budgetValidation = await this.validateExpenseBudget(userId, preparedInput)
+      if (!budgetValidation.ok) return budgetValidation
     }
 
     // ── PASO 4: Verificar saldo para EXPENSE y TRANSFER ─────────────────────
-    if ((input.type === 'EXPENSE' && !usesCreditCardAsSource) || input.type === 'TRANSFER') {
+    if ((preparedInput.type === 'EXPENSE' && !usesCreditCardAsSource) || preparedInput.type === 'TRANSFER') {
       const balanceResult = validateSufficientBalance(
         sourceAccount,
-        input.amount,
+        preparedInput.amount,
         false   // no permitir saldo negativo por defecto
       )
       if (!balanceResult.ok) return balanceResult
@@ -190,19 +289,19 @@ export class TransactionService {
           : 'CONSUMPTION'
 
       const adjustResult = op === 'CONSUMPTION'
-        ? await this.creditRepo.incrementUsedAmount(selectedCreditCard.id, input.amount)
-        : await this.creditRepo.decrementUsedAmount(selectedCreditCard.id, input.amount)
+        ? await this.creditRepo.incrementUsedAmount(selectedCreditCard.id, preparedInput.amount)
+        : await this.creditRepo.decrementUsedAmount(selectedCreditCard.id, preparedInput.amount)
 
       if (!adjustResult.ok) return adjustResult
-      creditAdjusted = { id: selectedCreditCard.id, op, amount: input.amount }
+      creditAdjusted = { id: selectedCreditCard.id, op, amount: preparedInput.amount }
     }
 
     // ── PASO 5: Construir payload atómico ────────────────────────────────────
-    const payload = this.buildAtomicPayload(userId, input)
+    const payload = this.buildAtomicPayload(userId, preparedInput)
     if (
       creditAdjusted?.op === 'PAYMENT' &&
       selectedCreditCard?.account_id &&
-      input.type === 'EXPENSE'
+      preparedInput.type === 'EXPENSE'
     ) {
       // Permite identificar en reportes qué egresos fueron pago de tarjeta.
       payload.p_destination_account_id = selectedCreditCard.account_id
@@ -398,19 +497,26 @@ export class TransactionService {
     userId: string,
     input:  CreateTransactionInput
   ): AtomicTransactionPayload {
+    const expBudgetId = input.type === 'EXPENSE'
+      ? (input as CreateExpenseInput).budget_id ?? null
+      : null
+
     const base: AtomicTransactionPayload = {
       p_user_id:                userId,
       p_source_account_id:      input.source_account_id,
       p_destination_account_id: input.type === 'TRANSFER' ? input.destination_account_id : null,
       p_category_id:            input.category_id ?? null,
+      p_budget_id:              expBudgetId,
       p_type:                   input.type,
       p_amount:                 input.amount,
       p_currency:               input.currency,
       p_exchange_rate:          input.exchange_rate ?? 1.0,
-      p_description:            input.description.trim(),
+      p_description:            input.description?.trim() ?? '',
       p_transaction_date:       input.transaction_date,
       p_notes:                  input.notes ?? null,
       p_is_recurring:           input.is_recurring ?? false,
+      p_sender:                 input.sender?.trim() || null,
+      p_recipient:              input.recipient?.trim() || null,
       p_asset:                  null,
       p_credit:                 null,
       p_loan:                   null,
@@ -421,12 +527,13 @@ export class TransactionService {
     // ── INCOME ───────────────────────────────────────────────────────────────
     if (input.type === 'INCOME') {
       const inc = input as CreateIncomeInput
-      if (inc.receivable) {
-        base.p_receivable = {
-          debtor_name: inc.receivable.debtor_name,
-          due_date:    inc.receivable.due_date,
-          concept:     inc.receivable.concept,
-          notes:       inc.receivable.notes,
+      if (inc.payable) {
+        base.p_payable = {
+          creditor_id:   inc.payable.creditor_id,
+          creditor_name: inc.payable.creditor_name,
+          due_date:      inc.payable.due_date,
+          concept:       inc.payable.concept,
+          notes:         inc.payable.notes,
         }
       }
     }
@@ -466,12 +573,13 @@ export class TransactionService {
         }
       }
 
-      if (exp.payable) {
-        base.p_payable = {
-          creditor_name: exp.payable.creditor_name,
-          due_date:      exp.payable.due_date,
-          concept:       exp.payable.concept,
-          notes:         exp.payable.notes,
+      if (exp.receivable) {
+        base.p_receivable = {
+          debtor_id:   exp.receivable.debtor_id,
+          debtor_name: exp.receivable.debtor_name,
+          due_date:    exp.receivable.due_date,
+          concept:     exp.receivable.concept,
+          notes:       exp.receivable.notes,
         }
       }
     }
@@ -486,13 +594,17 @@ export class TransactionService {
     payload: AtomicTransactionPayload
   ): Promise<Result<AtomicTransactionResult>> {
     try {
-      const { data, error } = await this.db.rpc(
+      const { data, error } = await (this.db.rpc as unknown as (
+        fn: string,
+        args: Record<string, unknown>
+      ) => Promise<{ data: unknown; error: { message: string } | null }>)(
         'create_transaction_atomic',
         {
           p_user_id:                payload.p_user_id,
           p_source_account_id:      payload.p_source_account_id,
           p_destination_account_id: payload.p_destination_account_id,
           p_category_id:            payload.p_category_id,
+          p_budget_id:              payload.p_budget_id ?? null,
           p_type:                   payload.p_type,
           p_amount:                 payload.p_amount,
           p_currency:               payload.p_currency,
@@ -501,6 +613,8 @@ export class TransactionService {
           p_transaction_date:       payload.p_transaction_date,
           p_notes:                  payload.p_notes,
           p_is_recurring:           payload.p_is_recurring,
+          p_sender:                 payload.p_sender,
+          p_recipient:              payload.p_recipient,
           p_asset:                  payload.p_asset      ? JSON.stringify(payload.p_asset)      : null,
           p_credit:                 payload.p_credit     ? JSON.stringify(payload.p_credit)     : null,
           p_loan:                   payload.p_loan       ? JSON.stringify(payload.p_loan)       : null,
@@ -555,6 +669,7 @@ export class TransactionService {
         source_account_id: payload.p_source_account_id,
         destination_account_id: payload.p_destination_account_id,
         category_id: payload.p_category_id,
+        budget_id: payload.p_budget_id ?? null,
         type: payload.p_type,
         amount: payload.p_amount,
         amount_pen: payload.p_currency === 'USD'
@@ -566,6 +681,10 @@ export class TransactionService {
         transaction_date: payload.p_transaction_date,
         notes: payload.p_notes,
         is_recurring: payload.p_is_recurring,
+        sender: payload.p_sender,
+        recipient: payload.p_recipient,
+        creditor_id: payload.p_payable?.creditor_id ?? null,
+        debtor_id: payload.p_receivable?.debtor_id ?? null,
       })
       .select('id')
       .single()
@@ -661,5 +780,88 @@ export class TransactionService {
     } catch {
       return false  // En caso de error, permitir la eliminación
     }
+  }
+
+  private prepareCreateInput(
+    input: CreateTransactionInput,
+    sourceAccount: Account,
+    destinationAccount: Account | null,
+  ): CreateTransactionInput {
+    const description = input.type === 'TRANSFER'
+      ? this.resolveTransferDescription(input, sourceAccount, destinationAccount)
+      : input.description?.trim()
+
+    return {
+      ...input,
+      description,
+      sender: input.sender?.trim() || undefined,
+      recipient: input.recipient?.trim() || undefined,
+      notes: input.notes?.trim() || undefined,
+    }
+  }
+
+  private resolveTransferDescription(
+    input: CreateTransferInput,
+    sourceAccount: Account,
+    destinationAccount: Account | null,
+  ): string {
+    const manual = input.description?.trim()
+    if (manual) return manual
+
+    const destinationName = destinationAccount?.name ?? 'Cuenta destino'
+    const destinationCurrency = destinationAccount?.currency ?? input.currency
+    const raw = `Transferencia de ${sourceAccount.name} / ${sourceAccount.currency} a ${destinationName} / ${destinationCurrency}`
+    return raw.slice(0, 255)
+  }
+
+  private async validateExpenseBudget(
+    userId: string,
+    input: CreateExpenseInput,
+  ): Promise<Result<true>> {
+    if (!input.budget_id) return ok(true)
+
+    if (!input.category_id) {
+      return Errors.businessRule(
+        'Debes seleccionar una categoría antes de asociar un presupuesto',
+        'El presupuesto solo puede vincularse a un egreso con categoría definida'
+      )
+    }
+
+    const { data, error } = await this.db
+      .from('budgets')
+      .select('id, name, category_id, currency, period_type, start_date, end_date, is_active')
+      .eq('id', input.budget_id)
+      .eq('user_id', userId)
+      .single()
+
+    if (error || !data) {
+      return Errors.notFound('Presupuesto')
+    }
+
+    const budget = data as BudgetEligibilityRow
+
+    if (!budget.is_active) {
+      return Errors.businessRule(
+        'El presupuesto seleccionado está inactivo',
+        `Activa "${budget.name}" o selecciona otro presupuesto`
+      )
+    }
+
+    if (!budget.category_id || budget.category_id !== input.category_id) {
+      return Errors.businessRule(
+        'El presupuesto no corresponde a la categoría del egreso',
+        `El egreso debe usar la misma categoría del presupuesto "${budget.name}"`
+      )
+    }
+
+    const eligibleWindow = resolveBudgetWindowAtDate(budget, input.transaction_date)
+    if (!eligibleWindow) {
+      return Errors.businessRule(
+        'El presupuesto no está vigente para la fecha seleccionada',
+        `La fecha ${input.transaction_date} no cae dentro de un período activo de "${budget.name}"`
+      )
+    }
+
+    return ok(true)
   }
 }

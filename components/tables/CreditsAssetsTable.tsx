@@ -7,11 +7,14 @@
 
 import Link                    from 'next/link'
 import { useRouter }           from 'next/navigation'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useCredits, useAssets } from '@/lib/hooks/useModules'
 import { useCurrency }         from '@/lib/hooks/useDashboard'
 import { formatCurrency, formatPercent, toPenAmount } from '@/lib/contracts/ui.contracts'
 import { FocusTrap } from '@/components/ui/accessibility'
+import { ModalOverlayPortal } from '@/components/ui/ModalOverlayPortal'
+import { useToast } from '@/lib/toast/toast'
+import { getApiErrorMessage } from '@/lib/api/error-message'
 import {
   TableShell,
   Toolbar,
@@ -26,7 +29,7 @@ import {
   ProgressBar,
   DateCell,
 }                              from './primitives'
-import type { CreditStatus, AssetStatus } from '@/types/database.types'
+import type { CreditStatus, AssetStatus, Credit } from '@/types/database.types'
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -54,7 +57,7 @@ function utilizationColor(pct: number): string {
   if (pct >= 90) return '#ef4444'
   if (pct >= 70) return '#f97316'
   if (pct >= 50) return '#eab308'
-  return '#10b981'
+  return 'var(--c-primary)'
 }
 
 function formatFriendlyDate(date: string): string {
@@ -75,8 +78,8 @@ function installmentStatusMeta(status: string): {
   if (status === 'PAID') {
     return {
       label: 'Pagada',
-      classes: 'bg-emerald-500/12 text-emerald-400 border border-emerald-400/25',
-      dotClass: 'bg-emerald-400',
+      classes: 'bg-[var(--c-primary-soft)] text-[var(--c-primary)] border border-[var(--c-primary-border)]',
+      dotClass: 'bg-[var(--c-primary)]',
     }
   }
   if (status === 'OVERDUE') {
@@ -96,13 +99,13 @@ function installmentStatusMeta(status: string): {
 
   return {
     label: 'Pendiente',
-    classes: 'bg-[var(--color-surface-2)] text-[var(--color-text-muted)] border border-[color:var(--color-border)]',
-    dotClass: 'bg-[var(--color-text-faint)]',
+    classes: 'bg-[var(--c-surface-2)] text-[var(--c-text-muted)] border border-[var(--c-border)]',
+    dotClass: 'bg-[var(--c-text-faint)]',
   }
 }
 
 function installmentAmountClass(status: string): string {
-  if (status === 'PAID') return 'text-emerald-400'
+  if (status === 'PAID') return 'text-[var(--c-primary)]'
   if (status === 'OVERDUE') return 'text-red-400'
   if (status === 'PARTIAL') return 'text-amber-400'
   return 'text-cyan-300'
@@ -110,7 +113,7 @@ function installmentAmountClass(status: string): string {
 
 function billingStatusMeta(status: 'PAID' | 'OVERDUE' | 'DUE_SOON' | 'UPCOMING'): { label: string; classes: string } {
   if (status === 'PAID') {
-    return { label: 'Pagado', classes: 'bg-emerald-500/15 text-emerald-300 border border-emerald-400/25' }
+    return { label: 'Pagado', classes: 'bg-[var(--c-primary-soft)] text-[var(--c-primary)] border border-[var(--c-primary-border)]' }
   }
   if (status === 'OVERDUE') {
     return { label: 'Vencido', classes: 'bg-red-500/15 text-red-300 border border-red-400/25' }
@@ -189,6 +192,7 @@ function buildMonthGrid(monthKey: string): Array<{ isoDate: string; dayNumber: n
 export function CreditsTable() {
   const router = useRouter()
   const { preferred, format } = useCurrency()
+  const { toast } = useToast()
   const [activeStatus, setActiveStatus] = useState<string>('ACTIVE')
   const [activeType, setActiveType]     = useState<'all' | 'CREDIT_CARD' | 'LINE_OF_CREDIT'>('all')
   const [search, setSearch]             = useState('')
@@ -198,6 +202,10 @@ export function CreditsTable() {
   const [detailTab, setDetailTab] = useState<'OVERVIEW' | 'MOVEMENTS' | 'SCHEDULE'>('OVERVIEW')
   const [scheduleMonth, setScheduleMonth] = useState<string>(currentMonthKey())
   const [selectedCycleKey, setSelectedCycleKey] = useState<string | null>(null)
+  const [pendingStatusChange, setPendingStatusChange] = useState<{ credit: Credit; nextStatus: 'ACTIVE' | 'CLOSED' } | null>(null)
+  const [pendingDeleteCredit, setPendingDeleteCredit] = useState<Credit | null>(null)
+  const [creditActionError, setCreditActionError] = useState<string | null>(null)
+  const [creditActionLoadingId, setCreditActionLoadingId] = useState<string | null>(null)
   const [detailData, setDetailData] = useState<{
     credit: {
       id: string
@@ -248,7 +256,7 @@ export function CreditsTable() {
     }
   } | null>(null)
 
-  const { credits, isLoading, isEmpty, setFilters } = useCredits({
+  const { credits, isLoading, isEmpty, setFilters, refetch } = useCredits({
     status: activeStatus || undefined,
   })
 
@@ -349,6 +357,77 @@ export function CreditsTable() {
     setSelectedCycleKey(null)
   }
 
+  const closeStatusModal = useCallback(() => {
+    if (creditActionLoadingId) return
+    setPendingStatusChange(null)
+    setCreditActionError(null)
+  }, [creditActionLoadingId])
+
+  const closeDeleteModal = useCallback(() => {
+    if (creditActionLoadingId) return
+    setPendingDeleteCredit(null)
+    setCreditActionError(null)
+  }, [creditActionLoadingId])
+
+  const confirmStatusChange = useCallback(async () => {
+    if (!pendingStatusChange) return
+
+    const { credit, nextStatus } = pendingStatusChange
+    setCreditActionLoadingId(credit.id)
+    setCreditActionError(null)
+
+    try {
+      const response = await fetch(`/api/credits/${credit.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus }),
+      })
+      const json = await response.json()
+      if (!response.ok || !json.ok) {
+        throw new Error(getApiErrorMessage(json, 'No se pudo actualizar el estado del crédito'))
+      }
+
+      await refetch()
+      setPendingStatusChange(null)
+      toast.success(
+        nextStatus === 'ACTIVE' ? 'Crédito reactivado' : 'Crédito desactivado',
+        `${credit.name} ahora está ${nextStatus === 'ACTIVE' ? 'activo' : 'cerrado'}.`,
+        { persist: false }
+      )
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : 'No se pudo actualizar el estado del crédito'
+      setCreditActionError(message)
+      toast.error('No se pudo actualizar el estado del crédito', message)
+    } finally {
+      setCreditActionLoadingId(null)
+    }
+  }, [pendingStatusChange, refetch, toast])
+
+  const confirmDeleteCredit = useCallback(async () => {
+    if (!pendingDeleteCredit) return
+
+    setCreditActionLoadingId(pendingDeleteCredit.id)
+    setCreditActionError(null)
+
+    try {
+      const response = await fetch(`/api/credits/${pendingDeleteCredit.id}`, { method: 'DELETE' })
+      if (!response.ok && response.status !== 204) {
+        const json = await response.json()
+        throw new Error(getApiErrorMessage(json, 'No se pudo eliminar el crédito'))
+      }
+
+      await refetch()
+      setPendingDeleteCredit(null)
+      toast.success('Crédito eliminado', `${pendingDeleteCredit.name} fue eliminado correctamente.`, { persist: false })
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : 'No se pudo eliminar el crédito'
+      setCreditActionError(message)
+      toast.error('No se pudo eliminar el crédito', message)
+    } finally {
+      setCreditActionLoadingId(null)
+    }
+  }, [pendingDeleteCredit, refetch, toast])
+
   const billingCycles = useMemo(
     () => detailData?.movements.billing_cycles ?? [],
     [detailData]
@@ -364,15 +443,14 @@ export function CreditsTable() {
     <>
     <TableShell>
       <Toolbar>
-        <FilterPill label="Activos"   active={activeStatus === 'ACTIVE'}  onClick={() => setActiveStatus('ACTIVE')}  color="#10b981"/>
+        <FilterPill label="Activos"   active={activeStatus === 'ACTIVE'}  onClick={() => setActiveStatus('ACTIVE')}  color="var(--c-primary)"/>
         <FilterPill label="Todos"     active={activeStatus === ''}        onClick={() => setActiveStatus('')}/>
         <FilterPill label="Cerrados"  active={activeStatus === 'CLOSED'}  onClick={() => setActiveStatus('CLOSED')}  color="#6b7280"/>
         <div className="mx-1 h-5 w-px bg-white/[0.08]"/>
         <FilterPill label="Tarjetas" active={activeType === 'CREDIT_CARD'} onClick={() => setActiveType('CREDIT_CARD')} color="#0ea5e9"/>
         <FilterPill label="Bancarios" active={activeType === 'LINE_OF_CREDIT'} onClick={() => setActiveType('LINE_OF_CREDIT')} color="#f59e0b"/>
         <FilterPill label="Ambos" active={activeType === 'all'} onClick={() => setActiveType('all')}/>
-        <div className="flex-1"/>
-        <SearchInput value={search} onChange={setSearch} placeholder="Buscar créditos…"/>
+        <SearchInput value={search} onChange={setSearch} placeholder="Buscar créditos…" className="filters-search xl:ml-auto"/>
       </Toolbar>
 
       <div className="overflow-x-auto">
@@ -399,7 +477,9 @@ export function CreditsTable() {
                 description="Registra tarjetas de crédito o créditos bancarios desde este módulo."
                 action={
                   <Link
-                    href="/credits#nuevo-credito"
+                    href="/credits?new=credit"
+                    prefetch
+                    scroll={false}
                     className="btn-primary text-xs px-4 py-2"
                   >
                     Registrar crédito
@@ -407,16 +487,16 @@ export function CreditsTable() {
                 }
               />
             ) : (
-              filtered.map(credit => {
+              filtered.map((credit, index) => {
                 const utilPct = credit.credit_limit > 0
                   ? (credit.used_amount / credit.credit_limit) * 100
                   : 0
                 const status  = CREDIT_STATUS_MAP[credit.status] ?? { label: credit.status, variant: 'closed' as const }
 
                 return (
-                  <tr key={credit.id} className="group/row hover:bg-white/[0.02] transition-colors">
+                  <tr key={credit.id} style={{ animationDelay: `${index * 16}ms` }} className="list-reveal-item group/row hover:bg-white/[0.02] transition-colors">
                     <Td>
-                      <p className="text-sm font-semibold text-[var(--color-text)]">{credit.name}</p>
+                      <p className="text-sm font-semibold text-[var(--c-text)]">{credit.name}</p>
                     </Td>
                     <Td muted>
                         <span className="text-[11px]">
@@ -425,7 +505,7 @@ export function CreditsTable() {
                     </Td>
                     <Td className="hidden sm:table-cell min-w-[120px]">
                       <div className="space-y-1">
-                        <div className="flex justify-between text-[10px] text-[var(--color-text-muted)]">
+                        <div className="flex justify-between text-[10px] text-[var(--c-text-muted)]">
                           <span>{formatPercent(utilPct, { fractionDigits: 0 })} usado</span>
                         </div>
                         <ProgressBar value={utilPct} color={utilizationColor(utilPct)} height={4}/>
@@ -437,7 +517,7 @@ export function CreditsTable() {
                       </span>
                     </Td>
                     <Td right>
-                      <span className="text-sm font-bold tabular-nums text-emerald-400">
+                      <span className="text-sm font-bold tabular-nums text-[var(--c-primary)]">
                         {formatCurrency(format(credit.available_amount ?? 0), preferred)}
                       </span>
                     </Td>
@@ -458,6 +538,27 @@ export function CreditsTable() {
                           label:   'Ver detalle',
                           onClick: () => { void openDetail(credit.id) },
                         },
+                        {
+                          label: credit.status === 'ACTIVE' ? 'Desactivar' : 'Reactivar',
+                          variant: credit.status === 'ACTIVE' ? 'danger' : 'default',
+                          disabled: Boolean(creditActionLoadingId),
+                          onClick: () => {
+                            setCreditActionError(null)
+                            setPendingStatusChange({
+                              credit,
+                              nextStatus: credit.status === 'ACTIVE' ? 'CLOSED' : 'ACTIVE',
+                            })
+                          },
+                        },
+                        {
+                          label: 'Eliminar',
+                          variant: 'danger',
+                          disabled: Boolean(creditActionLoadingId),
+                          onClick: () => {
+                            setCreditActionError(null)
+                            setPendingDeleteCredit(credit)
+                          },
+                        },
                       ]}/>
                     </Td>
                   </tr>
@@ -469,8 +570,8 @@ export function CreditsTable() {
       </div>
     </TableShell>
     {detailOpen && (
-      <div
-        className="fixed inset-0 z-[120] flex items-center justify-center bg-[color:var(--color-overlay)] px-4 py-6"
+      <ModalOverlayPortal
+        className="z-[120]"
         onClick={() => {
           if (!detailLoading) closeDetailModal()
         }}
@@ -479,15 +580,15 @@ export function CreditsTable() {
           <div
             role="dialog"
             aria-modal="true"
-            className="w-full max-w-5xl rounded-2xl border border-[color:var(--color-border)] bg-[var(--color-modal-bg)] shadow-2xl shadow-[color:var(--color-shadow)]"
+            className="w-full max-w-5xl rounded-2xl border border-[var(--c-border)] bg-[var(--c-modal-bg)] shadow-2xl shadow-[color:var(--c-shadow)]"
             onClick={event => event.stopPropagation()}
           >
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[color:var(--color-border)] px-5 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--c-border)] px-5 py-4">
               <div>
-                <h3 className="text-base font-bold text-[var(--color-text)]">
+                <h3 className="text-base font-bold text-[var(--c-text)]">
                   {detailData ? detailData.credit.name : 'Detalle de crédito'}
                 </h3>
-                <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
+                <p className="text-[11px] text-[var(--c-text-muted)] mt-0.5">
                   {detailData?.credit.credit_type === 'CREDIT_CARD'
                     ? 'Tarjeta de crédito: consumos, pagos y disponibilidad'
                     : 'Crédito bancario: cuotas, pagos y seguimiento'}
@@ -502,12 +603,12 @@ export function CreditsTable() {
                       {detailData.credit.credit_type === 'CREDIT_CARD' ? 'Tarjeta de crédito' : 'Crédito bancario'}
                     </span>
                     {detailData.credit.closing_day && (
-                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-[var(--color-surface-2)] text-[var(--color-text-muted)] border border-[color:var(--color-border)]">
+                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-[var(--c-surface-2)] text-[var(--c-text-muted)] border border-[var(--c-border)]">
                         Corte: día {detailData.credit.closing_day}
                       </span>
                     )}
                     {detailData.credit.payment_day && (
-                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-[var(--color-surface-2)] text-[var(--color-text-muted)] border border-[color:var(--color-border)]">
+                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-[var(--c-surface-2)] text-[var(--c-text-muted)] border border-[var(--c-border)]">
                         Pago: día {detailData.credit.payment_day}
                       </span>
                     )}
@@ -517,21 +618,21 @@ export function CreditsTable() {
               <button
                 type="button"
                 onClick={closeDetailModal}
-                className="rounded-lg border border-[color:var(--color-border)] px-2.5 py-1 text-[12px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                className="rounded-lg border border-[var(--c-border)] px-2.5 py-1 text-[12px] font-semibold text-[var(--c-text-muted)] hover:text-[var(--c-text)]"
               >
                 Cerrar
               </button>
             </div>
 
-            <div className="border-b border-[color:var(--color-border)] px-5 py-3">
+            <div className="border-b border-[var(--c-border)] px-5 py-3">
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setDetailTab('OVERVIEW')}
                   className={`rounded-lg border px-3 py-1.5 text-[11px] font-semibold transition-colors ${
                     detailTab === 'OVERVIEW'
-                      ? 'border-emerald-400/35 bg-emerald-500/15 text-emerald-300'
-                      : 'border-[color:var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)]'
+                      ? 'border-[var(--c-primary-border)] bg-[var(--c-primary-soft)] text-[var(--c-primary)]'
+                      : 'border-[var(--c-border)] bg-[var(--c-surface-2)] text-[var(--c-text-muted)]'
                   }`}
                 >
                   Resumen
@@ -542,7 +643,7 @@ export function CreditsTable() {
                   className={`rounded-lg border px-3 py-1.5 text-[11px] font-semibold transition-colors ${
                     detailTab === 'MOVEMENTS'
                       ? 'border-cyan-400/35 bg-cyan-500/15 text-cyan-300'
-                      : 'border-[color:var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)]'
+                      : 'border-[var(--c-border)] bg-[var(--c-surface-2)] text-[var(--c-text-muted)]'
                   }`}
                 >
                   Movimientos
@@ -554,7 +655,7 @@ export function CreditsTable() {
                     className={`rounded-lg border px-3 py-1.5 text-[11px] font-semibold transition-colors ${
                       detailTab === 'SCHEDULE'
                         ? 'border-amber-400/35 bg-amber-500/15 text-amber-300'
-                        : 'border-[color:var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)]'
+                        : 'border-[var(--c-border)] bg-[var(--c-surface-2)] text-[var(--c-text-muted)]'
                     }`}
                   >
                     Cronograma
@@ -565,7 +666,7 @@ export function CreditsTable() {
 
             <div className="max-h-[72vh] overflow-y-auto px-5 py-4 space-y-4">
               {detailLoading && (
-                <p className="text-sm text-[var(--color-text-muted)]">Cargando detalle...</p>
+                <p className="text-sm text-[var(--c-text-muted)]">Cargando detalle...</p>
               )}
               {detailError && (
                 <p className="text-sm text-red-400">{detailError}</p>
@@ -576,38 +677,38 @@ export function CreditsTable() {
                   {detailTab === 'OVERVIEW' && (
                     <>
                       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                        <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-3">
-                          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Límite</p>
-                          <p className="text-lg font-bold text-[var(--color-text)] mt-1 tabular-nums">
+                        <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-3">
+                          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Límite</p>
+                          <p className="text-lg font-bold text-[var(--c-text)] mt-1 tabular-nums">
                             {formatCurrency(detailData.summary.credit_limit, detailData.credit.currency)}
                           </p>
                         </div>
-                        <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-3">
-                          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Gastado actual</p>
+                        <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-3">
+                          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Gastado actual</p>
                           <p className="text-lg font-bold text-rose-400 mt-1 tabular-nums">
                             {formatCurrency(detailData.summary.used_amount, detailData.credit.currency)}
                           </p>
                         </div>
-                        <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-3">
-                          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Pagado identificado</p>
-                          <p className="text-lg font-bold text-emerald-400 mt-1 tabular-nums">
+                        <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-3">
+                          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Pagado identificado</p>
+                          <p className="text-lg font-bold text-[var(--c-primary)] mt-1 tabular-nums">
                             {formatCurrency(detailData.summary.payment_total_detected, detailData.credit.currency)}
                           </p>
                         </div>
-                        <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-3">
-                          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Disponible</p>
+                        <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-3">
+                          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Disponible</p>
                           <p className="text-lg font-bold text-cyan-300 mt-1 tabular-nums">
                             {formatCurrency(detailData.summary.available_amount, detailData.credit.currency)}
                           </p>
                         </div>
                       </div>
 
-                      <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-3">
+                      <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-3">
                         <div className="flex items-center justify-between gap-2">
-                          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
+                          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">
                             Utilización del crédito
                           </p>
-                          <span className="text-[11px] font-semibold text-[var(--color-text-muted)] tabular-nums">
+                          <span className="text-[11px] font-semibold text-[var(--c-text-muted)] tabular-nums">
                             {formatPercent(utilizationPct, { fractionDigits: 1 })}
                           </span>
                         </div>
@@ -617,40 +718,40 @@ export function CreditsTable() {
                       </div>
 
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                        <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-3">
-                          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)] mb-2">Actividad detectada</p>
+                        <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-3">
+                          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)] mb-2">Actividad detectada</p>
                           <div className="grid grid-cols-2 gap-2">
-                            <div className="rounded-lg border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-2">
-                              <p className="text-[10px] text-[var(--color-text-muted)]">Consumos</p>
+                            <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2">
+                              <p className="text-[10px] text-[var(--c-text-muted)]">Consumos</p>
                               <p className="text-sm font-bold text-rose-400 tabular-nums mt-0.5">
                                 {formatCurrency(detailData.summary.consumption_total_detected, detailData.credit.currency)}
                               </p>
                             </div>
-                            <div className="rounded-lg border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-2">
-                              <p className="text-[10px] text-[var(--color-text-muted)]">Pagos</p>
-                              <p className="text-sm font-bold text-emerald-400 tabular-nums mt-0.5">
+                            <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2">
+                              <p className="text-[10px] text-[var(--c-text-muted)]">Pagos</p>
+                              <p className="text-sm font-bold text-[var(--c-primary)] tabular-nums mt-0.5">
                                 {formatCurrency(detailData.summary.payment_total_detected, detailData.credit.currency)}
                               </p>
                             </div>
                           </div>
                         </div>
 
-                        <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-3">
-                          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)] mb-2">Próximo hito</p>
+                        <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-3">
+                          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)] mb-2">Próximo hito</p>
                           {nextInstallment ? (
-                            <div className="rounded-lg border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-2">
-                              <p className="text-[12px] font-semibold text-[var(--color-text)]">
+                            <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2">
+                              <p className="text-[12px] font-semibold text-[var(--c-text)]">
                                 Cuota #{nextInstallment.installment_number}
                               </p>
-                              <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
+                              <p className="text-[11px] text-[var(--c-text-muted)] mt-0.5">
                                 Vence: {formatFriendlyDate(nextInstallment.due_date)}
                               </p>
-                              <p className="text-[13px] font-bold text-[var(--color-text)] mt-1 tabular-nums">
+                              <p className="text-[13px] font-bold text-[var(--c-text)] mt-1 tabular-nums">
                                 {formatCurrency(nextInstallment.total_amount, detailData.credit.currency)}
                               </p>
                             </div>
                           ) : (
-                            <p className="text-[12px] text-[var(--color-text-muted)]">
+                            <p className="text-[12px] text-[var(--c-text-muted)]">
                               No hay cuotas pendientes por ahora.
                             </p>
                           )}
@@ -662,10 +763,10 @@ export function CreditsTable() {
                   {detailTab === 'MOVEMENTS' && (
                     <div className="space-y-3">
                       {detailData.credit.credit_type === 'CREDIT_CARD' && billingCycles.length > 0 && (
-                        <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-3">
+                        <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-3">
                           <div className="flex items-center justify-between gap-2 mb-2">
-                            <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Ciclos de facturación</p>
-                            <span className="text-[11px] text-[var(--color-text-muted)]">
+                            <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Ciclos de facturación</p>
+                            <span className="text-[11px] text-[var(--c-text-muted)]">
                               Corte día {detailData.credit.closing_day ?? '—'} · Pago día {detailData.credit.payment_day ?? '—'}
                             </span>
                           </div>
@@ -680,25 +781,25 @@ export function CreditsTable() {
                                   onClick={() => setSelectedCycleKey(cycle.key)}
                                   className={`rounded-lg border px-3 py-2 text-left transition-colors ${
                                     active
-                                      ? 'border-emerald-400/35 bg-emerald-500/10'
-                                      : 'border-[color:var(--color-border)] bg-[var(--color-surface-2)] hover:border-[color:var(--color-border-hover)]'
+                                      ? 'border-[var(--c-primary-border)] bg-[var(--c-primary-soft)]'
+                                      : 'border-[var(--c-border)] bg-[var(--c-surface-2)] hover:border-[var(--c-border-hover)]'
                                   }`}
                                 >
                                   <div className="flex items-center justify-between gap-2">
-                                    <p className="text-[12px] font-semibold text-[var(--color-text)] capitalize">
+                                    <p className="text-[12px] font-semibold text-[var(--c-text)] capitalize">
                                       {monthLabel(monthKeyFromIsoDate(cycle.end_date))}
                                     </p>
                                     <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${status.classes}`}>
                                       {status.label}
                                     </span>
                                   </div>
-                                  <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+                                  <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">
                                     Cierra {formatFriendlyDate(cycle.end_date)} · vence {formatFriendlyDate(cycle.due_date)}
                                   </p>
                                   <div className="mt-1.5 grid grid-cols-3 gap-2 text-[11px] tabular-nums">
                                     <span className="text-rose-400">{formatCurrency(cycle.consumption_total, detailData.credit.currency)}</span>
-                                    <span className="text-emerald-400">{formatCurrency(cycle.payment_total, detailData.credit.currency)}</span>
-                                    <span className={cycle.balance_due > 0 ? 'text-amber-300' : 'text-[var(--color-text-muted)]'}>
+                                    <span className="text-[var(--c-primary)]">{formatCurrency(cycle.payment_total, detailData.credit.currency)}</span>
+                                    <span className={cycle.balance_due > 0 ? 'text-amber-300' : 'text-[var(--c-text-muted)]'}>
                                       {formatCurrency(cycle.balance_due, detailData.credit.currency)}
                                     </span>
                                   </div>
@@ -710,25 +811,25 @@ export function CreditsTable() {
                       )}
 
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                      <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-3">
+                      <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-3">
                         <div className="flex items-center justify-between gap-2 mb-2">
-                          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Consumos detectados</p>
+                          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Consumos detectados</p>
                           <span className="text-[11px] font-semibold text-rose-400 tabular-nums">
                             {formatCurrency(selectedCycle?.consumption_total ?? detailData.summary.consumption_total_detected, detailData.credit.currency)}
                           </span>
                         </div>
                         <div className="space-y-1.5 max-h-64 overflow-y-auto">
                           {movementConsumptions.length === 0 ? (
-                            <p className="text-[12px] text-[var(--color-text-muted)]">Sin consumos detectados.</p>
+                            <p className="text-[12px] text-[var(--c-text-muted)]">Sin consumos detectados.</p>
                           ) : movementConsumptions.map(item => (
                             <button
                               key={item.id}
                               onClick={() => router.push(`/transactions/${item.id}`)}
-                              className="w-full rounded-lg border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-2 text-left hover:border-[color:var(--color-border-hover)] transition-colors"
+                              className="w-full rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2 text-left hover:border-[var(--c-border-hover)] transition-colors"
                             >
-                              <p className="text-[12px] font-semibold text-[var(--color-text)] truncate">{item.description}</p>
+                              <p className="text-[12px] font-semibold text-[var(--c-text)] truncate">{item.description}</p>
                               <div className="mt-1 flex items-center justify-between gap-2">
-                                <span className="text-[10px] text-[var(--color-text-muted)]">{formatFriendlyDate(item.transaction_date)}</span>
+                                <span className="text-[10px] text-[var(--c-text-muted)]">{formatFriendlyDate(item.transaction_date)}</span>
                                 <span className="text-[12px] font-bold text-rose-400 tabular-nums">
                                   {formatCurrency(item.amount, item.currency)}
                                 </span>
@@ -738,26 +839,26 @@ export function CreditsTable() {
                         </div>
                       </div>
 
-                      <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-3">
+                      <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-3">
                         <div className="flex items-center justify-between gap-2 mb-2">
-                          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Pagos detectados</p>
-                          <span className="text-[11px] font-semibold text-emerald-400 tabular-nums">
+                          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Pagos detectados</p>
+                          <span className="text-[11px] font-semibold text-[var(--c-primary)] tabular-nums">
                             {formatCurrency(selectedCycle?.payment_total ?? detailData.summary.payment_total_detected, detailData.credit.currency)}
                           </span>
                         </div>
                         <div className="space-y-1.5 max-h-64 overflow-y-auto">
                           {movementPayments.length === 0 ? (
-                            <p className="text-[12px] text-[var(--color-text-muted)]">Sin pagos detectados aún.</p>
+                            <p className="text-[12px] text-[var(--c-text-muted)]">Sin pagos detectados aún.</p>
                           ) : movementPayments.map(item => (
                             <button
                               key={item.id}
                               onClick={() => router.push(`/transactions/${item.id}`)}
-                              className="w-full rounded-lg border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-2 text-left hover:border-[color:var(--color-border-hover)] transition-colors"
+                              className="w-full rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2 text-left hover:border-[var(--c-border-hover)] transition-colors"
                             >
-                              <p className="text-[12px] font-semibold text-[var(--color-text)] truncate">{item.description}</p>
+                              <p className="text-[12px] font-semibold text-[var(--c-text)] truncate">{item.description}</p>
                               <div className="mt-1 flex items-center justify-between gap-2">
-                                <span className="text-[10px] text-[var(--color-text-muted)]">{formatFriendlyDate(item.transaction_date)}</span>
-                                <span className="text-[12px] font-bold text-emerald-400 tabular-nums">
+                                <span className="text-[10px] text-[var(--c-text-muted)]">{formatFriendlyDate(item.transaction_date)}</span>
+                                <span className="text-[12px] font-bold text-[var(--c-primary)] tabular-nums">
                                   {formatCurrency(item.amount, item.currency)}
                                 </span>
                               </div>
@@ -772,10 +873,10 @@ export function CreditsTable() {
                   {detailTab === 'SCHEDULE' && (
                     detailData.installments.length > 0 ? (
                       <div className="space-y-3">
-                        <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-3">
+                        <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-3">
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Cronograma mensual</p>
-                            <span className="text-[11px] text-[var(--color-text-muted)] tabular-nums">
+                            <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Cronograma mensual</p>
+                            <span className="text-[11px] text-[var(--c-text-muted)] tabular-nums">
                               {detailData.summary.paid_installments}/{detailData.summary.total_installments} pagadas
                             </span>
                           </div>
@@ -783,44 +884,44 @@ export function CreditsTable() {
                             <button
                               type="button"
                               onClick={() => setScheduleMonth(prev => moveMonth(prev, -1))}
-                              className="rounded-lg border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                              className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-1 text-[11px] font-semibold text-[var(--c-text-muted)] hover:text-[var(--c-text)]"
                             >
                               Anterior
                             </button>
-                            <p className="text-sm font-semibold text-[var(--color-text)] capitalize">
+                            <p className="text-sm font-semibold text-[var(--c-text)] capitalize">
                               {monthLabel(activeScheduleMonth)}
                             </p>
                             <button
                               type="button"
                               onClick={() => setScheduleMonth(prev => moveMonth(prev, 1))}
-                              className="rounded-lg border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                              className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-1 text-[11px] font-semibold text-[var(--c-text-muted)] hover:text-[var(--c-text)]"
                             >
                               Siguiente
                             </button>
                           </div>
                           <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                            <div className="rounded-lg border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-2">
-                              <p className="text-[10px] text-[var(--color-text-muted)]">Cuotas del mes</p>
-                              <p className="text-sm font-bold text-[var(--color-text)] tabular-nums mt-0.5">{monthInstallments.length}</p>
+                            <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2">
+                              <p className="text-[10px] text-[var(--c-text-muted)]">Cuotas del mes</p>
+                              <p className="text-sm font-bold text-[var(--c-text)] tabular-nums mt-0.5">{monthInstallments.length}</p>
                             </div>
-                            <div className="rounded-lg border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-2">
-                              <p className="text-[10px] text-[var(--color-text-muted)]">Monto del mes</p>
-                              <p className="text-sm font-bold text-[var(--color-text)] tabular-nums mt-0.5">
+                            <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2">
+                              <p className="text-[10px] text-[var(--c-text-muted)]">Monto del mes</p>
+                              <p className="text-sm font-bold text-[var(--c-text)] tabular-nums mt-0.5">
                                 {formatCurrency(monthTotalAmount, detailData.credit.currency)}
                               </p>
                             </div>
-                            <div className="rounded-lg border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-2">
-                              <p className="text-[10px] text-[var(--color-text-muted)]">Vencidas del mes</p>
+                            <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2">
+                              <p className="text-[10px] text-[var(--c-text-muted)]">Vencidas del mes</p>
                               <p className="text-sm font-bold text-red-400 tabular-nums mt-0.5">{monthOverdueCount}</p>
                             </div>
                           </div>
                         </div>
 
-                        <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-3 overflow-x-auto">
+                        <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-3 overflow-x-auto">
                           <div className="min-w-[760px]">
                             <div className="grid grid-cols-7 gap-2 mb-2">
                               {WEEK_DAYS.map(day => (
-                                <div key={day} className="px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-muted)] text-center">
+                                <div key={day} className="px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-muted)] text-center">
                                   {day}
                                 </div>
                               ))}
@@ -836,16 +937,16 @@ export function CreditsTable() {
                                     key={cell.isoDate}
                                     className={`min-h-[98px] rounded-lg border p-2 transition-colors ${
                                       cell.inMonth
-                                        ? 'border-[color:var(--color-border)] bg-[var(--color-surface-2)]'
-                                        : 'border-[color:var(--color-border)] bg-[var(--color-surface)] opacity-55'
-                                    } ${hasEvents ? 'ring-1 ring-emerald-400/20' : ''}`}
+                                        ? 'border-[var(--c-border)] bg-[var(--c-surface-2)]'
+                                        : 'border-[var(--c-border)] bg-[var(--c-surface)] opacity-55'
+                                    } ${hasEvents ? 'ring-1 ring-[rgba(14,79,70,0.18)]' : ''}`}
                                   >
                                     <div className="flex items-center justify-between gap-1">
-                                      <span className={`text-[11px] font-semibold ${cell.inMonth ? 'text-[var(--color-text)]' : 'text-[var(--color-text-muted)]'}`}>
+                                      <span className={`text-[11px] font-semibold ${cell.inMonth ? 'text-[var(--c-text)]' : 'text-[var(--c-text-muted)]'}`}>
                                         {cell.dayNumber}
                                       </span>
                                       {hasEvents && (
-                                        <span className="text-[10px] font-semibold text-[var(--color-text-muted)] tabular-nums">
+                                        <span className="text-[10px] font-semibold text-[var(--c-text-muted)] tabular-nums">
                                           {dayInstallments.length}
                                         </span>
                                       )}
@@ -853,8 +954,8 @@ export function CreditsTable() {
                                     <div className="mt-1.5 space-y-1">
                                       {dayInstallments.slice(0, 2).map(item => {
                                         return (
-                                          <div key={item.id} className="rounded-md border border-[color:var(--color-border)] bg-[var(--color-surface)] px-1.5 py-1">
-                                            <p className="text-[10px] font-semibold text-[var(--color-text)] truncate">
+                                          <div key={item.id} className="rounded-md border border-[var(--c-border)] bg-[var(--c-surface)] px-1.5 py-1">
+                                            <p className="text-[10px] font-semibold text-[var(--c-text)] truncate">
                                               Cuota #{item.installment_number}
                                             </p>
                                             <p className={`text-[10px] font-semibold ${installmentAmountClass(item.status)}`}>
@@ -864,12 +965,12 @@ export function CreditsTable() {
                                         )
                                       })}
                                       {dayInstallments.length > 2 && (
-                                        <p className="text-[10px] text-[var(--color-text-muted)]">
+                                        <p className="text-[10px] text-[var(--c-text-muted)]">
                                           +{dayInstallments.length - 2} mas
                                         </p>
                                       )}
                                       {hasEvents && (
-                                        <p className="text-[10px] text-[var(--color-text-muted)] tabular-nums">
+                                        <p className="text-[10px] text-[var(--c-text-muted)] tabular-nums">
                                           Total: {formatCurrency(dayTotal, detailData.credit.currency)}
                                         </p>
                                       )}
@@ -881,31 +982,31 @@ export function CreditsTable() {
                           </div>
                         </div>
 
-                        <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-3">
-                          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)] mb-2">
+                        <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-3">
+                          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)] mb-2">
                             Cuotas de {monthLabel(activeScheduleMonth)}
                           </p>
                           <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                             {monthInstallments.length === 0 ? (
-                              <p className="text-[12px] text-[var(--color-text-muted)]">
+                              <p className="text-[12px] text-[var(--c-text-muted)]">
                                 No hay cuotas registradas para este mes.
                               </p>
                             ) : monthInstallments.map(item => {
                               const meta = installmentStatusMeta(item.status)
                               return (
-                                <div key={item.id} className="rounded-lg border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-2">
+                                <div key={item.id} className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2">
                                   <div className="flex items-center justify-between gap-2">
-                                    <p className="text-[12px] font-semibold text-[var(--color-text)]">
+                                    <p className="text-[12px] font-semibold text-[var(--c-text)]">
                                       Cuota #{item.installment_number}
                                     </p>
                                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${meta.classes}`}>
                                       {meta.label}
                                     </span>
                                   </div>
-                                  <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
-                                    Vence: <strong className="text-[var(--color-text)]">{formatFriendlyDate(item.due_date)}</strong>
+                                  <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">
+                                    Vence: <strong className="text-[var(--c-text)]">{formatFriendlyDate(item.due_date)}</strong>
                                   </p>
-                                  <p className="mt-1 text-[12px] font-bold text-[var(--color-text)] tabular-nums">
+                                  <p className="mt-1 text-[12px] font-bold text-[var(--c-text)] tabular-nums">
                                     Total: {formatCurrency(item.total_amount, detailData.credit.currency)}
                                   </p>
                                 </div>
@@ -915,9 +1016,9 @@ export function CreditsTable() {
                         </div>
                       </div>
                     ) : (
-                      <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-6 text-center">
-                        <p className="text-sm font-semibold text-[var(--color-text)]">Sin cronograma disponible</p>
-                        <p className="text-[12px] text-[var(--color-text-muted)] mt-1">
+                      <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-6 text-center">
+                        <p className="text-sm font-semibold text-[var(--c-text)]">Sin cronograma disponible</p>
+                        <p className="text-[12px] text-[var(--c-text-muted)] mt-1">
                           Este crédito no tiene cuotas registradas.
                         </p>
                       </div>
@@ -928,7 +1029,98 @@ export function CreditsTable() {
             </div>
           </div>
         </FocusTrap>
-      </div>
+      </ModalOverlayPortal>
+    )}
+    {pendingStatusChange && (
+      <ModalOverlayPortal className="z-[121]" onClick={closeStatusModal}>
+        <FocusTrap active={Boolean(pendingStatusChange)} onEscape={closeStatusModal}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            onClick={event => event.stopPropagation()}
+            className="w-full max-w-md rounded-2xl border border-[var(--c-border)] bg-[var(--c-modal-bg)] p-5 shadow-2xl shadow-[color:var(--c-shadow)]"
+          >
+            <h3 className="text-sm font-bold text-[var(--c-text)]">
+              {pendingStatusChange.nextStatus === 'ACTIVE' ? 'Reactivar crédito' : 'Desactivar crédito'}
+            </h3>
+            <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">
+              {pendingStatusChange.nextStatus === 'ACTIVE'
+                ? `El crédito ${pendingStatusChange.credit.name} volverá a mostrarse como activo.`
+                : `El crédito ${pendingStatusChange.credit.name} cambiará a estado cerrado.`}
+            </p>
+            {creditActionError && (
+              <p className="mt-2 rounded-lg border border-red-500/25 bg-red-500/10 px-2.5 py-2 text-[12px] text-red-300">
+                {creditActionError}
+              </p>
+            )}
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeStatusModal}
+                disabled={Boolean(creditActionLoadingId)}
+                className="btn-secondary"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmStatusChange()}
+                disabled={Boolean(creditActionLoadingId)}
+                className={`rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${
+                  pendingStatusChange.nextStatus === 'ACTIVE'
+                    ? 'border-[var(--c-primary)]/40 bg-[var(--c-primary-soft)] text-[var(--c-primary)] hover:bg-[var(--c-primary-soft)]'
+                    : 'border-red-500/40 bg-red-500/15 text-red-300 hover:bg-red-500/20'
+                }`}
+              >
+                {creditActionLoadingId === pendingStatusChange.credit.id
+                  ? 'Procesando...'
+                  : (pendingStatusChange.nextStatus === 'ACTIVE' ? 'Reactivar' : 'Desactivar')}
+              </button>
+            </div>
+          </div>
+        </FocusTrap>
+      </ModalOverlayPortal>
+    )}
+    {pendingDeleteCredit && (
+      <ModalOverlayPortal className="z-[121]" onClick={closeDeleteModal}>
+        <FocusTrap active={Boolean(pendingDeleteCredit)} onEscape={closeDeleteModal}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            onClick={event => event.stopPropagation()}
+            className="w-full max-w-md rounded-2xl border border-[var(--c-border)] bg-[var(--c-modal-bg)] p-5 shadow-2xl shadow-[color:var(--c-shadow)]"
+          >
+            <h3 className="text-sm font-bold text-[var(--c-text)]">Eliminar crédito</h3>
+            <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">
+              Se intentará eliminar <span className="font-semibold text-[var(--c-text)]">{pendingDeleteCredit.name}</span>.
+              Si tiene transacciones, cuotas o préstamos vinculados, el sistema te indicará exactamente el bloqueo.
+            </p>
+            {creditActionError && (
+              <p className="mt-2 rounded-lg border border-red-500/25 bg-red-500/10 px-2.5 py-2 text-[12px] text-red-300">
+                {creditActionError}
+              </p>
+            )}
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeDeleteModal}
+                disabled={Boolean(creditActionLoadingId)}
+                className="btn-secondary"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmDeleteCredit()}
+                disabled={Boolean(creditActionLoadingId)}
+                className="rounded-lg border border-red-500/40 bg-red-500/15 px-3 py-1.5 text-[12px] font-semibold text-red-300 hover:bg-red-500/20"
+              >
+                {creditActionLoadingId === pendingDeleteCredit.id ? 'Eliminando...' : 'Eliminar'}
+              </button>
+            </div>
+          </div>
+        </FocusTrap>
+      </ModalOverlayPortal>
     )}
     </>
   )
@@ -970,7 +1162,6 @@ export function AssetsTable() {
         <FilterPill label="Activos"     active={activeStatus === 'ACTIVE'}  onClick={() => setActiveStatus('ACTIVE')}  color="#8b5cf6"/>
         <FilterPill label="Todos"       active={activeStatus === ''}        onClick={() => setActiveStatus('')}/>
         <FilterPill label="Vendidos"    active={activeStatus === 'SOLD'}    onClick={() => setActiveStatus('SOLD')}    color="#6b7280"/>
-        <div className="flex-1"/>
         {totalValue > 0 && (
           <span className="text-[11px] text-white/25 tabular-nums hidden sm:inline">
             Total: <strong className="text-purple-400">
@@ -978,7 +1169,7 @@ export function AssetsTable() {
             </strong>
           </span>
         )}
-        <SearchInput value={search} onChange={setSearch} placeholder="Buscar activos…"/>
+        <SearchInput value={search} onChange={setSearch} placeholder="Buscar activos…" className="filters-search xl:ml-auto"/>
       </Toolbar>
 
       <div className="overflow-x-auto">
@@ -1004,7 +1195,8 @@ export function AssetsTable() {
                 description="Los activos se crean al registrar un egreso de tipo activo."
                 action={
                   <Link
-                    href="/transactions/new?type=EXPENSE&module=asset"
+                    href="/transactions?new=transaction&type=EXPENSE&module=asset"
+                    prefetch
                     className="btn-primary text-xs px-4 py-2"
                   >
                     Registrar activo desde transacción
@@ -1012,7 +1204,7 @@ export function AssetsTable() {
                 }
               />
             ) : (
-              filtered.map(asset => {
+              filtered.map((asset, index) => {
                 const valuePen    = toPenAmount(asset.current_value, asset.currency, exchangeRate)
                 const purchasePen = toPenAmount(asset.purchase_value, asset.currency, exchangeRate)
                 const gainPct     = purchasePen > 0
@@ -1021,7 +1213,7 @@ export function AssetsTable() {
                 const status      = ASSET_STATUS_MAP[asset.status] ?? { label: asset.status, variant: 'closed' as const }
 
                 return (
-                  <tr key={asset.id} className="group/row hover:bg-white/[0.02] transition-colors">
+                  <tr key={asset.id} style={{ animationDelay: `${index * 16}ms` }} className="list-reveal-item group/row hover:bg-white/[0.02] transition-colors">
                     <Td>
                       <p className="text-sm text-white/80 font-medium">{asset.name}</p>
                       {asset.location && (
@@ -1044,7 +1236,7 @@ export function AssetsTable() {
                           {formatCurrency(format(valuePen), preferred)}
                         </p>
                         {Math.abs(gainPct) > 0.5 && (
-                          <p className={`text-[10px] tabular-nums ${gainPct >= 0 ? 'text-emerald-400/70' : 'text-red-400/70'}`}>
+                          <p className={`text-[10px] tabular-nums ${gainPct >= 0 ? 'text-[var(--c-primary)]/70' : 'text-red-400/70'}`}>
                             {formatPercent(gainPct, { fractionDigits: 1, signed: true })}
                           </p>
                         )}

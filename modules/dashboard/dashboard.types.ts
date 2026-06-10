@@ -43,6 +43,15 @@ export interface CashFlowPoint {
   netPen:     number
 }
 
+export interface DailyFlowPoint {
+  date:      string   // 'YYYY-MM-DD'
+  label:     string   // '05 abr'
+  incomePen: number
+  expensePen:number
+  netPen:    number
+  balancePen:number   // acumulado dentro del rango diario consultado
+}
+
 // ─── CATEGORÍAS ───────────────────────────────────────────────────────────────
 
 export interface ExpenseCategoryItem {
@@ -166,6 +175,7 @@ export interface DashboardSummary {
   currentMonth:           MonthMetrics
   accounts:               AccountBalance[]
   cashFlow6m:             CashFlowPoint[]
+  dailyFlow?:             DailyFlowPoint[]
   topExpenseCategories:   ExpenseCategoryItem[]
   credits:                CreditSummaryItem[]
   upcomingInstallments:   UpcomingInstallment[]

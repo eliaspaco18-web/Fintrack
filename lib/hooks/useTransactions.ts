@@ -18,6 +18,7 @@ import {
   createTransactionAction,
   updateTransactionAction,
   deleteTransactionAction,
+  deleteTransactionsBulkAction,
 }                                         from '@/app/actions/transaction.actions'
 
 // ─── FETCHER ─────────────────────────────────────────────────────────────────
@@ -59,9 +60,23 @@ export interface UseTransactionsReturn {
   createState:   ActionState<CreateTransactionResult>
   updateState:   ActionState<Transaction>
   deleteState:   ActionState<{ deleted: true }>
+  bulkDeleteState: ActionState<{
+    deleted_ids: string[]
+    deleted_count: number
+    failed: Array<{ id: string; message: string; detail?: string }>
+  }>
   create:        (input: unknown) => Promise<boolean>
   update:        (id: string, input: unknown) => Promise<boolean>
   remove:        (id: string, force?: boolean) => Promise<boolean>
+  bulkRemove:    (
+    ids: string[],
+    force?: boolean,
+  ) => Promise<{
+    deleted_ids: string[]
+    deleted_count: number
+    failed: Array<{ id: string; message: string; detail?: string }>
+  } | null>
+  refresh:       () => Promise<void>
 }
 
 type LegacyPaginatedTransactions<T> = {
@@ -111,6 +126,11 @@ export function useTransactions(
   const [createState, setCreate] = useState<ActionState<CreateTransactionResult>>({ status: 'idle' })
   const [updateState, setUpdate] = useState<ActionState<Transaction>>({ status: 'idle' })
   const [deleteState, setDelete] = useState<ActionState<{ deleted: true }>>({ status: 'idle' })
+  const [bulkDeleteState, setBulkDelete] = useState<ActionState<{
+    deleted_ids: string[]
+    deleted_count: number
+    failed: Array<{ id: string; message: string; detail?: string }>
+  }>>({ status: 'idle' })
 
   const url = buildUrl(params)
 
@@ -168,6 +188,22 @@ export function useTransactions(
     return false
   }, [url])
 
+  const bulkRemove = useCallback(async (ids: string[], force = false) => {
+    setBulkDelete({ status: 'loading' })
+    const result = await deleteTransactionsBulkAction(ids, force)
+    if (result.ok) {
+      setBulkDelete({ status: 'success', data: result.data })
+      await globalMutate(url)
+      return result.data
+    }
+    setBulkDelete({ status: 'error', error: result.error as FormError })
+    return null
+  }, [url])
+
+  const refresh = useCallback(async () => {
+    await globalMutate(url)
+  }, [url])
+
   const transactions = data?.data ?? []
   const paginationBase = extractPagination(data)
   const pagination = paginationBase && paginationBase.per_page > 0 ? {
@@ -182,8 +218,8 @@ export function useTransactions(
     isEmpty: !isLoading && transactions.length === 0,
     error: error as FormError | null,
     params, setParams, setPage, resetFilters,
-    createState, updateState, deleteState,
-    create, update, remove,
+    createState, updateState, deleteState, bulkDeleteState,
+    create, update, remove, bulkRemove, refresh,
   }
 }
 

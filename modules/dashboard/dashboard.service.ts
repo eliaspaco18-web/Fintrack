@@ -9,10 +9,12 @@ import type { SupabaseClient }        from '@supabase/supabase-js'
 import type { Database }              from '@/types/database.types'
 import { type Result, Errors, ok }    from '@/modules/shared/result.types'
 import { DEFAULT_USD_PEN_EXCHANGE_RATE } from '@/lib/constants/currency'
+import { resolveLiveUsdPenExchangeRate } from '@/lib/server/exchange-rate'
 import type {
   DashboardSummary,
   MonthlyComparison,
   CashFlowPoint,
+  DailyFlowPoint,
   ExpenseCategoryItem,
   CreditSummaryItem,
   UpcomingInstallment,
@@ -44,14 +46,18 @@ export class DashboardService {
    */
   async getSummary(userId: string): Promise<Result<DashboardSummary>> {
     try {
-      const { data, error } = await this.db.rpc('fn_dashboard_summary', {
-        p_user_id: userId,
-      })
+      const [{ data, error }, dailyFlowResult] = await Promise.all([
+        this.db.rpc('fn_dashboard_summary', {
+          p_user_id: userId,
+        }),
+        this.getDailyFlow(userId, 370),
+      ])
 
       if (error) return Errors.database(error.message)
       if (!data)  return Errors.notFound('Dashboard')
 
-      return ok(this.mapRpcResult(data as unknown as RawDashboardRpc))
+      const dailyFlow = dailyFlowResult.ok ? dailyFlowResult.data : []
+      return ok(this.mapRpcResult(data as unknown as RawDashboardRpc, dailyFlow))
     } catch (e) {
       return Errors.database(e instanceof Error ? e.message : 'Error desconocido')
     }
@@ -86,6 +92,79 @@ export class DashboardService {
         expensePen:  Number(row.expense_pen),
         netPen:      Number(row.net_pen),
       })))
+    } catch (e) {
+      return Errors.database(e instanceof Error ? e.message : 'Error desconocido')
+    }
+  }
+
+  /**
+   * Serie diaria de ingresos/egresos y neto acumulado para gráficas tipo
+   * "money flow" (5D / 1M / 3M / 6M / 1Y).
+   */
+  async getDailyFlow(
+    userId: string,
+    days = 365
+  ): Promise<Result<DailyFlowPoint[]>> {
+    try {
+      const safeDays = Math.max(7, Math.min(730, Math.trunc(days)))
+      const today = new Date()
+      const start = new Date(today)
+      start.setDate(today.getDate() - (safeDays - 1))
+
+      const startDate = start.toISOString().slice(0, 10)
+      const endDate = today.toISOString().slice(0, 10)
+
+      const { data, error } = await this.db
+        .from('transactions')
+        .select('transaction_date, type, amount_pen')
+        .eq('user_id', userId)
+        .eq('affects_reports', true)
+        .in('type', ['INCOME', 'EXPENSE'])
+        .gte('transaction_date', startDate)
+        .lte('transaction_date', endDate)
+        .order('transaction_date', { ascending: true })
+
+      if (error) return Errors.database(error.message)
+
+      const byDate = new Map<string, { incomePen: number; expensePen: number }>()
+
+      for (const row of data ?? []) {
+        const date = row.transaction_date
+        if (!date) continue
+
+        const current = byDate.get(date) ?? { incomePen: 0, expensePen: 0 }
+        const amountPen = Number(row.amount_pen ?? 0)
+        if (row.type === 'INCOME') current.incomePen += amountPen
+        if (row.type === 'EXPENSE') current.expensePen += amountPen
+        byDate.set(date, current)
+      }
+
+      const cursor = new Date(start)
+      let running = 0
+      const series: DailyFlowPoint[] = []
+
+      while (cursor <= today) {
+        const date = cursor.toISOString().slice(0, 10)
+        const aggregate = byDate.get(date) ?? { incomePen: 0, expensePen: 0 }
+        const netPen = aggregate.incomePen - aggregate.expensePen
+        running += netPen
+
+        series.push({
+          date,
+          label: new Date(`${date}T12:00:00`).toLocaleDateString('es-PE', {
+            day: '2-digit',
+            month: 'short',
+          }).replace('.', ''),
+          incomePen: aggregate.incomePen,
+          expensePen: aggregate.expensePen,
+          netPen,
+          balancePen: running,
+        })
+
+        cursor.setDate(cursor.getDate() + 1)
+      }
+
+      return ok(series)
     } catch (e) {
       return Errors.database(e instanceof Error ? e.message : 'Error desconocido')
     }
@@ -158,17 +237,8 @@ export class DashboardService {
     exchangeRate: number
   }>> {
     try {
-      // Tipo de cambio más reciente
-      const { data: rateRow } = await this.db
-        .from('exchange_rates')
-        .select('rate')
-        .eq('from_currency', 'USD')
-        .eq('to_currency',   'PEN')
-        .order('fetched_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-
-      const exchangeRate = rateRow?.rate ?? DEFAULT_USD_PEN_EXCHANGE_RATE
+      const exchangeSnapshot = await resolveLiveUsdPenExchangeRate()
+      const exchangeRate = exchangeSnapshot.rate ?? DEFAULT_USD_PEN_EXCHANGE_RATE
 
       const { data: nw } = await this.db
         .from('v_net_worth')
@@ -262,7 +332,7 @@ export class DashboardService {
   // ║  MAPEO PRIVADO RPC → tipos del servicio                                ║
   // ╚══════════════════════════════════════════════════════════════════════════╝
 
-  private mapRpcResult(raw: RawDashboardRpc): DashboardSummary {
+  private mapRpcResult(raw: RawDashboardRpc, dailyFlow: DailyFlowPoint[] = []): DashboardSummary {
     const rate = raw.meta?.exchange_rate_usd_pen ?? DEFAULT_USD_PEN_EXCHANGE_RATE
     const toUrgency = (value: string | null | undefined): DashboardUrgency | null => {
       if (value === 'OVERDUE' || value === 'DUE_SOON' || value === 'UPCOMING') {
@@ -304,6 +374,7 @@ export class DashboardService {
         expensePen:  p.expense_pen,
         netPen:      p.net_pen,
       })),
+      dailyFlow,
 
       topExpenseCategories: (raw.top_expense_categories ?? []).map(c => ({
         categoryId:    c.category_id,

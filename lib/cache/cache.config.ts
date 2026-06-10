@@ -13,6 +13,7 @@ export const CacheTags = {
   transactions:  'transactions',
   accounts:      'accounts',
   categories:    'categories',
+  budgets:       'budgets',
   assets:        'assets',
   credits:       'credits',
   loans:         'loans',
@@ -41,6 +42,7 @@ export const CacheTTL = {
   categories:   3600,        // 1 hora — raramente cambian
   credits:      300,         // 5 min
   assets:       300,
+  budgets:      300,
   receivables:  120,
   payables:     120,
   goals:        300,

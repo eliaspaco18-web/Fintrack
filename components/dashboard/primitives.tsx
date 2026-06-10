@@ -8,6 +8,7 @@
 
 import { type ReactNode } from 'react'
 import { formatPercent } from '@/lib/contracts/ui.contracts'
+import { PremiumCard } from './PremiumCard'
 
 // ─── WIDGET SHELL ─────────────────────────────────────────────────────────────
 // Contenedor base para todos los widgets. Maneja loading, empty y error.
@@ -20,16 +21,12 @@ interface WidgetShellProps {
 
 export function WidgetShell({ children, className = '', noPadding }: WidgetShellProps) {
   return (
-    <div
-      className={`
-        rounded-2xl border border-white/[0.06]
-        bg-white/[0.025]
-        ${noPadding ? '' : 'p-5'}
-        ${className}
-      `}
+    <PremiumCard
+      className={`dashboard-report-card ${className}`}
+      innerClassName={noPadding ? '' : 'p-4'}
     >
       {children}
-    </div>
+    </PremiumCard>
   )
 }
 
@@ -44,7 +41,7 @@ interface SectionHeaderProps {
 
 export function SectionHeader({ title, action, accent }: SectionHeaderProps) {
   return (
-    <div className="flex items-center justify-between mb-4">
+    <div className="mb-3 flex items-center justify-between">
       <div className="flex items-center gap-2">
         {accent && (
           <span
@@ -52,12 +49,12 @@ export function SectionHeader({ title, action, accent }: SectionHeaderProps) {
             style={{ backgroundColor: accent }}
           />
         )}
-        <h2 className="text-[11px] font-bold uppercase tracking-[0.1em] text-white/35">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--c-text-muted)]">
           {title}
         </h2>
       </div>
       {action && (
-        <div className="text-[11px] text-white/30">{action}</div>
+        <div className="text-[11px] text-[var(--c-text-muted)]">{action}</div>
       )}
     </div>
   )
@@ -80,34 +77,34 @@ const ACCENT_STYLES: Record<KpiCardProps['accent'], {
   value: string; badge: string; iconBg: string; ring: string
 }> = {
   emerald: {
-    value:  'text-emerald-400',
-    badge:  'bg-emerald-500/10 text-emerald-400',
-    iconBg: 'bg-emerald-500/10',
-    ring:   'ring-emerald-500/20',
+    value:  'text-[var(--c-primary)]',
+    badge:  'bg-[var(--c-primary-soft)] text-[var(--c-primary)]',
+    iconBg: 'bg-[var(--c-primary-soft)] text-[var(--c-primary)]',
+    ring:   '',
   },
   red: {
-    value:  'text-red-400',
-    badge:  'bg-red-500/10 text-red-400',
-    iconBg: 'bg-red-500/10',
-    ring:   'ring-red-500/20',
+    value:  'text-[#C14554]',
+    badge:  'bg-[rgba(193,69,84,0.10)] text-[#C14554]',
+    iconBg: 'bg-[rgba(193,69,84,0.10)] text-[#C14554]',
+    ring:   '',
   },
   amber: {
-    value:  'text-amber-400',
-    badge:  'bg-amber-500/10 text-amber-400',
-    iconBg: 'bg-amber-500/10',
-    ring:   'ring-amber-500/20',
+    value:  'text-[#B88435]',
+    badge:  'bg-amber-500/10 text-[#B88435]',
+    iconBg: 'bg-amber-500/10 text-[#B88435]',
+    ring:   '',
   },
   blue: {
-    value:  'text-blue-400',
-    badge:  'bg-blue-500/10 text-blue-400',
-    iconBg: 'bg-blue-500/10',
-    ring:   'ring-blue-500/20',
+    value:  'text-[#3F68A7]',
+    badge:  'bg-blue-500/10 text-[#3F68A7]',
+    iconBg: 'bg-blue-500/10 text-[#3F68A7]',
+    ring:   '',
   },
   white: {
-    value:  'text-white/80',
-    badge:  'bg-white/10 text-white/60',
-    iconBg: 'bg-white/5',
-    ring:   'ring-white/10',
+    value:  'text-[var(--c-text)]',
+    badge:  'bg-[var(--c-surface-2)] text-[var(--c-text-muted)]',
+    iconBg: 'bg-[var(--c-surface-2)]',
+    ring:   '',
   },
 }
 
@@ -120,9 +117,9 @@ export function KpiCard({
     return (
       <WidgetShell>
         <div className="animate-pulse space-y-3">
-          <div className="h-3 w-24 rounded bg-white/[0.06]"/>
-          <div className="h-7 w-32 rounded bg-white/[0.08]"/>
-          <div className="h-3 w-16 rounded bg-white/[0.04]"/>
+          <div className="h-3 w-24 rounded bg-[var(--c-primary-soft)]"/>
+          <div className="h-7 w-32 rounded bg-[rgba(13,79,74,0.06)]"/>
+          <div className="h-3 w-16 rounded bg-[rgba(13,79,74,0.04)]"/>
         </div>
       </WidgetShell>
     )
@@ -133,18 +130,18 @@ export function KpiCard({
     : null
 
   return (
-    <WidgetShell className={`ring-1 ${s.ring} hover:ring-2 transition-all duration-200`}>
+    <WidgetShell className="hover:shadow-[var(--shadow-md)] transition-shadow duration-200">
       <div className="flex items-start justify-between gap-3">
         {/* Label + values */}
         <div className="flex-1 min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-white/30 mb-2">
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--c-text-faint)]">
             {label}
           </p>
-          <p className={`text-2xl font-bold tabular-nums leading-none ${s.value}`}>
+          <p className={`text-[1.25rem] font-bold tabular-nums leading-none tracking-[-0.025em] md:text-[1.52rem] ${s.value}`}>
             {value}
           </p>
           {subvalue && (
-            <p className="text-[11px] text-white/25 tabular-nums mt-1">{subvalue}</p>
+            <p className="mt-1 text-[10px] text-[var(--c-text-faint)] tabular-nums">{subvalue}</p>
           )}
           {changeLabel && (
             <div className={`inline-flex items-center gap-1 mt-2 px-1.5 py-0.5 rounded-md text-[10px] font-bold ${s.badge}`}>
@@ -157,7 +154,7 @@ export function KpiCard({
 
         {/* Icon */}
         {icon && (
-          <div className={`flex-shrink-0 w-9 h-9 rounded-xl ${s.iconBg}
+          <div className={`flex-shrink-0 w-9 h-9 rounded-[11px] ${s.iconBg}
             flex items-center justify-center`}>
             {icon}
           </div>
@@ -184,7 +181,7 @@ function TrendArrow({ direction }: { direction: 'up' | 'down' }) {
 // ─── DIVIDER ROW ─────────────────────────────────────────────────────────────
 
 export function WidgetDivider() {
-  return <div className="h-px bg-white/[0.05] my-4"/>
+  return <div className="h-px my-4 bg-[var(--c-border)]"/>
 }
 
 // ─── MONEY ROW ───────────────────────────────────────────────────────────────
@@ -206,10 +203,10 @@ export function MoneyRow({ label, sublabel, amount, badge, accent, onClick }: Mo
     <Tag
       onClick={onClick}
       className={`
-        w-full flex items-center justify-between gap-3 py-2.5
-        border-b border-white/[0.04] last:border-0
+        w-full flex items-center justify-between gap-3 py-2
+        border-b border-[var(--c-border)] last:border-0
         text-left
-        ${onClick ? 'hover:bg-white/[0.025] -mx-5 px-5 rounded-lg cursor-pointer transition-colors' : ''}
+        ${onClick ? 'hover:bg-[var(--c-surface-2)] -mx-5 px-5 rounded-lg cursor-pointer transition-colors' : ''}
       `}
     >
       <div className="flex-1 min-w-0">
@@ -217,14 +214,14 @@ export function MoneyRow({ label, sublabel, amount, badge, accent, onClick }: Mo
           {accent && (
             <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: accent }}/>
           )}
-          <p className="text-sm text-white/70 font-medium truncate">{label}</p>
+          <p className="text-[12px] text-[var(--c-text)] font-medium truncate">{label}</p>
           {badge}
         </div>
         {sublabel && (
-          <p className="text-[11px] text-white/25 mt-0.5 ml-3.5 truncate">{sublabel}</p>
+          <p className="text-[10px] text-[var(--c-text-faint)] mt-0.5 ml-3.5 truncate">{sublabel}</p>
         )}
       </div>
-      <span className="text-sm font-bold tabular-nums text-white/80 flex-shrink-0">{amount}</span>
+      <span className="text-[12px] font-semibold tabular-nums text-[var(--c-text)] flex-shrink-0">{amount}</span>
     </Tag>
   )
 }
@@ -237,9 +234,9 @@ export function UrgencyBadge({ urgency }: { urgency: UrgencyLevel }) {
   if (!urgency) return null
 
   const styles = {
-    OVERDUE:  'bg-red-500/15 text-red-400',
-    DUE_SOON: 'bg-amber-500/15 text-amber-400',
-    UPCOMING: 'bg-white/5 text-white/35',
+    OVERDUE:  'bg-[rgba(193,69,84,0.14)] text-[#C14554]',
+    DUE_SOON: 'bg-amber-500/12 text-amber-700',
+    UPCOMING: 'bg-[var(--c-primary-soft)] text-[var(--c-primary)]',
   } as const
 
   const labels = {
@@ -269,15 +266,15 @@ interface EmptyWidgetProps {
 
 export function EmptyWidget({ icon, message, hint }: EmptyWidgetProps) {
   return (
-    <div className="flex flex-col items-center justify-center py-8 text-center">
+    <div className="flex min-h-[120px] flex-col items-center justify-center py-5 text-center">
       {icon && (
-        <div className="w-10 h-10 rounded-xl bg-white/[0.04] border border-white/[0.06]
-          flex items-center justify-center mb-3 text-white/15">
+        <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-[0.9rem] border border-[var(--c-border)] bg-[var(--c-surface-2)]
+          flex items-center justify-center mb-3 text-[var(--c-text-faint)]">
           {icon}
         </div>
       )}
-      <p className="text-sm text-white/30 font-medium">{message}</p>
-      {hint && <p className="text-[11px] text-white/15 mt-1">{hint}</p>}
+      <p className="text-[13px] text-[var(--c-text)] font-medium">{message}</p>
+      {hint && <p className="mt-1 text-[10px] text-[var(--c-text-faint)]">{hint}</p>}
     </div>
   )
 }
@@ -291,20 +288,20 @@ interface ProgressBarProps {
   label?:  string
 }
 
-export function ProgressBar({ value, color = '#10b981', height = 4, label }: ProgressBarProps) {
+export function ProgressBar({ value, color = '#0D4F4A', height = 4, label }: ProgressBarProps) {
   const clamped = Math.min(100, Math.max(0, value))
 
   return (
     <div>
       {label && (
-        <div className="flex justify-between text-[10px] text-white/30 mb-1">
+        <div className="flex justify-between text-[10px] text-[var(--c-text-muted)] mb-1">
           <span>{label}</span>
           <span className="tabular-nums">{formatPercent(clamped, { fractionDigits: 0 })}</span>
         </div>
       )}
       <div
-        className="w-full rounded-full bg-white/[0.06] overflow-hidden"
-        style={{ height }}
+        className="w-full rounded-full overflow-hidden"
+        style={{ backgroundColor: 'var(--c-primary-soft)', height }}
       >
         <div
           className="h-full rounded-full transition-all duration-700 ease-out"

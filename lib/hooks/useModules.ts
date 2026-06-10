@@ -10,9 +10,10 @@
 import useSWR                 from 'swr'
 import { useState, useCallback } from 'react'
 import { CacheTTL }           from '@/lib/cache/cache.config'
+import type { CreditListItem } from '@/lib/credits/display-type'
 import type { FormError }     from '@/lib/contracts/ui.contracts'
 import type {
-  Credit,
+  Budget,
   Asset,
   AccountReceivable,
   AccountPayable,
@@ -54,7 +55,7 @@ function buildUrl(base: string, filters: ModuleFilters): string {
 // =============================================================================
 
 export interface UseCreditsReturn {
-  credits:     Credit[]
+  credits:     CreditListItem[]
   isLoading:   boolean
   isEmpty:     boolean
   error:       FormError | null
@@ -70,7 +71,7 @@ export function useCredits(initial: ModuleFilters = {}): UseCreditsReturn {
 
   const url = buildUrl('/api/credits', filters)
 
-  const { data, isLoading, error, mutate } = useSWR<Credit[]>(
+  const { data, isLoading, error, mutate } = useSWR<CreditListItem[]>(
     url, fetcher, {
       revalidateOnFocus:  false,
       dedupingInterval:   CacheTTL.credits * 1000,
@@ -105,6 +106,50 @@ export interface UseAssetsReturn {
   filters:     ModuleFilters
   setFilters:  (f: Partial<ModuleFilters>) => void
   refetch:     () => void
+}
+
+// =============================================================================
+// useBudgets
+// =============================================================================
+
+export interface UseBudgetsReturn {
+  budgets:     Budget[]
+  isLoading:   boolean
+  isEmpty:     boolean
+  error:       FormError | null
+  filters:     ModuleFilters
+  setFilters:  (f: Partial<ModuleFilters>) => void
+  refetch:     () => void
+}
+
+export function useBudgets(initial: ModuleFilters = {}): UseBudgetsReturn {
+  const [filters, setFiltersState] = useState<ModuleFilters>({
+    status: 'ACTIVE', sort: 'created_at', ...initial,
+  })
+
+  const url = buildUrl('/api/budgets', filters)
+
+  const { data, isLoading, error, mutate } = useSWR<Budget[]>(
+    url, fetcher, {
+      revalidateOnFocus: false,
+      dedupingInterval:  CacheTTL.budgets * 1000,
+      keepPreviousData:  true,
+    }
+  )
+
+  const setFilters = useCallback((f: Partial<ModuleFilters>) => {
+    setFiltersState(prev => ({ ...prev, ...f }))
+  }, [])
+
+  return {
+    budgets:    data ?? [],
+    isLoading:  isLoading && !data,
+    isEmpty:    !isLoading && (data ?? []).length === 0,
+    error:      error as FormError | null,
+    filters,
+    setFilters,
+    refetch:    () => mutate(),
+  }
 }
 
 export function useAssets(initial: ModuleFilters = {}): UseAssetsReturn {

@@ -1,14 +1,54 @@
+// =============================================================================
+// components/management/CategoriesManager.tsx
+// PRD v3 — Módulo 10: Administración > Categoría
+//
+// Campos:
+//   - Nombre de Categoría (obligatorio)
+//   - Tipo de Categoría: Ingreso / Egreso (obligatorio)
+//   - Color (catálogo, default si no selecciona)
+//   - Icono (catálogo, permite subir imagen, default si no selecciona)
+//
+// Acciones por registro: Editar, Eliminar (restricción), Desactivar/Activar
+// =============================================================================
+
 'use client'
 
-import Link from 'next/link'
+import Image from 'next/image'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useToast } from '@/lib/toast/toast'
-import { FocusTrap } from '@/components/ui/accessibility'
+import { FormActions, FormField, FormSection, OptionalSection } from '@/components/forms/primitives'
 import { FinancialIcon } from '@/components/ui/FinancialIcon'
+import { FileUpload } from '@/components/ui/FileUpload'
 import { ColorSwatchPicker, IconGridPicker } from '@/components/ui/VisualPickers'
 import { CATEGORY_COLOR_OPTIONS, CATEGORY_ICON_OPTIONS } from '@/lib/constants/visual-options'
+import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
+import { ActionIconButton } from '@/components/ui/ActionIconButton'
+import { AppSelect } from '@/components/ui/AppSelect'
+import { Button } from '@/components/ui/Button'
+import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
+import {
+  ConfirmDialog,
+  DataSearchField,
+  StatusBadge,
+} from '@/components/finance'
+import {
+  CatalogCell,
+  CatalogEmptyState,
+  CatalogIdentity,
+  CatalogRow,
+  CatalogTable,
+} from '@/components/management/catalog'
+import { getApiErrorMessage } from '@/lib/api/error-message'
+import { createClient } from '@/lib/supabase.client'
+import {
+  ATTACHMENT_IMAGE_MIME_TYPES,
+  getAttachmentUrl,
+  uploadAttachment,
+} from '@/lib/utils/file-upload'
 
-type CategoryScope = 'INCOME' | 'EXPENSE' | 'BOTH'
+// ─── TYPES ────────────────────────────────────────────────────────────────────
+
+type CategoryScope = 'INCOME' | 'EXPENSE'
 
 type CategoryItem = {
   id: string
@@ -18,6 +58,7 @@ type CategoryItem = {
   color: string
   sort_order: number
   is_system: boolean
+  is_active?: boolean
   user_id: string | null
   system_key: string | null
 }
@@ -36,42 +77,53 @@ const EMPTY_FORM: CategoryForm = {
   color: '#6b7280',
 }
 
-const SCOPE_LABELS: Record<CategoryScope, string> = {
+const SCOPE_LABELS: Record<string, string> = {
   INCOME: 'Ingreso',
   EXPENSE: 'Egreso',
-  BOTH: 'Ambos',
 }
 
-interface ApiErrorShape {
-  ok: false
-  error: { message?: string }
+const SCOPE_TONES: Record<string, 'success' | 'danger'> = {
+  INCOME: 'success',
+  EXPENSE: 'danger',
 }
 
-function getApiErrorMessage(payload: unknown, fallback: string): string {
-  if (
-    typeof payload === 'object' &&
-    payload !== null &&
-    'ok' in payload &&
-    (payload as ApiErrorShape).ok === false &&
-    (payload as ApiErrorShape).error?.message
-  ) {
-    return (payload as ApiErrorShape).error.message ?? fallback
-  }
-  return fallback
+const CATEGORY_SCOPE_OPTIONS: Array<{ value: CategoryScope; label: string; detail: string }> = [
+  { value: 'INCOME', label: 'Ingresos', detail: 'Disponible solo para entradas.' },
+  { value: 'EXPENSE', label: 'Egresos', detail: 'Disponible solo para salidas.' },
+]
+
+function isUploadedIcon(value: string): boolean {
+  return value.includes('/')
 }
+
+function normalizeCategoryScope(scope: string): CategoryScope {
+  return scope === 'INCOME' ? 'INCOME' : 'EXPENSE'
+}
+
+function isProtectedCategory(category: CategoryItem): boolean {
+  return category.is_system || category.user_id === null
+}
+
+// ─── COMPONENT ────────────────────────────────────────────────────────────────
 
 export function CategoriesManager() {
+  const supabase = useMemo(() => createClient(), [])
   const { toast } = useToast()
   const [categories, setCategories] = useState<CategoryItem[]>([])
+  const [iconSignedUrls, setIconSignedUrls] = useState<Record<string, string>>({})
+  const [iconFile, setIconFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState<CategoryForm>(EMPTY_FORM)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const [showSystemCategories, setShowSystemCategories] = useState(false)
+  const [scopeFilter, setScopeFilter] = useState<'all' | CategoryScope>('all')
   const [rowActionId, setRowActionId] = useState<string | null>(null)
-  const [pendingDeleteCategory, setPendingDeleteCategory] = useState<CategoryItem | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<CategoryItem | null>(null)
+
+  // ─── DATA LOADING ─────────────────────────────────────────────────────────
 
   const loadCategories = useCallback(async () => {
     setLoading(true)
@@ -82,7 +134,19 @@ export function CategoriesManager() {
       if (!res.ok || !json.ok) {
         throw new Error(getApiErrorMessage(json, 'No se pudieron cargar las categorías'))
       }
-      setCategories(json.data as CategoryItem[])
+      const loaded = ((json.data as CategoryItem[]) ?? []).map(category => ({
+        ...category,
+        scope: normalizeCategoryScope(category.scope),
+      }))
+      setCategories(loaded)
+      const icons = await Promise.all(
+        loaded.map(async category => {
+          if (!isUploadedIcon(category.icon)) return [category.id, ''] as const
+          const signed = await getAttachmentUrl(category.icon, 3600)
+          return [category.id, signed ?? ''] as const
+        })
+      )
+      setIconSignedUrls(Object.fromEntries(icons.filter(([, value]) => value.length > 0)))
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No se pudieron cargar las categorías')
     } finally {
@@ -94,39 +158,61 @@ export function CategoriesManager() {
     void loadCategories()
   }, [loadCategories])
 
-  const resetForm = useCallback(() => {
-    setEditingId(null)
-    setForm(EMPTY_FORM)
-  }, [])
+  // ─── COMPUTED ─────────────────────────────────────────────────────────────
 
-  const userCategories = useMemo(
-    () => categories.filter(category => !category.is_system),
-    [categories]
-  )
-  const visibleCategories = useMemo(
-    () => showSystemCategories ? categories : userCategories,
-    [categories, showSystemCategories, userCategories]
-  )
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return visibleCategories
-    return visibleCategories.filter(category =>
-      category.name.toLowerCase().includes(q) ||
-      category.scope.toLowerCase().includes(q)
-    )
-  }, [query, visibleCategories])
+  const userCategories = useMemo(() => categories.filter(category => !isProtectedCategory(category)), [categories])
   const systemCount = categories.length - userCategories.length
   const incomeCount = useMemo(
-    () => userCategories.filter(category => category.scope === 'INCOME' || category.scope === 'BOTH').length,
+    () => userCategories.filter(c => c.scope === 'INCOME').length,
     [userCategories]
   )
   const expenseCount = useMemo(
-    () => userCategories.filter(category => category.scope === 'EXPENSE' || category.scope === 'BOTH').length,
+    () => userCategories.filter(c => c.scope === 'EXPENSE').length,
     [userCategories]
   )
 
-  const handleSubmit = useCallback(async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return categories.filter(category => {
+      if (scopeFilter !== 'all' && category.scope !== scopeFilter) return false
+      if (!q) return true
+      return category.name.toLowerCase().includes(q)
+    })
+  }, [categories, query, scopeFilter])
+
+  // ─── MODAL & FORM ─────────────────────────────────────────────────────────
+
+  const resetForm = useCallback(() => {
+    setForm(EMPTY_FORM)
+    setEditingId(null)
+    setIconFile(null)
+  }, [])
+
+  const openCreateModal = useCallback(() => {
+    resetForm()
+    setModalOpen(true)
+  }, [resetForm])
+
+  const closeModal = useCallback(() => {
+    if (saving) return
+    setModalOpen(false)
+    resetForm()
+  }, [resetForm, saving])
+
+  const startEdit = useCallback((category: CategoryItem) => {
+    if (isProtectedCategory(category)) return
+    setEditingId(category.id)
+    setForm({
+      name: category.name,
+      scope: category.scope,
+      icon: category.icon,
+      color: category.color,
+    })
+    setModalOpen(true)
+  }, [])
+
+  const handleSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
     const trimmedName = form.name.trim()
     if (trimmedName.length < 2) {
       const msg = 'El nombre debe tener al menos 2 caracteres.'
@@ -146,6 +232,13 @@ export function CategoriesManager() {
     }
 
     try {
+      if (iconFile) {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) throw new Error('No se pudo autenticar al usuario para subir el icono.')
+        const upload = await uploadAttachment(user.id, 'categories', editingId ?? crypto.randomUUID(), iconFile)
+        payload.icon = upload.path
+      }
+
       const endpoint = editingId ? `/api/categories/${editingId}` : '/api/categories'
       const method = editingId ? 'PATCH' : 'POST'
       const res = await fetch(endpoint, {
@@ -157,9 +250,14 @@ export function CategoriesManager() {
       if (!res.ok || !json.ok) {
         throw new Error(getApiErrorMessage(json, 'No se pudo guardar la categoría'))
       }
-      resetForm()
+
       await loadCategories()
-      toast.success(editingId ? 'Categoría actualizada' : 'Categoría creada')
+      closeModal()
+      toast.success(
+        editingId ? 'Categoría actualizada' : 'Categoría creada',
+        `${payload.name} disponible para transacciones.`,
+        { persist: false },
+      )
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'No se pudo guardar la categoría'
       setError(message)
@@ -167,32 +265,12 @@ export function CategoriesManager() {
     } finally {
       setSaving(false)
     }
-  }, [editingId, form, loadCategories, resetForm, toast])
+  }, [closeModal, editingId, form, iconFile, loadCategories, supabase, toast])
 
-  const startEdit = useCallback((category: CategoryItem) => {
-    if (category.is_system) return
-    setEditingId(category.id)
-    setForm({
-      name: category.name,
-      scope: category.scope,
-      icon: category.icon,
-      color: category.color,
-    })
-  }, [])
-
-  const openDeleteCategoryModal = useCallback((category: CategoryItem) => {
-    if (category.is_system) return
-    if (saving || loading || rowActionId !== null) return
-    setPendingDeleteCategory(category)
-  }, [loading, rowActionId, saving])
-
-  const closeDeleteCategoryModal = useCallback(() => {
-    if (rowActionId !== null) return
-    setPendingDeleteCategory(null)
-  }, [rowActionId])
+  // ─── ROW ACTIONS ──────────────────────────────────────────────────────────
 
   const removeCategory = useCallback(async (category: CategoryItem) => {
-    if (category.is_system) return
+    if (isProtectedCategory(category) || rowActionId || saving || loading) return
     setRowActionId(category.id)
     setError(null)
     try {
@@ -202,8 +280,8 @@ export function CategoriesManager() {
         throw new Error(getApiErrorMessage(json, 'No se pudo eliminar la categoría'))
       }
       await loadCategories()
-      toast.success('Categoría eliminada')
-      setPendingDeleteCategory(null)
+      setPendingDelete(null)
+      toast.success('Categoría eliminada', undefined, { persist: false })
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'No se pudo eliminar la categoría'
       setError(message)
@@ -211,323 +289,317 @@ export function CategoriesManager() {
     } finally {
       setRowActionId(null)
     }
-  }, [loadCategories, toast])
+  }, [loadCategories, loading, rowActionId, saving, toast])
 
-  const buildTransactionHref = useCallback((category: CategoryItem) => {
-    const params = new URLSearchParams({ category_id: category.id })
-    if (category.scope === 'INCOME' || category.scope === 'EXPENSE') {
-      params.set('type', category.scope)
-    }
-    return `/transactions/new?${params.toString()}`
-  }, [])
+  // ─── RENDER ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-[10px] uppercase tracking-[0.09em] text-[var(--color-text-muted)]">Resumen de categorías</p>
-            <p className="text-sm text-[var(--color-text)] mt-1">
-              {incomeCount} para ingreso · {expenseCount} para egreso · {userCategories.length} personalizadas
-              {systemCount > 0 ? ` · ${systemCount} sugeridas del sistema` : ''}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link
-              href="/transactions/new"
-              className="inline-flex items-center rounded-lg bg-emerald-500 px-3 py-1.5 text-[11px] font-bold text-[var(--color-on-accent)] hover:bg-emerald-400 transition-colors"
-            >
-              + Nueva transacción
-            </Link>
-            <Link
-              href="/portfolio"
-              className="inline-flex items-center rounded-lg border border-[color:var(--color-border)] px-3 py-1.5 text-[11px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[color:var(--color-border-hover)] transition-colors"
-            >
-              Ir a Portafolio
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-sm font-bold text-[var(--color-text)]">
-              {editingId ? 'Editar categoría' : 'Nueva categoría'}
-            </h2>
-            <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
-              Crea y administra categorías de ingreso y egreso para usarlas en transacciones.
-            </p>
-          </div>
-          {editingId && (
-            <button
-              type="button"
-              onClick={resetForm}
-              className="text-[12px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
-            >
-              Cancelar edición
-            </button>
-          )}
-        </div>
-
-        <form
-          onSubmit={handleSubmit}
-          data-testid="categories-form"
-          className="grid grid-cols-1 md:grid-cols-2 gap-3"
-        >
-          <label className="space-y-1.5 md:col-span-2">
-            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Nombre *</span>
-            <input
-              value={form.name}
-              onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
-              required
-              data-testid="categories-name-input"
-              className="field-base"
-              placeholder="Ej. Alimentación"
-            />
-          </label>
-
-          <label className="space-y-1.5">
-            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Tipo</span>
-            <select
-              value={form.scope}
-              onChange={e => setForm(prev => ({ ...prev, scope: e.target.value as CategoryScope }))}
-              data-testid="categories-scope-select"
-              className="field-base"
-            >
-              <option value="INCOME">Ingreso</option>
-              <option value="EXPENSE">Egreso</option>
-              <option value="BOTH">Ambos</option>
-            </select>
-          </label>
-
-          <div className="space-y-1.5">
-            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Icono</span>
-            <IconGridPicker
-              value={form.icon}
-              onChange={icon => setForm(prev => ({ ...prev, icon }))}
-              options={CATEGORY_ICON_OPTIONS}
-              wrapperTestId="categories-icon-input"
-              optionTestIdPrefix="categories-icon-option"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Color</span>
-            <ColorSwatchPicker
-              value={form.color}
-              onChange={color => setForm(prev => ({ ...prev, color }))}
-              palette={CATEGORY_COLOR_OPTIONS}
-              wrapperTestId="categories-color-options"
-              swatchTestIdPrefix="categories-color"
-              customInputTestId="categories-color-input"
-            />
-          </div>
-
-          {error && (
-            <p className="md:col-span-2 text-[12px] text-red-400">{error}</p>
-          )}
-
-          <div className="md:col-span-2 flex gap-2">
-            <button
-              type="submit"
-              disabled={saving}
-              data-testid="categories-submit-button"
-              className="btn-primary"
-            >
-              {saving ? 'Guardando...' : (editingId ? 'Guardar cambios' : 'Crear categoría')}
-            </button>
-            <button
-              type="button"
-              onClick={loadCategories}
-              disabled={loading || saving}
-              data-testid="categories-reload-button"
-              className="btn-secondary disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              Recargar
-            </button>
-          </div>
-        </form>
-      </section>
-
-      <section className="rounded-2xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-6">
-        <div className="flex flex-wrap items-center justify-between mb-4 gap-3">
-          <h2 className="text-sm font-bold text-[var(--color-text)]">
-            {showSystemCategories
-              ? `Categorías (${userCategories.length} propias / ${categories.length} total)`
-              : `Categorías propias (${userCategories.length})`}
-          </h2>
-          <div className="flex flex-wrap items-center gap-2">
-            {systemCount > 0 && (
-              <label className="inline-flex items-center gap-1.5 rounded-lg border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-[11px] text-[var(--color-text-muted)]">
-                <input
-                  type="checkbox"
-                  checked={showSystemCategories}
-                  onChange={e => setShowSystemCategories(e.target.checked)}
-                  data-testid="categories-show-system-toggle"
-                />
-                Mostrar sugeridas del sistema
-              </label>
-            )}
-            <input
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Buscar categoría..."
-              className="field-base max-w-[220px]"
-            />
-          </div>
-        </div>
-
-        {error && (
-          <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2">
-            <p className="text-[12px] text-red-200/90">{error}</p>
-            <button
-              type="button"
-              onClick={loadCategories}
-              className="rounded-md border border-red-300/35 px-2 py-1 text-[10px] font-semibold text-red-100/90 hover:bg-red-500/20 transition-colors"
-            >
-              Reintentar
-            </button>
-          </div>
+    <div className="space-y-5">
+      <CatalogTable
+        title="Catálogo de categorías"
+        description="Estructura de clasificación para ingresos, egresos y lectura financiera transversal."
+        count={filtered.length}
+        summary={(
+          <>
+            <StatusBadge tone="success">{incomeCount} para ingreso</StatusBadge>
+            <StatusBadge tone="danger">{expenseCount} para egreso</StatusBadge>
+            <StatusBadge tone="info">{userCategories.length} personalizadas</StatusBadge>
+            {systemCount > 0 ? <StatusBadge tone="muted">{systemCount} del sistema</StatusBadge> : null}
+          </>
         )}
-
-        {loading ? (
-          <p className="text-sm text-[var(--color-text-muted)]">Cargando categorías...</p>
-        ) : filtered.length === 0 ? (
-          <div className="space-y-2">
-            <p className="text-sm text-[var(--color-text-muted)]">
-              {query.trim()
-                ? 'No hay categorías que coincidan con la búsqueda.'
-                : showSystemCategories
-                  ? 'No hay categorías disponibles.'
-                  : 'Aún no tienes categorías personalizadas.'}
-            </p>
-            {!query.trim() && !showSystemCategories && systemCount > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowSystemCategories(true)}
-                className="text-[12px] text-emerald-400/80 hover:text-emerald-300 transition-colors"
-              >
-                Ver categorías sugeridas del sistema
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {filtered.map(category => (
+        primaryAction={(
+          <CreateModuleButton onClick={openCreateModal} label="Nueva categoría" />
+        )}
+        search={(
+          <DataSearchField
+            value={query}
+            onChange={setQuery}
+            placeholder="Buscar categoría"
+            className="filters-search"
+          />
+        )}
+        filters={(
+          <AppSelect
+            value={scopeFilter}
+            onChange={value => setScopeFilter(value as 'all' | CategoryScope)}
+            className="filters-control sm:w-[168px]"
+            compact
+            searchable={false}
+            options={[
+              { value: 'all', label: 'Todos los alcances' },
+              { value: 'INCOME', label: 'Ingreso' },
+              { value: 'EXPENSE', label: 'Egreso' },
+            ]}
+          />
+        )}
+        error={error}
+        onRetry={() => {
+          void loadCategories()
+        }}
+        loading={loading}
+        empty={filtered.length === 0}
+        loadingState={(
+          <div className="divide-y divide-[var(--c-border)]">
+            {[...Array(4)].map((_, index) => (
               <div
-                key={category.id}
-                data-testid={`categories-row-${category.id}`}
-                className={`rounded-xl border px-4 py-3 ${
-                  category.is_system
-                    ? 'border-[color:var(--color-border)] bg-[var(--color-surface)]'
-                    : 'border-[color:var(--color-border-hover)] bg-[var(--color-surface-2)]'
-                }`}
+                key={index}
+                className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1.7fr)_160px_170px_auto] md:items-center"
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-[var(--color-text)] truncate">
-                      <span className="inline-flex items-center gap-2">
-                        <FinancialIcon name={category.icon} size={13}/>
-                        {category.name}
-                      </span>
-                    </p>
-                    <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
-                      {SCOPE_LABELS[category.scope]}
-                    </p>
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 animate-pulse rounded-lg bg-[var(--c-surface-2)]" />
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="h-4 w-40 animate-pulse rounded bg-[var(--c-surface-2)]" />
+                    <div className="h-3 w-20 animate-pulse rounded bg-[var(--c-surface-2)]" />
                   </div>
-                  <div className="flex items-center gap-2">
-                    {category.is_system ? (
-                      <>
-                        <Link
-                          href={buildTransactionHref(category)}
-                          className="text-[12px] text-emerald-400/75 hover:text-emerald-300 transition-colors"
-                        >
-                          Usar
-                        </Link>
-                        <span className="text-[11px] text-[var(--color-text-muted)] px-2 py-0.5 rounded-full bg-[var(--color-surface-2)]">
-                          Sistema
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <Link
-                          href={buildTransactionHref(category)}
-                          className="text-[12px] text-emerald-400/75 hover:text-emerald-300 transition-colors"
-                        >
-                          Usar
-                        </Link>
-                        <button
-                          onClick={() => startEdit(category)}
-                          disabled={saving || loading || rowActionId !== null}
-                          data-testid={`categories-edit-${category.id}`}
-                          className="text-[12px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
-                        >
-                          Editar
-                        </button>
-                        <button
-                          onClick={() => openDeleteCategoryModal(category)}
-                          disabled={saving || loading || rowActionId !== null}
-                          data-testid={`categories-delete-${category.id}`}
-                          className="text-[12px] text-red-400/70 hover:text-red-400 transition-colors"
-                        >
-                          {rowActionId === category.id ? 'Procesando…' : 'Eliminar'}
-                        </button>
-                      </>
-                    )}
-                  </div>
+                </div>
+                <div className="h-7 w-24 animate-pulse rounded-md bg-[var(--c-surface-2)]" />
+                <div className="h-7 w-24 animate-pulse rounded-md bg-[var(--c-surface-2)]" />
+                <div className="flex gap-2 md:justify-end">
+                  <div className="h-8 w-8 animate-pulse rounded-lg bg-[var(--c-surface-2)]" />
+                  <div className="h-8 w-8 animate-pulse rounded-lg bg-[var(--c-surface-2)]" />
                 </div>
               </div>
             ))}
           </div>
         )}
-      </section>
+        emptyState={(
+          <CatalogEmptyState
+            title="No hay categorías con este criterio."
+            description={query.trim().length > 0
+              ? 'Prueba otra búsqueda o cambia el alcance para revisar el catálogo completo.'
+              : 'Crea una categoría nueva para afinar el orden financiero de tus movimientos.'}
+            action={(
+              <Button type="button" onClick={openCreateModal} variant="secondary" size="md">
+                Nueva categoría
+              </Button>
+            )}
+          />
+        )}
+        columns={[
+          { label: 'Categoría' },
+          { label: 'Alcance' },
+          { label: 'Origen' },
+          { label: 'Acciones', align: 'right' },
+        ]}
+        gridClassName="md:grid-cols-[minmax(0,1.7fr)_160px_170px_auto] md:items-center"
+      >
+        {filtered.map(category => (
+          <CatalogRow
+            key={category.id}
+            gridClassName="md:grid-cols-[minmax(0,1.7fr)_160px_170px_auto] md:items-center"
+            accentColor={category.color}
+          >
+            <CatalogCell label="Categoría">
+              <CatalogIdentity
+                icon={(
+                  <span
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--c-border)]"
+                    style={{ backgroundColor: `${category.color}16`, color: category.color }}
+                  >
+                    {iconSignedUrls[category.id] ? (
+                      <Image
+                        src={iconSignedUrls[category.id]!}
+                        alt={category.name}
+                        width={20}
+                        height={20}
+                        unoptimized
+                        className="h-5 w-5 rounded-sm object-cover"
+                      />
+                    ) : (
+                      <FinancialIcon name={category.icon} size={17} />
+                    )}
+                  </span>
+                )}
+                title={category.name}
+              />
+            </CatalogCell>
 
-      {pendingDeleteCategory && (
-        <div
-          className="fixed inset-0 z-[80] flex items-center justify-center bg-[color:var(--color-overlay)] px-4"
-          onClick={closeDeleteCategoryModal}
-          data-testid="categories-delete-modal"
-        >
-          <FocusTrap active={Boolean(pendingDeleteCategory)} onEscape={closeDeleteCategoryModal}>
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="categories-delete-title"
-              onClick={event => event.stopPropagation()}
-              className="w-full max-w-md rounded-2xl border border-[color:var(--color-border)] bg-[var(--color-modal-bg)] p-5 shadow-2xl shadow-[color:var(--color-shadow)]"
-            >
-              <h3 id="categories-delete-title" className="text-sm font-bold text-[var(--color-text)]">
-                Eliminar categoría
-              </h3>
-              <p className="mt-1 text-[12px] text-[var(--color-text-muted)]">
-                ¿Eliminar la categoría <span className="font-semibold text-[var(--color-text)]">{pendingDeleteCategory.name}</span>?
-              </p>
+            <CatalogCell label="Alcance">
+              <StatusBadge tone={SCOPE_TONES[category.scope] ?? 'muted'}>
+                {SCOPE_LABELS[category.scope] ?? category.scope}
+              </StatusBadge>
+            </CatalogCell>
 
-              <div className="mt-4 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={closeDeleteCategoryModal}
-                  disabled={rowActionId !== null}
-                  data-testid="categories-delete-cancel-button"
-                  className="rounded-lg border border-[color:var(--color-border)] px-3 py-1.5 text-[12px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[color:var(--color-border-hover)] transition-colors disabled:opacity-50"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void removeCategory(pendingDeleteCategory)}
-                  disabled={rowActionId !== null}
-                  data-testid="categories-delete-confirm-button"
-                  className="rounded-lg border border-red-400/40 bg-red-500/20 px-3 py-1.5 text-[12px] font-bold text-red-200 hover:bg-red-500/30 transition-colors disabled:opacity-50"
-                >
-                  {rowActionId === pendingDeleteCategory.id ? 'Eliminando...' : 'Eliminar'}
-                </button>
-              </div>
+            <CatalogCell label="Origen">
+              <StatusBadge tone={category.is_system ? 'muted' : 'info'}>
+                {category.is_system ? 'Sistema' : 'Personalizada'}
+              </StatusBadge>
+            </CatalogCell>
+
+            <CatalogCell label="Acciones" align="right">
+              {!isProtectedCategory(category) ? (
+                <div className="flex items-center gap-1.5 md:justify-end">
+                  <ActionIconButton
+                    onClick={() => startEdit(category)}
+                    disabled={Boolean(rowActionId)}
+                    icon="edit"
+                    label="Editar categoría"
+                  />
+                  <ActionIconButton
+                    onClick={() => setPendingDelete(category)}
+                    disabled={Boolean(rowActionId)}
+                    icon="delete"
+                    label="Eliminar categoría"
+                    variant="danger"
+                  />
+                </div>
+              ) : (
+                <div className="md:text-right">
+                  <StatusBadge tone="muted">Protegida</StatusBadge>
+                </div>
+              )}
+            </CatalogCell>
+          </CatalogRow>
+        ))}
+      </CatalogTable>
+
+      {/* Create/Edit Modal */}
+      <RecordModal
+        open={modalOpen}
+        onClose={closeModal}
+        eyebrow="Administración"
+        title={editingId ? 'Editar categoría' : 'Nueva categoría'}
+        subtitle="Las categorías organizan tus transacciones de ingreso y egreso."
+        widthClassName="w-[calc(100vw-32px)] max-w-[520px]"
+      >
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          {error ? (
+            <div className="rounded-[var(--ft-form-radius)] border border-[color:var(--ft-form-error)]/20 bg-[var(--ft-danger-soft)] px-3.5 py-3">
+              <p className="text-[12px] font-medium text-[var(--ft-form-error)]">{error}</p>
             </div>
-          </FocusTrap>
-        </div>
-      )}
+          ) : null}
+
+          <FormSection
+            title="Datos base"
+            description="Primero define el nombre y dónde estará disponible la categoría dentro de tu flujo financiero."
+            columns="1"
+            className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
+          >
+            <FormField label="Nombre">
+              <input
+                value={form.name}
+                onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
+                className="field-base ft-form-input w-full"
+                placeholder="Ej: Publicidad"
+                required
+              />
+            </FormField>
+
+            <FormField
+              label="Uso"
+              description="Define si la categoría aplica a ingresos o egresos para mantener el registro consistente con el PRD."
+            >
+              <div
+                role="radiogroup"
+                aria-label="Uso de la categoría"
+                className="grid gap-2 sm:grid-cols-3"
+              >
+                {CATEGORY_SCOPE_OPTIONS.map(option => {
+                  const active = form.scope === option.value
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setForm(prev => ({ ...prev, scope: option.value }))}
+                      className={[
+                        'ui-pressable rounded-[var(--ft-form-radius)] border px-3.5 py-3 text-left transition-[border-color,background-color,color,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]',
+                        active
+                          ? 'border-[var(--c-primary)] bg-[var(--c-primary-soft)] text-[var(--c-text)]'
+                          : 'border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] text-[var(--c-text-muted)] hover:border-[var(--c-border-hover)] hover:bg-[var(--c-surface-2)] hover:text-[var(--c-text)]',
+                      ].join(' ')}
+                    >
+                      <span className="block text-[13px] font-semibold tracking-[-0.01em]">
+                        {option.label}
+                      </span>
+                      <span className="mt-1 block text-[11px] leading-[1.4] text-current/75">
+                        {option.detail}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </FormField>
+          </FormSection>
+
+          <OptionalSection
+            title="Más opciones"
+            summary={[
+              'Color',
+              'Icono',
+              editingId && isUploadedIcon(form.icon) ? 'Icono personalizado' : '',
+            ]}
+          >
+            <div className="space-y-4">
+              <FormField label="Color" optional>
+                <ColorSwatchPicker
+                  value={form.color}
+                  onChange={color => setForm(prev => ({ ...prev, color }))}
+                  palette={CATEGORY_COLOR_OPTIONS}
+                  wrapperTestId="categories-color-options"
+                  swatchTestIdPrefix="categories-color"
+                  customInputTestId="categories-color-input"
+                />
+              </FormField>
+
+              <FormField label="Icono" optional>
+                <IconGridPicker
+                  value={form.icon}
+                  onChange={icon => setForm(prev => ({ ...prev, icon }))}
+                  options={CATEGORY_ICON_OPTIONS}
+                  wrapperTestId="categories-icon-options"
+                  optionTestIdPrefix="categories-icon"
+                />
+              </FormField>
+
+              <FileUpload
+                value={iconFile}
+                existingUrl={editingId && isUploadedIcon(form.icon) ? (iconSignedUrls[editingId] ?? null) : null}
+                onChange={setIconFile}
+                onRemoveExisting={() => setForm(prev => ({ ...prev, icon: 'tag' }))}
+                label="Icono personalizado (opcional)"
+                allowedMimeTypes={ATTACHMENT_IMAGE_MIME_TYPES}
+                accept=".jpg,.jpeg,.png,.webp,.gif"
+                acceptedTypesDescription="JPG, PNG, WEBP o GIF — Máx 10MB"
+              />
+            </div>
+          </OptionalSection>
+
+          <RecordModalFooter>
+            <FormActions
+              secondaryAction={(
+                <Button type="button" variant="secondary" size="lg" onClick={closeModal} disabled={saving}>
+                  Cancelar
+                </Button>
+              )}
+              primaryAction={(
+                <Button type="submit" variant="primary" size="lg" loading={saving}>
+                  {editingId ? 'Guardar cambios' : 'Crear categoría'}
+                </Button>
+              )}
+            />
+          </RecordModalFooter>
+        </form>
+      </RecordModal>
+
+      <ConfirmDialog
+        open={Boolean(pendingDelete)}
+        title="Eliminar categoría"
+        message={pendingDelete ? (
+          <>
+            Se eliminará <span className="font-semibold text-[var(--c-text)]">{pendingDelete.name}</span>.
+            {' '}Si tiene transacciones relacionadas, la operación será bloqueada.
+          </>
+        ) : ''}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          if (pendingDelete) void removeCategory(pendingDelete)
+        }}
+        loading={Boolean(rowActionId && pendingDelete && rowActionId === pendingDelete.id)}
+        danger
+        confirmLabel="Eliminar"
+      />
     </div>
   )
 }

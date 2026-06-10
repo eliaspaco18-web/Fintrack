@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunk_N_E=self.webpackChunk_N_E||[]).push([[5325],{35325:function(e,n,t){t.d(n,{createClient:function(){return s}});var l=t(4033);let r=null;function s(){return r||(r=(0,l.createBrowserClient)("https://yahocagtrxvevqhhlkln.supabase.co","sb_publishable_nxnr2DPKy2_DxjHQAn2Gyg_l81Qaspk"))}}}]);

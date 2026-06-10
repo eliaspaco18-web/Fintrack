@@ -135,8 +135,7 @@ export function ReceivablesTable() {
       <Toolbar>
         <FilterPill label="Pendientes" active={activeStatus === 'PENDING'}  onClick={() => setActiveStatus('PENDING')} color="#06b6d4"/>
         <FilterPill label="Todos"      active={activeStatus === ''}         onClick={() => setActiveStatus('')}/>
-        <FilterPill label="Cobrados"   active={activeStatus === 'COLLECTED'} onClick={() => setActiveStatus('COLLECTED')} color="#10b981"/>
-        <div className="flex-1"/>
+        <FilterPill label="Cobrados"   active={activeStatus === 'COLLECTED'} onClick={() => setActiveStatus('COLLECTED')} color="var(--c-primary)"/>
         {totalPending > 0 && (
           <span className="text-[11px] text-white/25 tabular-nums hidden sm:inline">
             Por cobrar: <strong className="text-cyan-400">
@@ -144,7 +143,7 @@ export function ReceivablesTable() {
             </strong>
           </span>
         )}
-        <SearchInput value={search} onChange={setSearch} placeholder="Buscar deudor…"/>
+        <SearchInput value={search} onChange={setSearch} placeholder="Buscar deudor…" className="filters-search xl:ml-auto"/>
       </Toolbar>
 
       <div className="overflow-x-auto">
@@ -171,7 +170,8 @@ export function ReceivablesTable() {
                 description="Registra un ingreso de tipo 'Cuenta por cobrar' para verlas aquí."
                 action={
                   <Link
-                    href="/transactions/new?type=INCOME&module=receivable"
+                    href="/transactions?new=transaction&type=INCOME&module=receivable"
+                    prefetch
                     className="btn-primary text-xs px-4 py-2"
                   >
                     Registrar por cobrar
@@ -179,7 +179,7 @@ export function ReceivablesTable() {
                 }
               />
             ) : (
-              filtered.map(rec => {
+              filtered.map((rec, index) => {
                 const pending    = rec.amount - rec.collected_amount
                 const pendingPen = toPenAmount(pending, rec.currency, exchangeRate)
                 const amountPen  = toPenAmount(rec.amount, rec.currency, exchangeRate)
@@ -189,7 +189,8 @@ export function ReceivablesTable() {
                 return (
                   <tr
                     key={rec.id}
-                    className={`group/row hover:bg-white/[0.02] transition-colors ${
+                    style={{ animationDelay: `${index * 16}ms` }}
+                    className={`list-reveal-item group/row hover:bg-white/[0.02] transition-colors ${
                       isOverdue ? 'bg-red-500/[0.03]' : ''
                     }`}
                   >
@@ -294,8 +295,7 @@ export function PayablesTable() {
       <Toolbar>
         <FilterPill label="Pendientes" active={activeStatus === 'PENDING'}  onClick={() => setActiveStatus('PENDING')} color="#f97316"/>
         <FilterPill label="Todos"      active={activeStatus === ''}         onClick={() => setActiveStatus('')}/>
-        <FilterPill label="Pagados"    active={activeStatus === 'PAID'}     onClick={() => setActiveStatus('PAID')}    color="#10b981"/>
-        <div className="flex-1"/>
+        <FilterPill label="Pagados"    active={activeStatus === 'PAID'}     onClick={() => setActiveStatus('PAID')}    color="var(--c-primary)"/>
         {totalPending > 0 && (
           <span className="text-[11px] text-white/25 tabular-nums hidden sm:inline">
             Por pagar: <strong className="text-orange-400">
@@ -303,7 +303,7 @@ export function PayablesTable() {
             </strong>
           </span>
         )}
-        <SearchInput value={search} onChange={setSearch} placeholder="Buscar acreedor…"/>
+        <SearchInput value={search} onChange={setSearch} placeholder="Buscar acreedor…" className="filters-search xl:ml-auto"/>
       </Toolbar>
 
       <div className="overflow-x-auto">
@@ -330,7 +330,8 @@ export function PayablesTable() {
                 description="Registra un egreso de tipo 'Cuenta por pagar' para verlas aquí."
                 action={
                   <Link
-                    href="/transactions/new?type=EXPENSE&module=payable"
+                    href="/transactions?new=transaction&type=EXPENSE&module=payable"
+                    prefetch
                     className="btn-primary text-xs px-4 py-2"
                   >
                     Registrar por pagar
@@ -338,7 +339,7 @@ export function PayablesTable() {
                 }
               />
             ) : (
-              filtered.map(pay => {
+              filtered.map((pay, index) => {
                 const pending    = pay.amount - pay.paid_amount
                 const pendingPen = toPenAmount(pending, pay.currency, exchangeRate)
                 const amountPen  = toPenAmount(pay.amount, pay.currency, exchangeRate)
@@ -348,7 +349,8 @@ export function PayablesTable() {
                 return (
                   <tr
                     key={pay.id}
-                    className={`group/row hover:bg-white/[0.02] transition-colors ${
+                    style={{ animationDelay: `${index * 16}ms` }}
+                    className={`list-reveal-item group/row hover:bg-white/[0.02] transition-colors ${
                       isOverdue ? 'bg-red-500/[0.03]' : ''
                     }`}
                   >

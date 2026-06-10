@@ -47,6 +47,15 @@ const NAV_ICON_PATHS: Record<NavIconKey, React.ReactNode> = {
       <path d="M14.5 14.5h3.8"/>
     </>
   ),
+  budgets: (
+    <>
+      <path d="M4 6.5h16v11a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-11Z"/>
+      <path d="M4 10.5h16"/>
+      <path d="M8 3.5v3"/>
+      <path d="M16 3.5v3"/>
+      <path d="M8.8 14.8h6.4"/>
+    </>
+  ),
   assets: (
     <>
       <path d="m12 3 8.5 4.8v8.4L12 21l-8.5-4.8V7.8L12 3Z"/>
@@ -73,6 +82,14 @@ const NAV_ICON_PATHS: Record<NavIconKey, React.ReactNode> = {
       <path d="M18.5 9.3a6.5 6.5 0 1 0-13 0c0 2.8-.9 4.8-2.2 6.1h17.4c-1.3-1.3-2.2-3.3-2.2-6.1Z"/>
       <path d="M9.6 19a2.4 2.4 0 0 0 4.8 0"/>
       <path d="M12 3V2"/>
+    </>
+  ),
+  recurring: (
+    <>
+      <path d="M17 2l4 4-4 4"/>
+      <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+      <path d="M7 22l-4-4 4-4"/>
+      <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
     </>
   ),
   admin: (

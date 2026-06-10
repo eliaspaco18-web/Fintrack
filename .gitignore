@@ -34,3 +34,6 @@ next-env.d.ts
 
 # Vercel
 .vercel
+
+# Local release tooling
+.tools/

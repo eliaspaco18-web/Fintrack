@@ -58,9 +58,9 @@ function AlertRow({
   formatted: string
 }) {
   const typeColor = {
-    installment: '#f59e0b',
-    receivable:  '#06b6d4',
-    payable:     '#f97316',
+    installment: 'var(--c-primary)',
+    receivable:  'var(--c-accent)',
+    payable:     '#C14554',
   }[item.type]
 
   const typeLabel = {
@@ -73,8 +73,8 @@ function AlertRow({
     <Link
       href={item.href}
       className="flex items-center gap-3 py-3
-        border-b border-white/[0.04] last:border-0
-        hover:bg-white/[0.02] -mx-5 px-5 transition-colors"
+        border-b border-[var(--c-border)] last:border-0
+        hover:bg-[var(--c-primary-soft)] -mx-5 px-5 rounded-lg transition-colors"
     >
       {/* Dot tipo */}
       <div
@@ -84,7 +84,7 @@ function AlertRow({
 
       {/* Info */}
       <div className="flex-1 min-w-0">
-        <p className="text-[12px] text-white/70 font-medium truncate leading-tight">
+        <p className="text-[12px] text-[var(--color-text)] font-medium truncate leading-tight">
           {item.label}
         </p>
         <div className="flex items-center gap-2 mt-0.5">
@@ -95,7 +95,7 @@ function AlertRow({
             {typeLabel}
           </span>
           {item.dueDate && (
-            <span className="text-[10px] text-white/25">
+            <span className="text-[10px] text-[var(--color-text-faint)]">
               {new Date(item.dueDate + 'T12:00:00').toLocaleDateString('es-PE', {
                 day: 'numeric', month: 'short'
               })}
@@ -105,7 +105,7 @@ function AlertRow({
       </div>
 
       <div className="flex flex-col items-end gap-1 flex-shrink-0">
-        <span className="text-[12px] font-bold tabular-nums text-white/75">{formatted}</span>
+        <span className="text-[12px] font-bold tabular-nums text-[var(--color-text)]">{formatted}</span>
         <UrgencyBadge urgency={item.urgency}/>
       </div>
     </Link>
@@ -134,11 +134,11 @@ export function AlertsWidget({
     return (
       <WidgetShell>
         <div className="animate-pulse space-y-3">
-          <div className="h-3 w-36 rounded bg-white/[0.06]"/>
+          <div className="h-3 w-36 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--color-text-faint) 26%, transparent)' }}/>
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="flex justify-between">
-              <div className="h-3 rounded bg-white/[0.05]" style={{ width: `${55 + i * 8}%` }}/>
-              <div className="h-3 w-16 rounded bg-white/[0.06]"/>
+              <div className="h-3 rounded" style={{ width: `${55 + i * 8}%`, backgroundColor: 'color-mix(in srgb, var(--color-text-faint) 22%, transparent)' }}/>
+              <div className="h-3 w-16 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--color-text-faint) 26%, transparent)' }}/>
             </div>
           ))}
         </div>
@@ -199,7 +199,7 @@ export function AlertsWidget({
     <WidgetShell>
       <SectionHeader
         title="Vencimientos próximos"
-        accent="#ef4444"
+        accent="var(--c-primary)"
         action={
           overdueCount > 0 ? (
             <span className="text-[10px] font-bold text-red-400 bg-red-500/10
@@ -212,7 +212,7 @@ export function AlertsWidget({
 
       {/* Tabs */}
       {allAlerts.length > 0 && (
-        <div className="flex gap-1 mb-4 p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.05]">
+        <div className="flex gap-1 mb-4 p-0.5 rounded-[10px] bg-[var(--c-surface-2)] border border-[var(--c-border)]">
           {TABS.map(tab => {
             const count = tab.key === 'all'
               ? allAlerts.length
@@ -224,18 +224,18 @@ export function AlertsWidget({
                 onClick={() => setActiveTab(tab.key)}
                 className={`
                   flex-1 flex items-center justify-center gap-1
-                  py-1.5 rounded-md text-[11px] font-semibold
+                  py-1.5 rounded-[8px] text-[11px] font-semibold
                   transition-all duration-150
                   ${activeTab === tab.key
-                    ? 'bg-white/[0.07] text-white/80'
-                    : 'text-white/25 hover:text-white/50'
+                    ? 'bg-[var(--c-primary)] text-white shadow-sm'
+                    : 'text-[var(--c-text-faint)] hover:text-[var(--c-primary)]'
                   }
                 `}
               >
                 {tab.label}
                 {count > 0 && (
                   <span className={`text-[9px] tabular-nums ${
-                    activeTab === tab.key ? 'text-white/50' : 'text-white/20'
+                    activeTab === tab.key ? 'text-[var(--color-text-muted)]' : 'text-[var(--color-text-faint)]'
                   }`}>
                     {count}
                   </span>
@@ -265,7 +265,7 @@ export function AlertsWidget({
             />
           ))}
           {filtered.length > 8 && (
-            <p className="text-[11px] text-white/25 text-center pt-3">
+            <p className="text-[11px] text-[var(--color-text-faint)] text-center pt-3">
               +{filtered.length - 8} más
             </p>
           )}

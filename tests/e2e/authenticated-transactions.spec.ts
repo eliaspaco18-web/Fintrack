@@ -36,6 +36,15 @@ async function createExpenseTransaction(page: Page, description: string, amount 
     await sourceSelect.selectOption(sourceAccountId)
   }
 
+  const categorySelect = page.getByTestId('transaction-category-select')
+  const firstCategoryOption = categorySelect.locator('option:not([value=""])').first()
+  await expect(firstCategoryOption).toBeVisible()
+
+  const categoryId = await firstCategoryOption.getAttribute('value')
+  if (categoryId) {
+    await categorySelect.selectOption(categoryId)
+  }
+
   await page.getByTestId('transaction-amount-input').fill(amount)
   await page.getByTestId('transaction-description-input').fill(description)
   await page.getByTestId('transaction-submit-button').click()
@@ -47,6 +56,39 @@ async function createExpenseTransaction(page: Page, description: string, amount 
   await expect(page).toHaveURL(/\/transactions$/)
 }
 
+async function createAssetPurchaseTransaction(page: Page, assetName: string, amount = '1200') {
+  await page.goto('/transactions/new?module=asset')
+  await expect(page.getByTestId('transaction-form')).toBeVisible()
+
+  const sourceSelect = page.getByTestId('transaction-source-account-select')
+  const firstAccountOption = sourceSelect.locator('option:not([value=""])').first()
+  await expect(firstAccountOption).toBeVisible()
+
+  const sourceAccountId = await firstAccountOption.getAttribute('value')
+  if (sourceAccountId) {
+    await sourceSelect.selectOption(sourceAccountId)
+  }
+
+  await expect(page.getByTestId('transaction-currency-select')).toBeDisabled()
+
+  const assetTypeSelect = page.getByTestId('transaction-asset-type-select')
+  const firstAssetTypeOption = assetTypeSelect.locator('option:not([value=""])').first()
+  await expect(firstAssetTypeOption).toBeVisible()
+
+  const assetTypeId = await firstAssetTypeOption.getAttribute('value')
+  if (assetTypeId) {
+    await assetTypeSelect.selectOption(assetTypeId)
+  }
+
+  await page.getByTestId('transaction-amount-input').fill(amount)
+  await page.getByTestId('transaction-asset-name-input').fill(assetName)
+  await page.getByTestId('transaction-description-input').fill(`Compra ${assetName}`)
+  await page.getByTestId('transaction-submit-button').click()
+
+  await expect(page.getByTestId('transaction-success-summary')).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByTestId('transaction-success-summary')).toContainText(assetName)
+}
+
 test.describe('authenticated transactions', () => {
   test.skip(!credentials, 'Set E2E_USER_EMAIL and E2E_USER_PASSWORD to run authenticated transaction tests.')
 
@@ -56,6 +98,14 @@ test.describe('authenticated transactions', () => {
 
     const description = `E2E TX ${Date.now()}`
     await createExpenseTransaction(page, description)
+  })
+
+  test('can create an asset purchase transaction with managed asset types', async ({ page }) => {
+    await loginViaUI(page, credentials!)
+    await ensureAtLeastOneAccount(page)
+
+    const assetName = `E2E Asset ${Date.now()}`
+    await createAssetPurchaseTransaction(page, assetName)
   })
 
   test('transactions table shows key controls', async ({ page }) => {

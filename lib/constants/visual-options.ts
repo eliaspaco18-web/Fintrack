@@ -16,6 +16,9 @@ export const ACCOUNT_ICON_OPTIONS: readonly VisualIconOption[] = [
 
 export const CATEGORY_ICON_OPTIONS: readonly VisualIconOption[] = [
   { value: 'tag', label: 'Etiqueta' },
+  { value: 'wallet', label: 'Cobro / Billetera' },
+  { value: 'bank', label: 'Banco / Transferencia' },
+  { value: 'coins', label: 'Monedas / Cripto' },
   { value: 'utensils', label: 'Alimentacion' },
   { value: 'car', label: 'Transporte' },
   { value: 'home', label: 'Vivienda' },
@@ -23,6 +26,8 @@ export const CATEGORY_ICON_OPTIONS: readonly VisualIconOption[] = [
   { value: 'book-open', label: 'Educacion' },
   { value: 'film', label: 'Entretenimiento' },
   { value: 'package', label: 'Activo' },
+  { value: 'shield', label: 'Proteccion / Seguro' },
+  { value: 'chart-line', label: 'Inversion / Analitica' },
   { value: 'credit-card', label: 'Credito / Prestamo' },
   { value: 'file-minus', label: 'Cuenta por pagar' },
   { value: 'minus-circle', label: 'Otros gastos' },

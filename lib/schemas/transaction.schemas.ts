@@ -6,6 +6,7 @@
 // =============================================================================
 
 import { z } from 'zod'
+import { hasAtMostDecimals } from '@/lib/utils/numeric-input'
 
 // ─── PRIMITIVOS COMPARTIDOS ───────────────────────────────────────────────────
 
@@ -15,7 +16,7 @@ const zUUID     = z.string().uuid('UUID inválido')
 const zAmount   = z
   .number({ invalid_type_error: 'El monto debe ser un número' })
   .positive('El monto debe ser mayor a cero')
-  .refine(v => Math.round(v * 100) === v * 100, 'Máximo 2 decimales')
+  .refine(v => hasAtMostDecimals(v, 2), 'Máximo 2 decimales')
   .refine(v => v <= 100_000_000, 'Monto excede el límite permitido')
 
 // ─── MÓDULOS DERIVADOS ────────────────────────────────────────────────────────
@@ -23,6 +24,7 @@ const zAmount   = z
 export const zAssetModule = z.object({
   name:              z.string().trim().min(1).max(150),
   asset_type:        z.enum(['REAL_ESTATE', 'VEHICLE', 'EQUIPMENT', 'INVESTMENT', 'OTHER']),
+  asset_type_id:     zUUID.optional(),
   purchase_value:    zAmount.optional(),
   current_value:     zAmount.optional(),
   purchase_date:     zDate.optional(),
@@ -54,6 +56,7 @@ export const zLoanModule = z.object({
 })
 
 export const zReceivableModule = z.object({
+  debtor_id:   zUUID.optional(),
   debtor_name: z.string().trim().min(1).max(150),
   due_date:    zDate.optional(),
   concept:     z.string().max(300).optional(),
@@ -61,6 +64,7 @@ export const zReceivableModule = z.object({
 })
 
 export const zPayableModule = z.object({
+  creditor_id:   zUUID.optional(),
   creditor_name: z.string().trim().min(1).max(150),
   due_date:      zDate.optional(),
   concept:       z.string().max(300).optional(),
@@ -77,27 +81,33 @@ const zTransactionBase = z.object({
   credit_card_id:    zUUID.optional(),
   credit_operation:  z.enum(['CONSUMPTION', 'PAYMENT']).optional(),
   exchange_rate:     z.number().positive().optional(),
-  description:       z.string().trim().min(1, 'La descripción es obligatoria').max(255),
+  description:       z.string().trim().max(255).optional(),
   transaction_date:  zDate,
   category_id:       zUUID.optional(),
   notes:             z.string().max(1000).optional(),
   is_recurring:      z.boolean().default(false),
+  recurring_name:    z.string().trim().min(1, 'El nombre de la recurrente es obligatorio').max(150).optional(),
 })
 
 // ─── SCHEMAS POR TIPO (unión discriminada) ────────────────────────────────────
 
 export const zCreateIncomeSchema = zTransactionBase.extend({
-  type:       z.literal('INCOME'),
-  receivable: zReceivableModule.optional(),
+  type:    z.literal('INCOME'),
+  payable: zPayableModule.optional(),
+  sender:  z.string().max(150).trim().optional(),
 })
 
 export const zCreateExpenseSchema = zTransactionBase
   .extend({
-    type:    z.literal('EXPENSE'),
-    asset:   zAssetModule.optional(),
-    credit:  zCreditModule.optional(),
-    loan:    zLoanModule.optional(),
-    payable: zPayableModule.optional(),
+    type:       z.literal('EXPENSE'),
+    asset:      zAssetModule.optional(),
+    credit:     zCreditModule.optional(),
+    loan:       zLoanModule.optional(),
+    receivable: zReceivableModule.optional(),
+    // Fase B — vincular egreso con presupuesto activo
+    budget_id: zUUID.optional(),
+    // PRD v3 — campos adicionales
+    recipient: z.string().max(150).trim().optional(),
   })
 
 export const zCreateTransferSchema = zTransactionBase.extend({
@@ -113,6 +123,30 @@ export const zCreateTransactionSchema = z
     zCreateTransferSchema,
   ])
   .superRefine((d, ctx) => {
+    if ((d.type === 'INCOME' || d.type === 'EXPENSE') && !d.category_id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['category_id'],
+        message: 'La categoría es obligatoria',
+      })
+    }
+
+    if ((d.type === 'INCOME' || d.type === 'EXPENSE') && (!d.description || d.description.trim().length === 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['description'],
+        message: 'La descripción es obligatoria',
+      })
+    }
+
+    if (d.is_recurring && (!d.recurring_name || d.recurring_name.trim().length === 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['recurring_name'],
+        message: 'Debes indicar un nombre para guardar la recurrente',
+      })
+    }
+
     if (d.type === 'EXPENSE' && d.asset && d.credit) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

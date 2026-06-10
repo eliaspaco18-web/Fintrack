@@ -153,7 +153,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 // ─── HOOK ─────────────────────────────────────────────────────────────────────
 
 interface ToastHelpers {
-  success: (title: string, detail?: string) => void
+  success: (
+    title: string,
+    detail?: string,
+    options?: SuccessToastOptions
+  ) => void
   error:   (title: string, detail?: string) => void
   warning: (title: string, detail?: string) => void
   info:    (title: string, detail?: string) => void
@@ -165,6 +169,13 @@ interface ToastHelpers {
   clear:   () => void
 }
 
+type SuccessToastOptions = {
+  persist?: boolean
+  category?: 'SYSTEM' | 'PORTFOLIO' | 'TRANSACTION' | 'BANK' | 'CATEGORY' | 'BUDGET' | 'ALERT'
+  event?: string
+  href?: string | null
+}
+
 export function useToast(): { toast: ToastHelpers } {
   const ctx = useContext(ToastCtx)
 
@@ -173,8 +184,36 @@ export function useToast(): { toast: ToastHelpers } {
       ctx.add({ variant, title, detail })
     }, [ctx])
 
+  const persistSuccessActivity = useCallback((
+    title: string,
+    detail?: string,
+    options?: { category?: string; event?: string; href?: string | null },
+  ) => {
+    void fetch('/api/notifications', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        category: options?.category ?? 'SYSTEM',
+        event: options?.event ?? 'TOAST_SUCCESS',
+        title,
+        message: detail ?? null,
+        href: options?.href ?? null,
+      }),
+    }).catch(() => {
+      // Sin impacto en UX: si falla persistencia, mantenemos solo el toast local.
+    })
+  }, [])
+
   const toast: ToastHelpers = {
-    success: make('success'),
+    success: (title: string, detail?: string, options?: SuccessToastOptions) => {
+      ctx.add({ variant: 'success', title, detail })
+      if (options?.persist === false) return
+      persistSuccessActivity(title, detail, {
+        category: options?.category,
+        event: options?.event,
+        href: options?.href ?? null,
+      })
+    },
     error:   make('error'),
     warning: make('warning'),
     info:    make('info'),
@@ -184,6 +223,7 @@ export function useToast(): { toast: ToastHelpers } {
         const result = await p
         ctx.remove(id)
         ctx.add({ variant: 'success', title: opts.success })
+        persistSuccessActivity(opts.success)
         return result
       } catch (e) {
         ctx.remove(id)
@@ -231,24 +271,24 @@ const ICONS: Record<ToastVariant, ReactNode> = {
 
 const VARIANT_STYLES: Record<ToastVariant, { wrap: string; icon: string; bar: string }> = {
   success: {
-    wrap: 'border-emerald-500/30 bg-emerald-500/10',
-    icon: 'bg-emerald-500/15 text-emerald-400',
-    bar:  'bg-emerald-500',
+    wrap: 'border-emerald-500/45',
+    icon: 'bg-emerald-500/20 text-emerald-400',
+    bar:  'bg-emerald-400',
   },
   error: {
-    wrap: 'border-red-500/30 bg-red-500/10',
-    icon: 'bg-red-500/15 text-red-400',
-    bar:  'bg-red-500',
+    wrap: 'border-red-500/50',
+    icon: 'bg-red-500/20 text-red-400',
+    bar:  'bg-red-400',
   },
   warning: {
-    wrap: 'border-amber-500/30 bg-amber-500/10',
-    icon: 'bg-amber-500/15 text-amber-400',
-    bar:  'bg-amber-500',
+    wrap: 'border-amber-500/45',
+    icon: 'bg-amber-500/20 text-amber-400',
+    bar:  'bg-amber-400',
   },
   info: {
-    wrap: 'border-blue-500/30 bg-blue-500/10',
-    icon: 'bg-blue-500/15 text-blue-400',
-    bar:  'bg-blue-500',
+    wrap: 'border-blue-500/45',
+    icon: 'bg-blue-500/20 text-blue-400',
+    bar:  'bg-blue-400',
   },
 }
 
@@ -280,9 +320,10 @@ function ToastItem({ toast: t, onRemove }: { toast: Toast; onRemove: (id: string
         relative overflow-hidden
         flex items-start gap-3 w-full max-w-sm
         rounded-xl border px-4 py-3.5
-        shadow-2xl shadow-black/50
+        bg-[var(--color-surface)]
+        shadow-[0_20px_48px_var(--color-shadow)]
         transition-all duration-300 ease-out
-        focus:outline-none focus:ring-2 focus:ring-white/20
+        focus:outline-none focus:ring-2 focus:ring-emerald-500/30
         ${s.wrap}
         ${visible && !t.closing
           ? 'opacity-100 translate-y-0'
@@ -292,7 +333,7 @@ function ToastItem({ toast: t, onRemove }: { toast: Toast; onRemove: (id: string
     >
       {/* Barra de progreso */}
       {t.duration > 0 && (
-        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/[0.05]">
+        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--color-border)]">
           <div
             className={`h-full ${s.bar} origin-left`}
             style={{
@@ -315,7 +356,7 @@ function ToastItem({ toast: t, onRemove }: { toast: Toast; onRemove: (id: string
       <div className="flex-1 min-w-0 py-0.5">
         <p className="text-sm font-semibold text-[var(--color-text)] leading-tight">{t.title}</p>
         {t.detail && (
-          <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5 leading-relaxed">{t.detail}</p>
+          <p className="text-[12px] text-[var(--color-text-muted)] mt-1 leading-relaxed">{t.detail}</p>
         )}
       </div>
 
@@ -324,7 +365,7 @@ function ToastItem({ toast: t, onRemove }: { toast: Toast; onRemove: (id: string
         onClick={() => onRemove(t.id)}
         aria-label="Cerrar notificación"
         className="flex-shrink-0 p-1 -mr-1 rounded-lg text-[var(--color-text-faint)]
-          hover:text-[var(--color-text)] hover:bg-white/[0.06]
+          hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]
           transition-colors focus:outline-none focus:ring-1 focus:ring-[color:var(--color-border-hover)]"
       >
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
@@ -354,13 +395,13 @@ export function ToastRenderer() {
         }
       `}</style>
 
-      {/* Zona de toasts: esquina inferior derecha en desktop, top en móvil */}
+      {/* Zona de toasts: esquina superior derecha */}
       <div
         aria-label="Notificaciones"
         className="
-          fixed z-[100] flex flex-col gap-2 pointer-events-none
-          bottom-6 right-4 left-4
-          sm:left-auto sm:w-[360px] sm:right-5
+          fixed z-[140] flex flex-col gap-2 pointer-events-none
+          top-[calc(var(--topbar-height)+0.65rem)] right-3 left-3
+          sm:left-auto sm:w-[390px] sm:right-5
         "
       >
         {toasts.map(t => (

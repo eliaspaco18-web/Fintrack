@@ -51,28 +51,43 @@ export function CurrencyProvider({
   initialCurrency?: DisplayCurrency
 }) {
   const [preferred, setPreferred] = useState<DisplayCurrency>(initialCurrency)
+  const { data: liveRatePayload } = useSWR<{ rate?: number; fetched_at?: string | null }>(
+    '/api/exchange-rate?mode=live',
+    fetcher,
+    {
+      fallbackData: { rate: initialRate },
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+      refreshInterval: 5 * 60 * 1000,
+      dedupingInterval: 60_000,
+    },
+  )
 
   const toggle = useCallback(() => {
     setPreferred(prev => prev === 'PEN' ? 'USD' : 'PEN')
   }, [])
 
-const format = useCallback(
-  (amountPen: number) => toDisplayAmount(amountPen, preferred, initialRate),
-  [preferred, initialRate]
-)
+  const resolvedRate = Number.isFinite(Number(liveRatePayload?.rate)) && Number(liveRatePayload?.rate) > 0
+    ? Number(liveRatePayload?.rate)
+    : initialRate
 
-return (
-  <CurrencyContext.Provider
-    value={{
-      preferred,
-      exchangeRate: initialRate,
-      toggle,
-      format,
-    }}
-  >
-    {children}
-  </CurrencyContext.Provider>
-)
+  const format = useCallback(
+    (amountPen: number) => toDisplayAmount(amountPen, preferred, resolvedRate),
+    [preferred, resolvedRate]
+  )
+
+  return (
+    <CurrencyContext.Provider
+      value={{
+        preferred,
+        exchangeRate: resolvedRate,
+        toggle,
+        format,
+      }}
+    >
+      {children}
+    </CurrencyContext.Provider>
+  )
 }
 
 export function useCurrency() {

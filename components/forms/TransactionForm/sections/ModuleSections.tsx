@@ -8,7 +8,10 @@
 'use client'
 
 import type { UseFormReturn }  from 'react-hook-form'
-import type { TransactionFormValues } from '@/lib/contracts/ui.contracts'
+import type {
+  FormSelectOption,
+  TransactionFormValues,
+} from '@/lib/contracts/ui.contracts'
 import {
   FieldWrapper,
   Input,
@@ -18,6 +21,7 @@ import {
   CollapsibleSection,
   SectionDivider,
 }                              from '../FormFields'
+import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 
 type Form = UseFormReturn<TransactionFormValues>
 
@@ -53,12 +57,25 @@ const Icons = {
 
 // ─── ASSET SECTION ────────────────────────────────────────────────────────────
 
-export function AssetSection({ form }: { form: Form }) {
-  const { register, formState: { errors } } = form
+export function AssetSection({
+  form,
+  assetTypes,
+}: {
+  form: Form
+  assetTypes: FormSelectOption[]
+}) {
+  const { register, setValue, watch, formState: { errors } } = form
+  const selectedAssetTypeId = watch('asset_type_id')
+  const selectedAssetType = assetTypes.find(option => option.value === selectedAssetTypeId) ?? null
 
   return (
     <ModuleCard icon={Icons.asset} title="Detalles del activo" color="#8b5cf6">
       <div className="grid grid-cols-2 gap-3">
+        <input
+          type="hidden"
+          {...register('asset_type_id', { required: 'Selecciona el tipo de activo' })}
+        />
+
         <FieldWrapper
           label="Nombre del activo"
           required
@@ -72,16 +89,38 @@ export function AssetSection({ form }: { form: Form }) {
           />
         </FieldWrapper>
 
-        <FieldWrapper label="Tipo de activo" error={errors.asset_type?.message}>
+        <FieldWrapper
+          label="Tipo de activo"
+          required
+          error={errors.asset_type_id?.message || errors.asset_type?.message}
+        >
           <Select
-            {...register('asset_type')}
-            error={errors.asset_type?.message}
+            value={selectedAssetTypeId ?? ''}
+            onChange={event => {
+              const nextId = event.target.value
+              const nextOption = assetTypes.find(option => option.value === nextId) ?? null
+              const legacyType =
+                typeof nextOption?.meta?.legacyType === 'string'
+                  ? nextOption.meta.legacyType
+                  : 'OTHER'
+
+              setValue('asset_type_id', nextId || undefined, {
+                shouldDirty: true,
+                shouldValidate: true,
+              })
+              setValue('asset_type', legacyType as TransactionFormValues['asset_type'], {
+                shouldDirty: true,
+                shouldValidate: true,
+              })
+            }}
+            error={errors.asset_type_id?.message || errors.asset_type?.message}
           >
-            <option value="EQUIPMENT">🖥 Equipo / Tecnología</option>
-            <option value="VEHICLE">🚗 Vehículo</option>
-            <option value="REAL_ESTATE">🏠 Inmueble</option>
-            <option value="INVESTMENT">📈 Inversión</option>
-            <option value="OTHER">📦 Otro</option>
+            <option value="">Seleccionar tipo...</option>
+            {assetTypes.map(assetType => (
+              <option key={assetType.value} value={assetType.value}>
+                {assetType.label}
+              </option>
+            ))}
           </Select>
         </FieldWrapper>
 
@@ -104,6 +143,17 @@ export function AssetSection({ form }: { form: Form }) {
           />
         </FieldWrapper>
       </div>
+
+      {selectedAssetType ? (
+        <div className="mt-3 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
+          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+            Tipo seleccionado
+          </p>
+          <p className="mt-1 text-[13px] font-medium text-[var(--c-text)]">
+            {selectedAssetType.label}
+          </p>
+        </div>
+      ) : null}
     </ModuleCard>
   )
 }
@@ -150,7 +200,11 @@ export function CreditSection({ form }: { form: Form }) {
             placeholder="0.00"
             error={errors.credit_limit?.message}
             {...register('credit_limit', {
-              valueAsNumber: true,
+              setValueAs: value => {
+                const parsed = parseNumericInput(value, Number.NaN)
+                if (!Number.isFinite(parsed)) return undefined
+                return roundToDecimals(parsed, 2)
+              },
               validate: v => !v || v > 0 || 'El límite debe ser positivo',
             })}
           />
@@ -167,7 +221,13 @@ export function CreditSection({ form }: { form: Form }) {
             step="0.01"
             placeholder="3.5"
             error={errors.credit_rate?.message}
-            {...register('credit_rate', { valueAsNumber: true })}
+            {...register('credit_rate', {
+              setValueAs: value => {
+                const parsed = parseNumericInput(value, Number.NaN)
+                if (!Number.isFinite(parsed)) return undefined
+                return roundToDecimals(parsed, 2)
+              },
+            })}
           />
         </FieldWrapper>
       </div>
@@ -188,8 +248,8 @@ export function LoanSection({ form, visible, onToggle, isActive }: LoanSectionPr
   const { register, formState: { errors } } = form
 
   return (
-    <div className="rounded-xl border border-white/[0.06] overflow-hidden">
-      <div className="px-4 py-3 bg-white/[0.02]">
+    <div className="overflow-hidden rounded-xl border border-[var(--c-border)]">
+      <div className="bg-[var(--c-surface-2)] px-4 py-3">
         <CheckboxToggle
           label="Registrar cronograma de cuotas"
           description="Genera el plan de pagos automáticamente (método francés)"
@@ -230,7 +290,11 @@ export function LoanSection({ form, visible, onToggle, isActive }: LoanSectionPr
                   placeholder="12"
                   error={errors.loan_installments?.message}
                   {...register('loan_installments', {
-                    valueAsNumber: true,
+                    setValueAs: value => {
+                      const parsed = parseNumericInput(value, Number.NaN)
+                      if (!Number.isFinite(parsed)) return undefined
+                      return Math.max(1, Math.trunc(parsed))
+                    },
                     required: isActive ? 'Número de cuotas requerido' : false,
                     min: { value: 1, message: 'Mínimo 1 cuota' },
                     max: { value: 600, message: 'Máximo 600 cuotas' },
@@ -248,7 +312,13 @@ export function LoanSection({ form, visible, onToggle, isActive }: LoanSectionPr
                   step="0.001"
                   placeholder="1.5"
                   error={errors.loan_rate?.message}
-                  {...register('loan_rate', { valueAsNumber: true })}
+                  {...register('loan_rate', {
+                    setValueAs: value => {
+                      const parsed = parseNumericInput(value, Number.NaN)
+                      if (!Number.isFinite(parsed)) return undefined
+                      return roundToDecimals(parsed, 3)
+                    },
+                  })}
                 />
               </FieldWrapper>
 
@@ -273,7 +343,7 @@ export function LoanSection({ form, visible, onToggle, isActive }: LoanSectionPr
                   description="Crea todas las cuotas con el método francés (cuota fija)"
                   checked={form.watch('loan_schedule')}
                   onChange={v => form.setValue('loan_schedule', v)}
-                  accent="emerald"
+                  accent="blue"
                 />
               </div>
             </div>
@@ -286,30 +356,44 @@ export function LoanSection({ form, visible, onToggle, isActive }: LoanSectionPr
 
 // ─── RECEIVABLE SECTION ───────────────────────────────────────────────────────
 
-export function ReceivableSection({ form }: { form: Form }) {
+export function ReceivableSection({
+  form,
+  debtors,
+}: {
+  form: Form
+  debtors: FormSelectOption[]
+}) {
   const { register, formState: { errors } } = form
 
   return (
-    <ModuleCard icon={Icons.receivable} title="Cuenta por cobrar" color="#06b6d4">
-      <p className="text-[11px] text-white/30 -mt-2">
-        El monto y descripción se tomarán de la transacción.
+    <ModuleCard icon={Icons.receivable} title="Cuenta por cobrar" color="#0f766e">
+      <p className="-mt-2 text-[11px] text-[var(--c-text-muted)]">
+        El monto y la descripción se mantienen desde la transacción base.
       </p>
       <div className="grid grid-cols-2 gap-3">
         <FieldWrapper
-          label="Nombre del deudor"
+          label="Deudor"
           required
-          error={errors.receivable_debtor?.message}
+          error={errors.receivable_debtor_id?.message}
           className="col-span-2"
         >
-          <Input
-            placeholder="¿Quién te debe este dinero?"
-            error={errors.receivable_debtor?.message}
-            {...register('receivable_debtor', { required: 'El nombre del deudor es requerido' })}
-          />
+          <Select
+            error={errors.receivable_debtor_id?.message}
+            {...register('receivable_debtor_id', {
+              required: 'Selecciona el deudor',
+            })}
+          >
+            <option value="">Seleccionar deudor...</option>
+            {debtors.map(debtor => (
+              <option key={debtor.value} value={debtor.value}>
+                {debtor.label}
+              </option>
+            ))}
+          </Select>
         </FieldWrapper>
 
         <FieldWrapper
-          label="Fecha límite de pago"
+          label="Fecha de vencimiento"
           hint="Opcional"
           error={errors.receivable_due?.message}
           className="col-span-2"
@@ -327,30 +411,44 @@ export function ReceivableSection({ form }: { form: Form }) {
 
 // ─── PAYABLE SECTION ──────────────────────────────────────────────────────────
 
-export function PayableSection({ form }: { form: Form }) {
+export function PayableSection({
+  form,
+  creditors,
+}: {
+  form: Form
+  creditors: FormSelectOption[]
+}) {
   const { register, formState: { errors } } = form
 
   return (
-    <ModuleCard icon={Icons.payable} title="Cuenta por pagar" color="#f97316">
-      <p className="text-[11px] text-white/30 -mt-2">
-        El monto y descripción se tomarán de la transacción.
+    <ModuleCard icon={Icons.payable} title="Cuenta por pagar" color="#b45309">
+      <p className="-mt-2 text-[11px] text-[var(--c-text-muted)]">
+        El monto y la descripción se mantienen desde la transacción base.
       </p>
       <div className="grid grid-cols-2 gap-3">
         <FieldWrapper
-          label="Nombre del acreedor"
+          label="Acreedor"
           required
-          error={errors.payable_creditor?.message}
+          error={errors.payable_creditor_id?.message}
           className="col-span-2"
         >
-          <Input
-            placeholder="¿A quién debes este dinero?"
-            error={errors.payable_creditor?.message}
-            {...register('payable_creditor', { required: 'El nombre del acreedor es requerido' })}
-          />
+          <Select
+            error={errors.payable_creditor_id?.message}
+            {...register('payable_creditor_id', {
+              required: 'Selecciona el acreedor',
+            })}
+          >
+            <option value="">Seleccionar acreedor...</option>
+            {creditors.map(creditor => (
+              <option key={creditor.value} value={creditor.value}>
+                {creditor.label}
+              </option>
+            ))}
+          </Select>
         </FieldWrapper>
 
         <FieldWrapper
-          label="Fecha límite de pago"
+          label="Fecha de vencimiento"
           hint="Opcional"
           error={errors.payable_due?.message}
           className="col-span-2"
@@ -392,7 +490,7 @@ export function ModuleTriggerHint({ moduleName, description, color }: ModuleTrig
       </svg>
       <div>
         <p className="text-xs font-semibold" style={{ color }}>{moduleName}</p>
-        <p className="text-[11px] text-white/40 mt-0.5">{description}</p>
+        <p className="mt-0.5 text-[11px] text-[var(--c-text-faint)]">{description}</p>
       </div>
     </div>
   )

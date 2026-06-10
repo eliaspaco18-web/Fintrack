@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { createClient, createServiceClient } from '@/lib/supabase.server'
-import { apiError, apiOk, apiUnauthorized, apiZodError } from '@/lib/api/response'
+import { apiError, apiNoContent, apiOk, apiUnauthorized, apiZodError } from '@/lib/api/response'
 
 const zCurrency = z.enum(['PEN', 'USD'])
 const zAvatarUrl = z.string().trim().max(1000).refine((value) => {
@@ -129,4 +129,28 @@ export async function PATCH(req: NextRequest) {
 
   if (error) return apiError({ code: 'DATABASE_ERROR', message: error.message })
   return apiOk(data)
+}
+
+export async function DELETE() {
+  const supabase = createClient()
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser()
+
+  if (authError || !user) return apiUnauthorized()
+
+  const service = createServiceClient()
+
+  const { error } = await service.auth.admin.deleteUser(user.id)
+  if (error) {
+    return apiError({
+      code: 'DATABASE_ERROR',
+      message: error.message || 'No se pudo eliminar la cuenta.',
+    })
+  }
+
+  await supabase.auth.signOut({ scope: 'global' })
+
+  return apiNoContent()
 }

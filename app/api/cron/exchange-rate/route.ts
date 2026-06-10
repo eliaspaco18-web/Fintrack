@@ -1,7 +1,7 @@
 // app/api/cron/exchange-rate/route.ts
 // Llamado por Vercel Cron Jobs — ver vercel.json
 import { NextResponse }          from 'next/server'
-import { resolveUsdPenExchangeRate } from '@/lib/server/exchange-rate'
+import { resolveLiveUsdPenExchangeRate } from '@/lib/server/exchange-rate'
 
 export async function GET(req: Request) {
   // Verificar que viene de Vercel Cron (o llamada manual con secret)
@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   }
 
   try {
-    const snapshot = await resolveUsdPenExchangeRate({ refresh: true })
+    const snapshot = await resolveLiveUsdPenExchangeRate({ forceRefresh: true })
     if (!snapshot.refreshed) {
       return NextResponse.json({
         ok: false,

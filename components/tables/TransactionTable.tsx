@@ -6,7 +6,6 @@
 // ordenamiento por columna y paginación.
 // =============================================================================
 
-import Link                          from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useState, useCallback,
          useDeferredValue,
@@ -22,30 +21,40 @@ import {
   type TransactionListParams,
 }                                    from '@/lib/contracts/ui.contracts'
 import {
-  TableShell,
-  Toolbar,
-  SearchInput,
-  FilterPill,
-  SortSelect,
+  ConfirmDialog,
+  DataEmptyStateRow,
+  DataErrorBanner,
+  DataFilterPreset,
+  DataPagination,
+  DataRefreshIndicator,
+  DataRowActions,
+  DataSearchField,
+  DataSortSelect,
+  DataTable,
+  DataToolbar,
+  DataToolbarRow,
+  SavedViewsToolbar,
+  StatusBadge as FinanceStatusBadge,
+}                                    from '@/components/finance'
+import {
   Th, Td,
   SkeletonRows,
-  EmptyState,
-  Pagination,
-  RowActions,
-  StatusBadge,
   AmountCell,
   DateCell,
 }                                    from './primitives'
 import { FocusTrap }                 from '@/components/ui/accessibility'
+import { ModalOverlayPortal }        from '@/components/ui/ModalOverlayPortal'
+import { AppSelect }                 from '@/components/ui/AppSelect'
+import { Button }                    from '@/components/ui/Button'
 import type { TransactionType }      from '@/types/database.types'
 
 // ─── CONFIGURACIÓN ────────────────────────────────────────────────────────────
 
 const QUICK_FILTERS: { key: QuickFilter; label: string; color?: string }[] = [
   { key: 'all',        label: 'Todos'        },
-  { key: 'income',     label: 'Ingresos',    color: '#10b981' },
-  { key: 'expense',    label: 'Egresos',     color: '#ef4444' },
-  { key: 'transfer',   label: 'Transferencias', color: '#3b82f6' },
+  { key: 'income',     label: 'Ingresos',    color: 'var(--c-primary)' },
+  { key: 'expense',    label: 'Egresos',     color: 'var(--c-danger)' },
+  { key: 'transfer',   label: 'Transferencias', color: 'var(--c-info)' },
   { key: 'this_month', label: 'Este mes'     },
   { key: 'last_month', label: 'Mes pasado'   },
 ]
@@ -60,26 +69,20 @@ const SORT_OPTIONS = [
 const PER_PAGE_OPTIONS = [20, 50, 100] as const
 
 const TYPE_CONFIG: Record<TransactionType, { label: string; color: string; prefix: string }> = {
-  INCOME:   { label: 'Ingreso',      color: '#10b981', prefix: '+' },
-  EXPENSE:  { label: 'Egreso',       color: '#ef4444', prefix: '−' },
-  TRANSFER: { label: 'Transferencia',color: '#3b82f6', prefix: '⇄' },
+  INCOME:   { label: 'Ingreso',      color: 'var(--c-primary)', prefix: '+' },
+  EXPENSE:  { label: 'Egreso',       color: 'var(--c-danger)', prefix: '−' },
+  TRANSFER: { label: 'Transferencia',color: 'var(--c-info)', prefix: '⇄' },
 }
 
 // ─── TYPE BADGE ───────────────────────────────────────────────────────────────
 
 function TypeBadge({ type }: { type: TransactionType }) {
   const cfg = TYPE_CONFIG[type]
+  const tone = type === 'INCOME' ? 'success' : type === 'EXPENSE' ? 'danger' : 'info'
   return (
-    <span
-      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full
-        text-[10px] font-bold uppercase tracking-wide whitespace-nowrap"
-      style={{
-        backgroundColor: cfg.color + '18',
-        color:           cfg.color,
-      }}
-    >
+    <FinanceStatusBadge tone={tone} dot={false} className="justify-center">
       {cfg.prefix} {cfg.label}
-    </span>
+    </FinanceStatusBadge>
   )
 }
 
@@ -89,11 +92,11 @@ function ModuleBadges({ tx }: {
   tx: { hasAsset?: boolean; hasCredit?: boolean; hasReceivable?: boolean; hasPayable?: boolean }
 }) {
   const badges = [
-    tx.hasAsset      && { label: 'Activo',   color: '#8b5cf6' },
-    tx.hasCredit     && { label: 'Crédito',  color: '#f59e0b' },
-    tx.hasReceivable && { label: 'X Cobrar', color: '#06b6d4' },
-    tx.hasPayable    && { label: 'X Pagar',  color: '#f97316' },
-  ].filter(Boolean) as { label: string; color: string }[]
+    tx.hasAsset      && { label: 'Activo',   className: 'border-[var(--c-border)] bg-[var(--c-surface-2)] text-[var(--c-text-muted)]' },
+    tx.hasCredit     && { label: 'Crédito',  className: 'border-[var(--c-warning)]/15 bg-[var(--c-warning-soft)] text-[var(--c-warning)]' },
+    tx.hasReceivable && { label: 'X Cobrar', className: 'border-[var(--c-info)]/15 bg-[var(--c-info-soft)] text-[var(--c-info)]' },
+    tx.hasPayable    && { label: 'X Pagar',  className: 'border-[var(--c-danger)]/15 bg-[var(--c-danger-soft)] text-[var(--c-danger)]' },
+  ].filter(Boolean) as { label: string; className: string }[]
 
   if (badges.length === 0) return null
 
@@ -102,8 +105,7 @@ function ModuleBadges({ tx }: {
       {badges.map(b => (
         <span
           key={b.label}
-          className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-          style={{ backgroundColor: b.color + '15', color: b.color }}
+          className={`rounded-md border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.05em] ${b.className}`}
         >
           {b.label}
         </span>
@@ -129,7 +131,7 @@ type AccountFilterRow = {
 type CategoryFilterRow = {
   id: string
   name: string
-  scope: 'INCOME' | 'EXPENSE' | 'BOTH'
+  scope: 'INCOME' | 'EXPENSE'
   icon: string | null
 }
 
@@ -426,6 +428,8 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
   const [sort,         setSort]         = useState(initialControl.sort)
   const [accountId,    setAccountId]    = useState(initialControl.accountId)
   const [categoryId,   setCategoryId]   = useState(initialControl.categoryId)
+  const [dateFrom,     setDateFrom]     = useState('')
+  const [dateTo,       setDateTo]       = useState('')
   const [accountOptions, setAccountOptions] = useState<FilterOption[]>([])
   const [categoryOptions, setCategoryOptions] = useState<FilterOption[]>([])
   const [loadingFilterOptions, setLoadingFilterOptions] = useState(true)
@@ -439,10 +443,13 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
   const [deleteSavedViewModalOpen, setDeleteSavedViewModalOpen] = useState(false)
   const [deleteTransactionModalOpen, setDeleteTransactionModalOpen] = useState(false)
   const [deleteTransactionId, setDeleteTransactionId] = useState<string | null>(null)
+  const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([])
+  const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false)
   const initializedFiltersRef = useRef(false)
   const suspendControlToParamsSyncRef = useRef(false)
   const loadedPrefsRef = useRef(false)
   const loadedSavedViewsRef = useRef(false)
+  const selectAllRef = useRef<HTMLInputElement | null>(null)
 
   const deferredSearch = useDeferredValue(search)
 
@@ -473,7 +480,10 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
     setParams,
     setPage,
     remove,
+    bulkRemove,
+    refresh,
     deleteState,
+    bulkDeleteState,
   } = useTransactions({
     ...initialParams,
     ...initialControl.txParams,
@@ -483,6 +493,17 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
     () => transactions.find(tx => tx.id === deleteTransactionId) ?? null,
     [deleteTransactionId, transactions]
   )
+  const selectedTransactions = useMemo(
+    () => transactions.filter(tx => selectedTransactionIds.includes(tx.id)),
+    [selectedTransactionIds, transactions]
+  )
+  const visibleTransactionIds = useMemo(
+    () => transactions.map(tx => tx.id),
+    [transactions]
+  )
+  const allVisibleSelected = visibleTransactionIds.length > 0
+    && visibleTransactionIds.every(id => selectedTransactionIds.includes(id))
+  const someVisibleSelected = visibleTransactionIds.some(id => selectedTransactionIds.includes(id))
 
   const currentViewState = useMemo<SavedTransactionViewState>(
     () => ({
@@ -507,15 +528,19 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
       return
     }
 
+    const quickDateParams = QuickFilterParams[activeFilter]
     setParams({
       search:   deferredSearch || undefined,
       account_id: accountId || undefined,
       category_id: categoryId || undefined,
       sort_by:  sortBy,
       sort_dir: sortDir,
-      ...QuickFilterParams[activeFilter],
+      ...quickDateParams,
+      // PRD: explicit date pickers override quick-filter dates
+      ...(dateFrom ? { date_from: dateFrom } : {}),
+      ...(dateTo ? { date_to: dateTo } : {}),
     })
-  }, [activeFilter, accountId, categoryId, deferredSearch, sortBy, sortDir, setParams])
+  }, [activeFilter, accountId, categoryId, dateFrom, dateTo, deferredSearch, sortBy, sortDir, setParams])
 
   useEffect(() => {
     const next = new URLSearchParams(searchParams.toString())
@@ -534,8 +559,8 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
     setOrDelete('account_id', accountId || undefined)
     setOrDelete('category_id', categoryId || undefined)
     setOrDelete('type', activeQuickFilterParams.type)
-    setOrDelete('date_from', activeQuickFilterParams.date_from)
-    setOrDelete('date_to', activeQuickFilterParams.date_to)
+    setOrDelete('date_from', dateFrom || activeQuickFilterParams.date_from)
+    setOrDelete('date_to', dateTo || activeQuickFilterParams.date_to)
 
     if (sort === 'transaction_date-desc') {
       next.delete('sort_by')
@@ -560,6 +585,8 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
     activeFilter,
     accountId,
     categoryId,
+    dateFrom,
+    dateTo,
     deferredSearch,
     pathname,
     router,
@@ -668,7 +695,6 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
         const scopeLabel: Record<CategoryFilterRow['scope'], string> = {
           INCOME: 'Ingreso',
           EXPENSE: 'Egreso',
-          BOTH: 'Ambos',
         }
 
         const nextCategories = rawCategories
@@ -705,6 +731,15 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
   }, [currentViewState, selectedSavedView])
 
   useEffect(() => {
+    setSelectedTransactionIds(prev => prev.filter(id => visibleTransactionIds.includes(id)))
+  }, [visibleTransactionIds])
+
+  useEffect(() => {
+    if (!selectAllRef.current) return
+    selectAllRef.current.indeterminate = someVisibleSelected && !allVisibleSelected
+  }, [allVisibleSelected, someVisibleSelected])
+
+  useEffect(() => {
     if (selectedSavedViewId) return
     setDeleteSavedViewModalOpen(false)
   }, [selectedSavedViewId])
@@ -723,6 +758,8 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
     setSort('transaction_date-desc')
     setAccountId('')
     setCategoryId('')
+    setDateFrom('')
+    setDateTo('')
     setSelectedSavedViewId('')
     setParams({
       sort_by: 'transaction_date',
@@ -732,6 +769,8 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
       search: undefined,
       account_id: undefined,
       category_id: undefined,
+      date_from: undefined,
+      date_to: undefined,
       ...QuickFilterParams.all,
     })
   }, [setParams])
@@ -754,6 +793,36 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
     setDeleteTransactionModalOpen(false)
     setDeleteTransactionId(null)
   }, [deleteTransactionId, remove])
+
+  const toggleTransactionSelection = useCallback((id: string) => {
+    setSelectedTransactionIds(prev => (
+      prev.includes(id)
+        ? prev.filter(currentId => currentId !== id)
+        : [...prev, id]
+    ))
+  }, [])
+
+  const toggleSelectVisible = useCallback(() => {
+    setSelectedTransactionIds(prev => (
+      allVisibleSelected ? prev.filter(id => !visibleTransactionIds.includes(id)) : Array.from(new Set([...prev, ...visibleTransactionIds]))
+    ))
+  }, [allVisibleSelected, visibleTransactionIds])
+
+  const closeBulkDeleteModal = useCallback(() => {
+    if (bulkDeleteState.status === 'loading') return
+    setBulkDeleteModalOpen(false)
+  }, [bulkDeleteState.status])
+
+  const confirmBulkDelete = useCallback(async () => {
+    if (selectedTransactionIds.length === 0) return
+    const result = await bulkRemove(selectedTransactionIds)
+    if (!result) return
+
+    const failedIds = new Set(result.failed.map(item => item.id))
+    setSelectedTransactionIds(prev => prev.filter(id => failedIds.has(id)))
+    setBulkDeleteModalOpen(false)
+    await refresh()
+  }, [bulkRemove, refresh, selectedTransactionIds])
 
   const openSaveViewModal = useCallback(() => {
     setSaveViewNameDraft(`Vista ${savedViews.length + 1}`)
@@ -848,27 +917,19 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
 
   return (
     <div className="space-y-0">
-      <TableShell>
+      <DataTable>
         {/* ── TOOLBAR ──────────────────────────────────────────────────── */}
         {filterOptionsError && (
-          <div className="px-4 pt-3">
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-red-400/25 bg-red-500/10 px-3 py-2">
-              <p className="text-[11px] font-medium text-red-400">{filterOptionsError}</p>
-              <button
-                type="button"
-                onClick={() => setFilterOptionsReloadTick(prev => prev + 1)}
-                className="rounded-md border border-red-300/35 px-2 py-1 text-[10px] font-semibold text-red-300 hover:bg-red-500/20 transition-colors"
-              >
-                Reintentar
-              </button>
-            </div>
-          </div>
+          <DataErrorBanner
+            message={filterOptionsError}
+            onRetry={() => setFilterOptionsReloadTick(prev => prev + 1)}
+          />
         )}
-        <Toolbar>
+        <DataToolbar>
           {/* Filtros rápidos */}
-          <div className="flex gap-1.5 overflow-x-auto pb-px">
+          <DataToolbarRow className="filters-row-tight w-full overflow-x-auto pb-px">
             {QUICK_FILTERS.map(f => (
-              <FilterPill
+              <DataFilterPreset
                 key={f.key}
                 label={f.label}
                 active={activeFilter === f.key}
@@ -877,194 +938,175 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
                 testId={`transactions-quick-filter-${f.key}`}
               />
             ))}
-          </div>
+          </DataToolbarRow>
 
-          {/* Espacio */}
-          <div className="flex-1"/>
+          <DataToolbarRow>
+            {/* Búsqueda */}
+            <DataSearchField
+              value={search}
+              onChange={setSearch}
+              placeholder="Buscar descripción…"
+              data-testid="transactions-search-input"
+              className="filters-search"
+            />
 
-          {/* Búsqueda */}
-          <SearchInput
-            value={search}
-            onChange={setSearch}
-            placeholder="Buscar descripción…"
-            data-testid="transactions-search-input"
-          />
-
-          {/* Cuenta */}
-          <div className="relative">
-            <select
+            {/* Cuenta */}
+            <AppSelect
               value={accountId}
-              onChange={e => setAccountId(e.target.value)}
+              onChange={setAccountId}
               disabled={loadingFilterOptions}
-              data-testid="transactions-account-filter"
-              className="
-                pl-3 pr-7 py-1.5 rounded-lg text-[12px] font-medium min-w-[170px]
-                bg-[var(--color-surface)] border border-[color:var(--color-border)]
-                text-[var(--color-text-muted)] appearance-none cursor-pointer
-                focus:outline-none focus:ring-1 focus:ring-emerald-500/20
-                disabled:opacity-50 disabled:cursor-not-allowed
-                transition-all duration-150
-              "
-            >
-              <option value="">Todas las cuentas</option>
-              {accountOptions.map(option => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-            <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-faint)] pointer-events-none"
-              width="10" height="10" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <path d="m6 9 6 6 6-6"/>
-            </svg>
-          </div>
+              testId="transactions-account-filter"
+              className="filters-control sm:w-[170px]"
+              compact
+              searchPlaceholder="Buscar cuenta..."
+              options={[
+                { value: '', label: 'Todas las cuentas' },
+                ...accountOptions.map(option => ({ value: option.value, label: option.label })),
+              ]}
+            />
 
-          {/* Categoría */}
-          <div className="relative">
-            <select
+            {/* Categoría */}
+            <AppSelect
               value={categoryId}
-              onChange={e => setCategoryId(e.target.value)}
+              onChange={setCategoryId}
               disabled={loadingFilterOptions}
-              data-testid="transactions-category-filter"
-              className="
-                pl-3 pr-7 py-1.5 rounded-lg text-[12px] font-medium min-w-[180px]
-                bg-[var(--color-surface)] border border-[color:var(--color-border)]
-                text-[var(--color-text-muted)] appearance-none cursor-pointer
-                focus:outline-none focus:ring-1 focus:ring-emerald-500/20
-                disabled:opacity-50 disabled:cursor-not-allowed
-                transition-all duration-150
-              "
-            >
-              <option value="">Todas las categorías</option>
-              {categoryOptions.map(option => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-            <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-faint)] pointer-events-none"
-              width="10" height="10" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <path d="m6 9 6 6 6-6"/>
-            </svg>
-          </div>
+              testId="transactions-category-filter"
+              className="filters-control sm:w-[180px]"
+              compact
+              searchPlaceholder="Buscar categoría..."
+              options={[
+                { value: '', label: 'Todas las categorías' },
+                ...categoryOptions.map(option => ({ value: option.value, label: option.label })),
+              ]}
+            />
 
-          {/* Ordenamiento */}
-          <SortSelect
-            options={SORT_OPTIONS}
-            value={sort}
-            onChange={handleSortChange}
-            data-testid="transactions-sort-select"
-          />
+            {/* PRD: Fecha Desde */}
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={event => setDateFrom(event.target.value)}
+              data-testid="transactions-date-from"
+              className="field-base filters-control h-[34px] text-[11px] sm:w-[140px]"
+              title="Fecha desde"
+            />
 
-          {/* Registros por página */}
-          <div className="relative">
-            <select
+            {/* PRD: Fecha Hasta */}
+            <input
+              type="date"
+              value={dateTo}
+              onChange={event => setDateTo(event.target.value)}
+              data-testid="transactions-date-to"
+              className="field-base filters-control h-[34px] text-[11px] sm:w-[140px]"
+              title="Fecha hasta"
+            />
+
+            {/* Ordenamiento */}
+            <DataSortSelect
+              options={SORT_OPTIONS}
+              value={sort}
+              onChange={handleSortChange}
+              testId="transactions-sort-select"
+              className="filters-control sm:w-[150px]"
+            />
+
+            {/* Registros por página */}
+            <AppSelect
               value={String(params.per_page ?? 20)}
-              onChange={e => {
-                const nextPerPage = Number(e.target.value)
+              onChange={value => {
+                const nextPerPage = Number(value)
                 setParams({ per_page: nextPerPage, page: 1 })
               }}
-              data-testid="transactions-per-page-select"
-              className="
-                pl-3 pr-7 py-1.5 rounded-lg text-[12px] font-medium min-w-[125px]
-                bg-[var(--color-surface)] border border-[color:var(--color-border)]
-                text-[var(--color-text-muted)] appearance-none cursor-pointer
-                focus:outline-none focus:ring-1 focus:ring-emerald-500/20
-                transition-all duration-150
-              "
-            >
-              {PER_PAGE_OPTIONS.map(option => (
-                <option key={option} value={option}>
-                  {option} / página
-                </option>
-              ))}
-            </select>
-            <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-faint)] pointer-events-none"
-              width="10" height="10" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <path d="m6 9 6 6 6-6"/>
-            </svg>
-          </div>
+              testId="transactions-per-page-select"
+              className="filters-control sm:w-[125px]"
+              compact
+              searchable={false}
+              options={PER_PAGE_OPTIONS.map(option => ({
+                value: String(option),
+                label: `${option} / página`,
+              }))}
+            />
 
-          {/* Vistas guardadas */}
-          <div className="relative">
-            <select
+          </DataToolbarRow>
+
+          <DataToolbarRow className="md:items-center md:justify-between">
+            <div className="w-full md:w-auto">
+              <Button
+                type="button"
+                onClick={resetAllFilters}
+                testId="transactions-reset-filters-button"
+                variant="secondary"
+                size="sm"
+              >
+                Limpiar filtros
+              </Button>
+            </div>
+
+            <SavedViewsToolbar
               value={selectedSavedViewId}
-              onChange={e => {
-                const nextId = e.target.value
+              onChange={nextId => {
                 if (!nextId) {
                   setSelectedSavedViewId('')
                   return
                 }
                 applySavedView(nextId)
               }}
-              data-testid="transactions-saved-view-select"
-              className="
-                pl-3 pr-7 py-1.5 rounded-lg text-[12px] font-medium min-w-[150px]
-                bg-[var(--color-surface)] border border-[color:var(--color-border)]
-                text-[var(--color-text-muted)] appearance-none cursor-pointer
-                focus:outline-none focus:ring-1 focus:ring-emerald-500/20
-                transition-all duration-150
-              "
-            >
-              <option value="">Vistas guardadas</option>
-              {savedViews.map(view => (
-                <option key={view.id} value={view.id}>{view.name}</option>
-              ))}
-            </select>
-            <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-faint)] pointer-events-none"
-              width="10" height="10" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <path d="m6 9 6 6 6-6"/>
-            </svg>
-          </div>
-          <button
-            type="button"
-            onClick={openSaveViewModal}
-            data-testid="transactions-save-view-button"
-            className="rounded-md border border-[color:var(--color-border)] px-2 py-1 text-[11px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[color:var(--color-border-hover)] transition-colors"
-          >
-            Guardar vista
-          </button>
-          <button
-            type="button"
-            disabled={!selectedSavedViewId}
-            onClick={openDeleteSavedViewModal}
-            data-testid="transactions-delete-view-button"
-            className="rounded-md border border-[color:var(--color-border)] px-2 py-1 text-[11px] font-semibold text-red-400/75 hover:text-red-300 hover:border-red-400/35 transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
-          >
-            Eliminar vista
-          </button>
+              onSave={openSaveViewModal}
+              onDelete={openDeleteSavedViewModal}
+              deleteDisabled={!selectedSavedViewId}
+              selectTestId="transactions-saved-view-select"
+              saveTestId="transactions-save-view-button"
+              deleteTestId="transactions-delete-view-button"
+              options={[
+                { value: '', label: 'Vistas guardadas' },
+                ...savedViews.map(view => ({ value: view.id, label: view.name })),
+              ]}
+              />
+          </DataToolbarRow>
 
-          {/* Gestión rápida */}
-          <div className="flex items-center gap-2">
-            <Link
-              href="/portfolio"
-              className="text-[11px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
-            >
-              Portafolio
-            </Link>
-            <span className="text-[var(--color-text-faint)] text-[10px]">·</span>
-            <Link
-              href="/admin"
-              className="text-[11px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
-            >
-              Categorías
-            </Link>
-            <button
-              type="button"
-              onClick={resetAllFilters}
-              data-testid="transactions-reset-filters-button"
-              className="ml-1 rounded-md border border-[color:var(--color-border)] px-2 py-1 text-[11px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[color:var(--color-border-hover)] transition-colors"
-            >
-              Limpiar
-            </button>
-          </div>
-        </Toolbar>
+          {selectedTransactionIds.length > 0 ? (
+            <DataToolbarRow className="items-center justify-between gap-3 rounded-[16px] border border-[color:rgba(184,74,74,0.14)] bg-[var(--c-danger-soft)] px-3 py-2">
+              <p className="text-[12px] font-medium text-[var(--c-danger)]">
+                {selectedTransactionIds.length} transacción(es) seleccionada(s) en esta vista.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  onClick={() => setSelectedTransactionIds([])}
+                  variant="secondary"
+                  size="sm"
+                >
+                  Limpiar selección
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => setBulkDeleteModalOpen(true)}
+                  variant="danger"
+                  size="sm"
+                >
+                  Eliminar seleccionadas
+                </Button>
+              </div>
+            </DataToolbarRow>
+          ) : null}
+        </DataToolbar>
 
         {/* ── TABLA ────────────────────────────────────────────────────── */}
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr>
+                <Th className="w-12">
+                  <div className="flex items-center justify-center">
+                    <input
+                      ref={selectAllRef}
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={toggleSelectVisible}
+                      aria-label="Seleccionar transacciones visibles"
+                      className="h-4 w-4 rounded border border-[var(--c-border)] text-[var(--c-primary)] accent-[var(--c-primary)]"
+                    />
+                  </div>
+                </Th>
                 <Th>Tipo</Th>
                 <Th className="min-w-[180px]">Descripción</Th>
                 <Th className="hidden md:table-cell">Cuenta</Th>
@@ -1084,52 +1126,59 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
                 >
                   Monto
                 </Th>
-                <Th className="w-20"/>
+                <Th className="w-24"/>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <SkeletonRows cols={6} rows={10}/>
+                <SkeletonRows cols={7} rows={10}/>
               ) : isEmpty ? (
-                <EmptyState
+                <DataEmptyStateRow
                   icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"/></svg>}
                   title="Sin transacciones"
                   description={search ? `No hay resultados para "${search}"` : 'Registra tu primer ingreso, egreso o transferencia.'}
                   action={
                     !search ? (
-                      <Link href="/transactions/new"
-                        className="btn-primary text-xs px-4 py-2">
-                        + Nueva transacción
-                      </Link>
+                      <Button href="/transactions?new=transaction" scroll={false} prefetch variant="primary" size="sm">
+                        Nueva transacción
+                      </Button>
                     ) : undefined
                   }
                 />
               ) : (
-                transactions.map(tx => {
-                  const rowAccentClass =
-                    tx.type === 'INCOME'
-                      ? 'border-l-2 border-l-emerald-500/70'
-                      : tx.type === 'EXPENSE'
-                        ? 'border-l-2 border-l-red-500/70'
-                        : 'border-l-2 border-l-cyan-400/70'
-
+                transactions.map((tx, index) => {
                   return (
                     <tr
                       key={tx.id}
                       data-testid={`transactions-row-${tx.id}`}
-                      className={`group/row cursor-pointer transition-colors hover:bg-[var(--color-surface-2)] ${rowAccentClass}`}
+                      style={{ animationDelay: `${index * 16}ms` }}
+                      className={`list-reveal-item group/row cursor-pointer transition-colors hover:bg-[var(--c-surface-2)] ${selectedTransactionIds.includes(tx.id) ? 'bg-[var(--c-primary-soft)]' : ''}`}
                       onClick={() => router.push(`/transactions/${tx.id}`)}
                     >
+                      <Td>
+                        <div
+                          className="flex items-center justify-center"
+                          onClick={event => event.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedTransactionIds.includes(tx.id)}
+                            onChange={() => toggleTransactionSelection(tx.id)}
+                            aria-label={`Seleccionar ${tx.description}`}
+                            className="h-4 w-4 rounded border border-[var(--c-border)] text-[var(--c-primary)] accent-[var(--c-primary)]"
+                          />
+                        </div>
+                      </Td>
                       <Td>
                         <TypeBadge type={tx.type}/>
                       </Td>
                       <Td>
-                        <p className="text-sm text-[var(--color-text)] font-medium leading-tight">
+                        <p className="text-sm text-[var(--c-text)] font-medium leading-tight">
                           {tx.description}
                         </p>
                         <ModuleBadges tx={tx}/>
                         {tx.category && (
-                          <p className="text-[10px] text-[var(--color-text-muted)] mt-0.5">
+                          <p className="text-[10px] text-[var(--c-text-muted)] mt-0.5">
                             {normalizeCategoryLabel(tx.category.name)}
                           </p>
                         )}
@@ -1137,7 +1186,7 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
                       <Td muted className="hidden md:table-cell">
                         <p className="text-[12px]">{tx.sourceAccount?.name ?? '—'}</p>
                         {tx.destinationAccount && (
-                          <p className="text-[10px] text-[var(--color-text-faint)]">
+                          <p className="text-[10px] text-[var(--c-text-faint)]">
                             → {tx.destinationAccount.name}
                           </p>
                         )}
@@ -1164,7 +1213,7 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
                         />
                       </Td>
                       <Td>
-                        <RowActions actions={[
+                        <DataRowActions actions={[
                           {
                             label:   'Editar',
                             onClick: () => router.push(`/transactions/${tx.id}`),
@@ -1189,7 +1238,7 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
 
         {/* ── PAGINACIÓN ───────────────────────────────────────────────── */}
         {pagination && (
-          <Pagination
+          <DataPagination
             page={pagination.page}
             totalPages={totalPages}
             total={pagination.total}
@@ -1199,16 +1248,12 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
         )}
 
         {/* Refresh indicator */}
-        {isValidating && !isLoading && (
-          <div className="px-4 py-2 border-t border-[color:var(--color-border)] text-center">
-            <p className="text-[10px] text-[var(--color-text-muted)] animate-pulse">Actualizando…</p>
-          </div>
-        )}
-      </TableShell>
+        <DataRefreshIndicator show={isValidating && !isLoading} />
+      </DataTable>
 
       {saveViewModalOpen && (
-        <div
-          className="fixed inset-0 z-[80] flex items-center justify-center bg-[color:var(--color-overlay)] px-4"
+        <ModalOverlayPortal
+          className="z-[80]"
           onClick={closeSaveViewModal}
           data-testid="transactions-save-view-modal"
         >
@@ -1217,13 +1262,13 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
               role="dialog"
               aria-modal="true"
               aria-labelledby="transactions-save-view-title"
-              className="w-full max-w-md rounded-2xl border border-[color:var(--color-border)] bg-[var(--color-modal-bg)] p-5"
+              className="w-full max-w-md rounded-2xl border border-[var(--c-border)] bg-[var(--c-modal-bg)] p-5"
               onClick={event => event.stopPropagation()}
             >
-              <h3 id="transactions-save-view-title" className="text-sm font-bold text-[var(--color-text)]">
+              <h3 id="transactions-save-view-title" className="text-sm font-bold text-[var(--c-text)]">
                 Guardar vista
               </h3>
-              <p className="mt-1 text-[12px] text-[var(--color-text-muted)]">
+              <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">
                 Guarda los filtros actuales para reutilizarlos después.
               </p>
 
@@ -1235,7 +1280,7 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
                 }}
               >
                 <label className="block space-y-1.5">
-                  <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Nombre</span>
+                  <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Nombre</span>
                   <input
                     value={saveViewNameDraft}
                     onChange={event => {
@@ -1244,7 +1289,7 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
                     }}
                     autoFocus
                     data-testid="transactions-save-view-name-input"
-                    className="w-full rounded-lg border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-text-faint)] outline-none transition-colors focus:border-emerald-400/45"
+                    className="field-base"
                     placeholder="Ej. Gastos hogar"
                   />
                 </label>
@@ -1259,130 +1304,105 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
                 )}
 
                 <div className="flex items-center justify-end gap-2 pt-1">
-                  <button
+                  <Button
                     type="button"
                     onClick={closeSaveViewModal}
-                    data-testid="transactions-save-view-cancel-button"
-                    className="rounded-lg border border-[color:var(--color-border)] px-3 py-1.5 text-[12px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[color:var(--color-border-hover)] transition-colors"
+                    testId="transactions-save-view-cancel-button"
+                    variant="secondary"
+                    size="sm"
                   >
                     Cancelar
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="submit"
-                    data-testid="transactions-save-view-confirm-button"
-                    className="rounded-lg bg-emerald-500 px-3 py-1.5 text-[12px] font-bold text-black hover:bg-emerald-400 transition-colors"
+                    testId="transactions-save-view-confirm-button"
+                    variant="primary"
+                    size="sm"
                   >
                     {duplicatedSavedView ? 'Sobrescribir' : 'Guardar'}
-                  </button>
+                  </Button>
                 </div>
               </form>
             </div>
           </FocusTrap>
-        </div>
+        </ModalOverlayPortal>
       )}
 
-      {deleteSavedViewModalOpen && selectedSavedView && (
-        <div
-          className="fixed inset-0 z-[80] flex items-center justify-center bg-[color:var(--color-overlay)] px-4"
-          onClick={closeDeleteSavedViewModal}
-          data-testid="transactions-delete-view-modal"
-        >
-          <FocusTrap active={deleteSavedViewModalOpen} onEscape={closeDeleteSavedViewModal}>
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="transactions-delete-view-title"
-              className="w-full max-w-md rounded-2xl border border-[color:var(--color-border)] bg-[var(--color-modal-bg)] p-5"
-              onClick={event => event.stopPropagation()}
-            >
-              <h3 id="transactions-delete-view-title" className="text-sm font-bold text-[var(--color-text)]">
-                Eliminar vista guardada
-              </h3>
-              <p className="mt-1 text-[12px] text-[var(--color-text-muted)]">
-                ¿Eliminar la vista <span className="font-semibold text-[var(--color-text)]">&quot;{selectedSavedView.name}&quot;</span>?
-              </p>
+      <ConfirmDialog
+        open={deleteSavedViewModalOpen && Boolean(selectedSavedView)}
+        title="Eliminar vista guardada"
+        message={
+          selectedSavedView ? (
+            <>
+              ¿Eliminar la vista <strong>&quot;{selectedSavedView.name}&quot;</strong>?
+            </>
+          ) : ''
+        }
+        onCancel={closeDeleteSavedViewModal}
+        onConfirm={confirmDeleteSavedView}
+        danger
+        testId="transactions-delete-view-modal"
+        cancelTestId="transactions-delete-view-cancel-button"
+        confirmTestId="transactions-delete-view-confirm-button"
+        confirmLabel="Eliminar"
+      />
 
-              <div className="mt-4 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={closeDeleteSavedViewModal}
-                  data-testid="transactions-delete-view-cancel-button"
-                  className="rounded-lg border border-[color:var(--color-border)] px-3 py-1.5 text-[12px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[color:var(--color-border-hover)] transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={confirmDeleteSavedView}
-                  data-testid="transactions-delete-view-confirm-button"
-                  className="rounded-lg border border-red-400/40 bg-red-500/20 px-3 py-1.5 text-[12px] font-bold text-red-300 hover:bg-red-500/30 transition-colors"
-                >
-                  Eliminar
-                </button>
-              </div>
-            </div>
-          </FocusTrap>
-        </div>
-      )}
+      <ConfirmDialog
+        open={deleteTransactionModalOpen}
+        title="Eliminar transacción"
+        message={
+          <>
+            Esta acción no se puede deshacer
+            {selectedTransactionForDelete ? (
+              <>
+                {' '}y afectará los saldos relacionados de{' '}
+                <strong>{selectedTransactionForDelete.description}</strong>.
+              </>
+            ) : '.'}
+            {deleteState.status === 'error' ? (
+              <span className="mt-2 block text-[11px] text-[var(--c-danger)]">
+                {deleteState.error.message ?? 'No se pudo eliminar la transacción.'}
+              </span>
+            ) : null}
+          </>
+        }
+        onCancel={closeDeleteTransactionModal}
+        onConfirm={() => void confirmDeleteTransaction()}
+        loading={deleteState.status === 'loading'}
+        danger
+        testId="transactions-delete-modal"
+        cancelTestId="transactions-delete-cancel-button"
+        confirmTestId="transactions-delete-confirm-button"
+        confirmLabel="Eliminar"
+      />
 
-      {deleteTransactionModalOpen && (
-        <div
-          className="fixed inset-0 z-[80] flex items-center justify-center bg-[color:var(--color-overlay)] px-4"
-          onClick={closeDeleteTransactionModal}
-          data-testid="transactions-delete-modal"
-        >
-          <FocusTrap active={deleteTransactionModalOpen} onEscape={closeDeleteTransactionModal}>
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="transactions-delete-title"
-              className="w-full max-w-md rounded-2xl border border-[color:var(--color-border)] bg-[var(--color-modal-bg)] p-5"
-              onClick={event => event.stopPropagation()}
-            >
-              <h3 id="transactions-delete-title" className="text-sm font-bold text-[var(--color-text)]">
-                Eliminar transacción
-              </h3>
-              <p className="mt-1 text-[12px] text-[var(--color-text-muted)]">
-                Esta acción no se puede deshacer
-                {selectedTransactionForDelete ? (
-                  <>
-                    {' '}y afectará los saldos relacionados de{' '}
-                    <span className="font-semibold text-[var(--color-text)]">
-                      {selectedTransactionForDelete.description}
-                    </span>.
-                  </>
-                ) : '.'}
-              </p>
-              {deleteState.status === 'error' && (
-                <p className="mt-2 text-[11px] text-red-400">
-                  {deleteState.error.message ?? 'No se pudo eliminar la transacción.'}
-                </p>
-              )}
-
-              <div className="mt-4 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={closeDeleteTransactionModal}
-                  disabled={deleteState.status === 'loading'}
-                  data-testid="transactions-delete-cancel-button"
-                  className="rounded-lg border border-[color:var(--color-border)] px-3 py-1.5 text-[12px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[color:var(--color-border-hover)] transition-colors disabled:opacity-50"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void confirmDeleteTransaction()}
-                  disabled={deleteState.status === 'loading'}
-                  data-testid="transactions-delete-confirm-button"
-                  className="rounded-lg border border-red-400/40 bg-red-500/20 px-3 py-1.5 text-[12px] font-bold text-red-300 hover:bg-red-500/30 transition-colors disabled:opacity-50"
-                >
-                  {deleteState.status === 'loading' ? 'Eliminando...' : 'Eliminar'}
-                </button>
-              </div>
-            </div>
-          </FocusTrap>
-        </div>
-      )}
+      <ConfirmDialog
+        open={bulkDeleteModalOpen}
+        title="Eliminar transacciones seleccionadas"
+        message={
+          <>
+            Esta acción eliminará <strong>{selectedTransactionIds.length}</strong> transacción(es) de la vista actual y ajustará los saldos relacionados.
+            {bulkDeleteState.status === 'error' ? (
+              <span className="mt-2 block text-[11px] text-[var(--c-danger)]">
+                {bulkDeleteState.error.message ?? 'No se pudieron eliminar las transacciones seleccionadas.'}
+              </span>
+            ) : null}
+            {bulkDeleteState.status === 'success' && bulkDeleteState.data.failed.length > 0 ? (
+              <span className="mt-2 block text-[11px] text-[var(--c-warning)]">
+                {bulkDeleteState.data.failed.length} transacción(es) no se pudieron eliminar y seguirán seleccionadas.
+              </span>
+            ) : null}
+          </>
+        }
+        onCancel={closeBulkDeleteModal}
+        onConfirm={() => void confirmBulkDelete()}
+        loading={bulkDeleteState.status === 'loading'}
+        danger
+        testId="transactions-bulk-delete-modal"
+        cancelTestId="transactions-bulk-delete-cancel-button"
+        confirmTestId="transactions-bulk-delete-confirm-button"
+        confirmLabel="Eliminar seleccionadas"
+      />
     </div>
   )
 }

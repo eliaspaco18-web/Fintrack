@@ -68,7 +68,7 @@ export function FirstRunOnboarding({
       id: 'transactions',
       title: 'Registra tu primera transacción',
       description: 'Carga un ingreso o egreso y valida cómo se actualiza el dashboard.',
-      href: '/transactions/new',
+      href: '/transactions?new=transaction',
       cta: 'Nueva transacción',
       done: hasTransactions,
     },

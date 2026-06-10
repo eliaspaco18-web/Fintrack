@@ -1,0 +1,1 @@
+self.__REACT_LOADABLE_MANIFEST='{"components/settings/SecuritySettingsPanel.tsx -> @/lib/supabase.client":{"id":35325,"files":["static/chunks/2957-135fdf77983e5820.js","static/chunks/4033-fd48dd4d8797bb7e.js","static/chunks/5325.18493521c4475339.js"]}}';

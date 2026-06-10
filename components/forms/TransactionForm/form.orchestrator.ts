@@ -69,7 +69,7 @@ export function deriveSections(
   const isExpense = type === 'EXPENSE'
   const isIncome  = type === 'INCOME'
   const mod       = getModuleTrigger(categorySystemKey)
-  const hasManualExpenseModule = createsAsset || createsPayable
+  const hasManualExpenseModule = createsAsset || createsReceivable
 
   const assetMod = isExpense && (
     hasManualExpenseModule
@@ -77,16 +77,12 @@ export function deriveSections(
       : mod === 'asset'
   )
   const creditMod = false
-  const payableMod = isExpense && (
+  const receivableMod = isExpense && (
     hasManualExpenseModule
-      ? createsPayable
-      : mod === 'payable'
-  )
-  const receivableMod = isIncome && (
-    createsReceivable
-      ? true
+      ? createsReceivable
       : mod === 'receivable'
   )
+  const payableMod = isIncome && (createsPayable ? true : mod === 'payable')
 
   return {
     destinationAccount: isTx,
@@ -102,16 +98,24 @@ export function deriveSections(
   }
 }
 
-// ─── PAYLOAD BUILDER ─────────────────────────────────────────────────────────
+function findOptionLabel(options: Array<{ value: string; label: string }>, value: string | undefined): string | null {
+  if (!value) return null
+  const match = options.find(option => option.value === value)
+  return match?.label ?? null
+}
 
 function buildPayload(
   values:   TransactionFormValues,
   sections: SectionVisibility,
+  options:  TransactionFormOptions,
 ): z.infer<typeof zCreateTransactionSchema> {
+  const selectedDebtorName = findOptionLabel(options.debtors, values.receivable_debtor_id)
+  const selectedCreditorName = findOptionLabel(options.creditors, values.payable_creditor_id)
+
   const base = {
     source_account_id: values.source_account_id,
     amount:            Number(values.amount),
-    currency:          values.currency,
+    currency:          values.currency as 'PEN' | 'USD',
     payment_method:    values.type === 'EXPENSE' ? values.payment_method ?? 'DEBIT' : undefined,
     credit_card_id:    values.type === 'EXPENSE' ? values.credit_card_id || undefined : undefined,
     credit_operation:  values.type === 'EXPENSE' ? values.credit_operation || undefined : undefined,
@@ -120,8 +124,11 @@ function buildPayload(
     category_id:       values.category_id || undefined,
     notes:             values.notes?.trim() || undefined,
     is_recurring:      values.is_recurring,
+    recurring_name:    values.recurring_name?.trim() || undefined,
     exchange_rate:     values.currency === 'USD' && values.exchange_rate
                          ? Number(values.exchange_rate) : undefined,
+    sender:            values.sender?.trim() || undefined,
+    recipient:         values.recipient?.trim() || undefined,
   }
 
   if (values.type === 'TRANSFER') {
@@ -132,26 +139,31 @@ function buildPayload(
     return {
       ...base,
       type: 'INCOME',
-      receivable: sections.receivableModule && values.receivable_debtor ? {
-        debtor_name: values.receivable_debtor,
-        due_date:    values.receivable_due || undefined,
-        concept:     values.description.trim(),
+      payable: sections.payableModule && selectedCreditorName ? {
+        creditor_id: values.payable_creditor_id,
+        creditor_name: selectedCreditorName,
+        due_date: values.payable_due || undefined,
+        concept: values.description.trim(),
       } : undefined,
     }
   }
 
   return {
     ...base,
-    type:   'EXPENSE',
-    asset:  sections.assetModule ? {
-      name: values.asset_name!, asset_type: values.asset_type ?? 'OTHER',
+    type: 'EXPENSE',
+    budget_id: values.budget_id || undefined,
+    asset: sections.assetModule ? {
+      name: values.asset_name!,
+      asset_type: values.asset_type ?? 'OTHER',
+      asset_type_id: values.asset_type_id || undefined,
       purchase_value: Number(values.amount),
       serial_number: values.asset_serial || undefined,
       location: values.asset_location || undefined,
     } : undefined,
     credit: sections.creditModule ? {
       credit_type: values.credit_type ?? 'CREDIT_CARD',
-      name: values.credit_name!, credit_limit: Number(values.credit_limit),
+      name: values.credit_name!,
+      credit_limit: Number(values.credit_limit),
       interest_rate: Number(values.credit_rate ?? 0),
     } : undefined,
     loan: sections.loanModule ? {
@@ -161,9 +173,10 @@ function buildPayload(
       end_date: values.loan_end_date!,
       generate_schedule: values.loan_schedule,
     } : undefined,
-    payable: sections.payableModule && values.payable_creditor ? {
-      creditor_name: values.payable_creditor,
-      due_date: values.payable_due || undefined,
+    receivable: sections.receivableModule && selectedDebtorName ? {
+      debtor_id: values.receivable_debtor_id,
+      debtor_name: selectedDebtorName,
+      due_date: values.receivable_due || undefined,
       concept: values.description.trim(),
     } : undefined,
   }
@@ -250,7 +263,7 @@ export function useFormOrchestrator(
   const submit = form.handleSubmit(async (values) => {
     setSubmitState({ status: 'loading' })
     try {
-      const payload = buildPayload(values, sections)
+      const payload = buildPayload(values, sections, options)
       const result  = await createTransactionAction(payload)
       if (result.ok) {
         setSubmitState({ status: 'success', data: result.data })

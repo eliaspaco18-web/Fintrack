@@ -33,13 +33,13 @@ export function EmptyPage({
   return (
     <div className={`flex flex-col items-center justify-center text-center ${pad}`}>
       <div className={`
-        ${iconSize} rounded-2xl bg-[var(--color-surface-2)] border border-[color:var(--color-border)]
-        flex items-center justify-center mb-5 text-[var(--color-text-faint)]
+        ${iconSize} rounded-2xl bg-[var(--c-surface-2)] border border-[var(--c-border)]
+        flex items-center justify-center mb-5 text-[var(--c-text-faint)]
       `}>
         {icon}
       </div>
-      <p className={`font-semibold text-[var(--color-text)] ${titleSize}`}>{title}</p>
-      <p className="text-[12px] text-[var(--color-text-muted)] mt-1.5 max-w-xs leading-relaxed">
+      <p className={`font-semibold text-[var(--c-text)] ${titleSize}`}>{title}</p>
+      <p className="text-[12px] text-[var(--c-text-muted)] mt-1.5 max-w-xs leading-relaxed">
         {description}
       </p>
       {action && (
@@ -47,18 +47,18 @@ export function EmptyPage({
           {action.href ? (
             <Link href={action.href}
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl
-                bg-emerald-500 hover:bg-emerald-400 text-[var(--color-on-accent)] text-sm font-bold
-                transition-all shadow-lg shadow-emerald-500/20
-                focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400">
+                bg-[var(--c-primary)] hover:bg-[var(--c-primary-hover)] text-[var(--c-text-on-primary)] text-sm font-bold
+                transition-all shadow-lg shadow-[rgba(14,79,70,0.16)]
+                focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-primary)]">
               {action.label}
             </Link>
           ) : (
             <button
               onClick={action.onClick}
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl
-                bg-[var(--color-surface-2)] hover:bg-[var(--color-surface)] border border-[color:var(--color-border)]
-                text-[var(--color-text-muted)] hover:text-[var(--color-text)] text-sm font-semibold
-                transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color:var(--color-border-hover)]">
+                bg-[var(--c-surface-2)] hover:bg-[var(--c-surface)] border border-[var(--c-border)]
+                text-[var(--c-text-muted)] hover:text-[var(--c-text)] text-sm font-semibold
+                transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-border-hover)]">
               {action.label}
             </button>
           )}
@@ -76,35 +76,35 @@ const EMPTY_CONFIGS = {
     title:       'Sin transacciones',
     description: 'Registra tu primer ingreso, egreso o transferencia para empezar.',
     actionLabel: '+ Nueva transacción',
-    actionHref:  '/transactions/new',
+    actionHref:  '/transactions?new=transaction',
     icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"/></svg>,
   },
   credits: {
     title:       'Sin créditos activos',
     description: 'Los créditos y préstamos aparecerán al registrar un egreso de tipo crédito.',
     actionLabel: 'Registrar egreso',
-    actionHref:  '/transactions/new',
+    actionHref:  '/transactions?new=transaction',
     icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20"/></svg>,
   },
   assets: {
     title:       'Sin activos registrados',
     description: 'Los activos se crean automáticamente al registrar un egreso de tipo activo.',
     actionLabel: 'Registrar egreso',
-    actionHref:  '/transactions/new',
+    actionHref:  '/transactions?new=transaction',
     icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="m12 2 9 4.9V17L12 22 3 17V6.9L12 2Z"/><path d="M12 22V12"/><path d="m3 7 9 5 9-5"/></svg>,
   },
   receivables: {
     title:       'Sin cuentas por cobrar',
     description: 'Aparecerán al registrar un ingreso con la categoría "Cuenta por cobrar".',
     actionLabel: 'Registrar ingreso',
-    actionHref:  '/transactions/new',
+    actionHref:  '/transactions?new=transaction',
     icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="m9 15 2 2 4-4"/></svg>,
   },
   payables: {
     title:       'Sin cuentas por pagar',
     description: 'Aparecerán al registrar un egreso con la categoría "Cuenta por pagar".',
     actionLabel: 'Registrar egreso',
-    actionHref:  '/transactions/new',
+    actionHref:  '/transactions?new=transaction',
     icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><line x1="9" y1="13" x2="15" y2="13"/></svg>,
   },
 } as const
@@ -148,15 +148,15 @@ export function ErrorState({
           <path d="M12 8v4m0 4h.01"/>
         </svg>
       </div>
-      <p className="text-sm font-semibold text-[var(--color-text)]">{title}</p>
-      <p className="text-[12px] text-[var(--color-text-muted)] mt-1 max-w-xs">{message}</p>
+      <p className="text-sm font-semibold text-[var(--c-text)]">{title}</p>
+      <p className="text-[12px] text-[var(--c-text-muted)] mt-1 max-w-xs">{message}</p>
       {onRetry && (
         <button
           onClick={onRetry}
           className="mt-5 px-4 py-2 rounded-xl text-sm
-            bg-[var(--color-surface-2)] hover:bg-[var(--color-surface)]
-            border border-[color:var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[color:var(--color-border-hover)]
-            transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color:var(--color-border-hover)]"
+            bg-[var(--c-surface-2)] hover:bg-[var(--c-surface)]
+            border border-[var(--c-border)] text-[var(--c-text-muted)] hover:text-[var(--c-text)] hover:border-[var(--c-border-hover)]
+            transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-border-hover)]"
         >
           Reintentar
         </button>
@@ -241,9 +241,9 @@ export function PageLoader() {
       aria-label="Cargando página…"
     >
       <div className="flex flex-col items-center gap-3">
-        <div className="w-8 h-8 rounded-full border-2 border-emerald-500/20
-          border-t-emerald-500 animate-spin"/>
-        <p className="text-[11px] text-[var(--color-text-muted)]">Cargando…</p>
+        <div className="w-8 h-8 rounded-full border-2 border-[var(--c-primary-border)]
+          border-t-[var(--c-primary)] animate-spin"/>
+        <p className="text-[11px] text-[var(--c-text-muted)]">Cargando…</p>
       </div>
     </div>
   )

@@ -7,15 +7,31 @@
 
 'use client'
 
-import { forwardRef, type ReactNode }  from 'react'
+import {
+  Children,
+  forwardRef,
+  isValidElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from 'react'
+import { AppSelect, type AppSelectOption } from '@/components/ui/AppSelect'
+import { NumericInput } from '@/components/ui/NumericInput'
 
 // ─── TIPOS BASE ───────────────────────────────────────────────────────────────
 
 interface FieldWrapperProps {
   label?:    string
   required?: boolean
+  optional?: boolean
+  optionalLabel?: string
   error?:    string
   hint?:     string
+  description?: string
   children:  ReactNode
   className?: string
 }
@@ -23,29 +39,35 @@ interface FieldWrapperProps {
 // ─── FIELD WRAPPER ────────────────────────────────────────────────────────────
 
 export function FieldWrapper({
-  label, required, error, hint, children, className = '',
+  label, required, optional = false, optionalLabel = 'Opcional', error, hint, description, children, className = '',
 }: FieldWrapperProps) {
   return (
-    <div className={`flex flex-col gap-1.5 ${className}`}>
+    <div className={`flex flex-col gap-[var(--ft-form-label-gap)] ${className}`}>
       {label && (
-        <label className="flex items-center gap-1 text-[11px] font-semibold
-          text-[var(--color-text-muted)] uppercase tracking-[0.08em]">
-          {label}
-          {required && (
-            <span className="text-red-400 font-bold">*</span>
-          )}
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <label className="text-[13px] font-semibold leading-[1.3] tracking-[-0.01em] text-[var(--c-text)]">
+            {label}
+            {optional && (
+              <span className="ml-2 text-[12px] font-medium text-[var(--ft-form-muted)]">
+                {optionalLabel}
+              </span>
+            )}
+          </label>
           {hint && (
-            <span className="ml-auto text-[10px] font-normal normal-case
-              text-[var(--color-text-faint)] tracking-normal">
+            <span className="text-[12px] leading-[1.4] text-[var(--ft-form-muted)]">
               {hint}
             </span>
           )}
-        </label>
+        </div>
+      )}
+      {description && (
+        <p className="max-w-[65ch] text-[12px] leading-[1.5] text-[var(--ft-form-muted)]">
+          {description}
+        </p>
       )}
       {children}
       {error && (
-        <p className="flex items-center gap-1.5 text-[11px] text-red-400
-          animate-[slide-down_0.15s_ease-out]">
+        <p className="flex items-center gap-1.5 text-[12px] font-medium leading-[1.45] text-[var(--ft-form-error)]">
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" strokeWidth="2.5">
             <circle cx="12" cy="12" r="10"/>
@@ -63,25 +85,61 @@ export function FieldWrapper({
 
 type InputProps = React.InputHTMLAttributes<HTMLInputElement> & {
   error?: string
+  numericDecimals?: number
+  numericAllowNegative?: boolean
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  function Input({ error, className = '', ...props }, ref) {
+  function Input({
+    error,
+    className = '',
+    type,
+    numericDecimals,
+    numericAllowNegative,
+    min,
+    step,
+    ...props
+  }, ref) {
+    const baseClassName = `
+      ft-form-input w-full px-3.5 py-2.5 rounded-lg text-sm font-medium tabular-nums
+      bg-[var(--c-surface-2)] text-[var(--c-text)] placeholder:text-[var(--c-text-faint)]
+      border transition-[border-color,box-shadow,background-color,color] duration-150 outline-none
+      focus:ring-2 ring-offset-0
+      ${error
+        ? 'border-red-500/40 focus:border-red-500/60 focus:ring-red-500/15'
+        : 'border-[var(--c-border)] hover:border-[var(--c-border-hover)] focus:border-[rgba(14,79,70,0.35)] focus:ring-[rgba(14,79,70,0.10)]'
+      }
+      disabled:opacity-40 disabled:cursor-not-allowed
+      ${className}
+    `
+
+    if (type === 'number') {
+      const resolvedAllowNegative = numericAllowNegative ?? (() => {
+        if (typeof min === 'number') return min < 0
+        if (typeof min === 'string' && min.trim().length > 0) return Number(min) < 0
+        return false
+      })()
+
+      return (
+        <NumericInput
+          ref={ref}
+          {...props}
+          min={min}
+          step={step}
+          decimals={numericDecimals}
+          allowNegative={resolvedAllowNegative}
+          className={baseClassName}
+        />
+      )
+    }
+
     return (
       <input
         ref={ref}
         {...props}
+        type={type}
         className={`
-          w-full px-3.5 py-2.5 rounded-lg text-sm font-medium
-          bg-[var(--color-surface-2)] text-[var(--color-text)] placeholder:text-[var(--color-text-faint)]
-          border transition-all duration-150 outline-none
-          focus:ring-2 ring-offset-0
-          ${error
-            ? 'border-red-500/40 focus:border-red-500/60 focus:ring-red-500/15'
-            : 'border-[color:var(--color-border)] hover:border-[color:var(--color-border-hover)] focus:border-emerald-500/40 focus:ring-emerald-500/10'
-          }
-          disabled:opacity-40 disabled:cursor-not-allowed
-          ${className}
+          ${baseClassName}
         `}
       />
     )
@@ -93,41 +151,148 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
 type SelectProps = React.SelectHTMLAttributes<HTMLSelectElement> & {
   error?:       string
   placeholder?: string
+  compact?:     boolean
 }
 
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(
-  function Select({ error, placeholder, children, className = '', ...props }, ref) {
+  function Select({
+    error,
+    placeholder,
+    compact = false,
+    children,
+    className = '',
+    onChange,
+    onBlur,
+    value: controlledValue,
+    defaultValue,
+    disabled,
+    required,
+    name,
+    ...props
+  }, ref) {
+    const selectRef = useRef<HTMLSelectElement | null>(null)
+    const [uncontrolledValue, setUncontrolledValue] = useState<string>(
+      String(defaultValue ?? ''),
+    )
+
+    const isControlled = controlledValue !== undefined
+    const currentValue = String(isControlled ? controlledValue ?? '' : uncontrolledValue)
+
+    const setRefs = useCallback((node: HTMLSelectElement | null) => {
+      selectRef.current = node
+      if (typeof ref === 'function') {
+        ref(node)
+        return
+      }
+      if (ref) {
+        ref.current = node
+      }
+    }, [ref])
+
+    const toOptionLabel = useCallback((child: ReactNode): string => {
+      if (typeof child === 'string' || typeof child === 'number') return String(child)
+      if (Array.isArray(child)) return child.map(item => toOptionLabel(item)).join('')
+      if (!isValidElement(child)) return ''
+      return toOptionLabel(child.props.children)
+    }, [])
+
+    type SelectOptionElementProps = {
+      value?: string | number
+      children?: ReactNode
+      disabled?: boolean
+    }
+
+    const options = useMemo<AppSelectOption[]>(() => {
+      const mapped = Children.toArray(children)
+        .filter((node): node is ReactElement<SelectOptionElementProps> => isValidElement<SelectOptionElementProps>(node))
+        .map(node => {
+          const value = node.props.value
+          return {
+            value: String(value ?? ''),
+            label: toOptionLabel(node.props.children),
+            disabled: Boolean(node.props.disabled),
+          } satisfies AppSelectOption
+        })
+
+      if (!placeholder) return mapped
+
+      return [
+        {
+          value: '',
+          label: placeholder,
+          disabled: Boolean(required),
+        },
+        ...mapped,
+      ]
+    }, [children, placeholder, required, toOptionLabel])
+
+    useEffect(() => {
+      if (isControlled) return
+      const domValue = selectRef.current?.value
+      if (typeof domValue === 'string' && domValue !== uncontrolledValue) {
+        setUncontrolledValue(domValue)
+      }
+    }, [isControlled, options, uncontrolledValue])
+
+    const emitChange = useCallback((nextValue: string) => {
+      if (!isControlled) {
+        setUncontrolledValue(nextValue)
+      }
+
+      if (selectRef.current) {
+        selectRef.current.value = nextValue
+        selectRef.current.dispatchEvent(new Event('change', { bubbles: true }))
+        selectRef.current.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+
+      if (onChange) {
+        const syntheticEvent = {
+          target: { value: nextValue, name },
+          currentTarget: { value: nextValue, name },
+        } as unknown as React.ChangeEvent<HTMLSelectElement>
+        onChange(syntheticEvent)
+      }
+    }, [isControlled, name, onChange])
+
     return (
       <div className="relative">
         <select
-          ref={ref}
+          ref={setRefs}
           {...props}
-          className={`
-            w-full px-3.5 py-2.5 rounded-lg text-sm font-medium
-            bg-[var(--color-surface-2)] text-[var(--color-text)] appearance-none cursor-pointer
-            border transition-all duration-150 outline-none
-            focus:ring-2 ring-offset-0 pr-9
-            ${error
-              ? 'border-red-500/40 focus:border-red-500/60 focus:ring-red-500/15'
-              : 'border-[color:var(--color-border)] hover:border-[color:var(--color-border-hover)] focus:border-emerald-500/40 focus:ring-emerald-500/10'
+          name={name}
+          value={currentValue}
+          disabled={disabled}
+          required={required}
+          onChange={event => {
+            if (!isControlled) {
+              setUncontrolledValue(event.target.value)
             }
-            disabled:opacity-40 disabled:cursor-not-allowed
-            ${className}
+            onChange?.(event)
+          }}
+          onBlur={onBlur}
+          className={`
+            sr-only pointer-events-none absolute h-0 w-0 opacity-0
           `}
+          tabIndex={-1}
+          aria-hidden="true"
         >
-          {placeholder && (
-            <option value="" disabled>{placeholder}</option>
-          )}
-          {children}
+          {options.map((option, index) => (
+            <option key={`${option.value || '__empty-option__'}-${index}`} value={option.value} disabled={option.disabled}>
+              {option.label}
+            </option>
+          ))}
         </select>
-        {/* Chevron */}
-        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2
-          text-[var(--color-text-faint)]">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" strokeWidth="2.5">
-            <path d="m6 9 6 6 6-6"/>
-          </svg>
-        </span>
+        <AppSelect
+          options={options}
+          value={currentValue}
+          onChange={emitChange}
+          disabled={disabled}
+          compact={compact}
+          placeholder={placeholder ?? 'Seleccionar...'}
+          searchPlaceholder={placeholder ? `Buscar ${placeholder.toLowerCase()}...` : 'Buscar...'}
+          buttonClassName={error ? 'app-select-invalid' : ''}
+          className={className}
+        />
       </div>
     )
   }
@@ -146,13 +311,13 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         ref={ref}
         {...props}
         className={`
-          w-full px-3.5 py-2.5 rounded-lg text-sm font-medium resize-none
-          bg-[var(--color-surface-2)] text-[var(--color-text)] placeholder:text-[var(--color-text-faint)]
-          border transition-all duration-150 outline-none
+          ft-form-textarea w-full px-3.5 py-2.5 rounded-lg text-sm font-medium resize-none
+          bg-[var(--c-surface-2)] text-[var(--c-text)] placeholder:text-[var(--c-text-faint)]
+          border transition-[border-color,box-shadow,background-color,color] duration-150 outline-none
           focus:ring-2 ring-offset-0
           ${error
             ? 'border-red-500/40 focus:border-red-500/60 focus:ring-red-500/15'
-            : 'border-[color:var(--color-border)] hover:border-[color:var(--color-border-hover)] focus:border-emerald-500/40 focus:ring-emerald-500/10'
+            : 'border-[var(--c-border)] hover:border-[var(--c-border-hover)] focus:border-[rgba(14,79,70,0.35)] focus:ring-[rgba(14,79,70,0.10)]'
           }
           disabled:opacity-40 disabled:cursor-not-allowed
           ${className}
@@ -177,7 +342,7 @@ export function CheckboxToggle({
   label, description, checked, onChange, disabled, accent = 'emerald',
 }: CheckboxToggleProps) {
   const colors = {
-    emerald: 'bg-emerald-500',
+    emerald: 'bg-[var(--c-primary)]',
     blue:    'bg-blue-500',
     amber:   'bg-amber-500',
   }
@@ -192,21 +357,21 @@ export function CheckboxToggle({
         onClick={() => !disabled && onChange(!checked)}
         className={`
           relative flex-shrink-0 mt-0.5 w-9 h-5 rounded-full transition-all duration-200
-          ${checked ? colors[accent] : 'bg-[var(--color-surface-2)] border border-[color:var(--color-border)]'}
-          focus:outline-none focus:ring-2 focus:ring-emerald-500/30
+          ${checked ? colors[accent] : 'bg-[var(--c-surface-2)] border border-[var(--c-border)]'}
+          focus:outline-none focus:ring-2 focus:ring-[rgba(14,79,70,0.25)]
         `}
       >
         <span className={`
-          absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-[var(--color-surface)]
-          border border-[color:var(--color-border)]
+          absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-[var(--c-surface)]
+          border border-[var(--c-border)]
           shadow-sm transition-transform duration-200
           ${checked ? 'translate-x-4' : 'translate-x-0'}
         `}/>
       </button>
       <div>
-        <p className="text-sm text-[var(--color-text)] font-medium leading-tight">{label}</p>
+        <p className="text-sm text-[var(--c-text)] font-medium leading-tight">{label}</p>
         {description && (
-          <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">{description}</p>
+          <p className="text-[11px] text-[var(--c-text-muted)] mt-0.5">{description}</p>
         )}
       </div>
     </label>
@@ -228,24 +393,24 @@ export const AmountInput = forwardRef<HTMLInputElement, AmountInputProps>(
     return (
       <div className="relative">
         <span className="absolute left-3.5 top-1/2 -translate-y-1/2
-          text-sm font-bold text-[var(--color-text-muted)] pointer-events-none select-none tabular-nums">
+          text-sm font-bold text-[var(--c-text-muted)] pointer-events-none select-none tabular-nums">
           {symbol}
         </span>
-        <input
+        <NumericInput
           ref={ref}
-          type="number"
           step="0.01"
-          min="0"
+          decimals={2}
+          allowNegative={false}
           placeholder="0.00"
           {...props}
           className={`
-            w-full pl-10 pr-3.5 py-3 rounded-lg text-lg font-bold tabular-nums
-            bg-[var(--color-surface-2)] text-[var(--color-text)] placeholder:text-[var(--color-text-faint)]
-            border transition-all duration-150 outline-none
+            ft-form-amount-input w-full pl-10 pr-3.5 py-3 rounded-lg text-lg font-bold tabular-nums
+            bg-[var(--c-surface-2)] text-[var(--c-text)] placeholder:text-[var(--c-text-faint)]
+            border transition-[border-color,box-shadow,background-color,color] duration-150 outline-none
             focus:ring-2 ring-offset-0
             ${error
               ? 'border-red-500/40 focus:border-red-500/60 focus:ring-red-500/15'
-              : 'border-[color:var(--color-border)] hover:border-[color:var(--color-border-hover)] focus:border-emerald-500/40 focus:ring-emerald-500/10'
+              : 'border-[var(--c-border)] hover:border-[var(--c-border-hover)] focus:border-[rgba(14,79,70,0.35)] focus:ring-[rgba(14,79,70,0.10)]'
             }
             ${className}
           `}
@@ -266,14 +431,14 @@ interface SectionDividerProps {
 }
 
 export function SectionDivider({
-  title, accent = '#10b981', collapsible, open, onToggle,
+  title, accent = 'var(--c-primary)', collapsible, open, onToggle,
 }: SectionDividerProps) {
   return (
     <div
       className={`flex items-center gap-3 py-0.5 ${collapsible ? 'cursor-pointer select-none' : ''}`}
       onClick={collapsible ? onToggle : undefined}
     >
-      <div className="h-px flex-1 bg-[var(--color-border)]"/>
+      <div className="h-px flex-1 bg-[var(--c-border)]"/>
       <span
         className="text-[10px] font-bold uppercase tracking-[0.12em] flex items-center gap-1.5"
         style={{ color: accent }}
@@ -289,7 +454,7 @@ export function SectionDivider({
           </svg>
         )}
       </span>
-      <div className="h-px flex-1 bg-[var(--color-border)]"/>
+      <div className="h-px flex-1 bg-[var(--c-border)]"/>
     </div>
   )
 }
@@ -359,7 +524,7 @@ interface InlineFeedbackProps {
 }
 
 const feedbackStyles = {
-  success: { border: 'border-emerald-500/20', bg: 'bg-emerald-500/8',  text: 'text-emerald-400', icon: '✓' },
+  success: { border: 'border-[var(--c-primary-border)]', bg: 'bg-[var(--c-primary-soft)]',  text: 'text-[var(--c-primary)]', icon: '✓' },
   error:   { border: 'border-red-500/20',     bg: 'bg-red-500/8',      text: 'text-red-400',     icon: '✕' },
   warning: { border: 'border-amber-500/20',   bg: 'bg-amber-500/8',    text: 'text-amber-400',   icon: '!' },
   info:    { border: 'border-blue-500/20',    bg: 'bg-blue-500/8',     text: 'text-blue-400',    icon: 'i' },

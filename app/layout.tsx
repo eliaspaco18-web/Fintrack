@@ -3,27 +3,28 @@
 // =============================================================================
 
 import type { Metadata, Viewport } from 'next'
-import { Providers }               from './providers'
+import { Providers } from './providers'
 import './globals.css'
 
 export const metadata: Metadata = {
   title: {
     template: '%s — FinTrack',
-    default:  'FinTrack · Finanzas inteligentes',
+    default: 'FinTrack · Plataforma financiera',
   },
-  description: 'Plataforma de finanzas inteligentes: ingresos, egresos, créditos y activos.',
+  description: 'Plataforma financiera para gestionar ingresos, egresos, créditos, activos y alertas.',
   icons: {
-    icon: '/brand/fintrack-mark.svg',
-    shortcut: '/brand/fintrack-mark.svg',
+    icon: '/brand/fintrack-tab-icon.png',
+    shortcut: '/brand/fintrack-tab-icon.png',
+    apple: '/brand/fintrack-mark.png',
   },
-  robots:      { index: false, follow: false },
+  robots: { index: false, follow: false },
 }
 
 export const viewport: Viewport = {
-  themeColor:    '#070b10',
-  colorScheme:   'dark light',
-  width:         'device-width',
-  initialScale:  1,
+  themeColor: '#070b10',
+  colorScheme: 'dark light',
+  width: 'device-width',
+  initialScale: 1,
 }
 
 const THEME_BOOTSTRAP_SCRIPT = `
@@ -34,12 +35,12 @@ const THEME_BOOTSTRAP_SCRIPT = `
     const theme =
       saved === 'light' || saved === 'dark'
         ? saved
-        : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+        : 'light'
     document.documentElement.setAttribute('data-theme', theme)
     document.documentElement.style.colorScheme = theme
   } catch {
-    document.documentElement.setAttribute('data-theme', 'dark')
-    document.documentElement.style.colorScheme = 'dark'
+    document.documentElement.setAttribute('data-theme', 'light')
+    document.documentElement.style.colorScheme = 'light'
   }
 })()
 `
@@ -51,7 +52,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       suppressHydrationWarning
     >
       <body className="font-body antialiased">
-        <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }}/>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
         <Providers>
           {children}
         </Providers>

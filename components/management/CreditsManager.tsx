@@ -1,19 +1,31 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react'
-import { useRouter } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { mutate } from 'swr'
 import { useToast } from '@/lib/toast/toast'
 import { FocusTrap } from '@/components/ui/accessibility'
+import { ModalOverlayPortal } from '@/components/ui/ModalOverlayPortal'
+import { AppSelect } from '@/components/ui/AppSelect'
+import { NumericInput } from '@/components/ui/NumericInput'
 import { formatNumber } from '@/lib/contracts/ui.contracts'
 import type { AccountType, CurrencyCode } from '@/types/database.types'
+import { getApiErrorMessage } from '@/lib/api/error-message'
+import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 
 type CreditMode = 'CARD' | 'BANK'
 
 type AccountOption = {
   id: string
   name: string
+  institution: string | null
+  bank_entity_id: string | null
+  bank_entity?: {
+    id: string
+    name: string
+    short_name: string | null
+  } | null
   type: AccountType
   currency: CurrencyCode
   is_active: boolean
@@ -22,7 +34,7 @@ type AccountOption = {
 type CategoryOption = {
   id: string
   name: string
-  scope: 'INCOME' | 'EXPENSE' | 'BOTH'
+  scope: 'INCOME' | 'EXPENSE'
 }
 
 type CardForm = {
@@ -66,24 +78,6 @@ type ManualInstallmentForm = {
   insurance_amount: string
 }
 
-interface ApiErrorShape {
-  ok: false
-  error?: { message?: string }
-}
-
-function getApiErrorMessage(payload: unknown, fallback: string): string {
-  if (
-    typeof payload === 'object' &&
-    payload !== null &&
-    'ok' in payload &&
-    (payload as ApiErrorShape).ok === false &&
-    (payload as ApiErrorShape).error?.message
-  ) {
-    return (payload as ApiErrorShape).error?.message ?? fallback
-  }
-  return fallback
-}
-
 function isoDateToday(): string {
   return new Date().toISOString().slice(0, 10)
 }
@@ -110,9 +104,9 @@ function buildManualInstallments(totalInstallments: number, startDate: string): 
   return Array.from({ length: totalInstallments }, (_, index) => ({
     installment_number: index + 1,
     due_date: addMonths(startDate, index),
-    principal_amount: '0',
-    interest_amount: '0',
-    insurance_amount: '0',
+    principal_amount: '0.00',
+    interest_amount: '0.00',
+    insurance_amount: '0.00',
   }))
 }
 
@@ -121,8 +115,8 @@ const EMPTY_CARD_FORM: CardForm = {
   account_id: '',
   currency: 'PEN',
   credit_limit: '',
-  used_amount: '0',
-  annual_tea: '0',
+  used_amount: '0.00',
+  annual_tea: '0.00',
   closing_day: '',
   payment_day: '',
   notes: '',
@@ -136,7 +130,7 @@ const EMPTY_BANK_FORM: BankForm = {
   category_id: '',
   currency: 'PEN',
   principal_amount: '',
-  annual_tea: '0',
+  annual_tea: '0.00',
   total_installments: '12',
   start_date: initialBankDate,
   end_date: addMonths(initialBankDate, 12),
@@ -148,6 +142,8 @@ const EMPTY_BANK_FORM: BankForm = {
 
 export function CreditsManager() {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const { toast } = useToast()
 
   const [mode, setMode] = useState<CreditMode>('CARD')
@@ -163,9 +159,16 @@ export function CreditsManager() {
   const [manualInstallments, setManualInstallments] = useState<ManualInstallmentForm[]>([])
   const [bankAttachment, setBankAttachment] = useState<File | null>(null)
   const [bankAttachmentError, setBankAttachmentError] = useState<string | null>(null)
+  const handledQueryOpenRef = useRef(false)
+  const openFromHeroQuery = searchParams.get('new') === 'credit'
 
   const cardAccounts = useMemo(
-    () => accounts.filter(account => account.is_active && account.type === 'CREDIT_CARD'),
+    () => accounts.filter(
+      account =>
+        account.is_active &&
+        account.type === 'CREDIT_CARD' &&
+        Boolean(account.bank_entity_id),
+    ),
     [accounts]
   )
   const destinationAccounts = useMemo(
@@ -180,12 +183,28 @@ export function CreditsManager() {
     setIsModalOpen(true)
   }, [])
 
+  const clearCreateQueryParam = useCallback(() => {
+    if (searchParams.get('new') !== 'credit') return
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete('new')
+    const nextUrl = params.toString().length > 0 ? `${pathname}?${params}` : pathname
+    router.replace(nextUrl, { scroll: false })
+  }, [pathname, router, searchParams])
+
   const closeModal = useCallback(() => {
     if (saving) return
     setIsModalOpen(false)
     setError(null)
     setBankAttachmentError(null)
-  }, [saving])
+    clearCreateQueryParam()
+  }, [clearCreateQueryParam, saving])
+
+  const closeModalAfterSubmit = useCallback(() => {
+    setIsModalOpen(false)
+    setError(null)
+    setBankAttachmentError(null)
+    clearCreateQueryParam()
+  }, [clearCreateQueryParam])
 
   const loadOptions = useCallback(async () => {
     setLoadingOptions(true)
@@ -208,14 +227,16 @@ export function CreditsManager() {
 
       const loadedAccounts = (accountsJson.data as AccountOption[]) ?? []
       const loadedIncomeCategories = ((categoriesJson.data as CategoryOption[]) ?? [])
-        .filter(category => category.scope === 'INCOME' || category.scope === 'BOTH')
+        .filter(category => category.scope === 'INCOME')
 
       setAccounts(loadedAccounts)
       setIncomeCategories(loadedIncomeCategories)
 
       setCardForm(prev => ({
         ...prev,
-        account_id: prev.account_id || loadedAccounts.find(account => account.type === 'CREDIT_CARD')?.id || '',
+        account_id: prev.account_id || loadedAccounts.find(
+          account => account.type === 'CREDIT_CARD' && Boolean(account.bank_entity_id)
+        )?.id || '',
       }))
 
       setBankForm(prev => ({
@@ -232,6 +253,17 @@ export function CreditsManager() {
   useEffect(() => {
     void loadOptions()
   }, [loadOptions])
+
+  useEffect(() => {
+    if (openFromHeroQuery) {
+      if (handledQueryOpenRef.current) return
+      handledQueryOpenRef.current = true
+      openModal('CARD')
+      return
+    }
+
+    handledQueryOpenRef.current = false
+  }, [openFromHeroQuery, openModal])
 
   const resetCardForm = useCallback(() => {
     setCardForm(prev => ({
@@ -358,9 +390,9 @@ export function CreditsManager() {
       return
     }
 
-    const limit = Number(cardForm.credit_limit)
-    const used = Number(cardForm.used_amount || '0')
-    const annualTea = Number(cardForm.annual_tea || '0')
+    const limit = roundToDecimals(parseNumericInput(cardForm.credit_limit, Number.NaN), 2)
+    const used = roundToDecimals(parseNumericInput(cardForm.used_amount || '0', Number.NaN), 2)
+    const annualTea = roundToDecimals(parseNumericInput(cardForm.annual_tea || '0', Number.NaN), 2)
     const monthlyRate = teaToMonthlyPercent(annualTea)
     const closingDay = cardForm.closing_day ? Number(cardForm.closing_day) : undefined
     const paymentDay = cardForm.payment_day ? Number(cardForm.payment_day) : undefined
@@ -429,7 +461,7 @@ export function CreditsManager() {
 
       resetCardForm()
       await refreshCreditsViews()
-      setIsModalOpen(false)
+      closeModalAfterSubmit()
       toast.success('Tarjeta registrada', 'Ya puedes usarla en egresos con pago a crédito.')
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'No se pudo crear la tarjeta de crédito'
@@ -438,7 +470,7 @@ export function CreditsManager() {
     } finally {
       setSaving(false)
     }
-  }, [cardForm, refreshCreditsViews, resetCardForm, saving, toast])
+  }, [cardForm, closeModalAfterSubmit, refreshCreditsViews, resetCardForm, saving, toast])
 
   const submitBank = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -446,11 +478,13 @@ export function CreditsManager() {
 
     const trimmedName = bankForm.name.trim()
     const trimmedCreditor = bankForm.creditor_name.trim()
-    const principal = Number(bankForm.principal_amount)
-    const annualTea = Number(bankForm.annual_tea || '0')
+    const principal = roundToDecimals(parseNumericInput(bankForm.principal_amount, Number.NaN), 2)
+    const annualTea = roundToDecimals(parseNumericInput(bankForm.annual_tea || '0', Number.NaN), 2)
     const monthlyRate = teaToMonthlyPercent(annualTea)
     const installments = Number(bankForm.total_installments)
-    const exchangeRate = bankForm.exchange_rate ? Number(bankForm.exchange_rate) : undefined
+    const exchangeRate = bankForm.exchange_rate
+      ? roundToDecimals(parseNumericInput(bankForm.exchange_rate, Number.NaN), 3)
+      : undefined
 
     if (trimmedName.length < 2 || trimmedCreditor.length < 2) {
       const msg = 'Completa el nombre del crédito y de la entidad financiera.'
@@ -504,9 +538,9 @@ export function CreditsManager() {
     const usingManualSchedule = scheduleMode === 'MANUAL'
     const parsedInstallments = usingManualSchedule
       ? manualInstallments.map((row, index) => {
-        const principalAmount = Number(row.principal_amount || '0')
-        const interestAmount = Number(row.interest_amount || '0')
-        const insuranceAmount = Number(row.insurance_amount || '0')
+        const principalAmount = roundToDecimals(parseNumericInput(row.principal_amount || '0', Number.NaN), 2)
+        const interestAmount = roundToDecimals(parseNumericInput(row.interest_amount || '0', Number.NaN), 2)
+        const insuranceAmount = roundToDecimals(parseNumericInput(row.insurance_amount || '0', Number.NaN), 2)
 
         return {
           installment_number: index + 1,
@@ -600,7 +634,7 @@ export function CreditsManager() {
 
       resetBankForm()
       await refreshCreditsViews()
-      setIsModalOpen(false)
+      closeModalAfterSubmit()
       if (attachmentUploadFailedMessage) {
         toast.error('Crédito registrado con observación', attachmentUploadFailedMessage)
       } else {
@@ -613,26 +647,17 @@ export function CreditsManager() {
     } finally {
       setSaving(false)
     }
-  }, [bankAttachment, bankForm, manualInstallments, refreshCreditsViews, resetBankForm, saving, scheduleMode, toast, uploadBankAttachment])
+  }, [bankAttachment, bankForm, closeModalAfterSubmit, manualInstallments, refreshCreditsViews, resetBankForm, saving, scheduleMode, toast, uploadBankAttachment])
 
   return (
     <div id="nuevo-credito" className="space-y-6">
-      <section className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-4">
+      <section className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.09em] text-[var(--color-text-muted)]">Registro de créditos</p>
-            <p className="text-sm text-[var(--color-text)] mt-1">
+            <p className="text-[10px] uppercase tracking-[0.09em] text-[var(--c-text-muted)]">Registro de créditos</p>
+            <p className="text-sm text-[var(--c-text)] mt-1">
               Usa ventana rápida para crear tarjeta o crédito bancario sin salir del listado.
             </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => openModal(mode)}
-              className="rounded-lg bg-emerald-500 px-3 py-1.5 text-[11px] font-bold text-[var(--color-on-accent)] hover:bg-emerald-400 transition-colors"
-            >
-              + Nuevo registro
-            </button>
           </div>
         </div>
       </section>
@@ -646,8 +671,8 @@ export function CreditsManager() {
       )}
 
       {isModalOpen && (
-        <div
-          className="fixed inset-0 z-[110] flex items-center justify-center bg-[color:var(--color-overlay)] px-3 py-3 sm:px-4 sm:py-4"
+        <ModalOverlayPortal
+          className="z-[110]"
           onClick={closeModal}
           data-testid="credits-create-overlay"
         >
@@ -656,15 +681,15 @@ export function CreditsManager() {
               role="dialog"
               aria-modal="true"
               aria-labelledby="credits-modal-title"
-              className="flex h-full max-h-[calc(100dvh-1.5rem)] w-full max-w-[min(97vw,1480px)] flex-col overflow-hidden rounded-2xl border border-[color:var(--color-border)] bg-[var(--color-modal-bg)] shadow-2xl shadow-[color:var(--color-shadow)]"
+              className="flex w-full max-w-[min(97vw,1480px)] max-h-[calc(100dvh-1.5rem)] flex-col overflow-hidden rounded-2xl border border-[var(--c-border)] bg-[var(--c-modal-bg)] shadow-2xl shadow-[color:var(--c-shadow)]"
               onClick={event => event.stopPropagation()}
             >
-              <div className="flex items-center justify-between gap-3 border-b border-[color:var(--color-border)] px-5 py-4">
+              <div className="flex items-center justify-between gap-3 border-b border-[var(--c-border)] px-5 py-4">
                 <div>
-                  <h3 id="credits-modal-title" className="text-base font-bold text-[var(--color-text)]">
+                  <h3 id="credits-modal-title" className="text-base font-bold text-[var(--c-text)]">
                     {mode === 'CARD' ? 'Nueva tarjeta de crédito' : 'Nuevo crédito bancario'}
                   </h3>
-                  <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
+                  <p className="text-[11px] text-[var(--c-text-muted)] mt-0.5">
                     {mode === 'CARD'
                       ? 'Registra línea de tarjeta para consumos y pagos.'
                       : 'Registra préstamo y crea ingreso automático por desembolso.'}
@@ -673,13 +698,13 @@ export function CreditsManager() {
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="rounded-lg border border-[color:var(--color-border)] px-2.5 py-1 text-[12px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                  className="rounded-lg border border-[var(--c-border)] px-2.5 py-1 text-[12px] font-semibold text-[var(--c-text-muted)] hover:text-[var(--c-text)]"
                 >
                   Cerrar
                 </button>
               </div>
 
-              <div className="border-b border-[color:var(--color-border)] px-5 py-3">
+              <div className="border-b border-[var(--c-border)] px-5 py-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
@@ -687,7 +712,7 @@ export function CreditsManager() {
                     className={`rounded-lg border px-3 py-1.5 text-[11px] font-semibold transition-colors ${
                       mode === 'CARD'
                         ? 'border-sky-400/35 bg-sky-500/15 text-sky-300'
-                        : 'border-[color:var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)]'
+                        : 'border-[var(--c-border)] bg-[var(--c-surface-2)] text-[var(--c-text-muted)]'
                     }`}
                   >
                     Tarjeta de crédito
@@ -698,7 +723,7 @@ export function CreditsManager() {
                     className={`rounded-lg border px-3 py-1.5 text-[11px] font-semibold transition-colors ${
                       mode === 'BANK'
                         ? 'border-amber-400/35 bg-amber-500/15 text-amber-300'
-                        : 'border-[color:var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)]'
+                        : 'border-[var(--c-border)] bg-[var(--c-surface-2)] text-[var(--c-text-muted)]'
                     }`}
                   >
                     Crédito bancario
@@ -708,11 +733,11 @@ export function CreditsManager() {
 
               <div className="credits-modal-body min-h-0 flex-1 overflow-hidden px-5 py-4">
                 {loadingOptions ? (
-                  <p className="text-sm text-[var(--color-text-muted)]">Cargando opciones...</p>
+                  <p className="text-sm text-[var(--c-text-muted)]">Cargando opciones...</p>
                 ) : mode === 'CARD' ? (
                   <form onSubmit={submitCard} className="grid h-full grid-cols-1 gap-3 overflow-y-auto pr-1 md:grid-cols-2" data-testid="credits-card-form">
                     <label className="space-y-1.5 md:col-span-2">
-                      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Nombre de la tarjeta *</span>
+                      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Nombre de la tarjeta *</span>
                       <input
                         value={cardForm.name}
                         onChange={event => setCardForm(prev => ({ ...prev, name: event.target.value }))}
@@ -723,108 +748,111 @@ export function CreditsManager() {
                     </label>
 
                     <label className="space-y-1.5">
-                      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Cuenta tarjeta en portafolio *</span>
-                      <select
+                      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Cuenta tarjeta en portafolio (entidad bancaria) *</span>
+                      <AppSelect
                         value={cardForm.account_id}
-                        onChange={event => setCardForm(prev => ({ ...prev, account_id: event.target.value }))}
-                        className="field-base"
-                        required
-                      >
-                        {!cardAccounts.length && <option value="">No hay cuentas tipo tarjeta</option>}
-                        {cardAccounts.map(account => (
-                          <option key={account.id} value={account.id}>
-                            {account.name} · {account.currency}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={value => setCardForm(prev => ({ ...prev, account_id: value }))}
+                        options={
+                          !cardAccounts.length
+                            ? [{ value: '', label: 'No hay cuentas tipo tarjeta', disabled: true }]
+                            : cardAccounts.map(account => ({
+                              value: account.id,
+                              label: `${account.name} · ${account.bank_entity?.short_name ?? account.bank_entity?.name ?? account.institution ?? 'Sin banco'} · ${account.currency}`,
+                            }))
+                        }
+                        searchPlaceholder="Buscar cuenta..."
+                      />
                       {!cardAccounts.length && (
                         <p className="text-[11px] text-amber-300/90">
-                          Crea una cuenta tipo Tarjeta en <Link href="/portfolio" className="underline">Portafolio</Link>.
+                          Crea una cuenta tipo Tarjeta y asígnale entidad bancaria en <Link href="/portfolio?new=portfolio" className="underline">Portafolio</Link>.
                         </p>
                       )}
                     </label>
 
                     <label className="space-y-1.5">
-                      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Moneda</span>
-                      <select
+                      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Moneda</span>
+                      <AppSelect
                         value={cardForm.currency}
-                        onChange={event => setCardForm(prev => ({ ...prev, currency: event.target.value as CurrencyCode }))}
-                        className="field-base"
-                      >
-                        <option value="PEN">PEN</option>
-                        <option value="USD">USD</option>
-                      </select>
+                        onChange={value => setCardForm(prev => ({ ...prev, currency: value as CurrencyCode }))}
+                        compact
+                        className="md:max-w-[170px]"
+                        searchable={false}
+                        options={[
+                          { value: 'PEN', label: 'PEN' },
+                          { value: 'USD', label: 'USD' },
+                        ]}
+                      />
                     </label>
 
                     <label className="space-y-1.5">
-                      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Límite de crédito *</span>
-                      <input
-                        type="number"
+                      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Límite de crédito *</span>
+                      <NumericInput
                         step="0.01"
-                        min="0"
+                        decimals={2}
+                        min={0}
                         value={cardForm.credit_limit}
-                        onChange={event => setCardForm(prev => ({ ...prev, credit_limit: event.target.value }))}
+                        onValueChange={value => setCardForm(prev => ({ ...prev, credit_limit: value }))}
                         className="field-base"
                         required
                       />
                     </label>
 
                     <label className="space-y-1.5">
-                      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Consumo actual</span>
-                      <input
-                        type="number"
+                      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Consumo actual</span>
+                      <NumericInput
                         step="0.01"
-                        min="0"
+                        decimals={2}
+                        min={0}
                         value={cardForm.used_amount}
-                        onChange={event => setCardForm(prev => ({ ...prev, used_amount: event.target.value }))}
+                        onValueChange={value => setCardForm(prev => ({ ...prev, used_amount: value }))}
                         className="field-base"
                       />
                     </label>
 
                     <label className="space-y-1.5">
-                      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">TEA anual (%)</span>
-                      <input
-                        type="number"
+                      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">TEA anual (%)</span>
+                      <NumericInput
                         step="0.01"
-                        min="0"
+                        decimals={2}
+                        min={0}
                         value={cardForm.annual_tea}
-                        onChange={event => setCardForm(prev => ({ ...prev, annual_tea: event.target.value }))}
+                        onValueChange={value => setCardForm(prev => ({ ...prev, annual_tea: value }))}
                         className="field-base"
                         placeholder="Ej. 95"
                       />
-                      <p className="text-[10px] text-[var(--color-text-faint)]">
+                      <p className="text-[10px] text-[var(--c-text-faint)]">
                         Se convertirá automáticamente a tasa mensual para el cálculo interno.
                       </p>
                     </label>
 
                     <label className="space-y-1.5">
-                      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Día de corte</span>
-                      <input
-                        type="number"
-                        min="1"
-                        max="31"
+                      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Día de corte</span>
+                      <NumericInput
+                        step="1"
+                        decimals={0}
+                        min={1}
                         value={cardForm.closing_day}
-                        onChange={event => setCardForm(prev => ({ ...prev, closing_day: event.target.value }))}
+                        onValueChange={value => setCardForm(prev => ({ ...prev, closing_day: value }))}
                         className="field-base"
                         placeholder="Ej. 20"
                       />
                     </label>
 
                     <label className="space-y-1.5">
-                      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Día de pago</span>
-                      <input
-                        type="number"
-                        min="1"
-                        max="31"
+                      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Día de pago</span>
+                      <NumericInput
+                        step="1"
+                        decimals={0}
+                        min={1}
                         value={cardForm.payment_day}
-                        onChange={event => setCardForm(prev => ({ ...prev, payment_day: event.target.value }))}
+                        onValueChange={value => setCardForm(prev => ({ ...prev, payment_day: value }))}
                         className="field-base"
                         placeholder="Ej. 5"
                       />
                     </label>
 
                     <label className="space-y-1.5 md:col-span-2">
-                      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Notas</span>
+                      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Notas</span>
                       <textarea
                         rows={2}
                         value={cardForm.notes}
@@ -854,15 +882,15 @@ export function CreditsManager() {
                   <form onSubmit={submitBank} className="flex h-full min-h-0 flex-col gap-2.5" data-testid="credits-bank-form">
                     <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.02fr)_minmax(0,0.98fr)]">
                       <section className="min-h-0 space-y-2.5 overflow-y-auto pr-1">
-                        <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2.5">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Datos del préstamo</p>
-                          <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+                        <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2.5">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Datos del préstamo</p>
+                          <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">
                             Registra condiciones del desembolso, destino y fechas clave del crédito.
                           </p>
                         </div>
 
                         <label className="space-y-1.5">
-                          <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Nombre del crédito *</span>
+                          <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Nombre del crédito *</span>
                           <input
                             value={bankForm.name}
                             onChange={event => setBankForm(prev => ({ ...prev, name: event.target.value }))}
@@ -874,7 +902,7 @@ export function CreditsManager() {
 
                         <div className="grid grid-cols-1 gap-2.5 md:grid-cols-12">
                           <label className="space-y-1.5 md:col-span-6">
-                            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Entidad financiera *</span>
+                            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Entidad financiera *</span>
                             <input
                               value={bankForm.creditor_name}
                               onChange={event => setBankForm(prev => ({ ...prev, creditor_name: event.target.value }))}
@@ -885,75 +913,77 @@ export function CreditsManager() {
                           </label>
 
                           <label className="space-y-1.5 md:col-span-6">
-                            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Cuenta destino del desembolso *</span>
-                            <select
+                            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Cuenta destino del desembolso *</span>
+                            <AppSelect
                               value={bankForm.account_id}
-                              onChange={event => setBankForm(prev => ({ ...prev, account_id: event.target.value }))}
-                              className="field-base"
-                              required
-                            >
-                              {!destinationAccounts.length && <option value="">No hay cuentas activas</option>}
-                              {destinationAccounts.map(account => (
-                                <option key={account.id} value={account.id}>
-                                  {account.name} · {account.currency}
-                                </option>
-                              ))}
-                            </select>
+                              onChange={value => setBankForm(prev => ({ ...prev, account_id: value }))}
+                              options={
+                                !destinationAccounts.length
+                                  ? [{ value: '', label: 'No hay cuentas activas', disabled: true }]
+                                  : destinationAccounts.map(account => ({
+                                    value: account.id,
+                                    label: `${account.name} · ${account.currency}`,
+                                  }))
+                              }
+                              searchPlaceholder="Buscar cuenta destino..."
+                            />
                           </label>
 
                           <label className="space-y-1.5 md:col-span-3">
-                            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Moneda</span>
-                            <select
+                            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Moneda</span>
+                            <AppSelect
                               value={bankForm.currency}
-                              onChange={event => setBankForm(prev => ({ ...prev, currency: event.target.value as CurrencyCode }))}
-                              className="field-base"
-                            >
-                              <option value="PEN">PEN</option>
-                              <option value="USD">USD</option>
-                            </select>
+                              onChange={value => setBankForm(prev => ({ ...prev, currency: value as CurrencyCode }))}
+                              compact
+                              searchable={false}
+                              options={[
+                                { value: 'PEN', label: 'PEN' },
+                                { value: 'USD', label: 'USD' },
+                              ]}
+                            />
                           </label>
 
                           <label className="space-y-1.5 md:col-span-9">
-                            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Capital prestado *</span>
-                            <input
-                              type="number"
+                            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Capital prestado *</span>
+                            <NumericInput
                               step="0.01"
-                              min="0"
+                              decimals={2}
+                              min={0}
                               value={bankForm.principal_amount}
-                              onChange={event => setBankForm(prev => ({ ...prev, principal_amount: event.target.value }))}
+                              onValueChange={value => setBankForm(prev => ({ ...prev, principal_amount: value }))}
                               className="field-base"
                               required
                             />
                           </label>
 
                           <label className="space-y-1.5 md:col-span-4">
-                            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">TEA anual (%)</span>
-                            <input
-                              type="number"
+                            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">TEA anual (%)</span>
+                            <NumericInput
                               step="0.01"
-                              min="0"
+                              decimals={2}
+                              min={0}
                               value={bankForm.annual_tea}
-                              onChange={event => setBankForm(prev => ({ ...prev, annual_tea: event.target.value }))}
+                              onValueChange={value => setBankForm(prev => ({ ...prev, annual_tea: value }))}
                               className="field-base"
                               placeholder="Ej. 45"
                             />
                           </label>
 
                           <label className="space-y-1.5 md:col-span-4">
-                            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Número de cuotas *</span>
-                            <input
-                              type="number"
+                            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Número de cuotas *</span>
+                            <NumericInput
                               step="1"
-                              min="1"
+                              decimals={0}
+                              min={1}
                               value={bankForm.total_installments}
-                              onChange={event => setBankForm(prev => ({ ...prev, total_installments: event.target.value }))}
+                              onValueChange={value => setBankForm(prev => ({ ...prev, total_installments: value }))}
                               className="field-base"
                               required
                             />
                           </label>
 
                           <label className="space-y-1.5 md:col-span-4">
-                            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Fecha desembolso</span>
+                            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Fecha desembolso</span>
                             <input
                               type="date"
                               value={bankForm.transaction_date}
@@ -963,7 +993,7 @@ export function CreditsManager() {
                           </label>
 
                           <label className="space-y-1.5 md:col-span-4">
-                            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Inicio de cuotas</span>
+                            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Inicio de cuotas</span>
                             <input
                               type="date"
                               value={bankForm.start_date}
@@ -974,7 +1004,7 @@ export function CreditsManager() {
                           </label>
 
                           <label className="space-y-1.5 md:col-span-4">
-                            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Fecha final</span>
+                            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Fecha final</span>
                             <input
                               type="date"
                               value={bankForm.end_date}
@@ -986,13 +1016,13 @@ export function CreditsManager() {
 
                           {bankForm.currency === 'USD' && (
                             <label className="space-y-1.5 md:col-span-4">
-                              <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Tipo de cambio *</span>
-                              <input
-                                type="number"
+                              <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Tipo de cambio *</span>
+                              <NumericInput
                                 step="0.001"
-                                min="0"
+                                decimals={3}
+                                min={0}
                                 value={bankForm.exchange_rate}
-                                onChange={event => setBankForm(prev => ({ ...prev, exchange_rate: event.target.value }))}
+                                onValueChange={value => setBankForm(prev => ({ ...prev, exchange_rate: value }))}
                                 className="field-base"
                                 placeholder="Ej. 3.700"
                                 required
@@ -1001,22 +1031,24 @@ export function CreditsManager() {
                           )}
 
                           <label className={`space-y-1.5 ${bankForm.currency === 'USD' ? 'md:col-span-8' : 'md:col-span-12'}`}>
-                            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Categoría de ingreso (opcional)</span>
-                            <select
+                            <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Categoría de ingreso (opcional)</span>
+                            <AppSelect
                               value={bankForm.category_id}
-                              onChange={event => setBankForm(prev => ({ ...prev, category_id: event.target.value }))}
-                              className="field-base"
-                            >
-                              <option value="">Sin categoría</option>
-                              {incomeCategories.map(category => (
-                                <option key={category.id} value={category.id}>{category.name}</option>
-                              ))}
-                            </select>
+                              onChange={value => setBankForm(prev => ({ ...prev, category_id: value }))}
+                              options={[
+                                { value: '', label: 'Sin categoría' },
+                                ...incomeCategories.map(category => ({
+                                  value: category.id,
+                                  label: category.name,
+                                })),
+                              ]}
+                              searchPlaceholder="Buscar categoría..."
+                            />
                           </label>
                         </div>
 
                         <label className="space-y-1.5">
-                          <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Notas</span>
+                          <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Notas</span>
                           <textarea
                             rows={2}
                             value={bankForm.notes}
@@ -1026,12 +1058,12 @@ export function CreditsManager() {
                           />
                         </label>
 
-                        <div className="rounded-xl border border-dashed border-[color:var(--color-border-hover)] bg-[var(--color-surface-2)] p-2.5">
+                        <div className="rounded-xl border border-dashed border-[var(--c-border-hover)] bg-[var(--c-surface-2)] p-2.5">
                           <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-muted)]">
                               Documento (opcional)
                             </p>
-                            <label className="inline-flex cursor-pointer items-center rounded-lg border border-[color:var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-[12px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[color:var(--color-border-hover)] transition-colors">
+                            <label className="inline-flex cursor-pointer items-center rounded-lg border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-1.5 text-[12px] font-semibold text-[var(--c-text-muted)] hover:text-[var(--c-text)] hover:border-[var(--c-border-hover)] transition-colors">
                               Subir archivo
                               <input
                                 type="file"
@@ -1040,16 +1072,16 @@ export function CreditsManager() {
                                 accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx,.csv,.txt"
                               />
                             </label>
-                            <span className="text-[11px] text-[var(--color-text-muted)]">PDF/imagen/documento hasta 8 MB.</span>
+                            <span className="text-[11px] text-[var(--c-text-muted)]">PDF/imagen/documento hasta 8 MB.</span>
                             {bankAttachment && (
                               <>
-                                <span className="text-[12px] text-[var(--color-text)] truncate max-w-[280px]">
+                                <span className="text-[12px] text-[var(--c-text)] truncate max-w-[280px]">
                                   {bankAttachment.name}
                                 </span>
                                 <button
                                   type="button"
                                   onClick={() => setBankAttachment(null)}
-                                  className="rounded-lg border border-[color:var(--color-border)] px-2 py-1 text-[11px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                                  className="rounded-lg border border-[var(--c-border)] px-2 py-1 text-[11px] font-semibold text-[var(--c-text-muted)] hover:text-[var(--c-text)]"
                                 >
                                   Quitar
                                 </button>
@@ -1063,9 +1095,9 @@ export function CreditsManager() {
                       </section>
 
                       <aside className="min-h-0 space-y-2.5 overflow-y-auto pr-1">
-                        <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface-2)] p-2.5">
+                        <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] p-2.5">
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-muted)]">
                               Cronograma de cuotas
                             </p>
                             <div className="flex items-center gap-2">
@@ -1074,8 +1106,8 @@ export function CreditsManager() {
                                 onClick={() => setScheduleMode('AUTO')}
                                 className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
                                   scheduleMode === 'AUTO'
-                                    ? 'border-emerald-400/35 bg-emerald-500/15 text-emerald-300'
-                                    : 'border-[color:var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
+                                    ? 'border-[var(--c-primary-border)] bg-[var(--c-primary-soft)] text-[var(--c-primary)]'
+                                    : 'border-[var(--c-border)] bg-[var(--c-surface)] text-[var(--c-text-muted)] hover:text-[var(--c-text)]'
                                 }`}
                               >
                                 Automático
@@ -1094,7 +1126,7 @@ export function CreditsManager() {
                                 className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
                                   scheduleMode === 'MANUAL'
                                     ? 'border-cyan-400/35 bg-cyan-500/15 text-cyan-300'
-                                    : 'border-[color:var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
+                                    : 'border-[var(--c-border)] bg-[var(--c-surface)] text-[var(--c-text-muted)] hover:text-[var(--c-text)]'
                                 }`}
                               >
                                 Manual
@@ -1102,7 +1134,7 @@ export function CreditsManager() {
                             </div>
                           </div>
 
-                          <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+                          <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">
                             {scheduleMode === 'AUTO'
                               ? 'Se calculará automáticamente según capital, tasa y número de cuotas.'
                               : 'Completa cuota por cuota: fecha, capital, interés y seguro.'}
@@ -1110,10 +1142,10 @@ export function CreditsManager() {
                         </div>
 
                         {scheduleMode === 'MANUAL' ? (
-                          <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-2.5 space-y-2">
+                          <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-2.5 space-y-2">
                             <div className="flex items-center justify-between gap-2">
-                              <p className="text-[11px] text-[var(--color-text-muted)]">
-                                Cuotas configuradas: <strong className="text-[var(--color-text)]">{manualInstallments.length}</strong>
+                              <p className="text-[11px] text-[var(--c-text-muted)]">
+                                Cuotas configuradas: <strong className="text-[var(--c-text)]">{manualInstallments.length}</strong>
                               </p>
                               <button
                                 type="button"
@@ -1122,16 +1154,16 @@ export function CreditsManager() {
                                   if (!Number.isFinite(count) || count < 1) return
                                   setManualInstallments(buildManualInstallments(count, bankForm.start_date))
                                 }}
-                                className="rounded-lg border border-[color:var(--color-border)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                                className="rounded-lg border border-[var(--c-border)] px-2.5 py-1 text-[11px] font-semibold text-[var(--c-text-muted)] hover:text-[var(--c-text)]"
                               >
                                 Recalcular
                               </button>
                             </div>
 
-                            <div className="max-h-[min(50dvh,560px)] overflow-auto rounded-lg border border-[color:var(--color-border)]">
+                            <div className="max-h-[min(50dvh,560px)] overflow-auto rounded-lg border border-[var(--c-border)]">
                               <table className="w-full min-w-[640px] text-[11px]">
-                                <thead className="bg-[var(--color-surface-2)] sticky top-0 z-[1]">
-                                  <tr className="text-[var(--color-text-muted)]">
+                                <thead className="bg-[var(--c-surface-2)] sticky top-0 z-[1]">
+                                  <tr className="text-[var(--c-text-muted)]">
                                     <th className="px-2 py-2 text-left font-semibold">#</th>
                                     <th className="px-2 py-2 text-left font-semibold">Vencimiento</th>
                                     <th className="px-2 py-2 text-left font-semibold">Capital</th>
@@ -1150,8 +1182,8 @@ export function CreditsManager() {
                                       + (Number.isFinite(insuranceValue) ? insuranceValue : 0)
 
                                     return (
-                                      <tr key={row.installment_number} className="border-t border-[color:var(--color-border)]">
-                                        <td className="px-2 py-1.5 font-semibold text-[var(--color-text)]">#{row.installment_number}</td>
+                                      <tr key={row.installment_number} className="border-t border-[var(--c-border)]">
+                                        <td className="px-2 py-1.5 font-semibold text-[var(--c-text)]">#{row.installment_number}</td>
                                         <td className="px-2 py-1.5">
                                           <input
                                             type="date"
@@ -1166,14 +1198,14 @@ export function CreditsManager() {
                                           />
                                         </td>
                                         <td className="px-2 py-1.5">
-                                          <input
-                                            type="number"
-                                            min="0"
+                                          <NumericInput
+                                            min={0}
                                             step="0.01"
+                                            decimals={2}
                                             value={row.principal_amount}
-                                            onChange={event => setManualInstallments(prev => prev.map((item, itemIndex) => (
+                                            onValueChange={value => setManualInstallments(prev => prev.map((item, itemIndex) => (
                                               itemIndex === index
-                                                ? { ...item, principal_amount: event.target.value }
+                                                ? { ...item, principal_amount: value }
                                                 : item
                                             )))}
                                             className="field-base py-1.5"
@@ -1181,14 +1213,14 @@ export function CreditsManager() {
                                           />
                                         </td>
                                         <td className="px-2 py-1.5">
-                                          <input
-                                            type="number"
-                                            min="0"
+                                          <NumericInput
+                                            min={0}
                                             step="0.01"
+                                            decimals={2}
                                             value={row.interest_amount}
-                                            onChange={event => setManualInstallments(prev => prev.map((item, itemIndex) => (
+                                            onValueChange={value => setManualInstallments(prev => prev.map((item, itemIndex) => (
                                               itemIndex === index
-                                                ? { ...item, interest_amount: event.target.value }
+                                                ? { ...item, interest_amount: value }
                                                 : item
                                             )))}
                                             className="field-base py-1.5"
@@ -1196,21 +1228,21 @@ export function CreditsManager() {
                                           />
                                         </td>
                                         <td className="px-2 py-1.5">
-                                          <input
-                                            type="number"
-                                            min="0"
+                                          <NumericInput
+                                            min={0}
                                             step="0.01"
+                                            decimals={2}
                                             value={row.insurance_amount}
-                                            onChange={event => setManualInstallments(prev => prev.map((item, itemIndex) => (
+                                            onValueChange={value => setManualInstallments(prev => prev.map((item, itemIndex) => (
                                               itemIndex === index
-                                                ? { ...item, insurance_amount: event.target.value }
+                                                ? { ...item, insurance_amount: value }
                                                 : item
                                             )))}
                                             className="field-base py-1.5"
                                             required
                                           />
                                         </td>
-                                        <td className="px-2 py-1.5 font-semibold text-[var(--color-text)] tabular-nums">
+                                        <td className="px-2 py-1.5 font-semibold text-[var(--c-text)] tabular-nums">
                                           {formatNumber(rowTotal)}
                                         </td>
                                       </tr>
@@ -1221,8 +1253,8 @@ export function CreditsManager() {
                             </div>
                           </div>
                         ) : (
-                          <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-3">
-                            <p className="text-[12px] text-[var(--color-text-muted)]">
+                          <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-3">
+                            <p className="text-[12px] text-[var(--c-text-muted)]">
                               Modo automático activo: el sistema generará el cronograma en base al número de cuotas.
                             </p>
                           </div>
@@ -1230,13 +1262,13 @@ export function CreditsManager() {
                       </aside>
                     </div>
 
-                    <div className="sticky bottom-0 z-[2] shrink-0 border-t border-[color:var(--color-border)] bg-[var(--color-modal-bg)] pt-2.5">
+                    <div className="sticky bottom-0 z-[2] shrink-0 border-t border-[var(--c-border)] bg-[var(--c-modal-bg)] pt-2.5">
                       {(error || bankAttachmentError) && (
                         <p className="text-[12px] text-red-400">{error ?? bankAttachmentError}</p>
                       )}
 
                       <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
-                        <p className="text-[11px] text-emerald-300/85">
+                        <p className="text-[11px] text-[var(--c-primary)]/85">
                           Se creará automáticamente un ingreso por desembolso en la cuenta destino.
                         </p>
 
@@ -1260,7 +1292,7 @@ export function CreditsManager() {
               </div>
             </div>
           </FocusTrap>
-        </div>
+        </ModalOverlayPortal>
       )}
     </div>
   )

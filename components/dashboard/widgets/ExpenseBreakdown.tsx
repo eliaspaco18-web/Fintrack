@@ -25,11 +25,11 @@ function DonutChart({
   categories: ExpenseCategoryItem[]
   total:      number
 }) {
-  const SIZE = 80
-  const R    = 30
+  const SIZE = 72
+  const R    = 26
   const CX   = SIZE / 2
   const CY   = SIZE / 2
-  const STROKE_W = 10
+  const STROKE_W = 8
   const CIRCUMFERENCE = 2 * Math.PI * R
 
   // Calcular segmentos
@@ -44,9 +44,9 @@ function DonutChart({
 
   if (total === 0) {
     return (
-      <div className="flex items-center justify-center w-20 h-20 rounded-full
-        border-4 border-white/[0.05]">
-        <span className="text-[10px] text-white/20">—</span>
+      <div className="flex items-center justify-center w-[72px] h-[72px] rounded-full
+        border-4 border-[color:var(--color-border)]">
+        <span className="text-[10px] text-[var(--color-text-faint)]">—</span>
       </div>
     )
   }
@@ -57,7 +57,7 @@ function DonutChart({
       <circle
         cx={CX} cy={CY} r={R}
         fill="none"
-        stroke="rgba(255,255,255,0.05)"
+        stroke="var(--color-border)"
         strokeWidth={STROKE_W}
       />
       {/* Segments */}
@@ -92,12 +92,12 @@ export function ExpenseBreakdown({ categories, loading }: ExpenseBreakdownProps)
     return (
       <WidgetShell>
         <div className="animate-pulse space-y-3">
-          <div className="h-3 w-32 rounded bg-white/[0.06]"/>
+          <div className="h-3 w-32 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--color-text-faint) 26%, transparent)' }}/>
           <div className="flex gap-4">
-            <div className="w-20 h-20 rounded-full bg-white/[0.05]"/>
+            <div className="w-20 h-20 rounded-full" style={{ backgroundColor: 'color-mix(in srgb, var(--color-text-faint) 20%, transparent)' }}/>
             <div className="flex-1 space-y-2">
               {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="h-3 rounded bg-white/[0.05]" style={{ width: `${60 + i * 10}%` }}/>
+                <div key={i} className="h-3 rounded" style={{ width: `${60 + i * 10}%`, backgroundColor: 'color-mix(in srgb, var(--color-text-faint) 20%, transparent)' }}/>
               ))}
             </div>
           </div>
@@ -111,7 +111,7 @@ export function ExpenseBreakdown({ categories, loading }: ExpenseBreakdownProps)
 
   return (
     <WidgetShell>
-      <SectionHeader title="Egresos por categoría" accent="#ef4444"/>
+      <SectionHeader title="Egresos por categoría" accent="var(--c-primary)"/>
 
       {cats.length === 0 ? (
         <EmptyWidget
@@ -121,14 +121,14 @@ export function ExpenseBreakdown({ categories, loading }: ExpenseBreakdownProps)
       ) : (
         <>
           {/* Donut + total */}
-          <div className="flex items-center gap-4 mb-5">
+          <div className="mb-4 flex items-center gap-3">
             <DonutChart categories={cats} total={total}/>
             <div>
-              <p className="text-[10px] text-white/25 uppercase tracking-wide">Total mes</p>
-              <p className="text-xl font-bold tabular-nums text-red-400 leading-tight">
+              <p className="text-[10px] text-[var(--color-text-faint)] uppercase tracking-wide">Total mes</p>
+              <p className="text-[1.45rem] font-semibold tabular-nums text-[var(--c-primary)] leading-tight">
                 {formatCurrency(format(total), preferred)}
               </p>
-              <p className="text-[11px] text-white/25 mt-0.5">
+              <p className="text-[11px] text-[var(--color-text-faint)] mt-0.5">
                 {cats.length} categoría{cats.length !== 1 ? 's' : ''}
               </p>
             </div>
@@ -144,11 +144,11 @@ export function ExpenseBreakdown({ categories, loading }: ExpenseBreakdownProps)
                       className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                       style={{ backgroundColor: cat.categoryColor }}
                     />
-                    <span className="text-[12px] text-white/60 font-medium truncate">
+                    <span className="text-[12px] text-[var(--color-text-muted)] font-medium truncate">
                       {cat.categoryName}
                     </span>
                   </div>
-                  <span className="text-[11px] text-white/50 tabular-nums flex-shrink-0 ml-2">
+                  <span className="text-[11px] text-[var(--color-text-faint)] tabular-nums flex-shrink-0 ml-2">
                     {formatCurrency(format(cat.totalPen), preferred)}
                   </span>
                 </div>

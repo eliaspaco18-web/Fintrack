@@ -1,222 +1,385 @@
-// =============================================================================
-// components/dashboard/widgets/CashFlowChart.tsx
-// Gráfico de barras agrupadas: ingresos vs egresos de los últimos 6 meses.
-// Implementado en SVG puro — sin dependencias externas.
-// =============================================================================
-
 'use client'
 
-import { useCurrency }          from '@/lib/hooks/useDashboard'
-import { formatCurrency }       from '@/lib/contracts/ui.contracts'
-import { WidgetShell, SectionHeader } from '../primitives'
-import type { CashFlowPoint }   from '@/modules/dashboard/dashboard.types'
+import { useState } from 'react'
+import { useCurrency } from '@/lib/hooks/useDashboard'
+import { formatCurrency } from '@/lib/contracts/ui.contracts'
+import type { CashFlowPoint, DailyFlowPoint } from '@/modules/dashboard/dashboard.types'
 
-// ─── CONSTANTES DE LAYOUT ─────────────────────────────────────────────────────
+const VIEW_W = 760
+const VIEW_H = 256
+const PAD = { top: 20, right: 16, bottom: 36, left: 58 }
+const PLOT_W = VIEW_W - PAD.left - PAD.right
+const PLOT_H = VIEW_H - PAD.top - PAD.bottom
+const BASE_Y = PAD.top + PLOT_H
 
-const CHART_H      = 120
-const CHART_PAD_L  = 0
-const CHART_PAD_B  = 24   // espacio para etiquetas del eje X
-const BAR_GAP      = 4    // gap entre las dos barras de un mes
-const GROUP_GAP    = 12   // gap entre grupos de meses
+type RangeKey = '5D' | '1M' | '3M' | '6M' | '1Y'
+type ChartSource = 'daily' | 'monthly'
 
-// ─── SKELETON ─────────────────────────────────────────────────────────────────
+interface ChartPoint {
+  id: string
+  label: string
+  shortLabel: string
+  incomePen: number
+  expensePen: number
+  netPen: number
+  balancePen: number
+}
+
+const RANGE_OPTIONS: Array<{
+  key: RangeKey
+  label: string
+  dailyDays: number
+  monthlyPoints: number
+}> = [
+  { key: '5D', label: '5D', dailyDays: 5, monthlyPoints: 1 },
+  { key: '1M', label: '1M', dailyDays: 30, monthlyPoints: 1 },
+  { key: '3M', label: '3M', dailyDays: 90, monthlyPoints: 3 },
+  { key: '6M', label: '6M', dailyDays: 180, monthlyPoints: 6 },
+  { key: '1Y', label: '1Y', dailyDays: 365, monthlyPoints: 12 },
+]
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value))
+}
+
+function controlPoint(
+  current: { x: number; y: number },
+  previous: { x: number; y: number },
+  next: { x: number; y: number },
+  reverse = false,
+) {
+  const smoothing = 0.18
+  const prev = previous || current
+  const nxt = next || current
+  const angle = Math.atan2(nxt.y - prev.y, nxt.x - prev.x) + (reverse ? Math.PI : 0)
+  const length = Math.hypot(nxt.x - prev.x, nxt.y - prev.y) * smoothing
+  return {
+    x: current.x + Math.cos(angle) * length,
+    y: current.y + Math.sin(angle) * length,
+  }
+}
+
+function smoothPath(points: Array<{ x: number; y: number }>) {
+  if (points.length < 2) return ''
+
+  let d = `M ${points[0]!.x} ${points[0]!.y}`
+
+  for (let i = 1; i < points.length; i++) {
+    const previous = points[i - 1]!
+    const current = points[i]!
+    const previous2 = points[i - 2] ?? previous
+    const next = points[i + 1] ?? current
+
+    const cp1 = controlPoint(previous, previous2, current)
+    const cp2 = controlPoint(current, previous, next, true)
+
+    d += ` C ${cp1.x} ${cp1.y}, ${cp2.x} ${cp2.y}, ${current.x} ${current.y}`
+  }
+
+  return d
+}
+
+function formatAxisValue(value: number, preferred: 'PEN' | 'USD') {
+  const sign = value < 0 ? '-' : ''
+  const abs = Math.abs(value)
+  const symbol = preferred === 'PEN' ? 'S/' : '$'
+
+  if (abs >= 1_000_000) return `${sign}${symbol}${(abs / 1_000_000).toFixed(1)}M`
+  if (abs >= 1_000) return `${sign}${symbol}${(abs / 1_000).toFixed(0)}k`
+  return `${sign}${symbol}${abs.toFixed(0)}`
+}
+
+function monthShortLabel(label: string) {
+  return label.split(' ')[0]?.slice(0, 3) ?? label.slice(0, 3)
+}
 
 function ChartSkeleton() {
   return (
-    <WidgetShell>
-      <div className="animate-pulse space-y-4">
-        <div className="h-3 w-28 rounded bg-white/[0.06]"/>
-        <div className="flex items-end gap-3 h-[120px]">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="flex-1 flex gap-1 items-end h-full">
-              <div className="flex-1 rounded-t bg-white/[0.05]" style={{ height: `${40 + i * 10}%` }}/>
-              <div className="flex-1 rounded-t bg-white/[0.04]" style={{ height: `${30 + i * 8}%` }}/>
-            </div>
-          ))}
-        </div>
+    <div className="rounded-2xl border border-[var(--c-border)] bg-white p-5 shadow-[var(--shadow-sm)]">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="h-4 w-24 rounded bg-[rgba(13,79,74,0.08)]" />
+        <div className="h-8 w-44 rounded-full bg-[rgba(13,79,74,0.06)]" />
       </div>
-    </WidgetShell>
+      <div className="h-[228px] rounded-xl bg-[rgba(13,79,74,0.05)]" />
+    </div>
   )
 }
 
-// ─── TOOLTIP ─────────────────────────────────────────────────────────────────
-
-interface TooltipData {
-  x:       number
-  month:   string
-  income:  number
-  expense: number
-  net:     number
+function EmptyState() {
+  return (
+    <div className="rounded-2xl border border-[var(--c-border)] bg-white p-5 shadow-[var(--shadow-sm)]">
+      <div className="flex h-[220px] items-center justify-center rounded-xl border border-dashed border-[var(--c-border)] bg-[var(--c-surface-2)]">
+        <p className="text-[13px] text-[var(--c-text-muted)]">Sin datos para construir el money flow.</p>
+      </div>
+    </div>
+  )
 }
 
-// ─── COMPONENTE PRINCIPAL ─────────────────────────────────────────────────────
-
 interface CashFlowChartProps {
-  data?:    CashFlowPoint[]
+  data?: CashFlowPoint[]
+  dailyData?: DailyFlowPoint[]
   loading?: boolean
 }
 
-export function CashFlowChart({ data, loading }: CashFlowChartProps) {
+export function CashFlowChart({ data, dailyData, loading }: CashFlowChartProps) {
   const { preferred, format } = useCurrency()
+  const [range, setRange] = useState<RangeKey>('1M')
+  const [hovered, setHovered] = useState<number | null>(null)
 
-  if (loading) return <ChartSkeleton/>
+  if (loading) return <ChartSkeleton />
 
-  const points = data ?? []
+  const monthly = data ?? []
+  const daily = dailyData ?? []
 
-  // Calcular dimensiones
-  const groupCount  = points.length
-  const viewW       = 560   // viewBox width — el SVG se escala via width="100%"
-  const availW      = viewW - CHART_PAD_L
-  const groupW      = groupCount > 0 ? (availW - GROUP_GAP * (groupCount - 1)) / groupCount : 80
-  const barW        = (groupW - BAR_GAP) / 2
+  let source: ChartSource = 'monthly'
+  let sourceSeries: ChartPoint[] = []
 
-  const maxVal = Math.max(
-    ...points.flatMap(p => [p.incomePen, p.expensePen]),
-    1
-  )
-
-  const toY = (v: number) =>
-    CHART_PAD_B + CHART_H - (v / maxVal) * CHART_H
-
-  const barHeight = (v: number) => (v / maxVal) * CHART_H
-
-  const totalIncome  = points.reduce((s, p) => s + p.incomePen, 0)
-  const totalExpense = points.reduce((s, p) => s + p.expensePen, 0)
-  const netBalance   = points.reduce((s, p) => s + p.netPen, 0)
-
-  if (points.length === 0) {
-    return (
-      <WidgetShell>
-        <SectionHeader title="Flujo de caja" accent="#10b981"/>
-        <div className="flex items-center justify-center h-[120px]">
-          <p className="text-sm text-white/20">Sin datos de los últimos meses</p>
-        </div>
-      </WidgetShell>
-    )
+  if (daily.length >= 2) {
+    source = 'daily'
+    sourceSeries = daily.map(point => ({
+      id: point.date,
+      label: point.label,
+      shortLabel: point.label.split(' ')[0] ?? point.label,
+      incomePen: point.incomePen,
+      expensePen: point.expensePen,
+      netPen: point.netPen,
+      balancePen: point.balancePen,
+    }))
+  } else {
+    let running = 0
+    sourceSeries = monthly.map(point => {
+      running += point.netPen
+      return {
+        id: point.month,
+        label: point.monthLabel,
+        shortLabel: monthShortLabel(point.monthLabel),
+        incomePen: point.incomePen,
+        expensePen: point.expensePen,
+        netPen: point.netPen,
+        balancePen: running,
+      }
+    })
   }
 
-  return (
-    <WidgetShell>
-      {/* Header + resumen */}
-      <SectionHeader
-        title="Flujo de caja · 6 meses"
-        accent="#10b981"
-        action={
-          <span className={`text-[11px] font-bold tabular-nums ${
-            netBalance >= 0 ? 'text-emerald-400' : 'text-red-400'
-          }`}>
-            {netBalance >= 0 ? '+' : ''}{formatCurrency(format(netBalance), preferred)}
-          </span>
-        }
-      />
+  if (sourceSeries.length === 0) return <EmptyState />
 
-      {/* Métricas rápidas */}
-      <div className="grid grid-cols-3 gap-3 mb-5">
-        {[
-          { label: 'Total ingresos', value: totalIncome,  color: 'text-emerald-400' },
-          { label: 'Total egresos',  value: totalExpense, color: 'text-red-400' },
-          { label: 'Balance neto',   value: netBalance,   color: netBalance >= 0 ? 'text-emerald-400' : 'text-red-400' },
-        ].map(m => (
-          <div key={m.label} className="text-center">
-            <p className={`text-base font-bold tabular-nums ${m.color}`}>
-              {formatCurrency(format(m.value), preferred)}
-            </p>
-            <p className="text-[10px] text-white/25 mt-0.5">{m.label}</p>
-          </div>
-        ))}
+  const activeRange = RANGE_OPTIONS.find(option => option.key === range) ?? RANGE_OPTIONS[1]!
+  const sampleCount = source === 'daily' ? activeRange.dailyDays : activeRange.monthlyPoints
+  const visibleCount = Math.max(1, Math.min(sampleCount, sourceSeries.length))
+  const visible = sourceSeries.slice(-visibleCount)
+
+  const values = visible.map(item => item.balancePen)
+  const minValue = Math.min(...values, 0)
+  const maxValue = Math.max(...values, 0)
+  const span = maxValue - minValue || 1
+  const padding = Math.max(span * 0.18, 1)
+  const yMin = minValue - padding
+  const yMax = maxValue + padding
+  const yRange = yMax - yMin || 1
+
+  const xStep = visible.length > 1 ? PLOT_W / (visible.length - 1) : 0
+  const fallbackCenterX = PAD.left + PLOT_W / 2
+
+  const plotted = visible.map((point, index) => {
+    const x = visible.length > 1 ? PAD.left + xStep * index : fallbackCenterX
+    const y = PAD.top + ((yMax - point.balancePen) / yRange) * PLOT_H
+    return { ...point, x, y }
+  })
+
+  const linePath = smoothPath(plotted.map(point => ({ x: point.x, y: point.y })))
+
+  const activeIndex = hovered ?? plotted.length - 1
+  const active = plotted[activeIndex] ?? plotted.at(-1)!
+
+  const activeValueLabel = formatCurrency(format(active.balancePen), preferred)
+  const badgeWidth = Math.max(86, Math.ceil(activeValueLabel.length * 7.2) + 22)
+  const badgeX = clamp(active.x - badgeWidth / 2, PAD.left + 1, VIEW_W - PAD.right - badgeWidth - 1)
+  const badgeY = clamp(active.y - 43, PAD.top + 2, BASE_Y - 26)
+
+  const totalIncome = visible.reduce((sum, item) => sum + item.incomePen, 0)
+  const totalExpense = visible.reduce((sum, item) => sum + item.expensePen, 0)
+
+  const yGrid = [0, 1, 2, 3, 4].map(index => {
+    const ratio = index / 4
+    const value = yMax - yRange * ratio
+    const y = PAD.top + PLOT_H * ratio
+    return { value, y }
+  })
+
+  const hitWidth = Math.max(36, PLOT_W / Math.max(plotted.length, 5))
+  const labelStep = Math.max(1, Math.ceil(plotted.length / 7))
+
+  return (
+    <div className="rounded-2xl border border-[var(--c-border)] bg-white shadow-[var(--shadow-sm)]">
+      <div className="flex flex-wrap items-start justify-between gap-3 px-5 pb-2 pt-5">
+        <div>
+          <p className="text-[10.5px] font-bold uppercase tracking-[0.19em] text-[var(--c-text-faint)]">Money Flow</p>
+          <p className="mt-0.5 text-[17px] font-bold tracking-tight text-[var(--c-text)]">
+            {source === 'daily' ? 'Saldos por día' : 'Saldo acumulado'}
+          </p>
+        </div>
+
+        <span className="rounded-full border border-[var(--c-primary-border)] bg-[var(--c-primary-soft)] px-2.5 py-1 text-[10.5px] font-bold text-[var(--c-primary)]">
+          {visible[0]?.label} - {visible.at(-1)?.label}
+        </span>
       </div>
 
-      {/* Gráfico SVG */}
-      <svg
-        width="100%"
-        viewBox={`0 0 ${viewW} ${CHART_H + CHART_PAD_B + 4}`}
-        preserveAspectRatio="none"
-        className="overflow-visible"
-      >
-        <defs>
-          {/* Gradientes para las barras */}
-          <linearGradient id="grad-income" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"   stopColor="#10b981" stopOpacity="0.85"/>
-            <stop offset="100%" stopColor="#10b981" stopOpacity="0.40"/>
-          </linearGradient>
-          <linearGradient id="grad-expense" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"   stopColor="#ef4444" stopOpacity="0.75"/>
-            <stop offset="100%" stopColor="#ef4444" stopOpacity="0.30"/>
-          </linearGradient>
-        </defs>
-
-        {/* Líneas horizontales de referencia */}
-        {[0.25, 0.5, 0.75, 1].map(frac => {
-          const y = CHART_PAD_B + CHART_H * (1 - frac)
-          return (
-            <line
-              key={frac}
-              x1="0" y1={y} x2={viewW} y2={y}
-              stroke="rgba(255,255,255,0.05)"
-              strokeWidth="1"
-            />
-          )
-        })}
-
-        {/* Barras por mes */}
-        {points.map((point, i) => {
-          const groupX = CHART_PAD_L + i * (groupW + GROUP_GAP)
-          const incX   = groupX
-          const expX   = groupX + barW + BAR_GAP
-          const incH   = barHeight(point.incomePen)
-          const expH   = barHeight(point.expensePen)
-          const baseline = CHART_PAD_B + CHART_H
-
-          // Etiqueta del mes: tomar las primeras 3 letras
-          const monthLabel = point.monthLabel.slice(0, 3)
-
-          return (
-            <g key={point.month}>
-              {/* Barra ingreso */}
-              <rect
-                x={incX}
-                y={baseline - incH}
-                width={barW}
-                height={Math.max(incH, 2)}
-                rx="2"
-                fill="url(#grad-income)"
-              />
-              {/* Barra egreso */}
-              <rect
-                x={expX}
-                y={baseline - expH}
-                width={barW}
-                height={Math.max(expH, 2)}
-                rx="2"
-                fill="url(#grad-expense)"
-              />
-              {/* Etiqueta mes (centrada bajo el grupo) */}
+      <div className="relative px-2 pb-2" onMouseLeave={() => setHovered(null)}>
+        <svg
+          viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
+          className="w-full"
+          style={{ height: 228 }}
+          preserveAspectRatio="xMidYMid meet"
+        >
+          {yGrid.map((line, index) => (
+            <g key={index}>
+              {index > 0 && (
+                <line
+                  x1={PAD.left}
+                  y1={line.y}
+                  x2={VIEW_W - PAD.right}
+                  y2={line.y}
+                  stroke="rgba(13,79,74,0.07)"
+                  strokeWidth="1"
+                />
+              )}
               <text
-                x={groupX + groupW / 2}
-                y={baseline + 14}
-                textAnchor="middle"
+                x={PAD.left - 8}
+                y={line.y + 4}
+                textAnchor="end"
                 fontSize="10"
-                fill="rgba(255,255,255,0.25)"
-                fontFamily="var(--font-body)"
+                fill="rgba(23,49,47,0.42)"
+                fontFamily="Inter, sans-serif"
               >
-                {monthLabel}
+                {formatAxisValue(line.value, preferred)}
               </text>
             </g>
-          )
-        })}
-      </svg>
+          ))}
 
-      {/* Leyenda */}
-      <div className="flex items-center gap-5 mt-2">
-        <span className="flex items-center gap-1.5 text-[11px] text-white/35">
-          <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500/70 flex-shrink-0"/>
-          Ingresos
-        </span>
-        <span className="flex items-center gap-1.5 text-[11px] text-white/35">
-          <span className="w-2.5 h-2.5 rounded-sm bg-red-500/60 flex-shrink-0"/>
-          Egresos
-        </span>
+          <line
+            x1={PAD.left}
+            y1={BASE_Y}
+            x2={VIEW_W - PAD.right}
+            y2={BASE_Y}
+            stroke="rgba(13,79,74,0.1)"
+            strokeWidth="1"
+          />
+
+          <line
+            x1={active.x}
+            y1={PAD.top - 4}
+            x2={active.x}
+            y2={BASE_Y}
+            stroke="rgba(13,79,74,0.24)"
+            strokeWidth="1.15"
+            strokeDasharray="3.5 3.5"
+          />
+
+          {plotted.length > 1 ? (
+            <path
+              d={linePath}
+              fill="none"
+              stroke="#0D4F4A"
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="chart-line-enter"
+            />
+          ) : (
+            <line
+              x1={PAD.left + 4}
+              y1={active.y}
+              x2={VIEW_W - PAD.right - 4}
+              y2={active.y}
+              stroke="#0D4F4A"
+              strokeWidth="2.4"
+              strokeLinecap="round"
+            />
+          )}
+
+          <circle cx={active.x} cy={active.y} r="6" fill="#3F6FD8" />
+          <circle cx={active.x} cy={active.y} r="3.6" fill="#FFFFFF" />
+
+          <rect
+            x={badgeX}
+            y={badgeY}
+            width={badgeWidth}
+            height="28"
+            rx="10"
+            fill="#3F6FD8"
+            stroke="rgba(63,111,216,0.28)"
+          />
+          <text
+            x={badgeX + badgeWidth / 2}
+            y={badgeY + 18}
+            textAnchor="middle"
+            fontSize="12"
+            fontWeight="700"
+            fill="#FFFFFF"
+            fontFamily="Inter, sans-serif"
+          >
+            {activeValueLabel}
+          </text>
+
+          {plotted.map((point, index) => {
+            const showLabel = index % labelStep === 0 || index === plotted.length - 1
+            return (
+              <g key={point.id}>
+                {showLabel && (
+                  <text
+                    x={point.x}
+                    y={BASE_Y + 18}
+                    textAnchor="middle"
+                    fontSize="10.5"
+                    fontWeight={index === activeIndex ? '700' : '500'}
+                    fill="rgba(23,49,47,0.48)"
+                    fontFamily="Inter, sans-serif"
+                  >
+                    {point.shortLabel}
+                  </text>
+                )}
+
+                <rect
+                  x={point.x - hitWidth / 2}
+                  y={PAD.top - 8}
+                  width={hitWidth}
+                  height={PLOT_H + 16}
+                  fill="transparent"
+                  onMouseEnter={() => setHovered(index)}
+                  onFocus={() => setHovered(index)}
+                  tabIndex={0}
+                  aria-label={`${point.label}: ${formatCurrency(format(point.balancePen), preferred)}`}
+                  style={{ cursor: 'crosshair' }}
+                />
+              </g>
+            )
+          })}
+        </svg>
       </div>
-    </WidgetShell>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 pb-5 pt-1">
+        <div className="flex flex-wrap items-center gap-3 text-[11px] text-[var(--c-text-muted)]">
+          <span className="font-semibold">Ingreso: {formatCurrency(format(totalIncome), preferred)}</span>
+          <span className="font-semibold">Egreso: {formatCurrency(format(totalExpense), preferred)}</span>
+        </div>
+
+        <div className="flex items-center gap-1 rounded-full border border-[var(--c-border)] bg-[var(--c-surface-2)] p-1">
+          {RANGE_OPTIONS.map(option => (
+            <button
+              key={option.key}
+              type="button"
+              onClick={() => setRange(option.key)}
+              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition-all ${
+                range === option.key
+                  ? 'bg-[var(--c-primary)] text-white shadow-sm'
+                  : 'text-[var(--c-text-muted)] hover:text-[var(--c-primary)]'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
   )
 }

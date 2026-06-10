@@ -16,7 +16,16 @@ import {
   getSessionUserId,
 }                                     from '@/lib/api/response'
 
-const zCategoryScope = z.enum(['INCOME', 'EXPENSE', 'BOTH'])
+const zCategoryScope = z.enum(['INCOME', 'EXPENSE'])
+type CategoryScope = z.infer<typeof zCategoryScope>
+
+function normalizeCategoryScope(scope: string): CategoryScope {
+  return scope === 'INCOME' ? 'INCOME' : 'EXPENSE'
+}
+
+function normalizeCategoryKey(name: string, scope: CategoryScope): string {
+  return `${scope}::${name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('es')}`
+}
 
 const zUpdateCategorySchema = z.object({
   name:       z.string().trim().min(2).max(80).optional(),
@@ -47,6 +56,41 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
   const parsed = zUpdateCategorySchema.safeParse(body)
   if (!parsed.success) return apiZodError(parsed.error)
+
+  const { data: currentCategory, error: currentError } = await supabase
+    .from('categories')
+    .select('id, name, scope')
+    .eq('id', params.id)
+    .eq('user_id', userId)
+    .eq('is_system', false)
+    .single()
+
+  if (currentError || !currentCategory) {
+    return apiError({ code: 'DATABASE_ERROR', message: currentError?.message ?? 'Categoría no encontrada' })
+  }
+
+  const nextName = parsed.data.name ?? currentCategory.name
+  const nextScope = parsed.data.scope ?? normalizeCategoryScope(currentCategory.scope)
+  const normalizedKey = normalizeCategoryKey(nextName, nextScope)
+
+  const { data: existingCategories, error: existingError } = await supabase
+    .from('categories')
+    .select('id, name, scope')
+    .eq('user_id', userId)
+
+  if (existingError) {
+    return apiError({ code: 'DATABASE_ERROR', message: existingError.message })
+  }
+
+  const duplicateExists = (existingCategories ?? []).some(category =>
+    category.id !== params.id && normalizeCategoryKey(category.name, normalizeCategoryScope(category.scope)) === normalizedKey
+  )
+  if (duplicateExists) {
+    return apiError({
+      code: 'BUSINESS_RULE_ERROR',
+      message: 'Ya existe una categoría con ese nombre para ese tipo.',
+    })
+  }
 
   const { data, error } = await supabase
     .from('categories')

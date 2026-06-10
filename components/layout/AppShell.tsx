@@ -13,12 +13,15 @@
 // =============================================================================
 
 import { useCallback }              from 'react'
-import { useRouter }                from 'next/navigation'
+import useSWR from 'swr'
+import { usePathname, useRouter }   from 'next/navigation'
 import { createClient }             from '@/lib/supabase.client'
 import { LayoutProvider, useLayout } from '@/lib/hooks/useLayout'
 import { CurrencyProvider }         from '@/lib/hooks/useDashboard'
 import { StaticSidebar, MobileDrawer } from './Sidebar'
+import { ProductUpdatesBanner }    from './ProductUpdatesBanner'
 import { Topbar }                   from './Topbar'
+import { QuickActionsFAB }          from './QuickActionsFAB'
 
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
 
@@ -42,6 +45,7 @@ interface AppShellProps {
 
 function InnerShell({ user, navBadges = {}, children }: Omit<AppShellProps, 'exchangeRate'>) {
   const router   = useRouter()
+  const pathname = usePathname()
   const supabase = createClient()
 
   const {
@@ -50,6 +54,25 @@ function InnerShell({ user, navBadges = {}, children }: Omit<AppShellProps, 'exc
     openMobileDrawer,
     closeMobileDrawer,
   } = useLayout()
+  const { data: liveNavBadges } = useSWR<Partial<Record<string, number>>>(
+    '/api/dashboard/nav-badges',
+    async (url: string) => {
+      const response = await fetch(url, { cache: 'no-store' })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error?.message ?? 'No se pudo cargar el estado del sidebar')
+      }
+      return payload.data as Partial<Record<string, number>>
+    },
+    {
+      fallbackData: navBadges,
+      revalidateOnFocus: false,
+      dedupingInterval: 30_000,
+      refreshInterval: 60_000,
+    },
+  )
+
+  const resolvedNavBadges = liveNavBadges ?? navBadges
 
   const handleSignOut = useCallback(async () => {
     await supabase.auth.signOut()
@@ -58,12 +81,15 @@ function InnerShell({ user, navBadges = {}, children }: Omit<AppShellProps, 'exc
   }, [supabase, router])
 
   return (
-    <div className="fin-shell density-compact flex h-screen overflow-hidden bg-[var(--color-bg)] text-[var(--color-text)]">
+    // h-screen + overflow-hidden en el shell evita que el sidebar haga scroll
+    // Solo el <main> scrollea internamente
+    <div className="fin-shell flex h-screen overflow-hidden"
+      style={{ backgroundColor: 'var(--c-bg)', color: 'var(--c-text)' }}>
       {/* Sidebar estático — tablet y desktop */}
       <StaticSidebar
         mode={sidebarMode}
         user={user}
-        badges={navBadges}
+        badges={resolvedNavBadges}
       />
 
       {/* Drawer — mobile */}
@@ -71,28 +97,34 @@ function InnerShell({ user, navBadges = {}, children }: Omit<AppShellProps, 'exc
         open={mobileDrawerOpen}
         onClose={closeMobileDrawer}
         user={user}
-        badges={navBadges}
+        badges={resolvedNavBadges}
       />
 
-      {/* Área principal */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      {/* Área principal — columna derecha, scroll independiente */}
+      <div className="flex-1 flex min-w-0 flex-col overflow-hidden">
+        {/* Topbar fija en la parte superior de la columna derecha */}
         <Topbar
           user={user}
+          navBadges={resolvedNavBadges}
           onMenuClick={openMobileDrawer}
           onSignOut={handleSignOut}
         />
 
-        {/* Scroll container del contenido */}
-        <main id="main-content" className="flex-1 overflow-y-auto overflow-x-hidden">
-          {/* Inner wrapper con max-width y padding responsive */}
-          <div className="max-w-[1400px] mx-auto px-3 md:px-5 lg:px-6 py-4 md:py-5">
+        {/* Scroll container del contenido — solo esta área scrollea */}
+        <main id="main-content" className="relative flex-1 overflow-y-auto overflow-x-hidden">
+          <div key={pathname} className="page-transition-enter w-full px-3 pt-4 sm:px-4 lg:px-5 xl:px-6" style={{ paddingBottom: 'max(6rem, calc(var(--fab-safe-area, 0px) + 1.5rem))' }}>
+            <ProductUpdatesBanner />
             {children}
           </div>
+
+          {/* FAB de accesos rápidos — posición fija dentro del scroll container */}
+          <QuickActionsFAB />
         </main>
       </div>
     </div>
   )
 }
+
 
 // ─── SHELL PRINCIPAL (con providers) ─────────────────────────────────────────
 

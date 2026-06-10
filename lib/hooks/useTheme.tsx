@@ -22,7 +22,7 @@ interface ThemeContextValue {
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
-  theme: 'dark',
+  theme: 'light',
   mounted: false,
   setTheme: () => {},
   toggleTheme: () => {},
@@ -35,8 +35,8 @@ function getStoredTheme(): AppTheme | null {
 }
 
 function getSystemTheme(): AppTheme {
-  if (typeof window === 'undefined') return 'dark'
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  if (typeof window === 'undefined') return 'light'
+  return 'light'
 }
 
 function applyTheme(theme: AppTheme) {
@@ -47,7 +47,7 @@ function applyTheme(theme: AppTheme) {
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<AppTheme>(() => {
-    if (typeof window === 'undefined') return 'dark'
+    if (typeof window === 'undefined') return 'light'
     return getStoredTheme() ?? getSystemTheme()
   })
   const [mounted, setMounted] = useState(false)

@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useCurrency, useDashboard } from '@/lib/hooks/useDashboard'
 import { formatCurrency, formatPercent, toPenAmount } from '@/lib/contracts/ui.contracts'
 import {
@@ -34,11 +34,30 @@ interface InsightItem {
   hrefLabel: string
 }
 
+interface AppNotificationItem {
+  id: string
+  category: string
+  event: string
+  title: string
+  message: string | null
+  href: string | null
+  is_read: boolean
+  created_at: string
+}
+
 function urgencyOrder(value: Urgency): number {
   if (value === 'OVERDUE') return 0
   if (value === 'DUE_SOON') return 1
   if (value === 'UPCOMING') return 2
   return 3
+}
+
+function notificationCategoryLabel(category: string): string {
+  if (category === 'PORTFOLIO') return 'Portafolio'
+  if (category === 'BANK') return 'Bancos'
+  if (category === 'TRANSACTION') return 'Transacciones'
+  if (category === 'CATEGORY') return 'Categorías'
+  return 'Sistema'
 }
 
 function alertTypeLabel(type: AlertType): string {
@@ -75,6 +94,45 @@ function insightTone(severity: InsightItem['severity']) {
 export function AlertsCenter() {
   const { summary, isLoading, error, refetch, lastUpdated } = useDashboard()
   const { preferred, format, exchangeRate } = useCurrency()
+  const [notifications, setNotifications] = useState<AppNotificationItem[]>([])
+  const [notificationsLoading, setNotificationsLoading] = useState(false)
+  const [markingRead, setMarkingRead] = useState(false)
+
+  const loadNotifications = useCallback(async () => {
+    setNotificationsLoading(true)
+    try {
+      const res = await fetch('/api/notifications?limit=20', { cache: 'no-store' })
+      const json = await res.json()
+      if (!res.ok || !json.ok) return
+      setNotifications(json.data as AppNotificationItem[])
+    } finally {
+      setNotificationsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadNotifications()
+  }, [loadNotifications])
+
+  const unreadNotifications = notifications.filter(item => !item.is_read).length
+
+  const markNotificationsAsRead = useCallback(async () => {
+    if (markingRead || unreadNotifications === 0) return
+    setMarkingRead(true)
+    try {
+      const res = await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mark_all: true, is_read: true }),
+      })
+      const json = await res.json()
+      if (res.ok && json.ok) {
+        setNotifications(json.data as AppNotificationItem[])
+      }
+    } finally {
+      setMarkingRead(false)
+    }
+  }, [markingRead, unreadNotifications])
 
   const alerts = useMemo<AlertItem[]>(() => {
     if (!summary) return []
@@ -187,8 +245,8 @@ export function AlertsCenter() {
   if (isLoading) {
     return (
       <div className="space-y-4">
-        <WidgetShell><div className="h-24 animate-pulse rounded-xl bg-white/[0.04]"/></WidgetShell>
-        <WidgetShell><div className="h-56 animate-pulse rounded-xl bg-white/[0.04]"/></WidgetShell>
+        <WidgetShell><div className="h-24 animate-pulse rounded-xl bg-[var(--c-surface-2)]"/></WidgetShell>
+        <WidgetShell><div className="h-56 animate-pulse rounded-xl bg-[var(--c-surface-2)]"/></WidgetShell>
       </div>
     )
   }
@@ -199,7 +257,7 @@ export function AlertsCenter() {
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="text-sm font-semibold text-red-300">No se pudo cargar el centro de alertas</p>
-            <p className="text-xs text-white/45 mt-1">{error.message ?? 'Intenta recargar.'}</p>
+            <p className="mt-1 text-xs text-[var(--c-text-muted)]">{error.message ?? 'Intenta recargar.'}</p>
           </div>
           <button onClick={refetch} className="btn-secondary text-xs px-3 py-2">Reintentar</button>
         </div>
@@ -211,23 +269,23 @@ export function AlertsCenter() {
     <div className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <WidgetShell>
-          <p className="text-[11px] uppercase tracking-[0.09em] text-white/35">Alertas críticas</p>
+          <p className="text-[11px] uppercase tracking-[0.09em] text-[var(--c-text-muted)]">Alertas críticas</p>
           <p className="text-2xl font-bold tabular-nums text-red-400 mt-1">{overdueCount}</p>
-          <p className="text-[11px] text-white/35 mt-1">vencidas</p>
+          <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">vencidas</p>
         </WidgetShell>
         <WidgetShell>
-          <p className="text-[11px] uppercase tracking-[0.09em] text-white/35">Por vencer</p>
+          <p className="text-[11px] uppercase tracking-[0.09em] text-[var(--c-text-muted)]">Por vencer</p>
           <p className="text-2xl font-bold tabular-nums text-amber-400 mt-1">{dueSoonCount}</p>
-          <p className="text-[11px] text-white/35 mt-1">esta semana</p>
+          <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">esta semana</p>
         </WidgetShell>
         <WidgetShell>
-          <p className="text-[11px] uppercase tracking-[0.09em] text-white/35">Última actualización</p>
-          <p className="text-base font-semibold text-white/80 mt-1">
+          <p className="text-[11px] uppercase tracking-[0.09em] text-[var(--c-text-muted)]">Última actualización</p>
+          <p className="mt-1 text-base font-semibold text-[var(--c-text)]">
             {lastUpdated
               ? lastUpdated.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })
               : '—'}
           </p>
-          <p className="text-[11px] text-white/35 mt-1">actualiza en automático</p>
+          <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">actualiza en automático</p>
         </WidgetShell>
       </div>
 
@@ -253,23 +311,23 @@ export function AlertsCenter() {
                   <Link
                     key={`${item.type}-${item.id}`}
                     href={item.href}
-                    className="block rounded-xl border border-white/[0.08] bg-white/[0.02] px-3 py-2.5
-                      hover:border-white/[0.16] hover:bg-white/[0.03] transition-colors"
+                    className="block rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-2.5
+                      transition-colors hover:border-[var(--c-border-hover)] hover:bg-[var(--c-surface-2)]"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="text-xs text-white/35 uppercase tracking-[0.08em]">
+                        <p className="text-xs uppercase tracking-[0.08em] text-[var(--c-text-muted)]">
                           {alertTypeLabel(item.type)}
                         </p>
-                        <p className="text-sm text-white/80 truncate mt-0.5">{item.label}</p>
+                        <p className="mt-0.5 truncate text-sm text-[var(--c-text)]">{item.label}</p>
                         {item.dueDate && (
-                          <p className="text-[11px] text-white/40 mt-1">
+                          <p className="mt-1 text-[11px] text-[var(--c-text-faint)]">
                             Vence: {new Date(item.dueDate + 'T12:00:00').toLocaleDateString('es-PE')}
                           </p>
                         )}
                       </div>
                       <div className="text-right flex-shrink-0">
-                        <p className="text-sm font-bold tabular-nums text-white/80">{formatted}</p>
+                        <p className="text-sm font-bold tabular-nums text-[var(--c-text)]">{formatted}</p>
                         <div className="mt-1 flex justify-end">
                           <UrgencyBadge urgency={item.urgency}/>
                         </div>
@@ -303,8 +361,8 @@ export function AlertsCenter() {
                       <span className="mt-1 h-2 w-2 rounded-full flex-shrink-0" style={{ background: tone.dot }}/>
                       <div className="min-w-0">
                         <p className={`text-sm font-semibold ${tone.text}`}>{item.title}</p>
-                        <p className="text-[12px] text-white/60 mt-1">{item.message}</p>
-                        <Link href={item.href} className="inline-flex mt-2 text-[11px] font-semibold text-emerald-300 hover:text-emerald-200">
+                        <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">{item.message}</p>
+                        <Link href={item.href} className="inline-flex mt-2 text-[11px] font-semibold text-[var(--c-primary)] hover:text-[var(--c-primary)]">
                           {item.hrefLabel} →
                         </Link>
                       </div>
@@ -316,6 +374,74 @@ export function AlertsCenter() {
           )}
         </WidgetShell>
       </div>
+
+      <WidgetShell>
+        <SectionHeader
+          title="Actividad reciente"
+          accent="var(--c-primary)"
+          action={
+            unreadNotifications > 0 ? (
+              <button
+                type="button"
+                onClick={() => void markNotificationsAsRead()}
+                disabled={markingRead}
+                className="text-[11px] text-[var(--c-primary)] hover:text-[var(--c-primary)] transition-colors disabled:opacity-60"
+              >
+                {markingRead ? 'Marcando...' : `Marcar leídas (${unreadNotifications})`}
+              </button>
+            ) : (
+              <span className="text-[11px] text-[var(--c-text-muted)]">Todo al día</span>
+            )
+          }
+        />
+
+        {notificationsLoading ? (
+          <div className="h-20 animate-pulse rounded-xl bg-[var(--c-surface-2)]"/>
+        ) : notifications.length === 0 ? (
+          <EmptyWidget
+            message="Sin actividad reciente"
+            hint="Los registros creados y actualizados aparecerán aquí."
+          />
+        ) : (
+          <div className="space-y-2">
+            {notifications.slice(0, 8).map(item => (
+              <div
+                key={item.id}
+                className={`rounded-xl border px-3 py-2.5 ${
+                  item.is_read
+                    ? 'border-[var(--c-border)] bg-[var(--c-surface)]'
+                    : 'border-[var(--c-primary-border)] bg-[var(--c-primary-soft)]'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+                      {notificationCategoryLabel(item.category)}
+                    </p>
+                    <p className="mt-0.5 truncate text-sm text-[var(--c-text)]">{item.title}</p>
+                    {item.message && (
+                      <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">{item.message}</p>
+                    )}
+                  </div>
+                  <div className="flex-shrink-0 text-right">
+                    <p className="text-[10px] text-[var(--c-text-faint)]">
+                      {new Date(item.created_at).toLocaleTimeString('es-PE', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </p>
+                    {item.href && (
+                      <Link href={item.href} className="mt-1 inline-block text-[11px] text-[var(--c-primary)] hover:text-[var(--c-primary)]">
+                        Ver →
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </WidgetShell>
     </div>
   )
 }

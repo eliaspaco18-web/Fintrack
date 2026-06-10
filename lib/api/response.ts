@@ -79,12 +79,19 @@ export function apiZodError(error: ZodError): NextResponse<ApiError> {
     fields[path].push(issue.message)
   }
 
+  const firstIssue = error.issues[0]
+  const firstPath = firstIssue?.path.join('.') || 'dato'
+  const detail = firstIssue?.message
+    ? `Campo "${firstPath}": ${firstIssue.message}`
+    : undefined
+
   return NextResponse.json(
     {
       ok: false,
       error: {
         code:    'VALIDATION_ERROR',
         message: 'Los datos enviados no son válidos',
+        detail,
         fields,
       },
     },

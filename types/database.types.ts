@@ -7,14 +7,20 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.4"
+  }
   public: {
     Tables: {
       accounts: {
         Row: {
           balance: number
+          bank_entity_id: string | null
           color: string
           created_at: string
-          currency: Database["public"]["Enums"]["currency_code"]
+          currency: string
           icon: string
           id: string
           include_in_net_worth: boolean
@@ -29,9 +35,10 @@ export type Database = {
         }
         Insert: {
           balance?: number
+          bank_entity_id?: string | null
           color?: string
           created_at?: string
-          currency?: Database["public"]["Enums"]["currency_code"]
+          currency?: string
           icon?: string
           id?: string
           include_in_net_worth?: boolean
@@ -46,9 +53,10 @@ export type Database = {
         }
         Update: {
           balance?: number
+          bank_entity_id?: string | null
           color?: string
           created_at?: string
-          currency?: Database["public"]["Enums"]["currency_code"]
+          currency?: string
           icon?: string
           id?: string
           include_in_net_worth?: boolean
@@ -74,10 +82,12 @@ export type Database = {
       accounts_payable: {
         Row: {
           amount: number
+          attachment_url: string | null
           concept: string | null
           created_at: string
+          creditor_id: string | null
           creditor_name: string
-          currency: Database["public"]["Enums"]["currency_code"]
+          currency: string
           due_date: string | null
           id: string
           issue_date: string
@@ -91,10 +101,12 @@ export type Database = {
         }
         Insert: {
           amount: number
+          attachment_url?: string | null
           concept?: string | null
           created_at?: string
+          creditor_id?: string | null
           creditor_name: string
-          currency?: Database["public"]["Enums"]["currency_code"]
+          currency?: string
           due_date?: string | null
           id?: string
           issue_date?: string
@@ -108,10 +120,12 @@ export type Database = {
         }
         Update: {
           amount?: number
+          attachment_url?: string | null
           concept?: string | null
           created_at?: string
+          creditor_id?: string | null
           creditor_name?: string
-          currency?: Database["public"]["Enums"]["currency_code"]
+          currency?: string
           due_date?: string | null
           id?: string
           issue_date?: string
@@ -124,6 +138,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "accounts_payable_creditor_id_fkey"
+            columns: ["creditor_id"]
+            isOneToOne: false
+            referencedRelation: "creditors"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "accounts_payable_transaction_id_fkey"
             columns: ["transaction_id"]
@@ -143,11 +164,13 @@ export type Database = {
       accounts_receivable: {
         Row: {
           amount: number
+          attachment_url: string | null
           collected_amount: number
           collected_date: string | null
           concept: string | null
           created_at: string
-          currency: Database["public"]["Enums"]["currency_code"]
+          currency: string
+          debtor_id: string | null
           debtor_name: string
           due_date: string | null
           id: string
@@ -160,11 +183,13 @@ export type Database = {
         }
         Insert: {
           amount: number
+          attachment_url?: string | null
           collected_amount?: number
           collected_date?: string | null
           concept?: string | null
           created_at?: string
-          currency?: Database["public"]["Enums"]["currency_code"]
+          currency?: string
+          debtor_id?: string | null
           debtor_name: string
           due_date?: string | null
           id?: string
@@ -177,11 +202,13 @@ export type Database = {
         }
         Update: {
           amount?: number
+          attachment_url?: string | null
           collected_amount?: number
           collected_date?: string | null
           concept?: string | null
           created_at?: string
-          currency?: Database["public"]["Enums"]["currency_code"]
+          currency?: string
+          debtor_id?: string | null
           debtor_name?: string
           due_date?: string | null
           id?: string
@@ -193,6 +220,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "accounts_receivable_debtor_id_fkey"
+            columns: ["debtor_id"]
+            isOneToOne: false
+            referencedRelation: "debtors"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "accounts_receivable_transaction_id_fkey"
             columns: ["transaction_id"]
@@ -209,11 +243,119 @@ export type Database = {
           },
         ]
       }
+      app_notifications: {
+        Row: {
+          alert_type: Database["public"]["Enums"]["alert_severity"]
+          category: string
+          context: Json
+          created_at: string
+          event: string
+          href: string | null
+          id: string
+          is_read: boolean
+          message: string | null
+          read_at: string | null
+          source_module: string | null
+          source_record_id: string | null
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          alert_type?: Database["public"]["Enums"]["alert_severity"]
+          category?: string
+          context?: Json
+          created_at?: string
+          event: string
+          href?: string | null
+          id?: string
+          is_read?: boolean
+          message?: string | null
+          read_at?: string | null
+          source_module?: string | null
+          source_record_id?: string | null
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          alert_type?: Database["public"]["Enums"]["alert_severity"]
+          category?: string
+          context?: Json
+          created_at?: string
+          event?: string
+          href?: string | null
+          id?: string
+          is_read?: boolean
+          message?: string | null
+          read_at?: string | null
+          source_module?: string | null
+          source_record_id?: string | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      asset_types: {
+        Row: {
+          color: string
+          created_at: string
+          icon: string
+          id: string
+          is_active: boolean
+          is_system: boolean
+          name: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          icon?: string
+          id?: string
+          is_active?: boolean
+          is_system?: boolean
+          name: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          icon?: string
+          id?: string
+          is_active?: boolean
+          is_system?: boolean
+          name?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asset_types_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       assets: {
         Row: {
           asset_type: Database["public"]["Enums"]["asset_type"]
+          asset_type_id: string | null
+          attachment_url: string | null
           created_at: string
-          currency: Database["public"]["Enums"]["currency_code"]
+          currency: string
           current_value: number
           depreciation_rate: number | null
           id: string
@@ -222,6 +364,7 @@ export type Database = {
           notes: string | null
           purchase_date: string
           purchase_value: number
+          recipient: string | null
           serial_number: string | null
           status: Database["public"]["Enums"]["asset_status"]
           transaction_id: string | null
@@ -230,8 +373,10 @@ export type Database = {
         }
         Insert: {
           asset_type?: Database["public"]["Enums"]["asset_type"]
+          asset_type_id?: string | null
+          attachment_url?: string | null
           created_at?: string
-          currency?: Database["public"]["Enums"]["currency_code"]
+          currency?: string
           current_value: number
           depreciation_rate?: number | null
           id?: string
@@ -240,6 +385,7 @@ export type Database = {
           notes?: string | null
           purchase_date: string
           purchase_value: number
+          recipient?: string | null
           serial_number?: string | null
           status?: Database["public"]["Enums"]["asset_status"]
           transaction_id?: string | null
@@ -248,8 +394,10 @@ export type Database = {
         }
         Update: {
           asset_type?: Database["public"]["Enums"]["asset_type"]
+          asset_type_id?: string | null
+          attachment_url?: string | null
           created_at?: string
-          currency?: Database["public"]["Enums"]["currency_code"]
+          currency?: string
           current_value?: number
           depreciation_rate?: number | null
           id?: string
@@ -258,6 +406,7 @@ export type Database = {
           notes?: string | null
           purchase_date?: string
           purchase_value?: number
+          recipient?: string | null
           serial_number?: string | null
           status?: Database["public"]["Enums"]["asset_status"]
           transaction_id?: string | null
@@ -265,6 +414,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "assets_asset_type_id_fkey"
+            columns: ["asset_type_id"]
+            isOneToOne: false
+            referencedRelation: "asset_types"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "assets_transaction_id_fkey"
             columns: ["transaction_id"]
@@ -281,18 +437,130 @@ export type Database = {
           },
         ]
       }
+      bank_entities: {
+        Row: {
+          code: string | null
+          color: string
+          country: string
+          created_at: string
+          icon: string
+          id: string
+          is_active: boolean
+          name: string
+          short_name: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          code?: string | null
+          color?: string
+          country?: string
+          created_at?: string
+          icon?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          short_name?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          code?: string | null
+          color?: string
+          country?: string
+          created_at?: string
+          icon?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          short_name?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bank_entities_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      billing_cycles: {
+        Row: {
+          billing_month: number
+          billing_year: number
+          consumption_from: string
+          consumption_to: string
+          created_at: string
+          credit_id: string
+          id: string
+          notes: string | null
+          payment_date: string
+          statement_url: string | null
+          total_to_pay: number
+          updated_at: string
+        }
+        Insert: {
+          billing_month: number
+          billing_year: number
+          consumption_from: string
+          consumption_to: string
+          created_at?: string
+          credit_id: string
+          id?: string
+          notes?: string | null
+          payment_date: string
+          statement_url?: string | null
+          total_to_pay?: number
+          updated_at?: string
+        }
+        Update: {
+          billing_month?: number
+          billing_year?: number
+          consumption_from?: string
+          consumption_to?: string
+          created_at?: string
+          credit_id?: string
+          id?: string
+          notes?: string | null
+          payment_date?: string
+          statement_url?: string | null
+          total_to_pay?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "billing_cycles_credit_id_fkey"
+            columns: ["credit_id"]
+            isOneToOne: false
+            referencedRelation: "credits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "billing_cycles_credit_id_fkey"
+            columns: ["credit_id"]
+            isOneToOne: false
+            referencedRelation: "v_credit_summary"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       budgets: {
         Row: {
           amount: number
           category_id: string | null
           created_at: string
-          currency: Database["public"]["Enums"]["currency_code"]
+          currency: string
+          description: string | null
           end_date: string | null
           id: string
           is_active: boolean
           name: string
           notes: string | null
           period_type: Database["public"]["Enums"]["budget_period"]
+          series_id: string
           start_date: string
           updated_at: string
           user_id: string
@@ -301,13 +569,15 @@ export type Database = {
           amount: number
           category_id?: string | null
           created_at?: string
-          currency?: Database["public"]["Enums"]["currency_code"]
+          currency?: string
+          description?: string | null
           end_date?: string | null
           id?: string
           is_active?: boolean
           name: string
           notes?: string | null
           period_type?: Database["public"]["Enums"]["budget_period"]
+          series_id?: string
           start_date: string
           updated_at?: string
           user_id: string
@@ -316,13 +586,15 @@ export type Database = {
           amount?: number
           category_id?: string | null
           created_at?: string
-          currency?: Database["public"]["Enums"]["currency_code"]
+          currency?: string
+          description?: string | null
           end_date?: string | null
           id?: string
           is_active?: boolean
           name?: string
           notes?: string | null
           period_type?: Database["public"]["Enums"]["budget_period"]
+          series_id?: string
           start_date?: string
           updated_at?: string
           user_id?: string
@@ -391,15 +663,57 @@ export type Database = {
           },
         ]
       }
+      creditors: {
+        Row: {
+          created_at: string
+          id: string
+          initial_debt: number
+          is_active: boolean
+          name: string
+          relationship: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          initial_debt?: number
+          is_active?: boolean
+          name: string
+          relationship?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          initial_debt?: number
+          is_active?: boolean
+          name?: string
+          relationship?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "creditors_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       credits: {
         Row: {
           account_id: string | null
           available_amount: number | null
+          bank_entity_id: string | null
           closing_day: number | null
           created_at: string
           credit_limit: number
           credit_type: Database["public"]["Enums"]["credit_type"]
-          currency: Database["public"]["Enums"]["currency_code"]
+          currency: string
           id: string
           interest_rate: number
           name: string
@@ -414,11 +728,12 @@ export type Database = {
         Insert: {
           account_id?: string | null
           available_amount?: number | null
+          bank_entity_id?: string | null
           closing_day?: number | null
           created_at?: string
           credit_limit: number
           credit_type?: Database["public"]["Enums"]["credit_type"]
-          currency?: Database["public"]["Enums"]["currency_code"]
+          currency?: string
           id?: string
           interest_rate?: number
           name: string
@@ -433,11 +748,12 @@ export type Database = {
         Update: {
           account_id?: string | null
           available_amount?: number | null
+          bank_entity_id?: string | null
           closing_day?: number | null
           created_at?: string
           credit_limit?: number
           credit_type?: Database["public"]["Enums"]["credit_type"]
-          currency?: Database["public"]["Enums"]["currency_code"]
+          currency?: string
           id?: string
           interest_rate?: number
           name?: string
@@ -462,6 +778,13 @@ export type Database = {
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "v_account_balances"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "credits_bank_entity_id_fkey"
+            columns: ["bank_entity_id"]
+            isOneToOne: false
+            referencedRelation: "bank_entities"
             referencedColumns: ["id"]
           },
           {
@@ -480,96 +803,40 @@ export type Database = {
           },
         ]
       }
-      exchange_rates: {
+      debtors: {
         Row: {
-          fetched_at: string
-          from_currency: Database["public"]["Enums"]["currency_code"]
-          id: string
-          rate: number
-          source: string
-          to_currency: Database["public"]["Enums"]["currency_code"]
-        }
-        Insert: {
-          fetched_at?: string
-          from_currency: Database["public"]["Enums"]["currency_code"]
-          id?: string
-          rate: number
-          source?: string
-          to_currency: Database["public"]["Enums"]["currency_code"]
-        }
-        Update: {
-          fetched_at?: string
-          from_currency?: Database["public"]["Enums"]["currency_code"]
-          id?: string
-          rate?: number
-          source?: string
-          to_currency?: Database["public"]["Enums"]["currency_code"]
-        }
-        Relationships: []
-      }
-      goals: {
-        Row: {
-          account_id: string | null
-          achieved_date: string | null
           created_at: string
-          currency: Database["public"]["Enums"]["currency_code"]
-          current_amount: number
-          description: string | null
           id: string
+          initial_debt: number
+          is_active: boolean
           name: string
-          status: Database["public"]["Enums"]["goal_status"]
-          target_amount: number
-          target_date: string | null
+          relationship: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
-          account_id?: string | null
-          achieved_date?: string | null
           created_at?: string
-          currency?: Database["public"]["Enums"]["currency_code"]
-          current_amount?: number
-          description?: string | null
           id?: string
+          initial_debt?: number
+          is_active?: boolean
           name: string
-          status?: Database["public"]["Enums"]["goal_status"]
-          target_amount: number
-          target_date?: string | null
+          relationship?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
-          account_id?: string | null
-          achieved_date?: string | null
           created_at?: string
-          currency?: Database["public"]["Enums"]["currency_code"]
-          current_amount?: number
-          description?: string | null
           id?: string
+          initial_debt?: number
+          is_active?: boolean
           name?: string
-          status?: Database["public"]["Enums"]["goal_status"]
-          target_amount?: number
-          target_date?: string | null
+          relationship?: string | null
           updated_at?: string
           user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "goals_account_id_fkey"
-            columns: ["account_id"]
-            isOneToOne: false
-            referencedRelation: "accounts"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "goals_account_id_fkey"
-            columns: ["account_id"]
-            isOneToOne: false
-            referencedRelation: "v_account_balances"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "goals_user_id_fkey"
+            foreignKeyName: "debtors_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
@@ -577,16 +844,46 @@ export type Database = {
           },
         ]
       }
+      exchange_rates: {
+        Row: {
+          fetched_at: string
+          from_currency: string
+          id: string
+          rate: number
+          source: string
+          to_currency: string
+        }
+        Insert: {
+          fetched_at?: string
+          from_currency: string
+          id?: string
+          rate: number
+          source?: string
+          to_currency: string
+        }
+        Update: {
+          fetched_at?: string
+          from_currency?: string
+          id?: string
+          rate?: number
+          source?: string
+          to_currency?: string
+        }
+        Relationships: []
+      }
       installments: {
         Row: {
           created_at: string
           due_date: string
           id: string
           installment_number: number
+          insurance_amount: number
           interest_amount: number
           loan_id: string
+          other_charges: number
           paid_amount: number | null
           paid_date: string | null
+          payment_proof_url: string | null
           principal_amount: number
           status: Database["public"]["Enums"]["installment_status"]
           total_amount: number
@@ -598,10 +895,13 @@ export type Database = {
           due_date: string
           id?: string
           installment_number: number
+          insurance_amount?: number
           interest_amount?: number
           loan_id: string
+          other_charges?: number
           paid_amount?: number | null
           paid_date?: string | null
+          payment_proof_url?: string | null
           principal_amount: number
           status?: Database["public"]["Enums"]["installment_status"]
           total_amount: number
@@ -613,10 +913,13 @@ export type Database = {
           due_date?: string
           id?: string
           installment_number?: number
+          insurance_amount?: number
           interest_amount?: number
           loan_id?: string
+          other_charges?: number
           paid_amount?: number | null
           paid_date?: string | null
+          payment_proof_url?: string | null
           principal_amount?: number
           status?: Database["public"]["Enums"]["installment_status"]
           total_amount?: number
@@ -642,13 +945,16 @@ export type Database = {
       }
       loans: {
         Row: {
+          bank_entity_id: string | null
           created_at: string
           credit_id: string | null
           creditor_name: string
-          currency: Database["public"]["Enums"]["currency_code"]
+          currency: string
+          disbursement_account_id: string | null
           end_date: string
           id: string
           interest_rate: number
+          name: string | null
           notes: string | null
           paid_installments: number
           principal_amount: number
@@ -660,13 +966,16 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          bank_entity_id?: string | null
           created_at?: string
           credit_id?: string | null
           creditor_name: string
-          currency?: Database["public"]["Enums"]["currency_code"]
+          currency?: string
+          disbursement_account_id?: string | null
           end_date: string
           id?: string
           interest_rate?: number
+          name?: string | null
           notes?: string | null
           paid_installments?: number
           principal_amount: number
@@ -678,13 +987,16 @@ export type Database = {
           user_id: string
         }
         Update: {
+          bank_entity_id?: string | null
           created_at?: string
           credit_id?: string | null
           creditor_name?: string
-          currency?: Database["public"]["Enums"]["currency_code"]
+          currency?: string
+          disbursement_account_id?: string | null
           end_date?: string
           id?: string
           interest_rate?: number
+          name?: string | null
           notes?: string | null
           paid_installments?: number
           principal_amount?: number
@@ -697,6 +1009,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "loans_bank_entity_id_fkey"
+            columns: ["bank_entity_id"]
+            isOneToOne: false
+            referencedRelation: "bank_entities"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "loans_credit_id_fkey"
             columns: ["credit_id"]
             isOneToOne: false
@@ -708,6 +1027,20 @@ export type Database = {
             columns: ["credit_id"]
             isOneToOne: false
             referencedRelation: "v_credit_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loans_disbursement_account_id_fkey"
+            columns: ["disbursement_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loans_disbursement_account_id_fkey"
+            columns: ["disbursement_account_id"]
+            isOneToOne: false
+            referencedRelation: "v_account_balances"
             referencedColumns: ["id"]
           },
           {
@@ -730,47 +1063,203 @@ export type Database = {
         Row: {
           avatar_url: string | null
           created_at: string
-          default_currency: Database["public"]["Enums"]["currency_code"]
+          default_currency: string
           email: string
           full_name: string | null
           id: string
+          notification_prefs: Json
           updated_at: string
         }
         Insert: {
           avatar_url?: string | null
           created_at?: string
-          default_currency?: Database["public"]["Enums"]["currency_code"]
+          default_currency?: string
           email: string
           full_name?: string | null
           id: string
+          notification_prefs?: Json
           updated_at?: string
         }
         Update: {
           avatar_url?: string | null
           created_at?: string
-          default_currency?: Database["public"]["Enums"]["currency_code"]
+          default_currency?: string
           email?: string
           full_name?: string | null
           id?: string
+          notification_prefs?: Json
           updated_at?: string
         }
         Relationships: []
+      }
+      recurring_transactions: {
+        Row: {
+          amount: number
+          budget_id: string | null
+          category_id: string | null
+          created_at: string
+          creditor_id: string | null
+          currency: string
+          debtor_id: string | null
+          description: string | null
+          destination_account_id: string | null
+          id: string
+          is_active: boolean
+          name: string
+          notes: string | null
+          payment_method:
+            | Database["public"]["Enums"]["payment_method_type"]
+            | null
+          recipient: string | null
+          sender: string | null
+          source_account_id: string | null
+          sub_type: Database["public"]["Enums"]["transaction_sub_type"] | null
+          type: Database["public"]["Enums"]["transaction_type"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount?: number
+          budget_id?: string | null
+          category_id?: string | null
+          created_at?: string
+          creditor_id?: string | null
+          currency?: string
+          debtor_id?: string | null
+          description?: string | null
+          destination_account_id?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          notes?: string | null
+          payment_method?:
+            | Database["public"]["Enums"]["payment_method_type"]
+            | null
+          recipient?: string | null
+          sender?: string | null
+          source_account_id?: string | null
+          sub_type?: Database["public"]["Enums"]["transaction_sub_type"] | null
+          type: Database["public"]["Enums"]["transaction_type"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          budget_id?: string | null
+          category_id?: string | null
+          created_at?: string
+          creditor_id?: string | null
+          currency?: string
+          debtor_id?: string | null
+          description?: string | null
+          destination_account_id?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          notes?: string | null
+          payment_method?:
+            | Database["public"]["Enums"]["payment_method_type"]
+            | null
+          recipient?: string | null
+          sender?: string | null
+          source_account_id?: string | null
+          sub_type?: Database["public"]["Enums"]["transaction_sub_type"] | null
+          type?: Database["public"]["Enums"]["transaction_type"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recurring_transactions_budget_id_fkey"
+            columns: ["budget_id"]
+            isOneToOne: false
+            referencedRelation: "budgets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recurring_transactions_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recurring_transactions_creditor_id_fkey"
+            columns: ["creditor_id"]
+            isOneToOne: false
+            referencedRelation: "creditors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recurring_transactions_debtor_id_fkey"
+            columns: ["debtor_id"]
+            isOneToOne: false
+            referencedRelation: "debtors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recurring_transactions_destination_account_id_fkey"
+            columns: ["destination_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recurring_transactions_destination_account_id_fkey"
+            columns: ["destination_account_id"]
+            isOneToOne: false
+            referencedRelation: "v_account_balances"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recurring_transactions_source_account_id_fkey"
+            columns: ["source_account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recurring_transactions_source_account_id_fkey"
+            columns: ["source_account_id"]
+            isOneToOne: false
+            referencedRelation: "v_account_balances"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recurring_transactions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       transactions: {
         Row: {
           affects_reports: boolean
           amount: number
           amount_pen: number
+          attachment_url: string | null
+          budget_id: string | null
           category_id: string | null
           created_at: string
-          currency: Database["public"]["Enums"]["currency_code"]
+          creditor_id: string | null
+          currency: string
+          debtor_id: string | null
           description: string
           destination_account_id: string | null
           exchange_rate: number
           id: string
           is_recurring: boolean
           notes: string | null
+          payment_method:
+            | Database["public"]["Enums"]["payment_method_type"]
+            | null
+          recipient: string | null
+          recurring_transaction_id: string | null
+          sender: string | null
           source_account_id: string
+          sub_type: Database["public"]["Enums"]["transaction_sub_type"] | null
           transaction_date: string
           type: Database["public"]["Enums"]["transaction_type"]
           updated_at: string
@@ -780,16 +1269,27 @@ export type Database = {
           affects_reports?: boolean
           amount: number
           amount_pen: number
+          attachment_url?: string | null
+          budget_id?: string | null
           category_id?: string | null
           created_at?: string
-          currency?: Database["public"]["Enums"]["currency_code"]
+          creditor_id?: string | null
+          currency?: string
+          debtor_id?: string | null
           description: string
           destination_account_id?: string | null
           exchange_rate?: number
           id?: string
           is_recurring?: boolean
           notes?: string | null
+          payment_method?:
+            | Database["public"]["Enums"]["payment_method_type"]
+            | null
+          recipient?: string | null
+          recurring_transaction_id?: string | null
+          sender?: string | null
           source_account_id: string
+          sub_type?: Database["public"]["Enums"]["transaction_sub_type"] | null
           transaction_date?: string
           type: Database["public"]["Enums"]["transaction_type"]
           updated_at?: string
@@ -799,16 +1299,27 @@ export type Database = {
           affects_reports?: boolean
           amount?: number
           amount_pen?: number
+          attachment_url?: string | null
+          budget_id?: string | null
           category_id?: string | null
           created_at?: string
-          currency?: Database["public"]["Enums"]["currency_code"]
+          creditor_id?: string | null
+          currency?: string
+          debtor_id?: string | null
           description?: string
           destination_account_id?: string | null
           exchange_rate?: number
           id?: string
           is_recurring?: boolean
           notes?: string | null
+          payment_method?:
+            | Database["public"]["Enums"]["payment_method_type"]
+            | null
+          recipient?: string | null
+          recurring_transaction_id?: string | null
+          sender?: string | null
           source_account_id?: string
+          sub_type?: Database["public"]["Enums"]["transaction_sub_type"] | null
           transaction_date?: string
           type?: Database["public"]["Enums"]["transaction_type"]
           updated_at?: string
@@ -816,10 +1327,31 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "transactions_budget_id_fkey"
+            columns: ["budget_id"]
+            isOneToOne: false
+            referencedRelation: "budgets"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "transactions_category_id_fkey"
             columns: ["category_id"]
             isOneToOne: false
             referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_creditor_id_fkey"
+            columns: ["creditor_id"]
+            isOneToOne: false
+            referencedRelation: "creditors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_debtor_id_fkey"
+            columns: ["debtor_id"]
+            isOneToOne: false
+            referencedRelation: "debtors"
             referencedColumns: ["id"]
           },
           {
@@ -834,6 +1366,13 @@ export type Database = {
             columns: ["destination_account_id"]
             isOneToOne: false
             referencedRelation: "v_account_balances"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_recurring_transaction_id_fkey"
+            columns: ["recurring_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "recurring_transactions"
             referencedColumns: ["id"]
           },
           {
@@ -859,6 +1398,56 @@ export type Database = {
           },
         ]
       }
+      user_currencies: {
+        Row: {
+          code: string
+          country: string | null
+          created_at: string
+          id: string
+          is_active: boolean
+          is_default: boolean
+          is_system: boolean
+          name: string
+          symbol: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          code: string
+          country?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          is_default?: boolean
+          is_system?: boolean
+          name: string
+          symbol?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          code?: string
+          country?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          is_default?: boolean
+          is_system?: boolean
+          name?: string
+          symbol?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_currencies_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       v_account_balances: {
@@ -866,7 +1455,7 @@ export type Database = {
           balance: number | null
           balance_pen: number | null
           color: string | null
-          currency: Database["public"]["Enums"]["currency_code"] | null
+          currency: string | null
           icon: string | null
           id: string | null
           include_in_net_worth: boolean | null
@@ -880,7 +1469,7 @@ export type Database = {
           balance?: number | null
           balance_pen?: never
           color?: string | null
-          currency?: Database["public"]["Enums"]["currency_code"] | null
+          currency?: string | null
           icon?: string | null
           id?: string | null
           include_in_net_worth?: boolean | null
@@ -894,7 +1483,7 @@ export type Database = {
           balance?: number | null
           balance_pen?: never
           color?: string | null
-          currency?: Database["public"]["Enums"]["currency_code"] | null
+          currency?: string | null
           icon?: string | null
           id?: string | null
           include_in_net_worth?: boolean | null
@@ -920,7 +1509,7 @@ export type Database = {
           closing_day: number | null
           credit_limit: number | null
           credit_type: Database["public"]["Enums"]["credit_type"] | null
-          currency: Database["public"]["Enums"]["currency_code"] | null
+          currency: string | null
           id: string | null
           interest_rate: number | null
           name: string | null
@@ -935,7 +1524,7 @@ export type Database = {
           closing_day?: number | null
           credit_limit?: number | null
           credit_type?: Database["public"]["Enums"]["credit_type"] | null
-          currency?: Database["public"]["Enums"]["currency_code"] | null
+          currency?: string | null
           id?: string | null
           interest_rate?: number | null
           name?: string | null
@@ -950,7 +1539,7 @@ export type Database = {
           closing_day?: number | null
           credit_limit?: number | null
           credit_type?: Database["public"]["Enums"]["credit_type"] | null
-          currency?: Database["public"]["Enums"]["currency_code"] | null
+          currency?: string | null
           id?: string | null
           interest_rate?: number | null
           name?: string | null
@@ -1060,13 +1649,14 @@ export type Database = {
           amount: number | null
           concept: string | null
           creditor_name: string | null
-          currency: Database["public"]["Enums"]["currency_code"] | null
+          currency: string | null
           days_until_due: number | null
           due_date: string | null
           id: string | null
           paid_amount: number | null
           pending_amount: number | null
           status: Database["public"]["Enums"]["payable_status"] | null
+          transaction_id: string | null
           urgency: string | null
           user_id: string | null
         }
@@ -1074,13 +1664,14 @@ export type Database = {
           amount?: number | null
           concept?: string | null
           creditor_name?: string | null
-          currency?: Database["public"]["Enums"]["currency_code"] | null
+          currency?: string | null
           days_until_due?: never
           due_date?: string | null
           id?: string | null
           paid_amount?: number | null
           pending_amount?: never
           status?: Database["public"]["Enums"]["payable_status"] | null
+          transaction_id?: string | null
           urgency?: never
           user_id?: string | null
         }
@@ -1088,17 +1679,25 @@ export type Database = {
           amount?: number | null
           concept?: string | null
           creditor_name?: string | null
-          currency?: Database["public"]["Enums"]["currency_code"] | null
+          currency?: string | null
           days_until_due?: never
           due_date?: string | null
           id?: string | null
           paid_amount?: number | null
           pending_amount?: never
           status?: Database["public"]["Enums"]["payable_status"] | null
+          transaction_id?: string | null
           urgency?: never
           user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "accounts_payable_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "accounts_payable_user_id_fkey"
             columns: ["user_id"]
@@ -1113,13 +1712,14 @@ export type Database = {
           amount: number | null
           collected_amount: number | null
           concept: string | null
-          currency: Database["public"]["Enums"]["currency_code"] | null
+          currency: string | null
           days_until_due: number | null
           debtor_name: string | null
           due_date: string | null
           id: string | null
           pending_amount: number | null
           status: Database["public"]["Enums"]["receivable_status"] | null
+          transaction_id: string | null
           urgency: string | null
           user_id: string | null
         }
@@ -1127,13 +1727,14 @@ export type Database = {
           amount?: number | null
           collected_amount?: number | null
           concept?: string | null
-          currency?: Database["public"]["Enums"]["currency_code"] | null
+          currency?: string | null
           days_until_due?: never
           debtor_name?: string | null
           due_date?: string | null
           id?: string | null
           pending_amount?: never
           status?: Database["public"]["Enums"]["receivable_status"] | null
+          transaction_id?: string | null
           urgency?: never
           user_id?: string | null
         }
@@ -1141,17 +1742,25 @@ export type Database = {
           amount?: number | null
           collected_amount?: number | null
           concept?: string | null
-          currency?: Database["public"]["Enums"]["currency_code"] | null
+          currency?: string | null
           days_until_due?: never
           debtor_name?: string | null
           due_date?: string | null
           id?: string | null
           pending_amount?: never
           status?: Database["public"]["Enums"]["receivable_status"] | null
+          transaction_id?: string | null
           urgency?: never
           user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "accounts_receivable_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "accounts_receivable_user_id_fkey"
             columns: ["user_id"]
@@ -1164,7 +1773,7 @@ export type Database = {
       v_upcoming_installments: {
         Row: {
           creditor_name: string | null
-          currency: Database["public"]["Enums"]["currency_code"] | null
+          currency: string | null
           days_until_due: number | null
           due_date: string | null
           id: string | null
@@ -1198,36 +1807,11 @@ export type Database = {
     Functions: {
       fn_dashboard_summary: { Args: { p_user_id: string }; Returns: Json }
       fn_latest_exchange_rate: {
-        Args: {
-          p_from: Database["public"]["Enums"]["currency_code"]
-          p_to: Database["public"]["Enums"]["currency_code"]
-        }
+        Args: { p_from: string; p_to: string }
         Returns: number
       }
       fn_mark_overdue_installments: { Args: never; Returns: undefined }
       fn_mark_overdue_payables_receivables: { Args: never; Returns: undefined }
-      create_transaction_atomic: {
-        Args: {
-          p_user_id:                string
-          p_source_account_id:      string
-          p_destination_account_id: string | null
-          p_category_id:            string | null
-          p_type:                   Database["public"]["Enums"]["transaction_type"]
-          p_amount:                 number
-          p_currency:               Database["public"]["Enums"]["currency_code"]
-          p_exchange_rate:          number
-          p_description:            string
-          p_transaction_date:       string
-          p_notes:                  string | null
-          p_is_recurring:           boolean
-          p_asset:                  Json | null
-          p_credit:                 Json | null
-          p_loan:                   Json | null
-          p_receivable:             Json | null
-          p_payable:                Json | null
-        }
-        Returns: Json
-      }
     }
     Enums: {
       account_type:
@@ -1237,6 +1821,10 @@ export type Database = {
         | "INVESTMENT"
         | "CREDIT_CARD"
         | "OTHER"
+        | "STOCKS"
+        | "ETF"
+        | "CRYPTO"
+      alert_severity: "CRITICAL" | "OPERATIONAL" | "SUGGESTION"
       asset_status: "ACTIVE" | "SOLD" | "DEPRECIATED"
       asset_type:
         | "REAL_ESTATE"
@@ -1245,15 +1833,18 @@ export type Database = {
         | "INVESTMENT"
         | "OTHER"
       budget_period: "WEEKLY" | "MONTHLY" | "QUARTERLY" | "YEARLY"
-      category_scope: "INCOME" | "EXPENSE" | "BOTH"
+      category_scope: "INCOME" | "EXPENSE"
       credit_status: "ACTIVE" | "CLOSED" | "BLOCKED"
       credit_type: "CREDIT_CARD" | "LINE_OF_CREDIT"
-      currency_code: "PEN" | "USD"
-      goal_status: "ACTIVE" | "ACHIEVED" | "CANCELLED" | "PAUSED"
       installment_status: "PENDING" | "PAID" | "OVERDUE" | "PARTIAL"
       loan_status: "ACTIVE" | "PAID" | "DEFAULTED" | "REFINANCED"
       payable_status: "PENDING" | "PARTIAL" | "PAID" | "DISPUTED"
+      payment_method_type: "DEBIT" | "CREDIT"
       receivable_status: "PENDING" | "PARTIAL" | "COLLECTED" | "WRITTEN_OFF"
+      transaction_sub_type:
+        | "ASSET_PURCHASE"
+        | "RECEIVABLE_LENDING"
+        | "PAYABLE_PAYMENT"
       transaction_type: "INCOME" | "EXPENSE" | "TRANSFER"
     }
     CompositeTypes: {
@@ -1389,7 +1980,11 @@ export const Constants = {
         "INVESTMENT",
         "CREDIT_CARD",
         "OTHER",
+        "STOCKS",
+        "ETF",
+        "CRYPTO",
       ],
+      alert_severity: ["CRITICAL", "OPERATIONAL", "SUGGESTION"],
       asset_status: ["ACTIVE", "SOLD", "DEPRECIATED"],
       asset_type: [
         "REAL_ESTATE",
@@ -1399,54 +1994,56 @@ export const Constants = {
         "OTHER",
       ],
       budget_period: ["WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"],
-      category_scope: ["INCOME", "EXPENSE", "BOTH"],
+      category_scope: ["INCOME", "EXPENSE"],
       credit_status: ["ACTIVE", "CLOSED", "BLOCKED"],
       credit_type: ["CREDIT_CARD", "LINE_OF_CREDIT"],
-      currency_code: ["PEN", "USD"],
-      goal_status: ["ACTIVE", "ACHIEVED", "CANCELLED", "PAUSED"],
       installment_status: ["PENDING", "PAID", "OVERDUE", "PARTIAL"],
       loan_status: ["ACTIVE", "PAID", "DEFAULTED", "REFINANCED"],
       payable_status: ["PENDING", "PARTIAL", "PAID", "DISPUTED"],
+      payment_method_type: ["DEBIT", "CREDIT"],
       receivable_status: ["PENDING", "PARTIAL", "COLLECTED", "WRITTEN_OFF"],
+      transaction_sub_type: [
+        "ASSET_PURCHASE",
+        "RECEIVABLE_LENDING",
+        "PAYABLE_PAYMENT",
+      ],
       transaction_type: ["INCOME", "EXPENSE", "TRANSFER"],
     },
   },
 } as const
 
 // =============================================================================
-// Named type aliases — convenience exports used throughout the codebase.
-// These are derived from Database["public"] so they stay in sync automatically.
+// Legacy compatibility aliases
+// Keep existing app imports stable after `supabase gen types`.
 // =============================================================================
 
-// ─── Enums ────────────────────────────────────────────────────────────────────
-export type TransactionType  = Database["public"]["Enums"]["transaction_type"]
-export type CurrencyCode     = Database["public"]["Enums"]["currency_code"]
-export type AccountType      = Database["public"]["Enums"]["account_type"]
-export type AssetType        = Database["public"]["Enums"]["asset_type"]
-export type CreditType       = Database["public"]["Enums"]["credit_type"]
-export type CreditStatus     = Database["public"]["Enums"]["credit_status"]
-export type AssetStatus      = Database["public"]["Enums"]["asset_status"]
-export type ReceivableStatus = Database["public"]["Enums"]["receivable_status"]
-export type PayableStatus    = Database["public"]["Enums"]["payable_status"]
+export type Account = Tables<'accounts'>
+export type Asset = Tables<'assets'>
+export type AssetTypeRow = Tables<'asset_types'>
+export type Budget = Tables<'budgets'>
+export type Credit = Tables<'credits'>
+export type Installment = Tables<'installments'>
+export type Loan = Tables<'loans'>
+export type Transaction = Tables<'transactions'>
+export type AccountReceivable = Tables<'accounts_receivable'>
+export type AccountPayable = Tables<'accounts_payable'>
+export type Debtor = Tables<'debtors'>
+export type Creditor = Tables<'creditors'>
+export type UserCurrency = Tables<'user_currencies'>
 
-// ─── Table rows ───────────────────────────────────────────────────────────────
-export type Account           = Tables<"accounts">
-export type Transaction       = Tables<"transactions">
-export type Asset             = Tables<"assets">
-export type Credit            = Tables<"credits">
-export type Loan              = Tables<"loans">
-export type Installment       = Tables<"installments">
-export type AccountReceivable = Tables<"accounts_receivable">
-export type AccountPayable    = Tables<"accounts_payable">
+export type AccountType = Enums<'account_type'>
+export type AssetType = Enums<'asset_type'>
+export type AssetStatus = Enums<'asset_status'>
+export type BudgetPeriod = Enums<'budget_period'>
+export type CreditType = Enums<'credit_type'>
+export type CreditStatus = Enums<'credit_status'>
+export type CurrencyCode = string
+export type PayableStatus = Enums<'payable_status'>
+export type ReceivableStatus = Enums<'receivable_status'>
+export type TransactionType = Enums<'transaction_type'>
 
-// ─── Composite type (no Row en la DB — se define manualmente) ─────────────────
-export type TransactionWithRelations = Tables<"transactions"> & {
-  source_account:      Pick<Tables<"accounts">, "id" | "name" | "color" | "icon"> | null
-  destination_account: Pick<Tables<"accounts">, "id" | "name" | "color" | "icon"> | null
-  category:            { id: string; name: string; icon: string; color: string } | null
-  asset:               Tables<"assets">               | null
-  credit:              Tables<"credits">              | null
-  loan:                Tables<"loans">                | null
-  receivable:          Tables<"accounts_receivable">  | null
-  payable:             Tables<"accounts_payable">     | null
+export type TransactionWithRelations = Transaction & {
+  source_account?: Pick<Account, 'id' | 'name' | 'color' | 'icon'> | null
+  destination_account?: Pick<Account, 'id' | 'name' | 'color' | 'icon'> | null
+  category?: Pick<Tables<'categories'>, 'id' | 'name' | 'icon' | 'color'> | null
 }

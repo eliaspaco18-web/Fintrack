@@ -29,8 +29,8 @@ function SkeletonRows({ count = 3 }: { count?: number }) {
     <div className="space-y-3 animate-pulse">
       {Array.from({ length: count }).map((_, i) => (
         <div key={i} className="flex justify-between">
-          <div className="h-3 rounded bg-white/[0.05]" style={{ width: `${50 + i * 10}%` }}/>
-          <div className="h-3 w-16 rounded bg-white/[0.06]"/>
+          <div className="h-3 rounded" style={{ width: `${50 + i * 10}%`, backgroundColor: 'color-mix(in srgb, var(--c-text-faint) 22%, transparent)' }}/>
+          <div className="h-3 w-16 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--c-text-faint) 26%, transparent)' }}/>
         </div>
       ))}
     </div>
@@ -55,10 +55,10 @@ export function AccountsWidget({ accounts, loading }: AccountsWidgetProps) {
     <WidgetShell>
       <SectionHeader
         title="Cuentas"
-        accent="#3b82f6"
+        accent="var(--c-primary)"
         action={
           <Link href="/portfolio"
-            className="text-white/25 hover:text-white/50 transition-colors">
+            className="text-[var(--c-text-faint)] hover:text-[var(--c-text)] transition-colors">
             Gestionar →
           </Link>
         }
@@ -68,11 +68,11 @@ export function AccountsWidget({ accounts, loading }: AccountsWidgetProps) {
         <>
           {/* Total consolidado */}
           {(accounts ?? []).length > 0 && (
-            <div className="mb-4 pb-4 border-b border-white/[0.05]">
-              <p className="text-[10px] text-white/25 uppercase tracking-wide mb-1">
+            <div className="mb-4 pb-4 border-b border-[var(--c-border)]">
+              <p className="text-[10px] text-[var(--c-text-faint)] uppercase tracking-wide mb-1">
                 Total consolidado
               </p>
-              <p className="text-xl font-bold tabular-nums text-white/80">
+              <p className="text-[1.45rem] font-semibold tabular-nums text-[var(--c-text)]">
                 {formatCurrency(format(totalPen), preferred)}
               </p>
             </div>
@@ -95,7 +95,7 @@ export function AccountsWidget({ accounts, loading }: AccountsWidgetProps) {
                 />
               ))}
               {(accounts ?? []).length > 5 && (
-                <p className="text-[11px] text-white/25 mt-2 text-center">
+                <p className="text-[11px] text-[var(--c-text-faint)] mt-2 text-center">
                   +{(accounts ?? []).length - 5} más
                 </p>
               )}
@@ -120,7 +120,7 @@ const UTILIZATION_COLORS = (pct: number) => {
   if (pct >= 90) return { bar: '#ef4444', text: 'text-red-400' }
   if (pct >= 70) return { bar: '#f97316', text: 'text-orange-400' }
   if (pct >= 50) return { bar: '#eab308', text: 'text-yellow-400' }
-  return { bar: '#10b981', text: 'text-emerald-400' }
+  return { bar: 'var(--c-primary)', text: 'text-[var(--c-primary)]' }
 }
 
 export function CreditsWidget({ credits, loading }: CreditsWidgetProps) {
@@ -135,10 +135,10 @@ export function CreditsWidget({ credits, loading }: CreditsWidgetProps) {
     <WidgetShell>
       <SectionHeader
         title="Créditos"
-        accent="#f59e0b"
+        accent="var(--c-primary)"
         action={
           <Link href="/credits"
-            className="text-white/25 hover:text-white/50 transition-colors">
+            className="text-[var(--c-text-faint)] hover:text-[var(--c-text)] transition-colors">
             Ver todos →
           </Link>
         }
@@ -156,7 +156,7 @@ export function CreditsWidget({ credits, loading }: CreditsWidgetProps) {
               {/* Global utilization */}
               <div className="mb-4">
                 <div className="flex justify-between items-baseline mb-1.5">
-                  <p className="text-[10px] text-white/25 uppercase tracking-wide">
+                  <p className="text-[10px] text-[var(--c-text-faint)] uppercase tracking-wide">
                     Uso total
                   </p>
                   <span className={`text-[11px] font-bold tabular-nums ${globalColors.text}`}>
@@ -164,7 +164,7 @@ export function CreditsWidget({ credits, loading }: CreditsWidgetProps) {
                   </span>
                 </div>
                 <ProgressBar value={globalUtilization} color={globalColors.bar} height={5}/>
-                <div className="flex justify-between text-[10px] text-white/25 mt-1 tabular-nums">
+                <div className="flex justify-between text-[10px] text-[var(--c-text-faint)] mt-1 tabular-nums">
                   <span>Usado: {formatCurrency(format(totalUsed), preferred)}</span>
                   <span>Límite: {formatCurrency(format(totalLimit), preferred)}</span>
                 </div>
@@ -181,7 +181,7 @@ export function CreditsWidget({ credits, loading }: CreditsWidgetProps) {
                   return (
                     <div key={credit.id}>
                       <div className="flex justify-between items-center mb-1">
-                        <span className="text-[12px] text-white/65 font-medium truncate">
+                        <span className="text-[12px] text-[var(--c-text-muted)] font-medium truncate">
                           {credit.name}
                         </span>
                         <span className={`text-[10px] font-bold tabular-nums ${colors.text}`}>
@@ -190,7 +190,7 @@ export function CreditsWidget({ credits, loading }: CreditsWidgetProps) {
                       </div>
                       <ProgressBar value={utilPct} color={colors.bar} height={3}/>
                       {credit.nextClosingDate && (
-                        <p className="text-[10px] text-white/20 mt-0.5">
+                        <p className="text-[10px] text-[var(--c-text-faint)] mt-0.5">
                           Corte: {new Date(credit.nextClosingDate + 'T12:00:00').toLocaleDateString('es-PE', {
                             day: 'numeric', month: 'short'
                           })}
@@ -228,7 +228,7 @@ const ASSET_TYPE_LABELS: Record<string, string> = {
 const ASSET_TYPE_COLORS: Record<string, string> = {
   REAL_ESTATE: '#8b5cf6',
   VEHICLE:     '#3b82f6',
-  EQUIPMENT:   '#10b981',
+  EQUIPMENT:   'var(--c-primary)',
   INVESTMENT:  '#f59e0b',
   OTHER:       '#6b7280',
 }
@@ -240,10 +240,10 @@ export function AssetsWidget({ assets, loading }: AssetsWidgetProps) {
     <WidgetShell>
       <SectionHeader
         title="Activos"
-        accent="#8b5cf6"
+        accent="var(--c-primary)"
         action={
           <Link href="/assets"
-            className="text-white/25 hover:text-white/50 transition-colors">
+            className="text-[var(--c-text-faint)] hover:text-[var(--c-text)] transition-colors">
             Ver todos →
           </Link>
         }
@@ -260,13 +260,13 @@ export function AssetsWidget({ assets, loading }: AssetsWidgetProps) {
             <>
               {/* Total */}
               <div className="mb-4">
-                <p className="text-[10px] text-white/25 uppercase tracking-wide mb-1">
+                <p className="text-[10px] text-[var(--c-text-faint)] uppercase tracking-wide mb-1">
                   Valor total
                 </p>
-                <p className="text-xl font-bold tabular-nums text-purple-400">
+                <p className="text-[1.45rem] font-semibold tabular-nums text-[var(--c-primary)]">
                   {formatCurrency(format(assets.totalValuePen), preferred)}
                 </p>
-                <p className="text-[11px] text-white/25 mt-0.5">
+                <p className="text-[11px] text-[var(--c-text-faint)] mt-0.5">
                   {assets.count} activo{assets.count !== 1 ? 's' : ''} activo{assets.count !== 1 ? 's' : ''}
                 </p>
               </div>
@@ -285,11 +285,11 @@ export function AssetsWidget({ assets, loading }: AssetsWidgetProps) {
                         <div className="flex justify-between items-center mb-1">
                           <div className="flex items-center gap-1.5">
                             <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }}/>
-                            <span className="text-[11px] text-white/50">
+                            <span className="text-[11px] text-[var(--c-text-muted)]">
                               {ASSET_TYPE_LABELS[item.assetType] ?? item.assetType}
                             </span>
                           </div>
-                          <span className="text-[11px] text-white/40 tabular-nums">
+                          <span className="text-[11px] text-[var(--c-text-faint)] tabular-nums">
                             {formatCurrency(format(item.totalPen), preferred)}
                           </span>
                         </div>

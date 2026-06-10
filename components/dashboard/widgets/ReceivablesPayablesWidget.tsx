@@ -52,7 +52,7 @@ function Half({
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: accent }}/>
-          <span className="text-[11px] font-bold uppercase tracking-[0.09em] text-white/30">
+          <span className="text-[11px] font-bold uppercase tracking-[0.09em] text-[var(--color-text-muted)]">
             {title}
           </span>
           {hasOverdue && (
@@ -63,7 +63,7 @@ function Half({
           )}
         </div>
         <Link href={href}
-          className="text-[11px] text-white/20 hover:text-white/45 transition-colors">
+          className="text-[11px] text-[var(--color-text-faint)] hover:text-[var(--color-text)] transition-colors">
           {count > 0 ? `${count} →` : '→'}
         </Link>
       </div>
@@ -76,22 +76,22 @@ function Half({
 
       {/* Items */}
       {items.length === 0 ? (
-        <p className="text-[11px] text-white/20">{emptyMsg}</p>
+        <p className="text-[11px] text-[var(--color-text-faint)]">{emptyMsg}</p>
       ) : (
         <div className="space-y-2">
           {items.slice(0, 3).map(item => (
             <div key={item.id} className="flex items-center justify-between gap-2">
-              <p className="text-[11px] text-white/55 truncate flex-1">{item.name}</p>
+              <p className="text-[11px] text-[var(--color-text-muted)] truncate flex-1">{item.name}</p>
               <div className="flex items-center gap-1.5 flex-shrink-0">
                 <UrgencyBadge urgency={item.urgency}/>
-                <span className="text-[11px] text-white/50 tabular-nums">
+                <span className="text-[11px] text-[var(--color-text-muted)] tabular-nums">
                   {formatCurrency(format(item.amount), preferred)}
                 </span>
               </div>
             </div>
           ))}
           {items.length > 3 && (
-            <p className="text-[10px] text-white/20">+{items.length - 3} más</p>
+            <p className="text-[10px] text-[var(--color-text-faint)]">+{items.length - 3} más</p>
           )}
         </div>
       )}
@@ -118,14 +118,14 @@ export function ReceivablesPayablesWidget({
     return (
       <WidgetShell>
         <div className="animate-pulse">
-          <div className="h-3 w-32 rounded bg-white/[0.06] mb-4"/>
+          <div className="h-3 w-32 rounded mb-4" style={{ backgroundColor: 'color-mix(in srgb, var(--color-text-faint) 26%, transparent)' }}/>
           <div className="grid grid-cols-2 gap-4">
             {[0, 1].map(i => (
               <div key={i} className="space-y-2">
-                <div className="h-3 w-20 rounded bg-white/[0.05]"/>
-                <div className="h-6 w-24 rounded bg-white/[0.07]"/>
-                <div className="h-3 w-28 rounded bg-white/[0.04]"/>
-                <div className="h-3 w-24 rounded bg-white/[0.04]"/>
+                <div className="h-3 w-20 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--color-text-faint) 22%, transparent)' }}/>
+                <div className="h-6 w-24 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--color-text-faint) 30%, transparent)' }}/>
+                <div className="h-3 w-28 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--color-text-faint) 18%, transparent)' }}/>
+                <div className="h-3 w-24 rounded" style={{ backgroundColor: 'color-mix(in srgb, var(--color-text-faint) 18%, transparent)' }}/>
               </div>
             ))}
           </div>
@@ -142,16 +142,16 @@ export function ReceivablesPayablesWidget({
 
   return (
     <WidgetShell>
-      <SectionHeader title="Posición neta" accent="#06b6d4"/>
+      <SectionHeader title="Posición neta" accent="var(--c-primary)"/>
 
       {/* Resumen neto */}
       {hasAny && (
-        <div className="mb-4 pb-4 border-b border-white/[0.05]">
+        <div className="mb-4 pb-4 border-b border-[color:var(--color-border)]">
           <div className="flex items-baseline gap-2">
-            <span className="text-[10px] text-white/25">Balance neto pendiente</span>
+            <span className="text-[10px] text-[var(--color-text-faint)]">Balance neto pendiente</span>
           </div>
-          <p className={`text-xl font-bold tabular-nums mt-0.5 ${
-            netPen >= 0 ? 'text-emerald-400' : 'text-red-400'
+          <p className={`text-[1.45rem] font-semibold tabular-nums mt-0.5 ${
+            netPen >= 0 ? 'text-[var(--c-primary)]' : 'text-[#C14554]'
           }`}>
             {netPen >= 0 ? '+' : ''}{formatCurrency(format(netPen), preferred)}
           </p>

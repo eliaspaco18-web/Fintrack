@@ -1,13 +1,20 @@
 'use client'
 
 import Image from 'next/image'
-import { useMemo, useRef, useState, useEffect } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { Button } from '@/components/ui/Button'
+import {
+  SettingsBadge,
+  SettingsPanel,
+  SettingsRow,
+  SettingsSubsection,
+  settingsInputClassName,
+} from '@/components/settings/primitives'
 import { useToast } from '@/lib/toast/toast'
 import {
   AVATAR_PRESETS,
   isAvatarPreset,
-  resolveUserAvatar,
 } from '@/lib/constants/avatar-presets'
 
 type CurrencyCode = 'PEN' | 'USD'
@@ -27,7 +34,6 @@ interface ProfileSettingsFormProps {
 
 type ApiSuccess<T> = { ok: true; data: T }
 type ApiFailure = { ok: false; error: { message?: string } }
-
 type ApiResult<T> = ApiSuccess<T> | ApiFailure
 
 const ACCEPTED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
@@ -43,6 +49,21 @@ function createAlias(source: string): string {
     .replace(/\s+/g, '_')
 
   return alias.length > 0 ? alias : 'usuario'
+}
+
+function createInitials(source: string): string {
+  const parts = source
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+
+  if (parts.length === 0) return 'FT'
+
+  return parts
+    .map(part => part[0]?.toUpperCase() ?? '')
+    .join('')
+    .slice(0, 2)
 }
 
 async function parseResponse<T>(response: Response): Promise<ApiResult<T>> {
@@ -67,19 +88,16 @@ export function ProfileSettingsForm({ initialProfile, accountCount }: ProfileSet
   )
   const [avatarUrl, setAvatarUrl] = useState<string | null>(initialProfile.avatar_url)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-
   const [savingProfile, setSavingProfile] = useState(false)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [removingAvatar, setRemovingAvatar] = useState(false)
 
-  const displayAvatarUrl = previewUrl ?? resolveUserAvatar(
-    avatarUrl,
-    initialProfile.id || initialProfile.email
-  )
+  const displayAvatarUrl = previewUrl ?? avatarUrl
   const alias = useMemo(() => createAlias(fullName), [fullName])
+  const initials = useMemo(() => createInitials(fullName || initialProfile.email), [fullName, initialProfile.email])
   const selectedPreset = useMemo(
     () => (isAvatarPreset(avatarUrl) ? avatarUrl : null),
-    [avatarUrl]
+    [avatarUrl],
   )
 
   useEffect(() => {
@@ -111,7 +129,9 @@ export function ProfileSettingsForm({ initialProfile, accountCount }: ProfileSet
 
       const result = await parseResponse<ProfilePayload>(response)
       if (!response.ok || !result.ok) {
-        const message = result.ok ? 'No se pudo guardar el perfil' : (result.error.message ?? 'No se pudo guardar el perfil')
+        const message = result.ok
+          ? 'No se pudo guardar el perfil'
+          : (result.error.message ?? 'No se pudo guardar el perfil')
         toast.error('No se pudo actualizar el perfil', message)
         return
       }
@@ -164,7 +184,9 @@ export function ProfileSettingsForm({ initialProfile, accountCount }: ProfileSet
 
       const result = await parseResponse<{ avatar_url: string | null }>(response)
       if (!response.ok || !result.ok) {
-        const message = result.ok ? 'No se pudo subir la foto' : (result.error.message ?? 'No se pudo subir la foto')
+        const message = result.ok
+          ? 'No se pudo subir la foto'
+          : (result.error.message ?? 'No se pudo subir la foto')
         toast.error('No se pudo subir la foto', message)
         setPreviewUrl(null)
         return
@@ -193,7 +215,9 @@ export function ProfileSettingsForm({ initialProfile, accountCount }: ProfileSet
       const result = await parseResponse<{ avatar_url: null }>(response)
 
       if (!response.ok || !result.ok) {
-        const message = result.ok ? 'No se pudo eliminar la foto' : (result.error.message ?? 'No se pudo eliminar la foto')
+        const message = result.ok
+          ? 'No se pudo eliminar la foto'
+          : (result.error.message ?? 'No se pudo eliminar la foto')
         toast.error('No se pudo eliminar la foto', message)
         return
       }
@@ -217,113 +241,128 @@ export function ProfileSettingsForm({ initialProfile, accountCount }: ProfileSet
   }
 
   return (
-    <section className="rounded-2xl border border-[color:var(--color-border)] bg-[var(--color-surface)] p-5 md:p-6 space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-[12px] font-bold uppercase tracking-[0.1em] text-[var(--color-text-muted)]">
-            Perfil y cuenta
-          </h2>
-          <p className="text-[13px] text-[var(--color-text-muted)] mt-1">
-            Personaliza tu usuario visible, moneda principal y foto de perfil.
-          </p>
-        </div>
-        <span className="inline-flex items-center rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300">
+    <SettingsPanel
+      eyebrow="Identidad"
+      title="Perfil"
+      description="Actualiza tu nombre y avatar. La moneda base se gestiona en Preferencias."
+      density="compact"
+      className="mx-auto max-w-[920px]"
+      action={
+        <SettingsBadge tone="accent">
           {accountCount} cuenta{accountCount === 1 ? '' : 's'} activa{accountCount === 1 ? '' : 's'}
-        </span>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-5">
-        <div className="rounded-2xl border border-[color:var(--color-border)] bg-[linear-gradient(155deg,rgba(16,185,129,0.2),rgba(59,130,246,0.12),rgba(15,23,42,0.72))] p-4">
-          <p className="text-[10px] uppercase tracking-[0.09em] text-[var(--color-text-muted)]">Avatar</p>
-
-          <div className="mt-3 flex flex-col items-center text-center">
-            <div className="w-24 h-24 rounded-2xl overflow-hidden border border-[color:var(--color-border)] bg-[var(--color-surface-2)] flex items-center justify-center">
-              <Image
-                src={displayAvatarUrl}
-                alt="Foto de perfil"
-                width={96}
-                height={96}
-                unoptimized
-                className="w-full h-full object-cover"
+        </SettingsBadge>
+      }
+    >
+      <form onSubmit={handleSaveProfile} className="space-y-4">
+        <section className="ft-profile-identity-card">
+          <div className="ft-profile-identity-main">
+            <div className="ft-profile-avatar-shell">
+              <div className="ft-profile-avatar-frame">
+                {displayAvatarUrl ? (
+                  <Image
+                    src={displayAvatarUrl}
+                    alt="Foto de perfil"
+                    width={88}
+                    height={88}
+                    unoptimized
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <span className="ft-profile-avatar-fallback">{initials}</span>
+                )}
+              </div>
+              <span
+                className={`ft-profile-avatar-status ${
+                  avatarUrl || previewUrl ? 'is-active' : 'is-idle'
+                }`}
+                aria-hidden="true"
               />
             </div>
 
-            <p className="mt-2 text-sm font-semibold text-[var(--color-text)]">@{alias}</p>
-            <p className="text-[11px] text-[var(--color-text-muted)]">Se mostrará en panel, menú y perfil.</p>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="ft-profile-identity-name">{fullName.trim() || 'Usuario'}</p>
+                <SettingsBadge tone={avatarUrl || previewUrl ? 'success' : 'warning'}>
+                  {avatarUrl || previewUrl ? 'Avatar activo' : 'Sin foto'}
+                </SettingsBadge>
+              </div>
+              <p className="ft-profile-identity-email">{initialProfile.email}</p>
+              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-[var(--c-text-muted)]">
+                <span>@{alias}</span>
+                <span>Moneda base: {defaultCurrency}</span>
+                <span>PNG, JPG, WEBP o GIF hasta 5 MB.</span>
+              </div>
+            </div>
+
+            <div className="ft-profile-identity-actions">
+              <Button
+                type="button"
+                onClick={handleOpenPicker}
+                loading={uploadingAvatar}
+                disabled={removingAvatar}
+                size="sm"
+              >
+                Cambiar foto
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleRemoveAvatar}
+                loading={removingAvatar}
+                disabled={!avatarUrl || uploadingAvatar}
+                size="sm"
+              >
+                Quitar
+              </Button>
+            </div>
           </div>
 
-          <div className="mt-4 space-y-2">
-            <button
-              type="button"
-              onClick={handleOpenPicker}
-              disabled={uploadingAvatar || removingAvatar}
-              className="w-full inline-flex items-center justify-center rounded-xl px-3 py-2
-                bg-emerald-500 text-black text-[12px] font-semibold hover:bg-emerald-400
-                disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-            >
-              {uploadingAvatar ? 'Subiendo foto...' : 'Subir foto'}
-            </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            onChange={handleAvatarChange}
+          />
 
-            <button
-              type="button"
-              onClick={handleRemoveAvatar}
-              disabled={!avatarUrl || removingAvatar || uploadingAvatar}
-              className="w-full inline-flex items-center justify-center rounded-xl px-3 py-2
-                border border-[color:var(--color-border)] text-[var(--color-text-muted)] text-[12px] font-semibold
-                hover:border-[color:var(--color-border-hover)] hover:text-[var(--color-text)] transition-colors
-                disabled:opacity-45 disabled:cursor-not-allowed"
-            >
-              {removingAvatar ? 'Eliminando...' : 'Quitar foto'}
-            </button>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp,image/gif"
-              className="hidden"
-              onChange={handleAvatarChange}
-            />
-          </div>
-
-          <div className="mt-3 space-y-2">
-            <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
-              Avatares sugeridos
-            </p>
-            <div className="grid grid-cols-4 gap-2">
-              {AVATAR_PRESETS.map(preset => (
+          <details className="ft-profile-presets">
+            <summary className="ft-profile-presets-summary">
+              Elegir avatar sugerido
+            </summary>
+            <div className="ft-profile-presets-grid">
+              {AVATAR_PRESETS.map((preset, index) => (
                 <button
                   key={preset}
                   type="button"
                   onClick={() => handleSelectPreset(preset)}
-                  className={`relative h-12 w-12 overflow-hidden rounded-lg border transition-colors ${
-                    selectedPreset === preset
-                      ? 'border-emerald-300 shadow-[0_0_0_2px_rgba(16,185,129,0.35)]'
-                      : 'border-[color:var(--color-border)] hover:border-[color:var(--color-border-hover)]'
+                  aria-label={`Seleccionar avatar sugerido ${index + 1}`}
+                  aria-pressed={selectedPreset === preset}
+                  className={`ft-profile-preset-button ${
+                    selectedPreset === preset ? 'is-selected' : ''
                   }`}
-                  title="Seleccionar avatar"
                 >
                   <Image
                     src={preset}
                     alt="Avatar sugerido"
-                    width={48}
-                    height={48}
+                    width={52}
+                    height={52}
                     unoptimized
                     className="h-full w-full object-cover"
                   />
                 </button>
               ))}
             </div>
-          </div>
+          </details>
+        </section>
 
-          <p className="mt-3 text-[10px] text-[var(--color-text-muted)] leading-relaxed">
-            Formatos: PNG, JPG, WEBP o GIF. Máximo 5 MB.
-          </p>
-        </div>
-
-        <form onSubmit={handleSaveProfile} className="rounded-2xl border border-[color:var(--color-border)] bg-[var(--color-surface-2)] p-4 md:p-5 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <label className="space-y-1.5 md:col-span-2">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
+        <SettingsSubsection
+          title="Datos visibles"
+          description="Nombre y correo que identifican tu cuenta dentro de FinTrack."
+          density="compact"
+        >
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-2 md:col-span-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--c-text-faint)]">
                 Usuario visible
               </span>
               <input
@@ -331,60 +370,64 @@ export function ProfileSettingsForm({ initialProfile, accountCount }: ProfileSet
                 onChange={event => setFullName(event.target.value)}
                 maxLength={80}
                 placeholder="Ej. Elías P."
-                className="w-full rounded-xl border border-[color:var(--color-border)] bg-[var(--color-input-bg)] px-3 py-2.5 text-sm text-[var(--color-text)] outline-none focus:border-emerald-400/45"
+                className={settingsInputClassName()}
               />
-              <p className="text-[11px] text-[var(--color-text-faint)]">
-                Este nombre aparece en el dashboard y menú de usuario.
+              <p className="text-[12px] leading-5 text-[var(--c-text-muted)]">
+                Este nombre aparece en navegación, dashboard y registros internos.
               </p>
             </label>
 
-            <label className="space-y-1.5">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
+            <label className="space-y-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--c-text-faint)]">
                 Correo
               </span>
               <input
                 value={initialProfile.email}
                 readOnly
-                className="w-full rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2.5 text-sm text-[var(--color-text-muted)] cursor-not-allowed"
+                className={settingsInputClassName('bg-[var(--c-surface-2)] text-[var(--c-text-muted)]')}
               />
             </label>
+          </div>
+        </SettingsSubsection>
 
-            <label className="space-y-1.5">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
-                Moneda por defecto
+        <SettingsSubsection
+          title="Configuración financiera"
+          description="La moneda base vive en Preferencias para evitar duplicación dentro de tu cuenta."
+          density="compact"
+        >
+          <SettingsRow
+            variant="compact"
+            title="Moneda base"
+            description="Se usa en reportes y vistas consolidadas."
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] font-semibold text-[var(--c-text)]">
+                {defaultCurrency}
               </span>
-              <select
-                value={defaultCurrency}
-                onChange={event => setDefaultCurrency(event.target.value as CurrencyCode)}
-                className="w-full rounded-xl border border-[color:var(--color-border)] bg-[var(--color-input-bg)] px-3 py-2.5 text-sm text-[var(--color-text)] outline-none focus:border-emerald-400/45"
+              <Button
+                href="/settings?tab=preferences"
+                variant="ghost"
+                size="sm"
               >
-                <option value="PEN">PEN (S/)</option>
-                <option value="USD">USD ($)</option>
-              </select>
-            </label>
-          </div>
+                Cambiar en Preferencias
+              </Button>
+            </div>
+          </SettingsRow>
+        </SettingsSubsection>
 
-          <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5">
-            <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-faint)]">Alias sugerido</p>
-            <p className="mt-1 text-sm font-semibold text-[var(--color-text)]">@{alias}</p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 pt-1">
-            <button
-              type="submit"
-              disabled={savingProfile || uploadingAvatar || removingAvatar}
-              className="inline-flex items-center justify-center rounded-xl px-4 py-2.5
-                bg-emerald-500 text-black text-[13px] font-bold hover:bg-emerald-400
-                disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-            >
-              {savingProfile ? 'Guardando...' : 'Guardar cambios'}
-            </button>
-            <span className="text-[11px] text-[var(--color-text-muted)]">
-              Los cambios se reflejan inmediatamente en toda la app.
-            </span>
-          </div>
-        </form>
-      </div>
-    </section>
+        <div className="flex flex-wrap items-center gap-3 pt-1">
+          <Button
+            type="submit"
+            loading={savingProfile}
+            disabled={uploadingAvatar || removingAvatar}
+          >
+            Guardar cambios
+          </Button>
+          <p className="text-[12px] leading-5 text-[var(--c-text-muted)]">
+            Los cambios se reflejan inmediatamente en toda la app.
+          </p>
+        </div>
+      </form>
+    </SettingsPanel>
   )
 }

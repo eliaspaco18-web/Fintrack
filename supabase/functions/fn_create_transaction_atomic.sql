@@ -12,6 +12,7 @@ CREATE OR REPLACE FUNCTION create_transaction_atomic(
   p_source_account_id       uuid,
   p_destination_account_id  uuid         DEFAULT NULL,
   p_category_id             uuid         DEFAULT NULL,
+  p_budget_id               uuid         DEFAULT NULL,
   p_type                    text         DEFAULT 'EXPENSE',
   p_amount                  numeric      DEFAULT 0,
   p_currency                text         DEFAULT 'PEN',
@@ -20,6 +21,8 @@ CREATE OR REPLACE FUNCTION create_transaction_atomic(
   p_transaction_date        date         DEFAULT CURRENT_DATE,
   p_notes                   text         DEFAULT NULL,
   p_is_recurring            boolean      DEFAULT false,
+  p_sender                  text         DEFAULT NULL,
+  p_recipient               text         DEFAULT NULL,
   -- Módulos derivados (JSONB, NULL si no aplica)
   p_asset                   jsonb        DEFAULT NULL,
   p_credit                  jsonb        DEFAULT NULL,
@@ -56,14 +59,25 @@ BEGIN
 
   INSERT INTO transactions (
     user_id, source_account_id, destination_account_id,
-    category_id, type, amount, currency, exchange_rate,
-    description, transaction_date, notes, is_recurring
+    category_id, budget_id, type, amount, currency, exchange_rate,
+    description, transaction_date, notes, is_recurring, sender, recipient,
+    creditor_id, debtor_id
   )
   VALUES (
     p_user_id, p_source_account_id, p_destination_account_id,
-    p_category_id, p_type::transaction_type, p_amount,
+    p_category_id, p_budget_id, p_type::transaction_type, p_amount,
     p_currency::currency_code, p_exchange_rate,
-    p_description, p_transaction_date, p_notes, p_is_recurring
+    p_description, p_transaction_date, p_notes, p_is_recurring, NULLIF(trim(p_sender), ''), NULLIF(trim(p_recipient), ''),
+    CASE
+      WHEN p_payable IS NOT NULL AND NULLIF(trim(p_payable->>'creditor_id'), '') IS NOT NULL
+        THEN (p_payable->>'creditor_id')::uuid
+      ELSE NULL
+    END,
+    CASE
+      WHEN p_receivable IS NOT NULL AND NULLIF(trim(p_receivable->>'debtor_id'), '') IS NOT NULL
+        THEN (p_receivable->>'debtor_id')::uuid
+      ELSE NULL
+    END
   )
   RETURNING id INTO v_transaction_id;
 
@@ -72,7 +86,7 @@ BEGIN
     INSERT INTO assets (
       user_id, transaction_id, name, asset_type,
       purchase_value, currency, current_value,
-      purchase_date, depreciation_rate, serial_number, location, notes
+      purchase_date, depreciation_rate, serial_number, location, notes, recipient
     )
     VALUES (
       p_user_id,
@@ -86,7 +100,8 @@ BEGIN
       (p_asset->>'depreciation_rate')::numeric,
       p_asset->>'serial_number',
       p_asset->>'location',
-      p_asset->>'notes'
+      p_asset->>'notes',
+      NULLIF(trim(p_recipient), '')
     )
     RETURNING id INTO v_asset_id;
   END IF;
@@ -184,13 +199,18 @@ BEGIN
   -- ── 5. MÓDULO: CUENTA POR COBRAR ─────────────────────────────────────────
   IF p_receivable IS NOT NULL THEN
     INSERT INTO accounts_receivable (
-      user_id, transaction_id, debtor_name,
+      user_id, transaction_id, debtor_id, debtor_name,
       amount, currency, issue_date, due_date,
       concept, notes, status
     )
     VALUES (
       p_user_id,
       v_transaction_id,
+      CASE
+        WHEN NULLIF(trim(p_receivable->>'debtor_id'), '') IS NOT NULL
+          THEN (p_receivable->>'debtor_id')::uuid
+        ELSE NULL
+      END,
       p_receivable->>'debtor_name',
       p_amount,
       p_currency::currency_code,
@@ -206,13 +226,18 @@ BEGIN
   -- ── 6. MÓDULO: CUENTA POR PAGAR ──────────────────────────────────────────
   IF p_payable IS NOT NULL THEN
     INSERT INTO accounts_payable (
-      user_id, transaction_id, creditor_name,
+      user_id, transaction_id, creditor_id, creditor_name,
       amount, currency, issue_date, due_date,
       concept, notes, status
     )
     VALUES (
       p_user_id,
       v_transaction_id,
+      CASE
+        WHEN NULLIF(trim(p_payable->>'creditor_id'), '') IS NOT NULL
+          THEN (p_payable->>'creditor_id')::uuid
+        ELSE NULL
+      END,
       p_payable->>'creditor_name',
       p_amount,
       p_currency::currency_code,
@@ -250,5 +275,19 @@ $$;
 -- Solo usuarios autenticados pueden llamar esta función.
 -- SECURITY DEFINER garantiza que se ejecuta con los permisos del dueño (postgres),
 -- pero las políticas RLS siguen aplicándose porque usamos p_user_id explícito.
-REVOKE ALL ON FUNCTION create_transaction_atomic FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION create_transaction_atomic TO authenticated;
+DO $$
+DECLARE
+  fn_signature regprocedure;
+BEGIN
+  FOR fn_signature IN
+    SELECT p.oid::regprocedure
+    FROM pg_proc p
+    JOIN pg_namespace n
+      ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname = 'create_transaction_atomic'
+  LOOP
+    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', fn_signature);
+    EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO authenticated', fn_signature);
+  END LOOP;
+END $$;

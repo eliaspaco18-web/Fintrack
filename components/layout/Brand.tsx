@@ -1,70 +1,101 @@
 // =============================================================================
 // components/layout/Brand.tsx
-// Identidad visual reutilizable de FinTrack.
+// Identidad visual FinTrack — Rediseño v2
+// Logo aprobado: isotipo circular oficial + wordmark "FinTrack" (Plus Jakarta Sans)
 // =============================================================================
 
+import Image from 'next/image'
 import type { ReactNode } from 'react'
 
 interface BrandMarkProps {
-  size?: number
+  size?:      number
   className?: string
+  /** 'default' = Forest Green, 'white' = para paneles oscuros */
+  variant?:   'default' | 'white'
 }
 
 interface BrandWordmarkProps {
-  titleClassName?: string
+  titleClassName?:    string
   subtitleClassName?: string
-  subtitle?: ReactNode
+  subtitle?:          ReactNode | null
+  /** 'default' = Deep Forest, 'white' = para paneles oscuros */
+  variant?:           'default' | 'white'
 }
 
-export function BrandMark({ size = 40, className = '' }: BrandMarkProps) {
+// ─── BRAND MARK ───────────────────────────────────────────────────────────────
+// Isotipo oficial (archivo en /public/brand)
+
+export function BrandMark({ size = 40, className = '', variant = 'default' }: BrandMarkProps) {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 72 72"
-      fill="none"
-      className={className}
-      aria-hidden
+    <span
+      className={`relative inline-flex overflow-hidden rounded-full ${className}`}
+      style={{
+        width: size,
+        height: size,
+        boxShadow: variant === 'white'
+          ? '0 0 0 1px rgba(255,255,255,0.28) inset'
+          : '0 0 0 1px rgba(13,79,74,0.14) inset',
+      }}
     >
-      <defs>
-        <linearGradient id="ft-mark-bg" x1="8" y1="8" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#0f766e"/>
-          <stop offset="0.55" stopColor="#0ea5a3"/>
-          <stop offset="1" stopColor="#0369a1"/>
-        </linearGradient>
-      </defs>
-      <rect x="4" y="4" width="64" height="64" rx="18" fill="url(#ft-mark-bg)"/>
-      <path
-        d="M23 19H49M23 32H41M23 45H37M23 19V53"
-        stroke="rgba(255,255,255,0.95)"
-        strokeWidth="5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
+      <Image
+        src="/brand/fintrack-mark.png"
+        alt="FinTrack"
+        fill
+        sizes={`${size}px`}
+        unoptimized
+        className="object-cover"
       />
-      <path
-        d="M43 45L50 38M50 38H44M50 38V44"
-        stroke="#bbf7d0"
-        strokeWidth="4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+    </span>
   )
 }
 
+// ─── BRAND WORDMARK ───────────────────────────────────────────────────────────
+
 export function BrandWordmark({
-  titleClassName = '',
+  titleClassName    = '',
   subtitleClassName = '',
-  subtitle = 'Finanzas inteligentes',
+  subtitle          = null,
+  variant           = 'default',
 }: BrandWordmarkProps) {
+  const textColor = variant === 'white'
+    ? 'text-white'
+    : 'text-[var(--c-text)]'
+
+  const mutedColor = variant === 'white'
+    ? 'text-white/60'
+    : 'text-[var(--c-text-faint)]'
+
   return (
     <div className="min-w-0">
-      <p className={`truncate text-[28px] leading-none font-display font-bold tracking-[-0.03em] text-[var(--color-text)] ${titleClassName}`}>
+      <p
+        className={`truncate text-[17px] leading-none font-display font-bold tracking-[-0.022em] ${textColor} ${titleClassName}`}
+      >
         FinTrack
       </p>
-      <p className={`mt-1 truncate text-[11px] uppercase tracking-[0.16em] text-[var(--color-text-muted)] ${subtitleClassName}`}>
-        {subtitle}
-      </p>
+      {subtitle && (
+        <p
+          className={`mt-0.5 truncate text-[9.5px] uppercase tracking-[0.20em] font-semibold ${mutedColor} ${subtitleClassName}`}
+        >
+          {subtitle}
+        </p>
+      )}
+    </div>
+  )
+}
+
+// ─── BRAND FULL (mark + wordmark juntos) ─────────────────────────────────────
+
+interface BrandFullProps {
+  size?:    number
+  variant?: 'default' | 'white'
+  className?: string
+}
+
+export function BrandFull({ size = 36, variant = 'default', className = '' }: BrandFullProps) {
+  return (
+    <div className={`flex items-center gap-2.5 ${className}`}>
+      <BrandMark size={size} variant={variant} />
+      <BrandWordmark variant={variant} />
     </div>
   )
 }

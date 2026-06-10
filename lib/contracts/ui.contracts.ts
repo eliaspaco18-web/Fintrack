@@ -173,8 +173,10 @@ export function mapTransactionTypeColor(type: TransactionType) {
 }
 
 export function mapAccountTypeLabel(type: AccountType): string {
-  return { CHECKING: 'Corriente', SAVINGS: 'Ahorros', CASH: 'Efectivo',
-           INVESTMENT: 'Inversión', CREDIT_CARD: 'Tarjeta', OTHER: 'Otra' }[type]
+  return ({ CHECKING: 'Corriente', SAVINGS: 'Ahorros', CASH: 'Efectivo',
+           INVESTMENT: 'Inversión', CREDIT_CARD: 'Tarjeta',
+           STOCKS: 'Acciones', ETF: 'ETF', CRYPTO: 'Cripto-activos',
+           OTHER: 'Otra' } as Record<AccountType, string>)[type]
 }
 
 export function mapCreditTypeLabel(type: CreditType) {
@@ -203,8 +205,9 @@ export function formatNumber(
   }
 ): string {
   const locale = options?.locale ?? 'es-PE'
-  const minimumFractionDigits = options?.minimumFractionDigits ?? 2
   const maximumFractionDigits = options?.maximumFractionDigits ?? 2
+  // Clamp minimum so it never exceeds maximum (prevents Intl.NumberFormat RangeError)
+  const minimumFractionDigits = Math.min(options?.minimumFractionDigits ?? 2, maximumFractionDigits)
   const useGrouping = options?.useGrouping ?? true
 
   return new Intl.NumberFormat(locale, {
@@ -262,6 +265,9 @@ export interface CategoryOption {
 export interface TransactionFormOptions {
   accounts:   FormSelectOption[]
   creditCards: FormSelectOption[]
+  creditors: FormSelectOption[]
+  debtors: FormSelectOption[]
+  assetTypes: FormSelectOption[]
   categories: {
     income:  CategoryOption[]
     expense: CategoryOption[]
@@ -290,10 +296,12 @@ export interface TransactionFormValues {
   transaction_date:        string
   notes?:                  string
   is_recurring:            boolean
+  recurring_name?:         string
   // Module flags
   creates_asset:      boolean
   asset_name?:        string
   asset_type?:        AssetType
+  asset_type_id?:     string
   asset_serial?:      string
   asset_location?:    string
   creates_credit:     boolean
@@ -308,11 +316,18 @@ export interface TransactionFormValues {
   loan_end_date?:     string
   loan_schedule:      boolean
   creates_receivable: boolean
+  receivable_debtor_id?: string
   receivable_debtor?: string
   receivable_due?:    string
   creates_payable:    boolean
+  payable_creditor_id?: string
   payable_creditor?:  string
   payable_due?:       string
+  // PRD v3 campos adicionales por tipo
+  sender?:            string   // Remitente — solo Ingreso (PRD línea 169)
+  recipient?:         string   // Destinatario — Egreso y Compra de Activo (PRD líneas 187, 215)
+  // Fase B — presupuesto asociado al egreso (PRD línea 135)
+  budget_id?:         string   // ID del presupuesto activo (solo Egreso)
 }
 
 // ─── CURRENCY DISPLAY ─────────────────────────────────────────────────────────

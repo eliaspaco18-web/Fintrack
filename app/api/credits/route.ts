@@ -8,6 +8,10 @@ import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase.server'
 import {
+  deriveCreditDisplayType,
+  type CreditListItem,
+} from '@/lib/credits/display-type'
+import {
   apiCreated,
   apiError,
   apiOk,
@@ -119,7 +123,7 @@ async function ensureUserActiveAccount(
   const supabase = createClient()
   const { data, error } = await supabase
     .from('accounts')
-    .select('id, name, type, is_active')
+    .select('id, name, type, is_active, bank_entity_id')
     .eq('id', params.accountId)
     .eq('user_id', params.userId)
     .single()
@@ -137,6 +141,15 @@ async function ensureUserActiveAccount(
       ok: false as const,
       code: 'BUSINESS_RULE_ERROR',
       message: 'La cuenta seleccionada debe ser de tipo Tarjeta para vincular la línea de crédito',
+    }
+  }
+
+  if (params.expectedType === 'CREDIT_CARD' && !data.bank_entity_id) {
+    return {
+      ok: false as const,
+      code: 'BUSINESS_RULE_ERROR',
+      message: 'La cuenta tarjeta debe estar vinculada a una entidad bancaria.',
+      detail: 'Edita la cuenta en Portafolio y asigna la entidad bancaria antes de crear la tarjeta de crédito.',
     }
   }
 
@@ -382,7 +395,45 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await query
   if (error) return apiError({ code: 'DATABASE_ERROR', message: error.message })
-  return apiOk(data ?? [])
+
+  const credits = data ?? []
+  const lineCreditIds = credits
+    .filter(credit => credit.credit_type === 'LINE_OF_CREDIT')
+    .map(credit => credit.id)
+
+  let creditIdsWithLoan = new Set<string>()
+  if (lineCreditIds.length > 0) {
+    const { data: loans, error: loansError } = await supabase
+      .from('loans')
+      .select('credit_id')
+      .eq('user_id', userId)
+      .in('credit_id', lineCreditIds)
+
+    if (loansError) {
+      return apiError({ code: 'DATABASE_ERROR', message: loansError.message })
+    }
+
+    creditIdsWithLoan = new Set(
+      (loans ?? [])
+        .map(loan => loan.credit_id)
+        .filter((creditId): creditId is string => typeof creditId === 'string' && creditId.length > 0),
+    )
+  }
+
+  const enrichedCredits: CreditListItem[] = credits.map(credit => {
+    const hasLoan = creditIdsWithLoan.has(credit.id)
+
+    return {
+      ...credit,
+      has_loan: hasLoan,
+      display_type: deriveCreditDisplayType({
+        creditType: credit.credit_type,
+        hasLoan,
+      }),
+    }
+  })
+
+  return apiOk(enrichedCredits)
 }
 
 export async function POST(req: NextRequest) {

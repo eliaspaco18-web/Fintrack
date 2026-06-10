@@ -35,27 +35,30 @@ export async function middleware(request: NextRequest) {
   // Refrescar la sesión si expiró
   const { data: { user } } = await supabase.auth.getUser()
 
-  const isAuthRoute   = pathname.startsWith('/login') || pathname.startsWith('/register')
-  const isApiRoute    = pathname.startsWith('/api/')
+  const isAuthEntryRoute = pathname.startsWith('/login') || pathname.startsWith('/register')
+  const isAuthCallbackRoute = pathname.startsWith('/auth/callback')
+  const isApiRoute = pathname.startsWith('/api/')
   const isStaticAsset = pathname.startsWith('/_next') || pathname === '/favicon.ico'
+  const isLandingPage = pathname === '/'
 
   // No interceptar rutas estáticas ni API
-  if (isStaticAsset || isApiRoute) return response
+  if (isStaticAsset || isApiRoute || isAuthCallbackRoute) return response
 
-  // Sin sesión → redirigir a login
-  if (!user && !isAuthRoute) {
+  // Landing page: accesible sin sesión; con sesión → dashboard
+  if (isLandingPage) {
+    if (user) return NextResponse.redirect(new URL('/dashboard', request.url))
+    return response
+  }
+
+  // Sin sesión → redirigir a login (excepto rutas de auth)
+  if (!user && !isAuthEntryRoute) {
     const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('next', pathname)
     return NextResponse.redirect(loginUrl)
   }
 
   // Con sesión → no dejar ir a login
-  if (user && isAuthRoute) {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
-  }
-
-  // Raíz → dashboard
-  if (user && pathname === '/') {
+  if (user && isAuthEntryRoute) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 

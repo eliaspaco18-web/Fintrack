@@ -26,7 +26,6 @@ import type {
 import { formatCurrency, formatNumber } from '@/lib/contracts/ui.contracts'
 import type { CreateTransactionResult }
   from '@/modules/transactions/transaction.service.types'
-import type { AccountType, CurrencyCode } from '@/types/database.types'
 import { useFormOrchestrator }        from './form.orchestrator'
 import { useCurrency } from '@/lib/hooks/useDashboard'
 import { TypeSelector, TYPE_CONFIG }  from './TypeSelector'
@@ -48,52 +47,17 @@ import {
 }                                     from './sections/ModuleSections'
 import { SubmitButton, SuccessSummary } from './SubmitButton'
 import { useToast } from '@/lib/toast/toast'
-import { FocusTrap } from '@/components/ui/accessibility'
-import { ColorSwatchPicker, IconGridPicker } from '@/components/ui/VisualPickers'
-import { CATEGORY_COLOR_OPTIONS, CATEGORY_ICON_OPTIONS } from '@/lib/constants/visual-options'
 import { getModuleTrigger } from '@/lib/constants/category-keys'
-
-type QuickCreateTarget = 'account' | 'category'
-type CategoryScope = 'INCOME' | 'EXPENSE' | 'BOTH'
-
-type AccountCreateDraft = {
-  name: string
-  institution: string
-  type: AccountType
-  currency: CurrencyCode
-  initial_balance: string
-}
-
-type CategoryCreateDraft = {
-  name: string
-  scope: CategoryScope
-  icon: string
-  color: string
-}
-
-type AccountApiRow = {
-  id: string
-  name: string
-  type: AccountType
-  currency: CurrencyCode
-  balance: number
-  icon: string | null
-  color: string | null
-}
-
-type CategoryApiRow = {
-  id: string
-  name: string
-  scope: CategoryScope
-  icon: string | null
-  color: string | null
-  system_key: string | null
-}
-
-interface ApiErrorShape {
-  ok: false
-  error?: { message?: string }
-}
+import { getApiErrorMessage } from '@/lib/api/error-message'
+import { hasAtMostDecimals, parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
+import { Button } from '@/components/ui/Button'
+import { FormActions, OptionalSection } from '@/components/forms/primitives'
+import { RecordModalFooter } from '@/components/ui/RecordModal'
+import {
+  NestedAccountCreateModal,
+  NestedCategoryCreateModal,
+} from './NestedRecordCreationModals'
+import { StatusBadge } from '@/components/finance'
 
 interface AttachmentUploadResult {
   path: string
@@ -103,57 +67,8 @@ interface AttachmentUploadResult {
   signed_url: string | null
 }
 
-const ACCOUNT_TYPE_OPTIONS: Array<{ value: AccountType; label: string }> = [
-  { value: 'CHECKING', label: 'Cuenta corriente' },
-  { value: 'SAVINGS', label: 'Cuenta ahorros' },
-  { value: 'CASH', label: 'Efectivo' },
-  { value: 'INVESTMENT', label: 'Inversión' },
-  { value: 'CREDIT_CARD', label: 'Tarjeta' },
-  { value: 'OTHER', label: 'Otra' },
-]
-
-const EMPTY_ACCOUNT_DRAFT: AccountCreateDraft = {
-  name: '',
-  institution: '',
-  type: 'CHECKING',
-  currency: 'PEN',
-  initial_balance: '0',
-}
-
-const EMPTY_CATEGORY_DRAFT: CategoryCreateDraft = {
-  name: '',
-  scope: 'EXPENSE',
-  icon: 'tag',
-  color: '#6b7280',
-}
-
 const ATTACHMENT_ACCEPT =
   'image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt'
-
-function getApiErrorMessage(payload: unknown, fallback: string): string {
-  if (
-    typeof payload === 'object' &&
-    payload !== null &&
-    'ok' in payload &&
-    (payload as ApiErrorShape).ok === false &&
-    (payload as ApiErrorShape).error?.message
-  ) {
-    return (payload as ApiErrorShape).error?.message ?? fallback
-  }
-
-  return fallback
-}
-
-function sortSelectOptionsByLabel<T extends { label: string }>(items: T[]): T[] {
-  return [...items].sort((a, b) => a.label.localeCompare(b.label, 'es'))
-}
-
-function upsertCategoryOption(list: CategoryOption[], next: CategoryOption): CategoryOption[] {
-  return sortSelectOptionsByLabel([
-    ...list.filter(item => item.value !== next.value),
-    next,
-  ])
-}
 
 const CATEGORY_ICON_PREFIXES = [
   'wallet',
@@ -197,6 +112,12 @@ interface TransactionFormProps {
   initialValues?: Partial<TransactionFormValues>
   /** Clases extra para el wrapper externo */
   className?:    string
+  /** PRD: ocultar el selector de tipo cuando ya se eligió desde OperationTypeSelector */
+  hideTypeSelector?: boolean
+  /** PRD: tipo de operación elegido (para condicionar campos según PRD v3) */
+  operationType?: 'income' | 'expense' | 'transfer' | 'asset_purchase' | 'payable' | 'receivable'
+  /** Permite cerrar el modal desde la barra de acciones del formulario */
+  onCancel?: () => void
 }
 
 // ─── COMPONENTE ───────────────────────────────────────────────────────────────
@@ -207,6 +128,9 @@ export function TransactionForm({
   showSuccessSummary = true,
   initialValues,
   className = '',
+  hideTypeSelector = false,
+  operationType,
+  onCancel,
 }: TransactionFormProps) {
   const router = useRouter()
   const { exchangeRate: liveExchangeRate } = useCurrency()
@@ -215,22 +139,28 @@ export function TransactionForm({
     return Number.isFinite(liveExchangeRate) && liveExchangeRate > 0 ? liveExchangeRate : 3.7
   })
   const [refreshingLiveRate, setRefreshingLiveRate] = useState(false)
-  const [formOptions, setFormOptions] = useState<TransactionFormOptions>(options)
-  const [quickCreateTarget, setQuickCreateTarget] = useState<QuickCreateTarget | null>(null)
-  const [quickCreateError, setQuickCreateError] = useState<string | null>(null)
-  const [quickCreateSaving, setQuickCreateSaving] = useState(false)
-  const [accountDraft, setAccountDraft] = useState<AccountCreateDraft>(EMPTY_ACCOUNT_DRAFT)
-  const [categoryDraft, setCategoryDraft] = useState<CategoryCreateDraft>(EMPTY_CATEGORY_DRAFT)
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
   const [attachmentUploading, setAttachmentUploading] = useState(false)
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [lastAttachmentTxId, setLastAttachmentTxId] = useState<string | null>(null)
   const [lastUploadedAttachment, setLastUploadedAttachment] = useState<AttachmentUploadResult | null>(null)
+  const formRef = useRef<HTMLFormElement | null>(null)
+  const isCompactLayout = className.includes('tx-modal-form')
+  const [attachmentSectionOpen, setAttachmentSectionOpen] = useState(!isCompactLayout)
+  const [inlineAccountModalOpen, setInlineAccountModalOpen] = useState(false)
+  const [inlineCategoryModalOpen, setInlineCategoryModalOpen] = useState(false)
+  const [inlineCategoryScope, setInlineCategoryScope] = useState<'INCOME' | 'EXPENSE'>('EXPENSE')
+  const [advancedSectionOpen, setAdvancedSectionOpen] = useState(false)
+  const [formOptions, setFormOptions] = useState<TransactionFormOptions>(options)
   const lastAutoUploadTxId = useRef<string | null>(null)
 
   useEffect(() => {
     setFormOptions(options)
   }, [options])
+
+  useEffect(() => {
+    setAttachmentSectionOpen(!isCompactLayout)
+  }, [isCompactLayout])
 
   const {
     form,
@@ -250,11 +180,16 @@ export function TransactionForm({
   const selectedCreditCardId = watch('credit_card_id')
   const creditOperation = watch('credit_operation')
   const amount      = watch('amount')
+  const sourceAccountId = watch('source_account_id')
   const categoryId  = watch('category_id')
+  const assetTypeId = watch('asset_type_id')
+  const budgetId    = watch('budget_id')
   const createsAsset = watch('creates_asset')
   const createsReceivable = watch('creates_receivable')
   const createsPayable = watch('creates_payable')
   const exchangeRateInput = watch('exchange_rate')
+  const transactionDate = watch('transaction_date')
+  const destinationAccountId = watch('destination_account_id')
   const accentColor = TYPE_CONFIG[type].accentColor
   const safeLiveRate = Number.isFinite(currentLiveRate) && currentLiveRate > 0
     ? currentLiveRate
@@ -278,13 +213,135 @@ export function TransactionForm({
     setCurrentLiveRate(liveExchangeRate)
   }, [liveExchangeRate])
 
+  // ── Fetch presupuestos activos para el selector de Egreso ────────────────
+  type BudgetOption = { value: string; label: string; categoryId: string | null }
+  const [activeBudgets, setActiveBudgets] = useState<BudgetOption[]>([])
+  const [budgetsLoading, setBudgetsLoading] = useState(false)
+
+  useEffect(() => {
+    if (type !== 'EXPENSE' || operationType !== 'expense') {
+      setActiveBudgets([])
+      setBudgetsLoading(false)
+      return
+    }
+    let cancelled = false
+    setBudgetsLoading(true)
+    const params = new URLSearchParams({ is_active: 'true' })
+    if (categoryId) params.set('category_id', categoryId)
+    if (transactionDate) params.set('transaction_date', transactionDate)
+    fetch(`/api/budgets?${params.toString()}`, { cache: 'no-store' })
+      .then(r => r.json())
+      .then(json => {
+        if (cancelled || !json?.ok || !Array.isArray(json.data)) return
+        setActiveBudgets(
+          (json.data as Array<{ id: string; name: string; category_id: string | null; period_type: string }>).map(b => ({
+            value: b.id,
+            label: b.name,
+            categoryId: b.category_id,
+          }))
+        )
+      })
+      .finally(() => {
+        if (!cancelled) setBudgetsLoading(false)
+      })
+      .catch(() => { /* silencioso */ })
+    return () => { cancelled = true }
+  }, [categoryId, operationType, transactionDate, type])
+
+  // Presupuestos filtrados por categoría seleccionada (o todos si no hay cat.)
+  const filteredBudgets = useMemo(() => {
+    if (!categoryId) return activeBudgets
+    return activeBudgets.filter(b => !b.categoryId || b.categoryId === categoryId)
+  }, [activeBudgets, categoryId])
+
+  // Resetear budget_id si el presupuesto seleccionado ya no aparece
+  useEffect(() => {
+    if (!budgetId) return
+    if (!filteredBudgets.some(b => b.value === budgetId)) {
+      setValue('budget_id', undefined, { shouldDirty: false })
+    }
+  }, [filteredBudgets, budgetId, setValue])
+
+  const sourceAccountOption = useMemo(
+    () => formOptions.accounts.find(account => account.value === sourceAccountId) ?? null,
+    [formOptions.accounts, sourceAccountId]
+  )
+  const destinationAccountOption = useMemo(
+    () => formOptions.accounts.find(account => account.value === destinationAccountId) ?? null,
+    [destinationAccountId, formOptions.accounts]
+  )
+  const selectedAssetTypeOption = useMemo(
+    () => formOptions.assetTypes.find(assetType => assetType.value === assetTypeId) ?? null,
+    [assetTypeId, formOptions.assetTypes]
+  )
+  const sourceAccountCurrency =
+    typeof sourceAccountOption?.meta?.currency === 'string' ? sourceAccountOption.meta.currency : currency
+  const destinationAccountCurrency =
+    typeof destinationAccountOption?.meta?.currency === 'string' ? destinationAccountOption.meta.currency : currency
+  const sourceAccountBalance =
+    typeof sourceAccountOption?.meta?.balance === 'number'
+      ? sourceAccountOption.meta.balance
+      : typeof sourceAccountOption?.meta?.balance === 'string'
+        ? Number(sourceAccountOption.meta.balance)
+        : null
+  const autoTransferDescription = useMemo(() => {
+    if (type !== 'TRANSFER') return ''
+    if (!sourceAccountOption || !destinationAccountOption) return ''
+    return `Transferencia de ${sourceAccountOption.label} / ${sourceAccountOption.meta?.currency ?? currency} a ${destinationAccountOption.label} / ${destinationAccountOption.meta?.currency ?? currency}`
+      .slice(0, 255)
+  }, [currency, destinationAccountOption, sourceAccountOption, type])
+  const shouldLockCurrencyToSourceAccount = true
+
+  useEffect(() => {
+    if (type !== 'TRANSFER' || !autoTransferDescription) return
+
+    setValue('description', autoTransferDescription, {
+      shouldDirty: false,
+      shouldValidate: true,
+    })
+  }, [autoTransferDescription, form, setValue, type])
+
+  useEffect(() => {
+    if (!shouldLockCurrencyToSourceAccount) return
+    if (!sourceAccountOption?.meta?.currency) return
+
+    const nextCurrency = sourceAccountOption.meta.currency
+    if ((currency as string | undefined) === nextCurrency) return
+
+    setValue('currency', nextCurrency as 'PEN' | 'USD', {
+      shouldDirty: false,
+      shouldValidate: true,
+    })
+  }, [currency, setValue, shouldLockCurrencyToSourceAccount, sourceAccountOption])
+
+  // ── PRD: forzar tipo de transacción según operationType prop ────────────────
+  // Esto garantiza que el form siempre refleja el tipo correcto,
+  // independientemente del FORM_DEFAULTS o timing de initialValues.
+  useEffect(() => {
+    if (!operationType) return
+    const typeMap: Record<typeof operationType, TransactionFormValues['type']> = {
+      income:        'INCOME',
+      expense:       'EXPENSE',
+      transfer:      'TRANSFER',
+      asset_purchase: 'EXPENSE',
+      payable:       'INCOME',
+      receivable:    'EXPENSE',
+    }
+    const targetType = typeMap[operationType]
+    if (targetType && form.getValues('type') !== targetType) {
+      setType(targetType)
+    }
+  // Solo al montar — operationType no cambia durante la vida del componente
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   useEffect(() => {
     let active = true
 
     const refreshRate = async () => {
       setRefreshingLiveRate(true)
       try {
-        const res = await fetch('/api/exchange-rate?refresh=1', { cache: 'no-store' })
+        const res = await fetch('/api/exchange-rate?mode=accounting&ensure=1', { cache: 'no-store' })
         const json = await res.json().catch(() => null)
         if (!active || !res.ok || !json?.ok) return
 
@@ -324,8 +381,25 @@ export function TransactionForm({
 
   // ── Filtrar cuentas destino (excluir cuenta origen) ──────────────────────
 
-  const sourceAccountId     = watch('source_account_id')
   const destinationAccounts = formOptions.accounts.filter(a => a.value !== sourceAccountId)
+  const filteredSourceAccounts = useMemo(() => {
+    if (type !== 'EXPENSE' || paymentMethod === 'CREDIT') return formOptions.accounts
+
+    const debitEligibleTypes = new Set([
+      'CHECKING',
+      'SAVINGS',
+      'CASH',
+      'INVESTMENT',
+      'STOCKS',
+      'ETF',
+      'CRYPTO',
+    ])
+
+    return formOptions.accounts.filter(account => {
+      const accountType = typeof account.meta?.type === 'string' ? account.meta.type : ''
+      return debitEligibleTypes.has(accountType)
+    })
+  }, [formOptions.accounts, paymentMethod, type])
 
   const visibleCategoryOptions = useMemo(
     () =>
@@ -340,29 +414,108 @@ export function TransactionForm({
     [categoryId, visibleCategoryOptions]
   )
   const autoModule = getModuleTrigger(selectedCategory?.system_key)
-  const activeExpenseModule = useMemo<'asset' | 'payable' | null>(() => {
+  const activeExpenseModule = useMemo<'asset' | 'receivable' | null>(() => {
     if (createsAsset) return 'asset'
-    if (createsPayable) return 'payable'
-    if (autoModule === 'asset' || autoModule === 'payable') return autoModule
+    if (createsReceivable) return 'receivable'
+    if (autoModule === 'asset' || autoModule === 'receivable') return autoModule
     return null
-  }, [autoModule, createsAsset, createsPayable])
-  const activeIncomeModule = useMemo<'receivable' | null>(() => {
-    if (autoModule === 'receivable') return 'receivable'
-    return createsReceivable ? 'receivable' : null
-  }, [autoModule, createsReceivable])
+  }, [autoModule, createsAsset, createsReceivable])
+  const activeIncomeModule = useMemo<'payable' | null>(() => {
+    if (autoModule === 'payable') return 'payable'
+    return createsPayable ? 'payable' : null
+  }, [autoModule, createsPayable])
   const isExpenseCreditPayment = type === 'EXPENSE' && paymentMethod === 'CREDIT'
   const creditCardOptions = useMemo(
     () => formOptions.creditCards ?? [],
     [formOptions.creditCards]
+  )
+  const creditorOptions = useMemo(
+    () => formOptions.creditors ?? [],
+    [formOptions.creditors]
+  )
+  const debtorOptions = useMemo(
+    () => formOptions.debtors ?? [],
+    [formOptions.debtors]
   )
   const selectedCreditCardOption = useMemo(
     () => creditCardOptions.find(option => option.value === selectedCreditCardId) ?? null,
     [creditCardOptions, selectedCreditCardId]
   )
   const hasAccounts = formOptions.accounts.length > 0
+  const hasFilteredSourceAccounts = filteredSourceAccounts.length > 0
   const hasCreditCards = creditCardOptions.length > 0
+  const hasCreditors = creditorOptions.length > 0
+  const hasDebtors = debtorOptions.length > 0
   const hasVisibleCategories = visibleCategoryOptions.length > 0
-  const categoryScopeHint = type === 'INCOME' ? 'INCOME' : 'EXPENSE'
+  const showDerivedSections =
+    (sections.assetModule && operationType !== 'asset_purchase') ||
+    (sections.receivableModule && operationType !== 'receivable') ||
+    (sections.payableModule && operationType !== 'payable')
+  const layoutMode = useMemo<
+    'income' | 'expense' | 'transfer' | 'asset_purchase' | 'payable' | 'receivable'
+  >(() => {
+    if (operationType) return operationType
+    if (type === 'TRANSFER') return 'transfer'
+    if (type === 'INCOME') return createsPayable ? 'payable' : 'income'
+    if (createsAsset) return 'asset_purchase'
+    if (createsReceivable) return 'receivable'
+    return 'expense'
+  }, [createsAsset, createsPayable, createsReceivable, operationType, type])
+  const usesProgressiveOptionalSection =
+    layoutMode === 'income' ||
+    layoutMode === 'expense' ||
+    layoutMode === 'transfer' ||
+    layoutMode === 'asset_purchase'
+  const optionalSummary = useMemo(() => {
+    switch (layoutMode) {
+      case 'income':
+        return ['Remitente', 'Notas', 'Recurrencia', 'Comprobante']
+      case 'expense':
+        return ['Destinatario', 'Presupuesto', 'Notas', 'Recurrencia', 'Comprobante']
+      case 'asset_purchase':
+        return ['Proveedor', 'Notas', 'Comprobante']
+      case 'transfer':
+        return ['Notas', 'Comprobante']
+      default:
+        return []
+    }
+  }, [layoutMode])
+  const hasOptionalSectionError = Boolean(
+    errors.sender?.message ||
+    errors.recipient?.message ||
+    errors.budget_id?.message ||
+    errors.notes?.message ||
+    errors.recurring_name?.message
+  )
+  const sourceAccountLabel = useMemo(() => {
+    switch (layoutMode) {
+      case 'income':
+        return 'Cuenta destino'
+      case 'expense':
+      case 'asset_purchase':
+        return 'Cuenta origen'
+      default:
+        return sections.sourceAccountLabel
+    }
+  }, [layoutMode, sections.sourceAccountLabel])
+  const descriptionPlaceholder = useMemo(() => {
+    switch (layoutMode) {
+      case 'income':
+        return 'Ej: Pago de cliente ACME'
+      case 'expense':
+        return 'Ej: Alquiler enero'
+      case 'transfer':
+        return 'Ej: Transferencia a cuenta de ahorros'
+      case 'asset_purchase':
+        return 'Ej: Compra de equipo para operaciones'
+      case 'payable':
+        return 'Ej: Servicio de internet mayo'
+      case 'receivable':
+        return 'Ej: Factura F001-184 pendiente'
+      default:
+        return '¿En qué o con quién?'
+    }
+  }, [layoutMode])
 
   useEffect(() => {
     if (type === 'EXPENSE') {
@@ -377,6 +530,16 @@ export function TransactionForm({
   }, [paymentMethod, setValue, type])
 
   useEffect(() => {
+    if (!sourceAccountId || paymentMethod === 'CREDIT') return
+    if (filteredSourceAccounts.some(account => account.value === sourceAccountId)) return
+
+    setValue('source_account_id', '' as TransactionFormValues['source_account_id'], {
+      shouldDirty: true,
+      shouldValidate: true,
+    })
+  }, [filteredSourceAccounts, paymentMethod, setValue, sourceAccountId])
+
+  useEffect(() => {
     if (!isExpenseCreditPayment) return
     if (!selectedCreditCardOption) return
 
@@ -387,196 +550,65 @@ export function TransactionForm({
     }
   }, [isExpenseCreditPayment, selectedCreditCardOption, setValue])
 
-  const setExpenseModule = useCallback((module: 'asset' | 'payable' | null) => {
+  const setExpenseModule = useCallback((module: 'asset' | 'receivable' | null) => {
     setValue('creates_asset', module === 'asset', { shouldDirty: true, shouldValidate: false })
-    setValue('creates_payable', module === 'payable', { shouldDirty: true, shouldValidate: false })
-  }, [setValue])
-
-  const setIncomeModule = useCallback((module: 'receivable' | null) => {
     setValue('creates_receivable', module === 'receivable', { shouldDirty: true, shouldValidate: false })
   }, [setValue])
 
-  const closeQuickCreate = useCallback(() => {
-    setQuickCreateTarget(null)
-    setQuickCreateError(null)
-    setQuickCreateSaving(false)
-  }, [])
+  const setIncomeModule = useCallback((module: 'payable' | null) => {
+    setValue('creates_payable', module === 'payable', { shouldDirty: true, shouldValidate: false })
+  }, [setValue])
 
-  const openAccountQuickCreate = useCallback(() => {
-    if (submitState.status === 'loading') return
-    setQuickCreateError(null)
-    setAccountDraft(prev => ({ ...EMPTY_ACCOUNT_DRAFT, currency: prev.currency }))
-    setQuickCreateTarget('account')
-  }, [submitState.status])
+  const handleInlineAccountCreated = useCallback((accountOption: FormSelectOption) => {
+    setFormOptions(prev => {
+      const alreadyExists = prev.accounts.some(account => account.value === accountOption.value)
+      const merged = alreadyExists
+        ? prev.accounts.map(account => (account.value === accountOption.value ? accountOption : account))
+        : [...prev.accounts, accountOption]
 
-  const openCategoryQuickCreate = useCallback(() => {
-    if (submitState.status === 'loading') return
-    setQuickCreateError(null)
-    setCategoryDraft(prev => ({
-      ...prev,
-      name: '',
-      scope: type === 'TRANSFER' ? 'EXPENSE' : categoryScopeHint,
-      icon: prev.icon || 'tag',
-      color: prev.color || '#6b7280',
-    }))
-    setQuickCreateTarget('category')
-  }, [categoryScopeHint, submitState.status, type])
+      return {
+        ...prev,
+        accounts: [...merged].sort((a, b) => a.label.localeCompare(b.label, 'es')),
+      }
+    })
 
-  const submitQuickAccount = useCallback(async () => {
-    if (quickCreateSaving) return
+    setValue('source_account_id', accountOption.value, { shouldDirty: true, shouldValidate: true })
+    setInlineAccountModalOpen(false)
+  }, [setValue])
 
-    const trimmedName = accountDraft.name.trim()
-    if (trimmedName.length < 2) {
-      setQuickCreateError('El nombre de la cuenta debe tener al menos 2 caracteres.')
-      return
-    }
-    const parsedInitialBalance = Number(accountDraft.initial_balance || '0')
-    if (!Number.isFinite(parsedInitialBalance)) {
-      setQuickCreateError('El saldo inicial debe ser un número válido.')
-      return
-    }
+  const handleInlineCategoryCreated = useCallback((
+    categoryOption: CategoryOption,
+    scope: 'INCOME' | 'EXPENSE',
+  ) => {
+    setFormOptions(prev => {
+      const upsertCategoryList = (list: CategoryOption[]) => {
+        const alreadyExists = list.some(category => category.value === categoryOption.value)
+        const merged = alreadyExists
+          ? list.map(category => (category.value === categoryOption.value ? categoryOption : category))
+          : [...list, categoryOption]
 
-    setQuickCreateSaving(true)
-    setQuickCreateError(null)
-
-    try {
-      const res = await fetch('/api/accounts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: trimmedName,
-          institution: accountDraft.institution.trim() || null,
-          type: accountDraft.type,
-          currency: accountDraft.currency,
-          initial_balance: parsedInitialBalance,
-        }),
-      })
-
-      const json = await res.json().catch(() => null)
-      if (!res.ok || !json?.ok) {
-        throw new Error(getApiErrorMessage(json, 'No se pudo crear la cuenta'))
+        return [...merged].sort((a, b) => a.label.localeCompare(b.label, 'es'))
       }
 
-      const created = json.data as AccountApiRow
-      const nextOption: FormSelectOption = {
-        value: created.id,
-        label: created.name,
-        icon: created.icon ?? 'wallet',
-        color: created.color ?? '#10b981',
-        meta: {
-          currency: created.currency,
-          balance: created.balance,
-          type: created.type,
+      return {
+        ...prev,
+        categories: {
+          income: scope === 'INCOME'
+            ? upsertCategoryList(prev.categories.income)
+            : prev.categories.income,
+          expense: scope === 'EXPENSE'
+            ? upsertCategoryList(prev.categories.expense)
+            : prev.categories.expense,
         },
       }
+    })
 
-      setFormOptions(prev => ({
-        ...prev,
-        accounts: sortSelectOptionsByLabel([
-          ...prev.accounts.filter(account => account.value !== nextOption.value),
-          nextOption,
-        ]),
-      }))
-      setValue('source_account_id', nextOption.value, { shouldDirty: true, shouldValidate: true })
-      setAccountDraft(EMPTY_ACCOUNT_DRAFT)
-      closeQuickCreate()
-      toast.success('Cuenta creada', 'Ya está disponible para esta transacción.')
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : 'No se pudo crear la cuenta'
-      setQuickCreateError(
-        message
-      )
-      toast.error('No se pudo crear la cuenta', message)
-      setQuickCreateSaving(false)
+    if (type !== 'TRANSFER') {
+      setValue('category_id', categoryOption.value, { shouldDirty: true, shouldValidate: true })
+      setValue('category_system_key', categoryOption.system_key ?? null, { shouldDirty: true, shouldValidate: false })
     }
-  }, [accountDraft, closeQuickCreate, quickCreateSaving, setValue, toast])
-
-  const submitQuickCategory = useCallback(async () => {
-    if (quickCreateSaving) return
-
-    const trimmedName = categoryDraft.name.trim()
-    if (trimmedName.length < 2) {
-      setQuickCreateError('El nombre de la categoría debe tener al menos 2 caracteres.')
-      return
-    }
-
-    setQuickCreateSaving(true)
-    setQuickCreateError(null)
-
-    try {
-      const res = await fetch('/api/categories', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: trimmedName,
-          scope: categoryDraft.scope,
-          icon: categoryDraft.icon.trim() || 'tag',
-          color: categoryDraft.color.trim() || '#6b7280',
-        }),
-      })
-
-      const json = await res.json().catch(() => null)
-      if (!res.ok || !json?.ok) {
-        throw new Error(getApiErrorMessage(json, 'No se pudo crear la categoría'))
-      }
-
-      const created = json.data as CategoryApiRow
-      const nextOption: CategoryOption = {
-        value: created.id,
-        label: normalizeCategoryLabel(created.name),
-        icon: created.icon ?? 'tag',
-        color: created.color ?? '#6b7280',
-        system_key: created.system_key ?? null,
-      }
-
-      setFormOptions(prev => {
-        const includeIncome = created.scope === 'INCOME' || created.scope === 'BOTH'
-        const includeExpense = created.scope === 'EXPENSE' || created.scope === 'BOTH'
-
-        return {
-          ...prev,
-          categories: {
-            income: includeIncome
-              ? upsertCategoryOption(prev.categories.income, nextOption)
-              : prev.categories.income,
-            expense: includeExpense
-              ? upsertCategoryOption(prev.categories.expense, nextOption)
-              : prev.categories.expense,
-          },
-        }
-      })
-
-      if (
-        type !== 'TRANSFER' &&
-        (
-          (type === 'INCOME' && (created.scope === 'INCOME' || created.scope === 'BOTH')) ||
-          (type === 'EXPENSE' && (created.scope === 'EXPENSE' || created.scope === 'BOTH'))
-        )
-      ) {
-        setValue('category_id', nextOption.value, { shouldDirty: true, shouldValidate: true })
-        setValue('category_system_key', nextOption.system_key ?? null, { shouldDirty: true })
-      }
-
-      setCategoryDraft(prev => ({ ...prev, name: '', scope: categoryScopeHint }))
-      closeQuickCreate()
-      toast.success('Categoría creada', 'Ya está disponible para esta transacción.')
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : 'No se pudo crear la categoría'
-      setQuickCreateError(
-        message
-      )
-      toast.error('No se pudo crear la categoría', message)
-      setQuickCreateSaving(false)
-    }
-  }, [categoryDraft, categoryScopeHint, closeQuickCreate, quickCreateSaving, setValue, toast, type])
-
-  const submitCurrentQuickCreate = useCallback(async () => {
-    if (quickCreateTarget === 'account') {
-      await submitQuickAccount()
-      return
-    }
-    await submitQuickCategory()
-  }, [quickCreateTarget, submitQuickAccount, submitQuickCategory])
+    setInlineCategoryModalOpen(false)
+  }, [setValue, type])
 
   const uploadAttachment = useCallback(async (
     transactionId: string,
@@ -634,25 +666,65 @@ export function TransactionForm({
   }, [attachmentFile, submitState, uploadAttachment])
 
   useEffect(() => {
-    if (!quickCreateTarget) return
+    if (!attachmentFile && !attachmentUploading && !attachmentError && !lastUploadedAttachment) return
+    setAttachmentSectionOpen(true)
+  }, [attachmentError, attachmentFile, attachmentUploading, lastUploadedAttachment])
 
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !quickCreateSaving) {
-        event.preventDefault()
-        closeQuickCreate()
+  useEffect(() => {
+    if (!usesProgressiveOptionalSection) return
+    if (
+      hasOptionalSectionError ||
+      Boolean(attachmentFile) ||
+      Boolean(attachmentError) ||
+      Boolean(lastUploadedAttachment) ||
+      Boolean(watch('is_recurring'))
+    ) {
+      setAdvancedSectionOpen(true)
+    }
+  }, [
+    attachmentError,
+    attachmentFile,
+    hasOptionalSectionError,
+    lastUploadedAttachment,
+    usesProgressiveOptionalSection,
+    watch,
+  ])
+
+  useEffect(() => {
+    const formElement = formRef.current
+    const modalBody = formElement?.closest<HTMLElement>('[data-record-modal-body="true"]')
+    if (!formElement || !modalBody) return
+
+    const syncOverflow = () => {
+      const isDesktop = window.matchMedia('(min-width: 860px)').matches
+      const isShortViewport = window.innerHeight < 720
+      const shouldForceAuto = !usesProgressiveOptionalSection || advancedSectionOpen || !isDesktop || isShortViewport
+
+      if (shouldForceAuto) {
+        modalBody.style.overflowY = ''
+        return
       }
 
-      if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-        event.preventDefault()
-        void submitCurrentQuickCreate()
-      }
+      const fitsWithoutScroll = formElement.scrollHeight <= modalBody.clientHeight
+      modalBody.style.overflowY = fitsWithoutScroll ? 'hidden' : ''
     }
 
-    window.addEventListener('keydown', onKeyDown)
+    syncOverflow()
+
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(syncOverflow)
+      : null
+
+    resizeObserver?.observe(formElement)
+    resizeObserver?.observe(modalBody)
+    window.addEventListener('resize', syncOverflow)
+
     return () => {
-      window.removeEventListener('keydown', onKeyDown)
+      resizeObserver?.disconnect()
+      window.removeEventListener('resize', syncOverflow)
+      modalBody.style.overflowY = ''
     }
-  }, [closeQuickCreate, quickCreateSaving, quickCreateTarget, submitCurrentQuickCreate])
+  }, [advancedSectionOpen, usesProgressiveOptionalSection])
 
   // ── Si hay éxito y showSuccessSummary, mostrar summary en lugar del form ──
 
@@ -668,538 +740,1065 @@ export function TransactionForm({
     )
   }
 
-  // ─── RENDER ───────────────────────────────────────────────────────────────
-
-  return (
-    <>
-      <form
-        onSubmit={submit}
-        noValidate
-        data-testid="transaction-form"
-        className={`space-y-5 ${className}`}
+  const amountCurrencyField = (
+    <div className={isCompactLayout ? 'grid grid-cols-[1fr_auto] gap-2' : 'grid grid-cols-[1fr_auto] gap-3'}>
+      <FieldWrapper
+        label={layoutMode === 'asset_purchase' ? 'Valor de compra' : 'Monto'}
+        required
+        error={errors.amount?.message}
       >
-      {/* ── 1. SELECTOR DE TIPO ──────────────────────────────────────────── */}
-      <div data-testid="transaction-type-selector">
-        <TypeSelector
-          value={type}
-          onChange={setType}
-          disabled={submitState.status === 'loading'}
-        />
-      </div>
-
-      {/* ── 2. MONTO + MONEDA ────────────────────────────────────────────── */}
-      <div className="grid grid-cols-[1fr_auto] gap-3">
-        <FieldWrapper
-          label="Monto"
-          required
+        <AmountInput
+          currency={currency as 'PEN' | 'USD'}
           error={errors.amount?.message}
-        >
-          <AmountInput
-            currency={currency}
-            error={errors.amount?.message}
-            data-testid="transaction-amount-input"
-            {...register('amount', {
-              required:     'El monto es requerido',
-              valueAsNumber: true,
-              validate: {
-                positive:   v => Number(v) > 0 || 'El monto debe ser mayor a cero',
-                twoDecimals: v => {
-                  const n = Number(v)
-                  return Math.round(n * 100) === n * 100 || 'Máximo 2 decimales'
-                },
+          data-testid="transaction-amount-input"
+          {...register('amount', {
+            required: 'El monto es requerido',
+            setValueAs: value => {
+              const parsed = parseNumericInput(value, Number.NaN)
+              if (!Number.isFinite(parsed)) return undefined
+              return roundToDecimals(parsed, 2)
+            },
+            validate: {
+              positive: v => Number(v) > 0 || 'El monto debe ser mayor a cero',
+              twoDecimals: v => {
+                const n = Number(v)
+                return hasAtMostDecimals(n, 2) || 'Máximo 2 decimales'
               },
-            })}
-          />
-        </FieldWrapper>
+            },
+          })}
+        />
+      </FieldWrapper>
 
-        <FieldWrapper label="Moneda">
-          <Select
-            {...register('currency')}
-            data-testid="transaction-currency-select"
-            className="min-w-[90px]"
-          >
-            <option value="PEN">PEN (S/)</option>
-            <option value="USD">USD ($)</option>
-          </Select>
-        </FieldWrapper>
-      </div>
+      <FieldWrapper label="Moneda" hint="Se sincroniza con el portafolio seleccionado.">
+        <Select
+          {...register('currency')}
+          compact
+          data-testid="transaction-currency-select"
+          className="w-[120px]"
+          disabled
+        >
+          <option value="PEN">PEN (S/)</option>
+          <option value="USD">USD ($)</option>
+        </Select>
+      </FieldWrapper>
+    </div>
+  )
 
-      {/* Tipo de cambio — slide in cuando moneda = USD */}
-      <div className={`
+  const exchangeRateField = (
+    <div
+      className={`
         overflow-hidden transition-all duration-300 ease-out
         ${sections.exchangeRate ? 'max-h-24 opacity-100' : 'max-h-0 opacity-0'}
-      `}>
-        <FieldWrapper
-          label="Tipo de cambio"
-          hint={`1 USD = ${formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN (${refreshingLiveRate ? 'actualizando…' : 'actual'})`}
-          required
+      `}
+    >
+      <FieldWrapper
+        label="Tipo de cambio"
+        hint={`1 USD = ${formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN (${refreshingLiveRate ? 'actualizando…' : 'actual'})`}
+        required
+        error={errors.exchange_rate?.message}
+      >
+        <Input
+          type="number"
+          step="0.001"
+          placeholder="3.750"
           error={errors.exchange_rate?.message}
-        >
-          <Input
-            type="number"
-            step="0.001"
-            placeholder="3.750"
-            error={errors.exchange_rate?.message}
-            data-testid="transaction-exchange-rate-input"
-            {...register('exchange_rate', {
-              valueAsNumber: true,
-              validate: v =>
-                currency !== 'USD' ||
-                (!!v && Number(v) > 0) ||
-                'El tipo de cambio es requerido para USD',
-            })}
-          />
-        </FieldWrapper>
-      </div>
+          data-testid="transaction-exchange-rate-input"
+          {...register('exchange_rate', {
+            setValueAs: value => {
+              const parsed = parseNumericInput(value, Number.NaN)
+              if (!Number.isFinite(parsed)) return undefined
+              return roundToDecimals(parsed, 3)
+            },
+            validate: v =>
+              currency !== 'USD' ||
+              (!!v && Number(v) > 0) ||
+              'El tipo de cambio es requerido para USD',
+          })}
+        />
+      </FieldWrapper>
+    </div>
+  )
 
-      {/* Equivalencia en vivo PEN/USD */}
-      <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface)] px-3.5 py-3">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
-            Equivalente estimado
-          </p>
-          <span className="text-[10px] text-[var(--color-text-faint)] tabular-nums">
-            TC {formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN {refreshingLiveRate ? '· actualizando…' : ''}
+  const equivalenceField = isCompactLayout ? (
+    <div className="flex items-center justify-between gap-2 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-1.5">
+      <span className="text-[10px] uppercase tracking-[0.06em] text-[var(--c-text-muted)]">
+        Equiv.
+      </span>
+      {hasAmount ? (
+        <div className="flex items-center gap-3 text-[11px]">
+          <span className="tabular-nums text-[var(--c-primary)] font-semibold">
+            {formatCurrency(equivalentPen, 'PEN')}
+          </span>
+          <span className="tabular-nums text-cyan-300 font-semibold">
+            {formatCurrency(equivalentUsd, 'USD')}
           </span>
         </div>
-        {!hasAmount ? (
-          <p className="text-[11px] text-[var(--color-text-muted)] mt-1.5">
-            Ingresa un monto para ver su equivalente en soles y dólares.
-          </p>
-        ) : (
-          <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <div className="rounded-lg border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
-              <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-faint)]">En soles</p>
-              <p className="text-[15px] font-bold tabular-nums text-emerald-400 mt-1">
-                {formatCurrency(equivalentPen, 'PEN')}
-              </p>
-            </div>
-            <div className="rounded-lg border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
-              <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-faint)]">En dólares</p>
-              <p className="text-[15px] font-bold tabular-nums text-cyan-300 mt-1">
-                {formatCurrency(equivalentUsd, 'USD')}
-              </p>
-            </div>
-          </div>
-        )}
+      ) : (
+        <span className="text-[10px] text-[var(--c-text-faint)]">
+          Ingresa monto
+        </span>
+      )}
+      <span className="text-[9px] text-[var(--c-text-faint)] tabular-nums">
+        TC {formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+      </span>
+    </div>
+  ) : (
+    <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3.5 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">
+          Equivalente estimado
+        </p>
+        <span className="text-[10px] text-[var(--c-text-faint)] tabular-nums">
+          TC {formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN {refreshingLiveRate ? '· actualizando…' : ''}
+        </span>
       </div>
-
-      {/* ── 3. CUENTAS ───────────────────────────────────────────────────── */}
-      {type === 'EXPENSE' && (
-        <div className="rounded-xl border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-3.5 py-3">
-          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
-            Forma de pago del egreso
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setValue('payment_method', 'DEBIT', { shouldDirty: true, shouldValidate: false })
-                setValue('credit_card_id', undefined, { shouldDirty: true, shouldValidate: false })
-                setValue('credit_operation', undefined, { shouldDirty: true, shouldValidate: false })
-              }}
-              className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-                !isExpenseCreditPayment
-                  ? 'border-emerald-400/35 bg-emerald-500/15 text-emerald-300'
-                  : 'border-[color:var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
-              }`}
-            >
-              Débito / contado
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setValue('payment_method', 'CREDIT', { shouldDirty: true, shouldValidate: false })
-                setValue('credit_operation', 'CONSUMPTION', { shouldDirty: true, shouldValidate: false })
-              }}
-              className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-                isExpenseCreditPayment
-                  ? 'border-sky-400/35 bg-sky-500/15 text-sky-300'
-                  : 'border-[color:var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
-              }`}
-            >
-              Crédito (tarjeta)
-            </button>
+      {!hasAmount ? (
+        <p className="mt-1.5 text-[11px] text-[var(--c-text-muted)]">
+          Ingresa un monto para ver su equivalente en soles y dólares.
+        </p>
+      ) : (
+        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
+            <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">En soles</p>
+            <p className="mt-1 text-[15px] font-bold tabular-nums text-[var(--c-primary)]">
+              {formatCurrency(equivalentPen, 'PEN')}
+            </p>
           </div>
-          {isExpenseCreditPayment ? (
-            <p className="mt-2 text-[11px] text-sky-200/80">
-              El egreso se cargará a la tarjeta seleccionada en el módulo Créditos.
+          <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
+            <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">En dólares</p>
+            <p className="mt-1 text-[15px] font-bold tabular-nums text-cyan-300">
+              {formatCurrency(equivalentUsd, 'USD')}
             </p>
-          ) : (
-            <p className="mt-2 text-[11px] text-[var(--color-text-muted)]">
-              Usa esta opción para pagos al contado o pagos de tarjeta desde una cuenta bancaria.
-            </p>
-          )}
+          </div>
         </div>
       )}
+    </div>
+  )
 
-      <div className={`grid gap-3 ${sections.destinationAccount ? 'grid-cols-2' : 'grid-cols-1'}`}>
-        {isExpenseCreditPayment ? (
-          <FieldWrapper
-            label="Tarjeta de crédito"
-            required
-            error={errors.credit_card_id?.message || errors.source_account_id?.message}
-          >
-            <Select
-              placeholder="Seleccionar tarjeta…"
-              error={errors.credit_card_id?.message || errors.source_account_id?.message}
-              data-testid="transaction-credit-card-select"
-              value={selectedCreditCardId ?? ''}
-              onChange={event => {
-                const nextId = event.target.value
-                setValue('credit_card_id', nextId || undefined, { shouldDirty: true, shouldValidate: true })
-                const selected = creditCardOptions.find(option => option.value === nextId)
-                const linkedAccountId = selected?.meta?.account_id
-                if (typeof linkedAccountId === 'string') {
-                  setValue('source_account_id', linkedAccountId, { shouldDirty: true, shouldValidate: true })
-                }
-              }}
-            >
-              {creditCardOptions.map(card => (
-                <option key={card.value} value={card.value}>
-                  {card.label}
-                </option>
-              ))}
-            </Select>
-            {!hasCreditCards && (
-              <div className="mt-2">
-                <InlineFeedback
-                  type="warning"
-                  message="No tienes tarjetas activas con cuenta vinculada."
-                  detail="Registra tu tarjeta en Créditos y asígnale una cuenta de tarjeta."
-                />
-              </div>
-            )}
-            <div className="mt-2 flex items-center justify-between gap-2">
-              <Link
-                href="/credits"
-                className="text-[11px] font-semibold text-sky-300/90 hover:text-sky-200 transition-colors"
-              >
-                + Registrar tarjeta en Créditos
-              </Link>
-              <span className="text-[10px] text-[var(--color-text-muted)]">
-                Origen: cuenta vinculada de la tarjeta
-              </span>
-            </div>
-          </FieldWrapper>
-        ) : (
-          <FieldWrapper
-            label={sections.sourceAccountLabel}
-            required
-            error={errors.source_account_id?.message}
-          >
-            <Select
-              placeholder="Seleccionar cuenta…"
-              error={errors.source_account_id?.message}
-              data-testid="transaction-source-account-select"
-              {...register('source_account_id', { required: 'La cuenta es requerida' })}
-            >
-              {formOptions.accounts.map(a => (
-                <option key={a.value} value={a.value}>
-                  {a.label}
-                  {a.meta?.currency ? ` · ${a.meta.currency}` : ''}
-                </option>
-              ))}
-            </Select>
-            {!hasAccounts && (
-              <div className="mt-2">
-                <InlineFeedback
-                  type="warning"
-                  message="No tienes cuentas activas aún."
-                  detail="Crea una cuenta rápida o configúrala en Portafolio."
-                />
-              </div>
-            )}
-            <div className="mt-2 flex items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={openAccountQuickCreate}
-                disabled={submitState.status === 'loading' || quickCreateSaving}
-                data-testid="transaction-open-quick-account"
-                className="text-[11px] font-semibold text-emerald-300/85 hover:text-emerald-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                + Crear cuenta rápida
-              </button>
-              <span className="text-[10px] text-[var(--color-text-muted)]">Se guardará en Portafolio</span>
-            </div>
-            {type === 'EXPENSE' && hasCreditCards && (
-              <div className="mt-3 rounded-lg border border-[color:var(--color-border)] bg-[var(--color-surface)] p-2.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nextIsPayment = creditOperation !== 'PAYMENT'
-                    setValue('credit_operation', nextIsPayment ? 'PAYMENT' : undefined, { shouldDirty: true, shouldValidate: false })
-                    if (!nextIsPayment) {
-                      setValue('credit_card_id', undefined, { shouldDirty: true, shouldValidate: false })
-                    }
-                  }}
-                  className="text-[11px] font-semibold text-[var(--color-text)] hover:text-emerald-300 transition-colors"
-                >
-                  {creditOperation === 'PAYMENT' ? 'Quitar' : 'Marcar'} como pago de tarjeta
-                </button>
-                <p className="mt-1 text-[10px] text-[var(--color-text-muted)]">
-                  Si marcas esta opción, el pago reducirá la deuda usada de la tarjeta elegida.
-                </p>
-                {creditOperation === 'PAYMENT' && (
-                  <div className="mt-2">
-                    <Select
-                      placeholder="Seleccionar tarjeta a pagar…"
-                      value={selectedCreditCardId ?? ''}
-                      onChange={event => {
-                        const nextId = event.target.value
-                        setValue('credit_card_id', nextId || undefined, { shouldDirty: true, shouldValidate: true })
-                      }}
-                    >
-                      {creditCardOptions.map(card => (
-                        <option key={card.value} value={card.value}>
-                          {card.label}
-                        </option>
-                      ))}
-                    </Select>
-                  </div>
-                )}
-              </div>
-            )}
-          </FieldWrapper>
-        )}
-
-        {/* Cuenta destino (TRANSFER) */}
-        <div className={`
-          overflow-hidden transition-all duration-300 ease-out
-          ${sections.destinationAccount ? 'max-h-24 opacity-100' : 'max-h-0 opacity-0 w-0'}
-        `}>
-          <FieldWrapper
-            label="Cuenta destino"
-            required
-            error={(errors as Record<string, { message?: string }>).destination_account_id?.message}
-          >
-            <Select
-              placeholder="Seleccionar…"
-              error={(errors as Record<string, { message?: string }>).destination_account_id?.message}
-              data-testid="transaction-destination-account-select"
-              {...register('destination_account_id', {
-                required: type === 'TRANSFER' ? 'La cuenta destino es requerida' : false,
-                validate: v =>
-                  type !== 'TRANSFER' ||
-                  v !== sourceAccountId ||
-                  'No puede ser la misma cuenta',
-              })}
-            >
-              {destinationAccounts.map(a => (
-                <option key={a.value} value={a.value}>{a.label}</option>
-              ))}
-            </Select>
-          </FieldWrapper>
-        </div>
+  const paymentMethodField = type === 'EXPENSE' && operationType !== 'transfer' && operationType !== 'asset_purchase' && operationType !== 'payable' && operationType !== 'receivable' ? (
+    <div className={`rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] ${isCompactLayout ? 'px-3 py-2' : 'px-3.5 py-3'}`}>
+      <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">
+        Forma de pago
+      </p>
+      <div className="mt-1.5 flex flex-wrap gap-1.5">
+        <button
+          type="button"
+          onClick={() => {
+            setValue('payment_method', 'DEBIT', { shouldDirty: true, shouldValidate: false })
+            setValue('credit_card_id', undefined, { shouldDirty: true, shouldValidate: false })
+            setValue('credit_operation', undefined, { shouldDirty: true, shouldValidate: false })
+          }}
+          className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+            !isExpenseCreditPayment
+              ? 'border-[var(--c-primary-border)] bg-[var(--c-primary-soft)] text-[var(--c-primary)]'
+              : 'border-[var(--c-border)] bg-[var(--c-surface)] text-[var(--c-text-muted)] hover:text-[var(--c-text)]'
+          }`}
+        >
+          Débito
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setValue('payment_method', 'CREDIT', { shouldDirty: true, shouldValidate: false })
+            setValue('credit_operation', 'CONSUMPTION', { shouldDirty: true, shouldValidate: false })
+          }}
+          className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+            isExpenseCreditPayment
+              ? 'border-sky-400/35 bg-sky-500/15 text-sky-300'
+              : 'border-[var(--c-border)] bg-[var(--c-surface)] text-[var(--c-text-muted)] hover:text-[var(--c-text)]'
+          }`}
+        >
+          Crédito
+        </button>
       </div>
+      {!isCompactLayout && (
+        isExpenseCreditPayment ? (
+          <p className="mt-2 text-[11px] text-sky-200/80">
+            El egreso se cargará a la tarjeta seleccionada en el módulo Créditos.
+          </p>
+        ) : (
+          <p className="mt-2 text-[11px] text-[var(--c-text-muted)]">
+            Usa esta opción para pagos al contado o pagos de tarjeta desde una cuenta bancaria.
+          </p>
+        )
+      )}
+    </div>
+  ) : null
 
-      {/* ── 4. CATEGORÍA (no en TRANSFER) ───────────────────────────────── */}
-      {type !== 'TRANSFER' && (
-        <FieldWrapper label="Categoría" error={errors.category_id?.message}>
+  const transferAccountsField = operationType === 'transfer' ? (
+    <div className="grid grid-cols-1 gap-3 min-[860px]:grid-cols-2">
+      <FieldWrapper
+        label="Cuenta origen"
+        required
+        error={errors.source_account_id?.message}
+      >
+        <Select
+          placeholder="Cuenta origen…"
+          error={errors.source_account_id?.message}
+          data-testid="transaction-source-account-select"
+          {...register('source_account_id', { required: 'La cuenta origen es requerida' })}
+        >
+          {formOptions.accounts.map(a => (
+            <option key={a.value} value={a.value}>
+              {a.label}{a.meta?.currency ? ` · ${a.meta.currency}` : ''}
+            </option>
+          ))}
+        </Select>
+        {!hasAccounts && (
+          <div className="mt-2">
+            <InlineFeedback type="warning" message="No tienes cuentas activas." detail="Crea una en Portafolio." />
+          </div>
+        )}
+      </FieldWrapper>
+      <FieldWrapper
+        label="Cuenta destino"
+        required
+        error={(errors as Record<string, { message?: string }>).destination_account_id?.message}
+      >
+        <Select
+          placeholder="Cuenta destino…"
+          error={(errors as Record<string, { message?: string }>).destination_account_id?.message}
+          data-testid="transaction-destination-account-select"
+          {...register('destination_account_id', {
+            required: 'La cuenta destino es requerida',
+            validate: v => v !== sourceAccountId || 'No puede ser la misma cuenta',
+          })}
+        >
+          {destinationAccounts.map(a => (
+            <option key={a.value} value={a.value}>{a.label}</option>
+          ))}
+        </Select>
+      </FieldWrapper>
+    </div>
+  ) : null
+
+  const accountField = operationType !== 'transfer' ? (
+    <div className={`grid gap-3 ${sections.destinationAccount ? 'grid-cols-2' : 'grid-cols-1'}`}>
+      {isExpenseCreditPayment ? (
+        <FieldWrapper
+          label="Tarjeta de crédito"
+          required
+          error={errors.credit_card_id?.message || errors.source_account_id?.message}
+        >
           <Select
-            placeholder="Sin categoría"
-            data-testid="transaction-category-select"
-            {...register('category_id')}
-            onChange={e => {
-              const val = e.target.value
-              setValue('category_id', val)
-              const allCats = [...categoryOptions.income, ...categoryOptions.expense]
-              const selected = allCats.find(c => c.value === val)
-              setValue('category_system_key', selected?.system_key ?? null)
+            placeholder="Seleccionar tarjeta…"
+            error={errors.credit_card_id?.message || errors.source_account_id?.message}
+            data-testid="transaction-credit-card-select"
+            value={selectedCreditCardId ?? ''}
+            onChange={event => {
+              const nextId = event.target.value
+              setValue('credit_card_id', nextId || undefined, { shouldDirty: true, shouldValidate: true })
+              const selected = creditCardOptions.find(option => option.value === nextId)
+              const linkedAccountId = selected?.meta?.account_id
+              if (typeof linkedAccountId === 'string') {
+                setValue('source_account_id', linkedAccountId, { shouldDirty: true, shouldValidate: true })
+              }
             }}
           >
-            {visibleCategoryOptions.map(c => (
-              <option key={c.value} value={c.value}>{c.label}</option>
+            {creditCardOptions.map(card => (
+              <option key={card.value} value={card.value}>
+                {card.label}
+              </option>
             ))}
           </Select>
-          {!hasVisibleCategories && (
+          {!hasCreditCards && (
             <div className="mt-2">
               <InlineFeedback
-                type="info"
-                message="No tienes categorías disponibles para este tipo."
-                detail="Puedes crear una categoría rápida y usarla al instante."
+                type="warning"
+                message="No tienes tarjetas activas con cuenta vinculada."
+                detail="Registra tu tarjeta en Créditos y asígnale una cuenta de tarjeta."
               />
             </div>
           )}
           <div className="mt-2 flex items-center justify-between gap-2">
+            <Link
+              href="/credits"
+              className="text-[11px] font-semibold text-sky-300/90 transition-colors hover:text-sky-200"
+            >
+              + Nueva tarjeta
+            </Link>
+            <span className="text-[10px] text-[var(--c-text-muted)]">
+              Origen: cuenta vinculada de la tarjeta
+            </span>
+          </div>
+        </FieldWrapper>
+      ) : (
+        <FieldWrapper
+          label={sourceAccountLabel}
+          required
+          error={errors.source_account_id?.message}
+        >
+          <Select
+            placeholder="Seleccionar cuenta…"
+            error={errors.source_account_id?.message}
+            data-testid="transaction-source-account-select"
+            {...register('source_account_id', { required: 'La cuenta es requerida' })}
+          >
+            {filteredSourceAccounts.map(a => (
+              <option key={a.value} value={a.value}>
+                {a.label}
+                {a.meta?.currency ? ` · ${a.meta.currency}` : ''}
+              </option>
+            ))}
+          </Select>
+          {!hasFilteredSourceAccounts && (
+            <div className="mt-2">
+              <InlineFeedback
+                type="warning"
+                message="No tienes portafolios compatibles para esta operación."
+                detail="Crea o activa un portafolio apto en Portafolio y vuelve para seleccionarlo."
+              />
+            </div>
+          )}
+          <div className="mt-1.5 flex items-center gap-2">
             <button
               type="button"
-              onClick={openCategoryQuickCreate}
-              disabled={submitState.status === 'loading' || quickCreateSaving}
-              data-testid="transaction-open-quick-category"
-              className="text-[11px] font-semibold text-emerald-300/85 hover:text-emerald-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => setInlineAccountModalOpen(true)}
+              className="text-[11px] font-semibold text-[var(--c-primary)]/85 transition-colors hover:text-[var(--c-primary)]"
             >
-              + Crear categoría rápida
+              + Crear cuenta
             </button>
-            <span className="text-[10px] text-[var(--color-text-muted)]">Se guardará en Administración</span>
           </div>
-
-          {type === 'EXPENSE' && (
-            <div className="mt-3 space-y-1.5">
-              <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
-                Relacionar egreso con
+          {type === 'EXPENSE' && hasCreditCards && operationType !== 'asset_purchase' && operationType !== 'payable' && operationType !== 'receivable' && (
+            <div className="mt-3 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface)] p-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  const nextIsPayment = creditOperation !== 'PAYMENT'
+                  setValue('credit_operation', nextIsPayment ? 'PAYMENT' : undefined, { shouldDirty: true, shouldValidate: false })
+                  if (!nextIsPayment) {
+                    setValue('credit_card_id', undefined, { shouldDirty: true, shouldValidate: false })
+                  }
+                }}
+                className="text-[11px] font-semibold text-[var(--c-text)] transition-colors hover:text-[var(--c-primary)]"
+              >
+                {creditOperation === 'PAYMENT' ? 'Quitar' : 'Marcar'} como pago de tarjeta
+              </button>
+              <p className="mt-1 text-[10px] text-[var(--c-text-muted)]">
+                Si marcas esta opción, el pago reducirá la deuda usada de la tarjeta elegida.
               </p>
-              <div className="flex flex-wrap gap-1.5">
-                {[
-                  { value: null, label: 'Ningún módulo' },
-                  { value: 'asset', label: 'Activo' },
-                  { value: 'payable', label: 'Por pagar' },
-                ].map(option => {
-                  const active = activeExpenseModule === option.value
-                  return (
-                    <button
-                      key={option.label}
-                      type="button"
-                      onClick={() => setExpenseModule(option.value as 'asset' | 'payable' | null)}
-                      className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-                        active
-                          ? 'border-emerald-400/35 bg-emerald-500/15 text-emerald-300'
-                          : 'border-[color:var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  )
-                })}
-              </div>
-              {autoModule && (autoModule === 'asset' || autoModule === 'payable') && (
-                <p className="text-[10px] text-[var(--color-text-faint)]">
-                  Esta categoría activa automáticamente el módulo <strong className="text-[var(--color-text-muted)]">
-                    {autoModule === 'asset' ? 'Activo' : 'Por pagar'}
-                  </strong>.
-                </p>
+              {creditOperation === 'PAYMENT' && (
+                <div className="mt-2">
+                  <Select
+                    placeholder="Seleccionar tarjeta a pagar…"
+                    value={selectedCreditCardId ?? ''}
+                    onChange={event => {
+                      const nextId = event.target.value
+                      setValue('credit_card_id', nextId || undefined, { shouldDirty: true, shouldValidate: true })
+                    }}
+                  >
+                    {creditCardOptions.map(card => (
+                      <option key={card.value} value={card.value}>
+                        {card.label}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
               )}
-            </div>
-          )}
-
-          {type === 'INCOME' && (
-            <div className="mt-3 space-y-1.5">
-              <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
-                Relacionar ingreso con
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {[
-                  { value: null, label: 'Ningún módulo' },
-                  { value: 'receivable', label: 'Por cobrar' },
-                ].map(option => {
-                  const active = activeIncomeModule === option.value
-                  return (
-                    <button
-                      key={option.label}
-                      type="button"
-                      onClick={() => setIncomeModule(option.value as 'receivable' | null)}
-                      className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-                        active
-                          ? 'border-emerald-400/35 bg-emerald-500/15 text-emerald-300'
-                          : 'border-[color:var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  )
-                })}
-              </div>
-              {autoModule === 'receivable' && (
-                <p className="text-[10px] text-[var(--color-text-faint)]">
-                  Esta categoría activa automáticamente el módulo <strong className="text-[var(--color-text-muted)]">Por cobrar</strong>.
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Hint cuando se selecciona categoría que activa módulo */}
-          {sections.assetModule && (
-            <div className="mt-2">
-              <ModuleTriggerHint
-                moduleName="Módulo de activo activado"
-                description="Completa los datos del activo al final del formulario"
-                color="#8b5cf6"
-              />
-            </div>
-          )}
-          {sections.receivableModule && (
-            <div className="mt-2">
-              <ModuleTriggerHint
-                moduleName="Cuenta por cobrar"
-                description="Indica quién te debe este dinero"
-                color="#06b6d4"
-              />
-            </div>
-          )}
-          {sections.payableModule && (
-            <div className="mt-2">
-              <ModuleTriggerHint
-                moduleName="Cuenta por pagar"
-                description="Indica a quién le debes este dinero"
-                color="#f97316"
-              />
             </div>
           )}
         </FieldWrapper>
       )}
 
-      {/* ── 5. DESCRIPCIÓN + FECHA ───────────────────────────────────────── */}
-      <div className="grid grid-cols-[1fr_auto] gap-3">
+      <div className={`
+        overflow-hidden transition-all duration-300 ease-out
+        ${sections.destinationAccount ? 'max-h-24 opacity-100' : 'max-h-0 opacity-0 w-0'}
+      `}>
         <FieldWrapper
-          label="Descripción"
+          label="Cuenta destino"
           required
-          error={errors.description?.message}
+          error={(errors as Record<string, { message?: string }>).destination_account_id?.message}
+        >
+          <Select
+            placeholder="Seleccionar…"
+            error={(errors as Record<string, { message?: string }>).destination_account_id?.message}
+            data-testid="transaction-destination-account-select"
+            {...register('destination_account_id', {
+              required: type === 'TRANSFER' ? 'La cuenta destino es requerida' : false,
+              validate: v =>
+                type !== 'TRANSFER' ||
+                v !== sourceAccountId ||
+                'No puede ser la misma cuenta',
+            })}
+          >
+            {destinationAccounts.map(a => (
+              <option key={a.value} value={a.value}>{a.label}</option>
+            ))}
+          </Select>
+        </FieldWrapper>
+      </div>
+    </div>
+  ) : null
+
+  const transferSummaryField = layoutMode === 'transfer' ? (
+    <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3.5 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+            Resumen de transferencia
+          </p>
+          <p className="mt-1 text-[13px] font-semibold tracking-[-0.01em] text-[var(--c-text)]">
+            {sourceAccountOption?.label ?? 'Cuenta origen'} {'->'} {destinationAccountOption?.label ?? 'Cuenta destino'}
+          </p>
+        </div>
+        <div className="text-right text-[11px] text-[var(--c-text-muted)]">
+          <p>{sourceAccountCurrency} {'->'} {destinationAccountCurrency}</p>
+          <p className="tabular-nums">
+            {sourceAccountBalance !== null && Number.isFinite(sourceAccountBalance)
+              ? `Saldo disponible ${formatCurrency(sourceAccountBalance, sourceAccountCurrency as 'PEN' | 'USD')}`
+              : 'Selecciona ambas cuentas'}
+          </p>
+        </div>
+      </div>
+    </div>
+  ) : null
+
+  const categoryField = operationType !== 'transfer' && type !== 'TRANSFER' && operationType !== 'asset_purchase' && operationType !== 'payable' && operationType !== 'receivable' ? (
+    <FieldWrapper
+      label="Categoría"
+      required
+      error={errors.category_id?.message}
+      className=""
+    >
+      <Select
+        placeholder="Sin categoría"
+        data-testid="transaction-category-select"
+        {...register('category_id', {
+          required: 'La categoría es requerida',
+          validate: value => !!value || 'La categoría es requerida',
+        })}
+        onChange={e => {
+          const val = e.target.value
+          setValue('category_id', val)
+          const allCats = [...categoryOptions.income, ...categoryOptions.expense]
+          const selected = allCats.find(c => c.value === val)
+          setValue('category_system_key', selected?.system_key ?? null)
+        }}
+      >
+        {visibleCategoryOptions.map(c => (
+          <option key={c.value} value={c.value}>{c.label}</option>
+        ))}
+      </Select>
+      {!hasVisibleCategories && (
+        <div className="mt-2">
+          <InlineFeedback
+            type="info"
+            message="No tienes categorías disponibles para este tipo."
+            detail="Crea la categoría en Administración y vuelve para seleccionarla."
+          />
+        </div>
+      )}
+      <div className="mt-1.5 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            setInlineCategoryScope(type === 'INCOME' ? 'INCOME' : 'EXPENSE')
+            setInlineCategoryModalOpen(true)
+          }}
+          className="text-[11px] font-semibold text-[var(--c-primary)]/85 transition-colors hover:text-[var(--c-primary)]"
+        >
+          + Crear categoría
+        </button>
+      </div>
+
+      {type === 'EXPENSE' && !hideTypeSelector && (
+        <div className="mt-3 space-y-1.5">
+          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">
+            Relacionar egreso con
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { value: null, label: 'Ningún módulo' },
+              { value: 'asset', label: 'Activo' },
+              { value: 'receivable', label: 'Por cobrar' },
+            ].map(option => {
+              const active = activeExpenseModule === option.value
+              return (
+                <button
+                  key={option.label}
+                  type="button"
+                  onClick={() => setExpenseModule(option.value as 'asset' | 'receivable' | null)}
+                  className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                    active
+                      ? 'border-[var(--c-primary-border)] bg-[var(--c-primary-soft)] text-[var(--c-primary)]'
+                      : 'border-[var(--c-border)] bg-[var(--c-surface-2)] text-[var(--c-text-muted)] hover:text-[var(--c-text)]'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              )
+            })}
+          </div>
+          {autoModule && (autoModule === 'asset' || autoModule === 'receivable') && (
+            <p className="text-[10px] text-[var(--c-text-faint)]">
+              Esta categoría activa automáticamente el módulo <strong className="text-[var(--c-text-muted)]">
+                {autoModule === 'asset' ? 'Activo' : 'Por cobrar'}
+              </strong>.
+            </p>
+          )}
+        </div>
+      )}
+
+      {type === 'INCOME' && !hideTypeSelector && (
+        <div className="mt-3 space-y-1.5">
+          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">
+            Relacionar ingreso con
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { value: null, label: 'Ningún módulo' },
+              { value: 'payable', label: 'Por pagar' },
+            ].map(option => {
+              const active = activeIncomeModule === option.value
+              return (
+                <button
+                  key={option.label}
+                  type="button"
+                  onClick={() => setIncomeModule(option.value as 'payable' | null)}
+                  className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                    active
+                      ? 'border-[var(--c-primary-border)] bg-[var(--c-primary-soft)] text-[var(--c-primary)]'
+                      : 'border-[var(--c-border)] bg-[var(--c-surface-2)] text-[var(--c-text-muted)] hover:text-[var(--c-text)]'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              )
+            })}
+          </div>
+          {autoModule === 'payable' && (
+            <p className="text-[10px] text-[var(--c-text-faint)]">
+              Esta categoría activa automáticamente el módulo <strong className="text-[var(--c-text-muted)]">Por pagar</strong>.
+            </p>
+          )}
+        </div>
+      )}
+
+      {sections.assetModule && (
+        <div className="mt-2">
+          <ModuleTriggerHint
+            moduleName="Módulo de activo activado"
+            description="Completa los datos del activo al final del formulario"
+            color="#8b5cf6"
+          />
+        </div>
+      )}
+      {sections.receivableModule && (
+        <div className="mt-2">
+          <ModuleTriggerHint
+            moduleName="Cuenta por cobrar"
+            description="Indica quién te debe este dinero"
+            color="#06b6d4"
+          />
+        </div>
+      )}
+      {sections.payableModule && (
+        <div className="mt-2">
+          <ModuleTriggerHint
+            moduleName="Cuenta por pagar"
+            description="Indica a quién le debes este dinero"
+            color="#f97316"
+          />
+        </div>
+      )}
+    </FieldWrapper>
+  ) : null
+
+  const assetPurchaseField = operationType === 'asset_purchase' ? (
+    <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-3.5">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+            Activo
+          </p>
+          <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">
+            Define primero el activo y usa el mismo monto de la transacción como valor de compra.
+          </p>
+        </div>
+        <StatusBadge tone="primary" dot={false}>
+          Mismo monto
+        </StatusBadge>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+        <input
+          type="hidden"
+          {...register('asset_type_id', { required: 'Selecciona el tipo de activo' })}
+        />
+        <input
+          type="hidden"
+          {...register('asset_type', { required: 'Selecciona el tipo de activo' })}
+        />
+        <FieldWrapper
+          label="Nombre del activo"
+          required
+          error={errors.asset_name?.message}
         >
           <Input
             type="text"
-            placeholder="¿En qué o con quién?"
-            error={errors.description?.message}
-            data-testid="transaction-description-input"
-            {...register('description', {
-              required: 'La descripción es requerida',
-              maxLength: { value: 255, message: 'Máximo 255 caracteres' },
-              validate: v => v.trim().length > 0 || 'La descripción no puede estar vacía',
+            placeholder="Ej: MacBook Pro 14"
+            error={errors.asset_name?.message}
+            data-testid="transaction-asset-name-input"
+            {...register('asset_name', {
+              required: 'Ingresa el nombre del activo',
             })}
           />
         </FieldWrapper>
 
-        <FieldWrapper label="Fecha" required error={errors.transaction_date?.message}>
-          <Input
-            type="date"
-            className="min-w-[130px]"
-            error={errors.transaction_date?.message}
-            data-testid="transaction-date-input"
-            {...register('transaction_date', { required: 'La fecha es requerida' })}
-          />
+        <FieldWrapper
+          label="Tipo de activo"
+          required
+          error={errors.asset_type_id?.message || errors.asset_type?.message}
+        >
+          <Select
+            value={assetTypeId ?? ''}
+            onChange={event => {
+              const nextId = event.target.value
+              const nextOption = formOptions.assetTypes.find(option => option.value === nextId) ?? null
+              const legacyType =
+                typeof nextOption?.meta?.legacyType === 'string'
+                  ? nextOption.meta.legacyType
+                  : 'OTHER'
+
+              setValue('asset_type_id', nextId || undefined, {
+                shouldDirty: true,
+                shouldValidate: true,
+              })
+              setValue('asset_type', legacyType as TransactionFormValues['asset_type'], {
+                shouldDirty: true,
+                shouldValidate: true,
+              })
+            }}
+            error={errors.asset_type_id?.message || errors.asset_type?.message}
+            data-testid="transaction-asset-type-select"
+          >
+            <option value="">Seleccionar tipo...</option>
+            {formOptions.assetTypes.map(assetType => (
+              <option key={assetType.value} value={assetType.value}>
+                {assetType.label}
+              </option>
+            ))}
+          </Select>
         </FieldWrapper>
       </div>
 
-      {/* ── 6. NOTAS ─────────────────────────────────────────────────────── */}
-      <FieldWrapper label="Notas" hint="Opcional">
+      {selectedAssetTypeOption ? (
+        <div className="mt-3 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
+          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+            Tipo seleccionado
+          </p>
+          <p className="mt-1 text-[13px] font-medium text-[var(--c-text)]">
+            {selectedAssetTypeOption.label}
+          </p>
+        </div>
+      ) : null}
+
+      <div className="mt-3 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
+        <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+          Valor del activo
+        </p>
+        <p className="mt-1 text-[15px] font-semibold tabular-nums text-[var(--c-text)]">
+          {hasAmount ? formatCurrency(numericAmount, currency as 'PEN' | 'USD') : 'Ingresa el monto para fijar el valor'}
+        </p>
+      </div>
+    </div>
+  ) : null
+
+  const dateDescriptionField = (
+    <div className="grid grid-cols-1 gap-3">
+      <FieldWrapper label="Fecha" required error={errors.transaction_date?.message}>
+        <Input
+          type="date"
+          className="w-full"
+          error={errors.transaction_date?.message}
+          data-testid="transaction-date-input"
+          {...register('transaction_date', { required: 'La fecha es requerida' })}
+        />
+      </FieldWrapper>
+
+      <FieldWrapper
+        label="Descripción"
+        optional={layoutMode === 'transfer'}
+        required={layoutMode !== 'transfer'}
+        hint={layoutMode === 'transfer' ? 'Se completa automáticamente según las cuentas elegidas.' : undefined}
+        error={errors.description?.message}
+      >
+        <Input
+          type="text"
+          placeholder={descriptionPlaceholder}
+          error={errors.description?.message}
+          data-testid="transaction-description-input"
+          readOnly={layoutMode === 'transfer'}
+          {...register('description', {
+            maxLength: { value: 255, message: 'Máximo 255 caracteres' },
+            validate: v =>
+              type === 'TRANSFER' || v.trim().length > 0 || 'La descripción no puede estar vacía',
+          })}
+        />
+      </FieldWrapper>
+    </div>
+  )
+
+  const progressiveOptionalField = usesProgressiveOptionalSection ? (
+    <OptionalSection
+      title="Mas opciones"
+      summary={optionalSummary}
+      open={advancedSectionOpen}
+      onOpenChange={setAdvancedSectionOpen}
+      hasError={hasOptionalSectionError || Boolean(attachmentError)}
+    >
+      {layoutMode === 'income' && (
+        <FieldWrapper label="Remitente" optional>
+          <Input
+            type="text"
+            placeholder="Ej: ACME SAC"
+            data-testid="transaction-sender-input"
+            {...register('sender')}
+          />
+        </FieldWrapper>
+      )}
+
+      {layoutMode === 'expense' && (
+        <>
+          <FieldWrapper label="Destinatario" optional>
+            <Input
+              type="text"
+              placeholder="Ej: Inmobiliaria Norte"
+              data-testid="transaction-recipient-input"
+              {...register('recipient')}
+            />
+          </FieldWrapper>
+
+          <FieldWrapper
+            label="Presupuesto"
+            optional
+            hint={
+              categoryId
+                ? 'Solo se muestran presupuestos compatibles con la categoría y fecha.'
+                : 'Selecciona una categoría para ver presupuestos compatibles.'
+            }
+          >
+            <Select
+              placeholder="Sin presupuesto"
+              data-testid="transaction-budget-select"
+              disabled={!categoryId || budgetsLoading || filteredBudgets.length === 0}
+              {...register('budget_id')}
+            >
+              <option value="">Sin presupuesto</option>
+              {filteredBudgets.map(b => (
+                <option key={b.value} value={b.value}>{b.label}</option>
+              ))}
+            </Select>
+            {budgetsLoading && (
+              <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">
+                Buscando presupuestos compatibles…
+              </p>
+            )}
+            {!budgetsLoading && !categoryId && (
+              <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">
+                Elige primero una categoría para filtrar presupuestos estrictamente.
+              </p>
+            )}
+            {!budgetsLoading && categoryId && filteredBudgets.length === 0 && (
+              <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">
+                No hay presupuestos activos para esta categoría en la fecha seleccionada.
+              </p>
+            )}
+          </FieldWrapper>
+        </>
+      )}
+
+      {layoutMode === 'asset_purchase' && (
+        <FieldWrapper label="Proveedor" optional>
+          <Input
+            type="text"
+            placeholder="Ej: iShop Peru"
+            data-testid="transaction-recipient-input"
+            {...register('recipient')}
+          />
+        </FieldWrapper>
+      )}
+
+      <FieldWrapper label="Notas" optional>
         <Textarea
           rows={2}
-          placeholder="Observaciones adicionales…"
+          placeholder={
+            layoutMode === 'income'
+              ? 'Ej: Factura F001-238'
+              : layoutMode === 'expense'
+                ? 'Observaciones adicionales…'
+                : 'Observaciones de la transferencia…'
+          }
           data-testid="transaction-notes-input"
           {...register('notes')}
         />
       </FieldWrapper>
 
-      <FieldWrapper label="Comprobante" hint="Opcional">
-        <div className="rounded-xl border border-dashed border-[color:var(--color-border-hover)] bg-[var(--color-surface-2)] px-3.5 py-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="inline-flex cursor-pointer items-center rounded-lg border border-[color:var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-[11px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[color:var(--color-border-hover)] transition-colors">
-              Subir archivo
-              <input
-                type="file"
-                accept={ATTACHMENT_ACCEPT}
-                data-testid="transaction-attachment-input"
-                className="sr-only"
-                onChange={event => {
-                  const nextFile = event.target.files?.[0] ?? null
-                  setAttachmentFile(nextFile)
-                  setAttachmentError(null)
-                  setLastAttachmentTxId(null)
-                  setLastUploadedAttachment(null)
-                  lastAutoUploadTxId.current = null
-                }}
+      {layoutMode !== 'transfer' && layoutMode !== 'asset_purchase' && (
+        <div className="space-y-2 pt-0.5">
+          <CheckboxToggle
+            label="Transacción recurrente"
+            description="Guarda esta configuración como plantilla reutilizable."
+            checked={!!watch('is_recurring')}
+            onChange={v => setValue('is_recurring', v)}
+          />
+          {watch('is_recurring') && (
+            <FieldWrapper
+              label="Nombre de la recurrente"
+              required
+              error={errors.recurring_name?.message}
+              hint="Será el nombre visible dentro del módulo de recurrentes."
+            >
+              <Input
+                type="text"
+                placeholder={
+                  layoutMode === 'income'
+                    ? 'Ej. Ingreso recurrente por cliente'
+                    : 'Ej. Pago mensual de internet'
+                }
+                data-testid="transaction-recurring-name-input"
+                error={errors.recurring_name?.message}
+                {...register('recurring_name', {
+                  maxLength: { value: 150, message: 'Máximo 150 caracteres' },
+                  validate: value =>
+                    !watch('is_recurring') || (value ?? '').trim().length > 0 || 'Ingresa un nombre para la plantilla recurrente',
+                })}
               />
-            </label>
-            {attachmentFile && (
+            </FieldWrapper>
+          )}
+        </div>
+      )}
+
+      <FieldWrapper label="Comprobante" optional>
+        {!attachmentSectionOpen ? (
+          <button
+            type="button"
+            onClick={() => setAttachmentSectionOpen(true)}
+            className="w-full rounded-xl border border-dashed border-[var(--c-border-hover)] bg-[var(--c-surface-2)] px-3.5 py-3 text-left text-[11px] font-semibold text-[var(--c-text-muted)] transition-colors hover:border-[color:var(--c-primary)] hover:text-[var(--c-text)]"
+          >
+            + Adjuntar comprobante
+          </button>
+        ) : (
+          <div className="rounded-xl border border-dashed border-[var(--c-border-hover)] bg-[var(--c-surface-2)] px-3.5 py-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="inline-flex cursor-pointer items-center rounded-lg border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-1.5 text-[11px] font-semibold text-[var(--c-text-muted)] transition-colors hover:border-[var(--c-border-hover)] hover:text-[var(--c-text)]">
+                Subir archivo
+                <input
+                  type="file"
+                  accept={ATTACHMENT_ACCEPT}
+                  data-testid="transaction-attachment-input"
+                  className="sr-only"
+                  onChange={event => {
+                    const nextFile = event.target.files?.[0] ?? null
+                    setAttachmentFile(nextFile)
+                    setAttachmentError(null)
+                    setLastAttachmentTxId(null)
+                    setLastUploadedAttachment(null)
+                    lastAutoUploadTxId.current = null
+                  }}
+                />
+              </label>
+              {attachmentFile && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAttachmentFile(null)
+                    setAttachmentError(null)
+                    setLastAttachmentTxId(null)
+                    setLastUploadedAttachment(null)
+                    lastAutoUploadTxId.current = null
+                  }}
+                  className="rounded-lg border border-[var(--c-border)] px-2.5 py-1 text-[11px] font-semibold text-[var(--c-text-muted)] transition-colors hover:border-[var(--c-border-hover)] hover:text-[var(--c-text)]"
+                >
+                  Quitar
+                </button>
+              )}
+            </div>
+
+            <p className="mt-2 text-[11px] text-[var(--c-text-muted)]">
+              {attachmentFile
+                ? `Seleccionado: ${attachmentFile.name}`
+                : 'Puedes adjuntar imagen, PDF o documento como constancia.'}
+            </p>
+            <p className="mt-1 text-[10px] text-[var(--c-text-faint)]">
+              El archivo se subira automaticamente despues de registrar la transaccion.
+            </p>
+
+            {attachmentUploading && (
+              <p className="mt-2 text-[11px] text-blue-300/85">Subiendo comprobante...</p>
+            )}
+            {lastUploadedAttachment && !attachmentUploading && !attachmentError && (
+              <p className="mt-2 text-[11px] text-[var(--c-primary)]/85">
+                Archivo asociado: {lastUploadedAttachment.file_name}
+                {lastUploadedAttachment.signed_url ? (
+                  <>
+                    {' · '}
+                    <a
+                      href={lastUploadedAttachment.signed_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline hover:text-[var(--c-primary)]"
+                    >
+                      Ver
+                    </a>
+                  </>
+                ) : null}
+              </p>
+            )}
+            {attachmentError && (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <p className="text-[11px] text-red-400">{attachmentError}</p>
+                {attachmentFile && lastAttachmentTxId && (
+                  <button
+                    type="button"
+                    onClick={retryAttachmentUpload}
+                    disabled={attachmentUploading}
+                    className="rounded-md border border-red-400/30 px-2 py-1 text-[10px] font-semibold text-red-300 transition-colors hover:bg-red-500/15 disabled:opacity-50"
+                  >
+                    Reintentar
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </FieldWrapper>
+    </OptionalSection>
+  ) : null
+
+  const payableField = operationType === 'payable' ? (
+    <FieldWrapper
+      label="Acreedor"
+      required
+      error={errors.payable_creditor_id?.message}
+      hint="Usa el mismo catálogo de acreedores del módulo Por Pagar."
+    >
+      <Select
+        data-testid="transaction-payable-creditor-select"
+        error={errors.payable_creditor_id?.message}
+        {...register('payable_creditor_id', {
+          required: 'Selecciona el acreedor',
+        })}
+      >
+        <option value="">Seleccionar acreedor...</option>
+        {creditorOptions.map(creditor => (
+          <option key={creditor.value} value={creditor.value}>
+            {creditor.label}
+          </option>
+        ))}
+      </Select>
+      {!hasCreditors && (
+        <div className="mt-2">
+          <InlineFeedback
+            type="warning"
+            message="No tienes acreedores activos disponibles."
+            detail="Registra el acreedor en el módulo Por Pagar y vuelve a intentarlo."
+          />
+        </div>
+      )}
+    </FieldWrapper>
+  ) : null
+
+  const receivableField = operationType === 'receivable' ? (
+    <FieldWrapper
+      label="Deudor"
+      required
+      error={errors.receivable_debtor_id?.message}
+      hint="Usa el mismo catálogo de deudores del módulo Por Cobrar."
+    >
+      <Select
+        data-testid="transaction-receivable-debtor-select"
+        error={errors.receivable_debtor_id?.message}
+        {...register('receivable_debtor_id', {
+          required: 'Selecciona el deudor',
+        })}
+      >
+        <option value="">Seleccionar deudor...</option>
+        {debtorOptions.map(debtor => (
+          <option key={debtor.value} value={debtor.value}>
+            {debtor.label}
+          </option>
+        ))}
+      </Select>
+      {!hasDebtors && (
+        <div className="mt-2">
+          <InlineFeedback
+            type="warning"
+            message="No tienes deudores activos disponibles."
+            detail="Registra el deudor en el módulo Por Cobrar y vuelve a intentarlo."
+          />
+        </div>
+      )}
+    </FieldWrapper>
+  ) : null
+
+  const inlineOptionalField = !usesProgressiveOptionalSection ? (
+    isCompactLayout ? (
+      <div className="space-y-2">
+        <div className="grid grid-cols-[1fr_auto] items-end gap-2">
+          <FieldWrapper label="Notas" hint="Opcional">
+            <Input
+              type="text"
+              placeholder="Observaciones…"
+              data-testid="transaction-notes-input"
+              {...register('notes')}
+            />
+          </FieldWrapper>
+          {operationType !== 'asset_purchase' && (
+            <div className="pb-0.5">
+              <CheckboxToggle
+                label="Recurrente"
+                checked={!!watch('is_recurring')}
+                onChange={v => setValue('is_recurring', v)}
+              />
+            </div>
+          )}
+        </div>
+
+        {operationType !== 'asset_purchase' && watch('is_recurring') && (
+          <FieldWrapper
+            label="Nombre de la recurrente"
+            required
+            error={errors.recurring_name?.message}
+            hint="Este nombre se usará en tu biblioteca de plantillas."
+          >
+            <Input
+              type="text"
+              placeholder="Ej. Pago mensual de internet"
+              data-testid="transaction-recurring-name-input"
+              error={errors.recurring_name?.message}
+              {...register('recurring_name', {
+                maxLength: { value: 150, message: 'Máximo 150 caracteres' },
+                validate: value =>
+                  !watch('is_recurring') || (value ?? '').trim().length > 0 || 'Ingresa un nombre para la plantilla recurrente',
+              })}
+            />
+          </FieldWrapper>
+        )}
+
+        <div className="flex items-center gap-2">
+          <label className="inline-flex cursor-pointer items-center rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-1 text-[10px] font-semibold text-[var(--c-text-muted)] transition-colors hover:border-[var(--c-border-hover)] hover:text-[var(--c-text)]">
+            📎 Comprobante
+            <input
+              type="file"
+              accept={ATTACHMENT_ACCEPT}
+              data-testid="transaction-attachment-input"
+              className="sr-only"
+              onChange={event => {
+                const nextFile = event.target.files?.[0] ?? null
+                setAttachmentFile(nextFile)
+                setAttachmentError(null)
+                setLastAttachmentTxId(null)
+                setLastUploadedAttachment(null)
+                lastAutoUploadTxId.current = null
+              }}
+            />
+          </label>
+          {attachmentFile && (
+            <>
+              <span className="max-w-[200px] truncate text-[10px] text-[var(--c-text-muted)]">
+                {attachmentFile.name}
+              </span>
               <button
                 type="button"
                 onClick={() => {
@@ -1209,86 +1808,253 @@ export function TransactionForm({
                   setLastUploadedAttachment(null)
                   lastAutoUploadTxId.current = null
                 }}
-                className="rounded-lg border border-[color:var(--color-border)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[color:var(--color-border-hover)] transition-colors"
+                className="text-[10px] font-semibold text-red-400 hover:text-red-300"
               >
-                Quitar
+                ✕
               </button>
-            )}
-          </div>
-
-          <p className="mt-2 text-[11px] text-[var(--color-text-muted)]">
-            {attachmentFile
-              ? `Seleccionado: ${attachmentFile.name}`
-              : 'Puedes adjuntar imagen, PDF o documento como constancia.'}
-          </p>
-          <p className="mt-1 text-[10px] text-[var(--color-text-faint)]">
-            El archivo se subira automaticamente despues de registrar la transaccion.
-          </p>
-
+            </>
+          )}
           {attachmentUploading && (
-            <p className="mt-2 text-[11px] text-blue-300/85">Subiendo comprobante...</p>
+            <span className="text-[10px] text-blue-300/85">Subiendo…</span>
           )}
           {lastUploadedAttachment && !attachmentUploading && !attachmentError && (
-            <p className="mt-2 text-[11px] text-emerald-300/85">
-              Archivo asociado: {lastUploadedAttachment.file_name}
-              {lastUploadedAttachment.signed_url ? (
-                <>
-                  {' · '}
-                  <a
-                    href={lastUploadedAttachment.signed_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="underline hover:text-emerald-200"
-                  >
-                    Ver
-                  </a>
-                </>
-              ) : null}
-            </p>
+            <span className="text-[10px] text-[var(--c-primary)]/85">
+              ✓ {lastUploadedAttachment.file_name}
+            </span>
           )}
           {attachmentError && (
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <p className="text-[11px] text-red-400">{attachmentError}</p>
-              {attachmentFile && lastAttachmentTxId && (
-                <button
-                  type="button"
-                  onClick={retryAttachmentUpload}
-                  disabled={attachmentUploading}
-                  className="rounded-md border border-red-400/30 px-2 py-1 text-[10px] font-semibold text-red-300 hover:bg-red-500/15 transition-colors disabled:opacity-50"
+            <span className="text-[10px] text-red-400">{attachmentError}</span>
+          )}
+        </div>
+      </div>
+    ) : (
+      <div className="pt-1">
+        <div className="space-y-2.5 pt-1">
+          <FieldWrapper label="Notas" hint="Opcional">
+            <Textarea
+              rows={2}
+              placeholder="Observaciones adicionales…"
+              data-testid="transaction-notes-input"
+              {...register('notes')}
+            />
+          </FieldWrapper>
+
+          <FieldWrapper label="Comprobante" hint="Opcional">
+            {!attachmentSectionOpen ? (
+              <button
+                type="button"
+                onClick={() => setAttachmentSectionOpen(true)}
+                className="w-full rounded-xl border border-dashed border-[var(--c-border-hover)] bg-[var(--c-surface-2)] px-3.5 py-3 text-left text-[11px] font-semibold text-[var(--c-text-muted)] transition-colors hover:border-[color:var(--c-primary)] hover:text-[var(--c-text)]"
+              >
+                + Adjuntar comprobante
+              </button>
+            ) : (
+              <div className="rounded-xl border border-dashed border-[var(--c-border-hover)] bg-[var(--c-surface-2)] px-3.5 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="inline-flex cursor-pointer items-center rounded-lg border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-1.5 text-[11px] font-semibold text-[var(--c-text-muted)] transition-colors hover:border-[var(--c-border-hover)] hover:text-[var(--c-text)]">
+                    Subir archivo
+                    <input
+                      type="file"
+                      accept={ATTACHMENT_ACCEPT}
+                      data-testid="transaction-attachment-input"
+                      className="sr-only"
+                      onChange={event => {
+                        const nextFile = event.target.files?.[0] ?? null
+                        setAttachmentFile(nextFile)
+                        setAttachmentError(null)
+                        setLastAttachmentTxId(null)
+                        setLastUploadedAttachment(null)
+                        lastAutoUploadTxId.current = null
+                      }}
+                    />
+                  </label>
+                  {attachmentFile && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAttachmentFile(null)
+                        setAttachmentError(null)
+                        setLastAttachmentTxId(null)
+                        setLastUploadedAttachment(null)
+                        lastAutoUploadTxId.current = null
+                      }}
+                      className="rounded-lg border border-[var(--c-border)] px-2.5 py-1 text-[11px] font-semibold text-[var(--c-text-muted)] transition-colors hover:border-[var(--c-border-hover)] hover:text-[var(--c-text)]"
+                    >
+                      Quitar
+                    </button>
+                  )}
+                </div>
+
+                <p className="mt-2 text-[11px] text-[var(--c-text-muted)]">
+                  {attachmentFile
+                    ? `Seleccionado: ${attachmentFile.name}`
+                    : 'Puedes adjuntar imagen, PDF o documento como constancia.'}
+                </p>
+                <p className="mt-1 text-[10px] text-[var(--c-text-faint)]">
+                  El archivo se subira automaticamente despues de registrar la transaccion.
+                </p>
+
+                {attachmentUploading && (
+                  <p className="mt-2 text-[11px] text-blue-300/85">Subiendo comprobante...</p>
+                )}
+                {lastUploadedAttachment && !attachmentUploading && !attachmentError && (
+                  <p className="mt-2 text-[11px] text-[var(--c-primary)]/85">
+                    Archivo asociado: {lastUploadedAttachment.file_name}
+                    {lastUploadedAttachment.signed_url ? (
+                      <>
+                        {' · '}
+                        <a
+                          href={lastUploadedAttachment.signed_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="underline hover:text-[var(--c-primary)]"
+                        >
+                          Ver
+                        </a>
+                      </>
+                    ) : null}
+                  </p>
+                )}
+                {attachmentError && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <p className="text-[11px] text-red-400">{attachmentError}</p>
+                    {attachmentFile && lastAttachmentTxId && (
+                      <button
+                        type="button"
+                        onClick={retryAttachmentUpload}
+                        disabled={attachmentUploading}
+                        className="rounded-md border border-red-400/30 px-2 py-1 text-[10px] font-semibold text-red-300 transition-colors hover:bg-red-500/15 disabled:opacity-50"
+                      >
+                        Reintentar
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </FieldWrapper>
+
+          {operationType !== 'asset_purchase' && (
+            <div className="space-y-2 pt-0.5">
+              <CheckboxToggle
+                label="Transacción recurrente"
+                description="Guarda esta configuración como plantilla reutilizable."
+                checked={!!watch('is_recurring')}
+                onChange={v => setValue('is_recurring', v)}
+              />
+              {watch('is_recurring') && (
+                <FieldWrapper
+                  label="Nombre de la recurrente"
+                  required
+                  error={errors.recurring_name?.message}
+                  hint="Será el nombre visible dentro del módulo de recurrentes."
                 >
-                  Reintentar
-                </button>
+                  <Input
+                    type="text"
+                    placeholder="Ej. Transferencia a fondo de emergencia"
+                    data-testid="transaction-recurring-name-input"
+                    error={errors.recurring_name?.message}
+                    {...register('recurring_name', {
+                      maxLength: { value: 150, message: 'Máximo 150 caracteres' },
+                      validate: value =>
+                        !watch('is_recurring') || (value ?? '').trim().length > 0 || 'Ingresa un nombre para la plantilla recurrente',
+                    })}
+                  />
+                </FieldWrapper>
               )}
             </div>
           )}
         </div>
-      </FieldWrapper>
+      </div>
+    )
+  ) : null
+
+  const primaryContextZone = (
+    <>
+      {layoutMode === 'expense' ? paymentMethodField : null}
+      {layoutMode === 'payable' ? payableField : null}
+      {layoutMode === 'receivable' ? receivableField : null}
+      {layoutMode === 'asset_purchase' ? assetPurchaseField : null}
+      {layoutMode === 'transfer' ? transferAccountsField : accountField}
+      {layoutMode === 'transfer' ? transferSummaryField : null}
+      {layoutMode === 'income' || layoutMode === 'expense' ? categoryField : null}
+    </>
+  )
+
+  const secondaryRecordZone = (
+    <>
+      {amountCurrencyField}
+      {exchangeRateField}
+      {equivalenceField}
+      {dateDescriptionField}
+    </>
+  )
+
+  // ─── RENDER ───────────────────────────────────────────────────────────────
+
+  return (
+    <>
+      <form
+        ref={formRef}
+        onSubmit={submit}
+        noValidate
+        data-testid="transaction-form"
+        className={`${isCompactLayout ? 'space-y-2.5' : 'space-y-5'} ${className}`}
+      >
+        {!hideTypeSelector && (
+          <div data-testid="transaction-type-selector">
+            <TypeSelector
+              value={type}
+              onChange={setType}
+              disabled={submitState.status === 'loading'}
+              compact={isCompactLayout}
+            />
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 gap-4 min-[860px]:grid-cols-[minmax(0,1.04fr)_minmax(320px,0.96fr)] min-[860px]:items-start min-[860px]:gap-5">
+          <div className="space-y-4">
+            {primaryContextZone}
+          </div>
+
+          <div className="space-y-4">
+            {secondaryRecordZone}
+          </div>
+
+          {progressiveOptionalField ? (
+            <div className="min-[860px]:col-span-2">
+              {progressiveOptionalField}
+            </div>
+          ) : null}
+
+          {inlineOptionalField ? (
+            <div className="min-[860px]:col-span-2">
+              {inlineOptionalField}
+            </div>
+          ) : null}
+        </div>
 
       {/* ── 7. MÓDULOS DERIVADOS ─────────────────────────────────────────── */}
-      {(sections.assetModule || sections.receivableModule || sections.payableModule) && (
+      {showDerivedSections && (
         <SectionDivider title="Módulos relacionados" accent={accentColor}/>
       )}
 
       {/* Activo */}
-      {sections.assetModule && <AssetSection form={form}/>}
+      {sections.assetModule && operationType !== 'asset_purchase' && (
+        <AssetSection form={form} assetTypes={formOptions.assetTypes}/>
+      )}
 
       {/* Cuenta por cobrar */}
-      {sections.receivableModule && <ReceivableSection form={form}/>}
+      {sections.receivableModule && operationType !== 'receivable' && (
+        <ReceivableSection form={form} debtors={debtorOptions}/>
+      )}
 
       {/* Cuenta por pagar */}
-      {sections.payableModule && <PayableSection form={form}/>}
+      {sections.payableModule && operationType !== 'payable' && (
+        <PayableSection form={form} creditors={creditorOptions}/>
+      )}
 
-      {/* ── 8. RECURRENTE ────────────────────────────────────────────────── */}
-      <div className="pt-1">
-        <CheckboxToggle
-          label="Transacción recurrente"
-          description="Marcar si este ingreso o gasto se repite periódicamente"
-          checked={!!watch('is_recurring')}
-          onChange={v => setValue('is_recurring', v)}
-        />
-      </div>
-
-      {/* ── 9. ERROR GLOBAL ──────────────────────────────────────────────── */}
+      {/* ── 8. ERROR GLOBAL ──────────────────────────────────────────────── */}
       {submitState.status === 'error' && (
         <InlineFeedback
           type="error"
@@ -1297,202 +2063,47 @@ export function TransactionForm({
         />
       )}
 
-      {/* ── 10. SUBMIT ───────────────────────────────────────────────────── */}
-        <SubmitButton
-          type={type}
-          state={submitState}
-          disabled={submitState.status === 'loading'}
+      {/* ── 9. SUBMIT ────────────────────────────────────────────────────── */}
+      <RecordModalFooter>
+        <FormActions
+          secondaryAction={onCancel ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="lg"
+              onClick={onCancel}
+              disabled={submitState.status === 'loading'}
+            >
+              Cancelar
+            </Button>
+          ) : undefined}
+          primaryAction={(
+            <SubmitButton
+              type={type}
+              state={submitState}
+              disabled={submitState.status === 'loading'}
+              fullWidth={false}
+              className="min-w-[190px]"
+            />
+          )}
         />
+      </RecordModalFooter>
       </form>
 
-      {quickCreateTarget && (
-        <div
-          className="fixed inset-0 z-[90] flex items-center justify-center bg-[color:var(--color-overlay)] px-4"
-          onClick={() => {
-            if (!quickCreateSaving) closeQuickCreate()
-          }}
-          data-testid="quick-create-overlay"
-        >
-          <FocusTrap
-            active={Boolean(quickCreateTarget)}
-            onEscape={() => {
-              if (!quickCreateSaving) closeQuickCreate()
-            }}
-          >
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="quick-create-title"
-              onClick={event => event.stopPropagation()}
-              data-testid={
-                quickCreateTarget === 'account'
-                  ? 'quick-account-modal'
-                  : 'quick-category-modal'
-              }
-              className="w-full max-w-md rounded-2xl border border-[color:var(--color-border)] bg-[var(--color-modal-bg)] p-5 shadow-2xl shadow-[color:var(--color-shadow)]"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h3 id="quick-create-title" className="text-sm font-bold text-[var(--color-text)]">
-                    {quickCreateTarget === 'account' ? 'Crear cuenta rápida' : 'Crear categoría rápida'}
-                  </h3>
-                  <p className="text-[11px] text-[var(--color-text-muted)] mt-1">
-                    {quickCreateTarget === 'account'
-                      ? 'Se agregará al Portafolio y quedará seleccionada.'
-                      : 'Se agregará a Administración y quedará disponible al instante.'}
-                  </p>
-                </div>
-                <Link
-                  href={quickCreateTarget === 'account' ? '/portfolio' : '/admin'}
-                  className="text-[11px] font-semibold text-emerald-300/80 hover:text-emerald-200 transition-colors"
-                >
-                  {quickCreateTarget === 'account' ? 'Ir a Portafolio' : 'Ir a Administración'}
-                </Link>
-              </div>
+      <NestedAccountCreateModal
+        open={inlineAccountModalOpen}
+        onClose={() => setInlineAccountModalOpen(false)}
+        onCreated={handleInlineAccountCreated}
+        preferredCurrency={currency}
+      />
 
-              {quickCreateTarget === 'account' ? (
-                <div className="mt-4 space-y-3">
-                  <label className="space-y-1.5 block">
-                    <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Nombre *</span>
-                    <Input
-                      value={accountDraft.name}
-                      onChange={e => setAccountDraft(prev => ({ ...prev, name: e.target.value }))}
-                      placeholder="Ej. BCP Sueldo"
-                      data-testid="quick-account-name-input"
-                    />
-                  </label>
+      <NestedCategoryCreateModal
+        open={inlineCategoryModalOpen}
+        onClose={() => setInlineCategoryModalOpen(false)}
+        onCreated={handleInlineCategoryCreated}
+        initialScope={inlineCategoryScope}
+      />
 
-                  <label className="space-y-1.5 block">
-                    <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Banco / Institución</span>
-                    <Input
-                      value={accountDraft.institution}
-                      onChange={e => setAccountDraft(prev => ({ ...prev, institution: e.target.value }))}
-                      placeholder="Ej. BCP"
-                      data-testid="quick-account-institution-input"
-                    />
-                  </label>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className="space-y-1.5 block">
-                      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Tipo</span>
-                      <Select
-                        value={accountDraft.type}
-                        onChange={e => setAccountDraft(prev => ({ ...prev, type: e.target.value as AccountType }))}
-                        data-testid="quick-account-type-select"
-                      >
-                        {ACCOUNT_TYPE_OPTIONS.map(option => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                      </Select>
-                    </label>
-
-                    <label className="space-y-1.5 block">
-                      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Moneda</span>
-                      <Select
-                        value={accountDraft.currency}
-                        onChange={e => setAccountDraft(prev => ({ ...prev, currency: e.target.value as CurrencyCode }))}
-                        data-testid="quick-account-currency-select"
-                      >
-                        <option value="PEN">PEN</option>
-                        <option value="USD">USD</option>
-                      </Select>
-                    </label>
-                  </div>
-
-                  <label className="space-y-1.5 block">
-                    <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Saldo inicial</span>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={accountDraft.initial_balance}
-                      onChange={e => setAccountDraft(prev => ({ ...prev, initial_balance: e.target.value }))}
-                      data-testid="quick-account-balance-input"
-                    />
-                  </label>
-                </div>
-              ) : (
-                <div className="mt-4 space-y-3">
-                  <label className="space-y-1.5 block">
-                    <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Nombre *</span>
-                    <Input
-                      value={categoryDraft.name}
-                      onChange={e => setCategoryDraft(prev => ({ ...prev, name: e.target.value }))}
-                      placeholder="Ej. Alimentación"
-                      data-testid="quick-category-name-input"
-                    />
-                  </label>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className="space-y-1.5 block">
-                      <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Tipo</span>
-                      <Select
-                        value={categoryDraft.scope}
-                        onChange={e => setCategoryDraft(prev => ({ ...prev, scope: e.target.value as CategoryScope }))}
-                        data-testid="quick-category-scope-select"
-                      >
-                        <option value="INCOME">Ingreso</option>
-                        <option value="EXPENSE">Egreso</option>
-                        <option value="BOTH">Ambos</option>
-                      </Select>
-                    </label>
-                  </div>
-
-                  <div className="space-y-1.5 block">
-                    <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Icono</span>
-                    <IconGridPicker
-                      value={categoryDraft.icon}
-                      onChange={icon => setCategoryDraft(prev => ({ ...prev, icon }))}
-                      options={CATEGORY_ICON_OPTIONS}
-                      wrapperTestId="quick-category-icon-input"
-                      optionTestIdPrefix="quick-category-icon-option"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5 block">
-                    <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Color</span>
-                    <ColorSwatchPicker
-                      value={categoryDraft.color}
-                      onChange={color => setCategoryDraft(prev => ({ ...prev, color }))}
-                      palette={CATEGORY_COLOR_OPTIONS}
-                      wrapperTestId="quick-category-color-options"
-                      swatchTestIdPrefix="quick-category-color"
-                      customInputTestId="quick-category-color-input"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {quickCreateError && (
-                <p className="mt-3 text-[12px] text-red-400">{quickCreateError}</p>
-              )}
-
-              <div className="mt-4 flex items-center justify-end gap-2">
-                <span className="mr-auto text-[10px] text-[var(--color-text-muted)]">
-                  `Ctrl/Cmd + Enter` para guardar · `Esc` para cerrar
-                </span>
-                <button
-                  type="button"
-                  onClick={closeQuickCreate}
-                  disabled={quickCreateSaving}
-                  data-testid="quick-create-cancel"
-                  className="rounded-lg border border-[color:var(--color-border)] px-3 py-1.5 text-[12px] font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:border-[color:var(--color-border-hover)] transition-colors disabled:opacity-50"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void submitCurrentQuickCreate()}
-                  disabled={quickCreateSaving}
-                  data-testid="quick-create-save"
-                  className="rounded-lg bg-emerald-500 px-3 py-1.5 text-[12px] font-bold text-[var(--color-on-accent)] hover:bg-emerald-400 transition-colors disabled:opacity-50"
-                >
-                  {quickCreateSaving ? 'Guardando...' : 'Guardar'}
-                </button>
-              </div>
-            </div>
-          </FocusTrap>
-        </div>
-      )}
     </>
   )
 }

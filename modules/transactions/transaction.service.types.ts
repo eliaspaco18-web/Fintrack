@@ -32,19 +32,21 @@ interface BaseTransactionInput {
   credit_card_id?:   string
   credit_operation?: 'CONSUMPTION' | 'PAYMENT'
   exchange_rate?:    number   // obligatorio si currency = 'USD'
-  description:       string
+  description?:      string
   transaction_date:  string   // 'YYYY-MM-DD'
   category_id?:      string
   notes?:            string
   is_recurring?:     boolean
+  sender?:           string
+  recipient?:        string
 }
 
 // ── INCOME ────────────────────────────────────────────────────────────────────
 
 export interface CreateIncomeInput extends BaseTransactionInput {
   type: 'INCOME'
-  /** Si se pasa, registra la cuenta por cobrar asociada */
-  receivable?: CreateReceivableModuleInput
+  /** Si se pasa, registra la cuenta por pagar asociada */
+  payable?: CreatePayableModuleInput
 }
 
 // ── EXPENSE ───────────────────────────────────────────────────────────────────
@@ -52,12 +54,14 @@ export interface CreateIncomeInput extends BaseTransactionInput {
 export interface CreateExpenseInput extends BaseTransactionInput {
   type: 'EXPENSE'
   /** Si se pasa, crea el activo asociado al gasto */
-  asset?:    CreateAssetModuleInput
+  asset?:     CreateAssetModuleInput
   /** Si se pasa, registra el crédito / préstamo asociado */
-  credit?:   CreateCreditModuleInput
-  loan?:     CreateLoanModuleInput
-  /** Si se pasa, registra la cuenta por pagar */
-  payable?:  CreatePayableModuleInput
+  credit?:    CreateCreditModuleInput
+  loan?:      CreateLoanModuleInput
+  /** Si se pasa, registra la cuenta por cobrar */
+  receivable?: CreateReceivableModuleInput
+  /** Fase B — ID del presupuesto activo al que se imputa este egreso */
+  budget_id?: string
 }
 
 // ── TRANSFER ──────────────────────────────────────────────────────────────────
@@ -78,6 +82,7 @@ export type CreateTransactionInput =
 export interface CreateAssetModuleInput {
   name:              string
   asset_type:        AssetType
+  asset_type_id?:    string
   purchase_value?:   number
   current_value?:    number   // si omitido = purchase_value
   purchase_date?:    string   // si omitido = transaction_date
@@ -110,6 +115,7 @@ export interface CreateLoanModuleInput {
 }
 
 export interface CreateReceivableModuleInput {
+  debtor_id?:   string
   debtor_name:  string
   due_date?:    string
   concept?:     string
@@ -117,6 +123,7 @@ export interface CreateReceivableModuleInput {
 }
 
 export interface CreatePayableModuleInput {
+  creditor_id?:  string
   creditor_name: string
   due_date?:     string
   concept?:      string
@@ -152,6 +159,12 @@ export interface CreateTransactionResult {
   loan?:        Loan
   receivable?:  AccountReceivable
   payable?:     AccountPayable
+  recurring_template?: {
+    created: boolean
+    id?: string | null
+    name?: string | null
+    warning?: string | null
+  }
   /** Cuotas generadas si se solicitó generate_schedule = true */
   installments_generated?: number
 }
@@ -192,6 +205,7 @@ export interface AtomicTransactionPayload {
   p_source_account_id:        string
   p_destination_account_id:   string | null
   p_category_id:              string | null
+  p_budget_id:                string | null
   p_type:                     TransactionType
   p_amount:                   number
   p_currency:                 CurrencyCode
@@ -200,6 +214,8 @@ export interface AtomicTransactionPayload {
   p_transaction_date:         string
   p_notes:                    string | null
   p_is_recurring:             boolean
+  p_sender:                   string | null
+  p_recipient:                string | null
   // Módulos derivados (null si no aplica)
   p_asset:                    Omit<CreateAssetModuleInput, 'current_value' | 'purchase_date'> & {
     current_value: number

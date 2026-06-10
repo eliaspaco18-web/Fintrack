@@ -7,11 +7,21 @@
 import type { Account }                from '@/types/database.types'
 import type { CreateTransactionInput } from './transaction.service.types'
 import { type Result, Errors, ok }     from '@/modules/shared/result.types'
+import { hasAtMostDecimals }           from '@/lib/utils/numeric-input'
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
 const isValidDate = (d: string) => !isNaN(Date.parse(d))
 const isFutureDate = (d: string) => new Date(d) > new Date()
+const DEBIT_EXPENSE_ALLOWED_ACCOUNT_TYPES = new Set<Account['type']>([
+  'CHECKING',
+  'SAVINGS',
+  'CASH',
+  'INVESTMENT',
+  'STOCKS',
+  'ETF',
+  'CRYPTO',
+])
 
 // ─── VALIDACIONES GENERALES ───────────────────────────────────────────────────
 
@@ -22,7 +32,7 @@ function validateAmount(amount: number): Result<true> {
   if (amount <= 0)
     return Errors.validation('El monto debe ser mayor a cero')
 
-  if (Math.round(amount * 100) !== amount * 100)
+  if (!hasAtMostDecimals(amount, 2))
     return Errors.validation('El monto no puede tener más de 2 decimales')
 
   if (amount > 100_000_000)
@@ -71,11 +81,13 @@ function validateExchangeRate(currency: string, exchangeRate?: number): Result<t
 /**
  * Valida la descripción.
  */
-function validateDescription(description: string): Result<true> {
-  if (!description || description.trim().length === 0)
+function validateDescription(description: string | undefined, required = true): Result<true> {
+  const trimmed = description?.trim() ?? ''
+
+  if (required && trimmed.length === 0)
     return Errors.validation('La descripción es obligatoria')
 
-  if (description.trim().length > 255)
+  if (trimmed.length > 255)
     return Errors.validation('La descripción no puede superar 255 caracteres')
 
   return ok(true)
@@ -141,6 +153,36 @@ export function validateSufficientBalance(
   return ok(true)
 }
 
+export function validateSourceAccountAgainstTransaction(
+  input: CreateTransactionInput,
+  account: Account,
+): Result<true> {
+  if (input.currency !== account.currency) {
+    return Errors.businessRule(
+      'La moneda de la transacción no coincide con el portafolio seleccionado',
+      `El portafolio "${account.name}" opera en ${account.currency}.`
+    )
+  }
+
+  if (input.type === 'EXPENSE' && input.payment_method !== 'CREDIT') {
+    if (!DEBIT_EXPENSE_ALLOWED_ACCOUNT_TYPES.has(account.type)) {
+      return Errors.businessRule(
+        'Ese portafolio no está habilitado para egresos por débito',
+        'Usa una cuenta corriente, ahorros, efectivo o un portafolio transaccional compatible.'
+      )
+    }
+  }
+
+  if (input.type === 'EXPENSE' && input.payment_method === 'CREDIT' && account.type !== 'CREDIT_CARD') {
+    return Errors.businessRule(
+      'Los egresos con crédito deben usar un portafolio tipo tarjeta',
+      'Selecciona una tarjeta de crédito activa.'
+    )
+  }
+
+  return ok(true)
+}
+
 // ─── VALIDACIÓN PRINCIPAL ─────────────────────────────────────────────────────
 
 /**
@@ -159,7 +201,7 @@ export function validateCreateTransactionInput(
   const rateResult = validateExchangeRate(input.currency, input.exchange_rate)
   if (!rateResult.ok) return rateResult
 
-  const descResult = validateDescription(input.description)
+  const descResult = validateDescription(input.description, input.type !== 'TRANSFER')
   if (!descResult.ok) return descResult
 
   // Validaciones específicas por tipo
@@ -206,7 +248,12 @@ export function validateCreateTransactionInput(
     }
   }
 
-  if (input.type === 'INCOME' && input.receivable) {
+  if (input.type === 'INCOME' && input.payable) {
+    if (!input.payable.creditor_name?.trim())
+      return Errors.validation('El nombre del acreedor es obligatorio')
+  }
+
+  if (input.type === 'EXPENSE' && input.receivable) {
     if (!input.receivable.debtor_name?.trim())
       return Errors.validation('El nombre del deudor es obligatorio')
   }
