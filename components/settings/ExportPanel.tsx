@@ -97,6 +97,7 @@ type ImportSummary = NonNullable<ImportJobWithRows['summary']> & {
   }>
   globalErrors?: Array<{ field?: string; message?: string; code?: string }>
   globalWarnings?: Array<{ field?: string; message?: string; code?: string }>
+  committedTables?: Record<string, number>
 }
 
 type ImportProgressState = {
@@ -125,6 +126,46 @@ function formatMoney(value: number, currency: string) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value)}`
+}
+
+function humanizeSheetName(sheetName: string): string {
+  return sheetName
+    .replace(/^\d+_?/, '')
+    .replace(/_/g, ' ')
+    .trim()
+}
+
+function humanizeFieldName(field?: string) {
+  if (!field) return 'Revisa este dato'
+  return field.replace(/_/g, ' ')
+}
+
+function correctionHint(field?: string, message?: string): string {
+  const normalized = `${field ?? ''} ${message ?? ''}`.toLowerCase()
+
+  if (normalized.includes('portafolio')) {
+    return 'Usa exactamente el mismo nombre del portafolio que ya existe en FinTrack.'
+  }
+  if (normalized.includes('categoria')) {
+    return 'Elige una categoría visible en el sistema y respeta el mismo texto.'
+  }
+  if (normalized.includes('tarjeta_credito') || normalized.includes('tarjeta de credito')) {
+    return 'Selecciona una tarjeta existente en FinTrack o cambia la forma de pago.'
+  }
+  if (normalized.includes('moneda')) {
+    return 'Usa PEN o USD tal como aparece en la plantilla.'
+  }
+  if (normalized.includes('fecha')) {
+    return 'Completa la fecha con el formato yyyy-mm-dd.'
+  }
+  if (normalized.includes('monto') || normalized.includes('decimal')) {
+    return 'Usa solo números, sin símbolo de moneda, y con máximo 2 decimales.'
+  }
+  if (normalized.includes('tipo de cambio') || normalized.includes('exchange')) {
+    return 'Esa fecha necesita una tasa disponible. Vuelve a intentar tras sincronizar tipos de cambio o ajusta la fecha del movimiento.'
+  }
+
+  return 'Corrige el dato indicado y vuelve a subir la plantilla para validarla otra vez.'
 }
 
 export function ExportPanel() {
@@ -407,6 +448,21 @@ export function ExportPanel() {
     .slice(0, 8)
   const totalErrors = analysis?.error_count ?? totals?.errorRows ?? 0
   const hasImportedRows = (analysis?.rows ?? []).some(row => row.status === 'IMPORTED')
+  const committedTables = summary?.committedTables ?? {}
+  const committedTransactionCount = Number(committedTables.transactions ?? 0)
+  const committedReceivableCount = Number(committedTables.receivables ?? 0)
+  const committedPayableCount = Number(committedTables.payables ?? 0)
+  const committedAssetCount = Number(committedTables.assets ?? 0)
+  const committedBudgetCount = Number(committedTables.budgets ?? 0)
+  const committedCreditCount = Number(committedTables.credits ?? 0)
+  const totalCommittedRecords =
+    committedTransactionCount +
+    committedReceivableCount +
+    committedPayableCount +
+    committedAssetCount +
+    committedBudgetCount +
+    committedCreditCount
+  const sheetBreakdown = Object.entries(summary?.sheets ?? {})
   const canCommit =
     !!analysis &&
     totalErrors === 0 &&
@@ -465,13 +521,29 @@ export function ExportPanel() {
         return
       }
 
-      setAnalysis(data.data as ImportJobWithRows)
+      const committedAnalysis = data.data as ImportJobWithRows
+      setAnalysis(committedAnalysis)
+      const committedSummary = committedAnalysis.summary as ImportSummary | undefined
+      const committedCounts = committedSummary?.committedTables ?? {}
+      const txCount = Number(committedCounts.transactions ?? 0)
+      const receivableCount = Number(committedCounts.receivables ?? 0)
+      const payableCount = Number(committedCounts.payables ?? 0)
+      const parts = [
+        txCount > 0 ? `${txCount} transacción${txCount === 1 ? '' : 'es'}` : null,
+        receivableCount > 0 ? `${receivableCount} por cobrar` : null,
+        payableCount > 0 ? `${payableCount} por pagar` : null,
+      ].filter(Boolean)
       finishProgress({
         title: 'Importación completada',
         detail: 'Los registros del Excel ya fueron creados en FinTrack.',
         tone: 'success',
       })
-      toast.success('Importación confirmada', 'Los módulos validados del archivo ya fueron creados en FinTrack.', {
+      toast.success(
+        'Importación confirmada',
+        parts.length > 0
+          ? `FinTrack creó ${parts.join(', ')}.`
+          : 'FinTrack terminó la importación y ya puedes revisar el resumen creado.',
+        {
         category: 'TRANSACTION',
         event: 'IMPORT_JOB_COMMITTED',
         href: '/settings?tab=export',
@@ -631,6 +703,56 @@ export function ExportPanel() {
               </div>
             ) : null}
 
+            {analysis && sheetBreakdown.length > 0 ? (
+              <div className="rounded-[18px] border border-[var(--c-border)] bg-[var(--c-surface)] p-3">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <p className="text-[12px] font-semibold text-[var(--c-text)]">Resultado por módulo</p>
+                  <SettingsBadge tone="neutral">{sheetBreakdown.length} hoja(s)</SettingsBadge>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {sheetBreakdown.map(([sheetName, stats]) => (
+                    <div
+                      key={sheetName}
+                      className="rounded-[14px] border border-[var(--c-border)] bg-[var(--c-surface-muted)] px-3 py-2"
+                    >
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <p className="text-[12px] font-semibold text-[var(--c-text)]">{humanizeSheetName(sheetName)}</p>
+                        <SettingsBadge tone={stats.errorRows > 0 ? 'danger' : stats.warningRows > 0 ? 'warning' : 'success'}>
+                          {stats.errorRows > 0 ? 'Revisar' : stats.warningRows > 0 ? 'Con aviso' : 'Listo'}
+                        </SettingsBadge>
+                      </div>
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[var(--c-text-muted)]">
+                        <span>{formatNumber(stats.totalRows)} fila(s)</span>
+                        <span>{formatNumber(stats.validRows)} válidas</span>
+                        <span>{formatNumber(stats.warningRows)} avisos</span>
+                        <span>{formatNumber(stats.errorRows)} errores</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {analysis?.status !== 'COMMITTED' && canCommit ? (
+              <div className="rounded-[18px] border border-[color:rgba(63,127,98,0.22)] bg-[var(--c-success-soft)] px-4 py-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 text-[12px] font-semibold text-[var(--c-success)]">
+                      <IconCheckCircle size={15} />
+                      Listo para importar
+                    </div>
+                    <p className="max-w-[58ch] text-[12px] leading-5 text-[var(--c-text-muted)]">
+                      FinTrack ya validó la plantilla. Si confirmas ahora, guardará los módulos listos y te mostrará exactamente cuántos registros creó.
+                    </p>
+                  </div>
+                  <div className="text-right text-[11px] text-[var(--c-text-muted)]">
+                    <div>{formatNumber(totals?.validRows ?? 0)} fila(s) listas</div>
+                    <div>{formatNumber(totals?.warningRows ?? 0)} observación(es) no bloqueantes</div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             {summary?.lastCommitError ? (
               <div className="rounded-[18px] border border-[color:rgba(169,120,47,0.18)] bg-[var(--c-warning-soft)] p-3">
                 <div className="mb-1 flex items-center gap-2 text-[12px] font-semibold text-[var(--c-warning)]">
@@ -639,6 +761,9 @@ export function ExportPanel() {
                 </div>
                 <p className="text-[12px] leading-5 text-[var(--c-text-muted)]">
                   {summary.lastCommitError}
+                </p>
+                <p className="mt-2 text-[11px] leading-5 text-[var(--c-text-muted)]">
+                  {correctionHint(undefined, summary.lastCommitError)}
                 </p>
               </div>
             ) : null}
@@ -658,6 +783,53 @@ export function ExportPanel() {
                       </span>
                     </div>
                   ))}
+                </div>
+              </div>
+            ) : null}
+
+            {analysis?.status === 'COMMITTED' && summary?.committedTables ? (
+              <div className="rounded-[18px] border border-[color:rgba(63,127,98,0.2)] bg-[var(--c-success-soft)] p-3">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-[12px] font-semibold text-[var(--c-success)]">
+                    <IconCheckCircle size={15} />
+                    Importación completada con éxito
+                  </div>
+                  <SettingsBadge tone="success">{formatNumber(totalCommittedRecords)} registro(s)</SettingsBadge>
+                </div>
+                <p className="mb-3 text-[12px] leading-5 text-[var(--c-text-muted)]">
+                  FinTrack terminó el guardado. Este resumen te confirma qué módulos sí se crearon y te ayuda a revisar el resultado enseguida.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <SettingsMetric
+                    label="Transacciones"
+                    value={formatNumber(committedTransactionCount)}
+                    caption="Movimientos creados"
+                  />
+                  <SettingsMetric
+                    label="Por cobrar"
+                    value={formatNumber(committedReceivableCount)}
+                    caption="Cuentas por cobrar"
+                  />
+                  <SettingsMetric
+                    label="Por pagar"
+                    value={formatNumber(committedPayableCount)}
+                    caption="Cuentas por pagar"
+                  />
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button href="/transactions" size="sm" variant="primary">
+                    Ver movimientos
+                  </Button>
+                  {committedReceivableCount > 0 ? (
+                    <Button href="/receivables" size="sm" variant="secondary">
+                      Ver por cobrar
+                    </Button>
+                  ) : null}
+                  {committedPayableCount > 0 ? (
+                    <Button href="/payables" size="sm" variant="secondary">
+                      Ver por pagar
+                    </Button>
+                  ) : null}
                 </div>
               </div>
             ) : null}
@@ -700,6 +872,9 @@ export function ExportPanel() {
                         </div>
                         <p className="mt-1 text-[var(--c-text-muted)]">
                           {firstIssue?.field ? `${firstIssue.field}: ` : null}{firstIssue?.message ?? 'Revisa esta fila.'}
+                        </p>
+                        <p className="mt-2 text-[11px] leading-5 text-[var(--c-text-faint)]">
+                          Qué corregir: {correctionHint(firstIssue?.field, firstIssue?.message)}
                         </p>
                       </div>
                     )

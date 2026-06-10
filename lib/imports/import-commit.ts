@@ -479,56 +479,6 @@ async function countImportedRows(
   return count ?? 0
 }
 
-function countImportedRowsInMemory(job: ImportJobWithRows): number {
-  return job.rows.filter(row => row.status === 'IMPORTED').length
-}
-
-function countCommittedTargets(summary: ImportJobSummary | undefined): number {
-  const tables = summary?.committedTables
-  if (!tables) return 0
-  return Object.values(tables).reduce((acc, value) => acc + (Number.isFinite(value) ? Number(value) : 0), 0)
-}
-
-async function findCommittedJobByFileHash(
-  db: DbClient,
-  userId: string,
-  fileHash: string,
-  excludeJobId?: string,
-): Promise<ImportJobWithRows | null> {
-  let request = untyped(db)
-    .from('import_jobs')
-    .select('id,user_id,source,status,template_version,file_name,file_url,file_size_bytes,file_hash,summary,error_count,warning_count,created_at,updated_at,committed_at')
-    .eq('user_id', userId)
-    .eq('file_hash', fileHash)
-    .eq('status', 'COMMITTED')
-    .order('created_at', { ascending: false })
-    .limit(1)
-
-  if (excludeJobId) {
-    request = request.neq('id', excludeJobId)
-  }
-
-  const { data, error } = await request
-  if (error) throw new Error(error.message)
-  const job = (data ?? [])[0] as ImportJob | undefined
-  if (!job) return null
-
-  const { data: rows, error: rowsError } = await untyped(db)
-    .from('import_job_rows')
-    .select('id,import_job_id,user_id,sheet_name,row_number,row_key,status,payload,errors,warnings,target_table,target_record_id,created_at,updated_at')
-    .eq('user_id', userId)
-    .eq('import_job_id', job.id)
-    .order('sheet_name', { ascending: true })
-    .order('row_number', { ascending: true })
-
-  if (rowsError) throw new Error(rowsError.message)
-
-  return {
-    ...job,
-    rows: rows as unknown as ImportJobRow[],
-  }
-}
-
 async function createOrReuseCategory(
   db: DbClient,
   userId: string,
@@ -1617,17 +1567,6 @@ export async function commitImportJob(
 ): Promise<ImportJobWithRows> {
   const db = supabase as DbClient
   if (job.status === 'COMMITTED') return job
-
-  if (job.file_hash) {
-    const existingCommitted = await findCommittedJobByFileHash(db, userId, job.file_hash, job.id)
-    if (existingCommitted) {
-      const importedRows = countImportedRowsInMemory(existingCommitted)
-      const committedTargets = countCommittedTargets(existingCommitted.summary)
-      if (importedRows > 0 || committedTargets > 0) {
-        return existingCommitted
-      }
-    }
-  }
 
   try {
     return await commitImportJobData(db, userId, job)
