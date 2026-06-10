@@ -3,9 +3,11 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
-import { loadEnvConfig } from '@next/env'
+import nextEnv from '@next/env'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+
+const { loadEnvConfig } = nextEnv
 
 const rootDir = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
 const manifestPath = path.join(rootDir, 'lib', 'release', 'current-release.json')
