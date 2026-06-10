@@ -20,7 +20,6 @@ import {
 import { loadImportTemplateCatalogs } from '@/lib/imports/excel-template'
 import {
   createAnalyzedImportJob,
-  getLatestImportJobByFileHash,
 } from '@/lib/imports/import-repository'
 import { IMPORT_TEMPLATE_VERSION } from '@/lib/imports/import-types'
 
@@ -72,19 +71,6 @@ export async function POST(req: NextRequest) {
     const hash = createHash('sha256')
       .update(new Uint8Array(arrayBuffer))
       .digest('hex')
-
-    const existing = await getLatestImportJobByFileHash(
-      supabase,
-      userId,
-      hash,
-      ['COMMITTED'],
-    )
-    if (existing.error) {
-      return apiError({ code: 'DATABASE_ERROR', message: existing.error.message })
-    }
-    if (existing.data) {
-      return apiOk(existing.data)
-    }
 
     const catalogs = await loadImportTemplateCatalogs(supabase, userId)
     const analysis = await analyzeImportWorkbook(arrayBuffer, catalogs)

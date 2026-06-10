@@ -30,6 +30,9 @@ if [[ "$CURRENT_BRANCH" != "$TARGET_BRANCH" ]]; then
   exit 1
 fi
 
+echo "==> Preparando versión visible del release"
+node scripts/prepare-release-manifest.mjs "$COMMIT_MESSAGE"
+
 echo "==> Ejecutando checks locales de release"
 npm run build
 npm run typecheck

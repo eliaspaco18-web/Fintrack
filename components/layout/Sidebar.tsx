@@ -18,6 +18,7 @@ import { NAV_MAIN, NAV_SECONDARY }        from '@/lib/constants/nav'
 import { resolveUserAvatar }              from '@/lib/constants/avatar-presets'
 import type { SidebarMode }               from '@/lib/hooks/useLayout'
 import { useLayout }                      from '@/lib/hooks/useLayout'
+import { CURRENT_RELEASE }                from '@/lib/release/current-release'
 import { BrandMark, BrandWordmark }       from './Brand'
 
 // ─── LOGO ─────────────────────────────────────────────────────────────────────
@@ -175,6 +176,9 @@ function SidebarProfile({ user, collapsed }: SidebarProfileProps) {
         </p>
         <p className="mt-0.5 truncate text-[11px] leading-tight text-[var(--sidebar-account-email)]">
           {user.email}
+        </p>
+        <p className="mt-1 truncate text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--sidebar-section-text)]">
+          {CURRENT_RELEASE.version}
         </p>
       </div>
 

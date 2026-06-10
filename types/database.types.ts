@@ -305,6 +305,96 @@ export type Database = {
           },
         ]
       }
+      app_releases: {
+        Row: {
+          build_number: number
+          commit_sha: string | null
+          created_at: string
+          deployed_at: string
+          email_sent_at: string | null
+          highlights: Json
+          id: string
+          series: string
+          summary: string
+          title: string
+          updated_at: string
+          version: string
+        }
+        Insert: {
+          build_number: number
+          commit_sha?: string | null
+          created_at?: string
+          deployed_at?: string
+          email_sent_at?: string | null
+          highlights?: Json
+          id?: string
+          series: string
+          summary: string
+          title: string
+          updated_at?: string
+          version: string
+        }
+        Update: {
+          build_number?: number
+          commit_sha?: string | null
+          created_at?: string
+          deployed_at?: string
+          email_sent_at?: string | null
+          highlights?: Json
+          id?: string
+          series?: string
+          summary?: string
+          title?: string
+          updated_at?: string
+          version?: string
+        }
+        Relationships: []
+      }
+      app_release_user_state: {
+        Row: {
+          created_at: string
+          email_sent_at: string | null
+          id: string
+          in_app_seen_at: string | null
+          release_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          email_sent_at?: string | null
+          id?: string
+          in_app_seen_at?: string | null
+          release_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          email_sent_at?: string | null
+          id?: string
+          in_app_seen_at?: string | null
+          release_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_release_user_state_release_id_fkey"
+            columns: ["release_id"]
+            isOneToOne: false
+            referencedRelation: "app_releases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "app_release_user_state_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       asset_types: {
         Row: {
           color: string

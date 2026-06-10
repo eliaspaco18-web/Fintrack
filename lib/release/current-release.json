@@ -1,0 +1,13 @@
+{
+  "version": "V1.0.0.2",
+  "series": "1.0.0",
+  "build": 2,
+  "title": "Mejoras en Plataforma, Importaciones, Configuración",
+  "summary": "Esta versión mejora plataforma, importaciones, configuración para dejar la operación más estable y fluida en producción.",
+  "highlights": [
+    "Mejoras internas de plataforma para hacer más confiable el despliegue y la operación.",
+    "Mejoras en Importaciones para preparar una migración de datos más robusta.",
+    "Mejoras en Configuración y seguridad para una administración más clara."
+  ],
+  "releasedAt": "2026-06-10T19:39:55.324Z"
+}

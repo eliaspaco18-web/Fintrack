@@ -177,26 +177,34 @@ La fuente de verdad pasa a ser tu repositorio local, pero el release se alinea e
 ### Archivos de automatizacion
 - Workflow: [.github/workflows/production-release.yml](/Users/eliasgustavopacopauccara/Documents/Fintrack_v1/fintrack/.github/workflows/production-release.yml)
 - Script local: [scripts/release-production.sh](/Users/eliasgustavopacopauccara/Documents/Fintrack_v1/fintrack/scripts/release-production.sh)
+- Version actual del producto: [lib/release/current-release.json](/Users/eliasgustavopacopauccara/Documents/Fintrack_v1/fintrack/lib/release/current-release.json)
 
 ### Que hace el flujo
-1. Ejecuta checks de salida.
-2. Sube tu version local a GitHub.
-3. Dispara un workflow manual de GitHub Actions.
-4. El workflow:
+1. Genera automaticamente la nueva version visible en formato `Vx.y.z.build`.
+2. Genera automaticamente un titulo, resumen y mejoras clave del release.
+3. Ejecuta checks de salida.
+4. Sube tu version local a GitHub.
+5. Dispara un workflow manual de GitHub Actions.
+6. El workflow:
    - instala dependencias,
    - corre build, typecheck y smoke,
    - aplica migraciones en Supabase,
-   - construye y despliega en Vercel Produccion.
+   - construye y despliega en Vercel Produccion,
+   - registra la version publicada en base de datos,
+   - envia correo a usuarios con la nueva version y mejoras,
+   - y deja listo el aviso in-app para mostrarse solo una vez por usuario.
 
 ### Variables y secretos que debes configurar en GitHub
 En `Settings > Secrets and variables > Actions`:
 
 #### Repository variables
+- `NEXT_PUBLIC_SUPABASE_URL`
 - `SUPABASE_PROJECT_REF`: `yahocagtrxvevqhhlkln`
 - `VERCEL_ORG_ID`: `team_yoQ8LjFAuDbIECvokuYnyerC`
 - `VERCEL_PROJECT_ID`: `prj_sD0qAEQHEKYsvCeQBjb0lWJWgGiG`
 
 #### Repository secrets
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_ACCESS_TOKEN`
 - `SUPABASE_DB_PASSWORD`
 - `VERCEL_TOKEN`
@@ -209,11 +217,43 @@ npm run release:production -- "release: descripcion corta"
 ```
 
 Ese comando:
+- genera automaticamente la siguiente version disponible a partir del manifiesto actual,
+- genera automaticamente el titulo, resumen y highlights visibles para usuarios,
 - corre checks locales,
 - hace `git add -A`,
 - crea commit si hay cambios,
 - hace `git push` a `main`,
 - y si tienes `gh` instalado, dispara el workflow remoto automaticamente.
+
+### Reglas de version
+- Formato: `Vx.y.z.build`
+- Ejemplo: `V1.1.1.100`
+- Por defecto, el comando mantiene la misma serie `x.y.z` y sube solo el `build` en `+1`.
+- Si alguna vez quieres cambiar manualmente la serie, puedes usar:
+
+```bash
+RELEASE_SERIES=1.2.0 npm run release:production -- "release: descripcion corta"
+```
+
+- Si quieres editar el contenido manualmente antes de lanzar, puedes usar modo interactivo:
+
+```bash
+RELEASE_INTERACTIVE=true npm run release:production -- "release: descripcion corta"
+```
+
+### Como se enteran los usuarios
+En cada release exitoso:
+1. Se envia un correo con:
+   - version publicada,
+   - titulo del release,
+   - resumen corto,
+   - mejoras o correcciones clave.
+2. Dentro de la app aparece un mensaje modal solo la primera vez que cada usuario entra despues de esa actualizacion.
+3. La version actual queda visible dentro de la interfaz.
+
+### Estilo de comunicacion del release
+- El correo se arma con un bloque hero, tarjeta de version y highlights con iconos visuales de `Novedad`, `Mejora` y `Corrección`.
+- El popup in-app usa badges, iconos y tarjetas visuales para que el usuario sí lea el cambio y no lo cierre por inercia.
 
 Si no tienes `gh`, el push queda hecho y solo tendrás que lanzar manualmente el workflow `Production Release` desde la pestaña `Actions`.
 
@@ -222,18 +262,5 @@ El workflow no se dispara en cada push por defecto. Sale solo cuando:
 - tú ejecutas el script local, o
 - disparas manualmente `Production Release` desde GitHub.
 
-## Ejemplo de alta de novedad
-```ts
-export const PRODUCT_UPDATES: ProductUpdateEntry[] = [
-  {
-    id: 'release-2026-05-settings',
-    title: 'Centro de configuracion renovado',
-    message: 'Reordenamos preferencias, seguridad y exportaciones para que encuentres todo mas rapido.',
-    href: '/settings',
-    hrefLabel: 'Abrir ajustes',
-    startsAt: '2026-05-26T00:00:00-05:00',
-    endsAt: '2026-05-31T23:59:59-05:00',
-    badgeLabel: 'Nuevo',
-  },
-]
-```
+## Nota
+El banner estatico de `PRODUCT_UPDATES` puede seguir usandose para campañas o avisos manuales, pero el versionado operativo del release ahora sale del manifiesto dinámico y del workflow de producción.

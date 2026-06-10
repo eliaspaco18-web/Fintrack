@@ -718,7 +718,7 @@ export function ExportPanel() {
                 {analysis?.status === 'CANCELLED'
                   ? 'Esta importación ya fue revertida. Conservamos el análisis y el historial para auditoría, pero sus registros creados ya no siguen activos.'
                   : analysis?.status === 'COMMITTED'
-                  ? 'La importación ya fue confirmada. Este preview conserva el resumen y las filas procesadas.'
+                  ? 'La importación ya fue confirmada. Si vuelves a subir el mismo archivo, FinTrack lo analizará de nuevo, pero al confirmar evitará duplicar registros ya importados.'
                   : 'La confirmación crea catálogos, portafolios, transacciones y módulos relacionados cuando las referencias y formatos ya están consistentes.'}
               </p>
               <div className="flex flex-wrap items-center justify-end gap-2">
@@ -738,7 +738,11 @@ export function ExportPanel() {
                   onClick={() => void commitImport()}
                   loading={committing}
                   leadingIcon={<IconCheckCircle size={14} />}
-                  size="sm"
+                  size="md"
+                  variant="primary"
+                  className={canCommit
+                    ? 'min-w-[220px] shadow-[0_10px_30px_rgba(13,107,94,0.18)] ring-1 ring-[rgba(13,107,94,0.12)]'
+                    : 'min-w-[220px]'}
                 >
                   {analysis?.status === 'FAILED' && !hasImportedRows ? 'Reintentar importación' : 'Confirmar importación'}
                 </Button>

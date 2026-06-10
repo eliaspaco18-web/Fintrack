@@ -106,3 +106,6 @@ jobs:
       - name: Deploy to Vercel Production
         if: ${{ inputs.deploy_vercel }}
         run: npx vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+
+      - name: Publish release version and user announcement
+        run: node scripts/publish-release-announcement.mjs

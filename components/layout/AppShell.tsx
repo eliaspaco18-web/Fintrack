@@ -20,6 +20,7 @@ import { LayoutProvider, useLayout } from '@/lib/hooks/useLayout'
 import { CurrencyProvider }         from '@/lib/hooks/useDashboard'
 import { StaticSidebar, MobileDrawer } from './Sidebar'
 import { ProductUpdatesBanner }    from './ProductUpdatesBanner'
+import { ReleaseAnnouncementGate } from './ReleaseAnnouncementGate'
 import { Topbar }                   from './Topbar'
 import { QuickActionsFAB }          from './QuickActionsFAB'
 
@@ -85,6 +86,8 @@ function InnerShell({ user, navBadges = {}, children }: Omit<AppShellProps, 'exc
     // Solo el <main> scrollea internamente
     <div className="fin-shell flex h-screen overflow-hidden"
       style={{ backgroundColor: 'var(--c-bg)', color: 'var(--c-text)' }}>
+      <ReleaseAnnouncementGate />
+
       {/* Sidebar estático — tablet y desktop */}
       <StaticSidebar
         mode={sidebarMode}

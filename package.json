@@ -14,6 +14,7 @@
     "test:e2e:ui": "playwright test --ui",
     "gh:login": "./.tools/gh/gh-current/bin/gh auth login --hostname github.com --git-protocol https --web",
     "gh:status": "./.tools/gh/gh-current/bin/gh auth status",
+    "release:prepare": "node scripts/prepare-release-manifest.mjs",
     "release:check": "npm run build && npm run typecheck && npm run test:e2e -- tests/e2e/login-ui.spec.ts tests/e2e/auth-redirect.spec.ts",
     "release:production": "bash scripts/release-production.sh",
     "db:push": "supabase db push",

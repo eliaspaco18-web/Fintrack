@@ -12,6 +12,7 @@ import { usePathname }      from 'next/navigation'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { getActiveNavItem } from '@/lib/constants/nav'
 import { useTheme } from '@/lib/hooks/useTheme'
+import { CURRENT_RELEASE } from '@/lib/release/current-release'
 import {
   IconBell,
   IconChevronRight,
@@ -293,6 +294,18 @@ export function Topbar(props: TopbarProps) {
             <span>{connectionLabel}</span>
           </div>
 
+          <div
+            className="
+              hidden h-9 items-center rounded-[var(--radius-sm)]
+              border border-[var(--ft-border)] bg-[var(--ft-surface)]
+              px-2.5 text-[11px] font-semibold text-[var(--ft-text-muted)]
+              lg:flex
+            "
+            title={`Versión actual ${CURRENT_RELEASE.version}`}
+          >
+            {CURRENT_RELEASE.version}
+          </div>
+
           <TopbarIconButton
             label={isLight ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro'}
             onClick={toggleTheme}
@@ -342,6 +355,7 @@ export function Topbar(props: TopbarProps) {
                   <p className="truncate text-[13px] font-semibold text-[var(--ft-text)]">{displayName}</p>
                   <p className="truncate text-[11px] text-[var(--ft-text-muted)]">{user.email}</p>
                   <p className="mt-1 text-[11px] font-medium text-[var(--ft-primary)]">Plan Personal</p>
+                  <p className="mt-1 text-[11px] text-[var(--ft-text-subtle)]">Versión {CURRENT_RELEASE.version}</p>
                 </div>
                 <button
                   type="button"
