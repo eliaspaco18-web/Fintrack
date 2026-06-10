@@ -479,6 +479,16 @@ async function countImportedRows(
   return count ?? 0
 }
 
+function countImportedRowsInMemory(job: ImportJobWithRows): number {
+  return job.rows.filter(row => row.status === 'IMPORTED').length
+}
+
+function countCommittedTargets(summary: ImportJobSummary | undefined): number {
+  const tables = summary?.committedTables
+  if (!tables) return 0
+  return Object.values(tables).reduce((acc, value) => acc + (Number.isFinite(value) ? Number(value) : 0), 0)
+}
+
 async function findCommittedJobByFileHash(
   db: DbClient,
   userId: string,
@@ -1549,6 +1559,13 @@ async function commitImportJobData(db: DbClient, userId: string, job: ImportJobW
     })
   }
 
+  const totalCommittedRecords = Object.values(counts).reduce((acc, value) => acc + value, 0)
+  if (totalCommittedRecords === 0) {
+    throw new Error(
+      'La importación no creó registros nuevos. Vuelve a analizar el archivo o revisa si ya fue importado anteriormente.'
+    )
+  }
+
   const committedAt = new Date().toISOString()
   const nextSummary: Partial<ImportJobSummary> = {
     committedTables: counts,
@@ -1603,7 +1620,13 @@ export async function commitImportJob(
 
   if (job.file_hash) {
     const existingCommitted = await findCommittedJobByFileHash(db, userId, job.file_hash, job.id)
-    if (existingCommitted) return existingCommitted
+    if (existingCommitted) {
+      const importedRows = countImportedRowsInMemory(existingCommitted)
+      const committedTargets = countCommittedTargets(existingCommitted.summary)
+      if (importedRows > 0 || committedTargets > 0) {
+        return existingCommitted
+      }
+    }
   }
 
   try {
