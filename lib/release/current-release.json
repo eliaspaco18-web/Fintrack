@@ -1,28 +1,16 @@
 {
-  "version": "V1.0.0.5",
+  "version": "V1.0.0.6",
   "series": "1.0.0",
-  "build": 5,
-  "title": "Actualización en Presupuestos, Alertas, Importaciones",
-  "summary": "Esta versión trae cambios en Presupuestos, Alertas, Importaciones para que tus tareas diarias dentro de FinTrack sean más claras, estables y fáciles de seguir.",
+  "build": 6,
+  "title": "Actualización en Bancos",
+  "summary": "Esta versión trae cambios en Bancos para que tus tareas diarias dentro de FinTrack sean más claras, estables y fáciles de seguir.",
   "highlights": [
     {
-      "module": "Presupuestos",
-      "type": "improve",
-      "title": "Control de presupuestos más fácil de seguir",
-      "detail": "Refinamos el módulo de Presupuestos para que entiendas mejor tus límites, avance y acciones disponibles."
-    },
-    {
-      "module": "Alertas",
-      "type": "improve",
-      "title": "Alertas más visibles y oportunas",
-      "detail": "Refinamos los avisos para que identifiques mejor recordatorios, eventos y pendientes importantes."
-    },
-    {
-      "module": "Importaciones",
-      "type": "new",
-      "title": "Base reforzada para futuras importaciones",
-      "detail": "Preparamos el módulo de Importaciones para que la migración de información sea más robusta y guiada."
+      "module": "Bancos",
+      "type": "fix",
+      "title": "Gestión de bancos y entidades más estable",
+      "detail": "Corregimos el catálogo de entidades bancarias para que crear y usar bancos dentro de la app sea más confiable."
     }
   ],
-  "releasedAt": "2026-06-12T13:15:35.575Z"
+  "releasedAt": "2026-06-12T21:32:37.791Z"
 }

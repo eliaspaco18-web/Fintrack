@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useToast } from '@/lib/toast/toast'
 import { FormActions, FormField, FormSection, OptionalSection } from '@/components/forms/primitives'
 import { FinancialIcon } from '@/components/ui/FinancialIcon'
-import { FileUpload } from '@/components/ui/FileUpload'
+import { IconImageUpload } from '@/components/ui/IconImageUpload'
 import { ColorSwatchPicker, IconGridPicker } from '@/components/ui/VisualPickers'
 import { CATEGORY_COLOR_OPTIONS, CATEGORY_ICON_OPTIONS } from '@/lib/constants/visual-options'
 import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
@@ -400,10 +400,10 @@ export function CategoriesManager() {
                       <Image
                         src={iconSignedUrls[category.id]!}
                         alt={category.name}
-                        width={20}
-                        height={20}
+                        width={32}
+                        height={32}
                         unoptimized
-                        className="h-5 w-5 rounded-sm object-cover"
+                        className="h-8 w-8 rounded-md object-contain"
                       />
                     ) : (
                       <FinancialIcon name={category.icon} size={17} />
@@ -553,7 +553,7 @@ export function CategoriesManager() {
                 />
               </FormField>
 
-              <FileUpload
+              <IconImageUpload
                 value={iconFile}
                 existingUrl={editingId && isUploadedIcon(form.icon) ? (iconSignedUrls[editingId] ?? null) : null}
                 onChange={setIconFile}

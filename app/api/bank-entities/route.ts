@@ -33,7 +33,7 @@ const zCreateBankEntitySchema = z.object({
   code: z.string().trim().min(2).max(20).optional().nullable(),
   country: z.string().trim().min(2).max(3).default('PE'),
   color: z.string().trim().min(4).max(20).default('#0ea5e9'),
-  icon: z.string().trim().min(1).max(40).default('bank'),
+  icon: z.string().trim().min(1).max(512).default('bank'),
   is_active: z.boolean().default(true),
 })
 

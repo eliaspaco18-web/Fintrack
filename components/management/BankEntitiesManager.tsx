@@ -21,7 +21,7 @@ import { useToast } from '@/lib/toast/toast'
 import { FormActions, FormField, FormSection, OptionalSection } from '@/components/forms/primitives'
 import { FinancialIcon } from '@/components/ui/FinancialIcon'
 import { CountrySelect } from '@/components/ui/CountrySelect'
-import { FileUpload } from '@/components/ui/FileUpload'
+import { IconImageUpload } from '@/components/ui/IconImageUpload'
 import { ColorSwatchPicker, IconGridPicker } from '@/components/ui/VisualPickers'
 import { ACCOUNT_COLOR_OPTIONS, ACCOUNT_ICON_OPTIONS } from '@/lib/constants/visual-options'
 import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
@@ -436,10 +436,10 @@ export function BankEntitiesManager() {
                       <Image
                         src={iconSignedUrls[entity.id]!}
                         alt={entity.name}
-                        width={20}
-                        height={20}
+                        width={32}
+                        height={32}
                         unoptimized
-                        className="h-5 w-5 rounded-sm object-cover"
+                        className="h-8 w-8 rounded-md object-contain"
                       />
                     ) : (
                       <FinancialIcon name={entity.icon} size={17} />
@@ -592,7 +592,7 @@ export function BankEntitiesManager() {
                 />
               </FormField>
 
-              <FileUpload
+              <IconImageUpload
                 value={iconFile}
                 existingUrl={editingId && isUploadedIcon(form.icon) ? (iconSignedUrls[editingId] ?? null) : null}
                 onChange={setIconFile}

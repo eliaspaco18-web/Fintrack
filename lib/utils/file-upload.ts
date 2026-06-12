@@ -52,10 +52,18 @@ export async function uploadAttachment(
 ): Promise<UploadResult> {
   const supabase = createClient()
 
-  // Sanitizar nombre de archivo
-  const sanitized = file.name
+  const extensionMatch = file.name.toLowerCase().match(/(\.[a-z0-9]+)$/)
+  const extension = extensionMatch?.[1] ?? ''
+  const baseName = extension.length > 0
+    ? file.name.slice(0, -extension.length)
+    : file.name
+  const sanitizedBase = baseName
     .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
     .toLowerCase()
+  const safeBase = (sanitizedBase || 'file').slice(0, 48)
+  const sanitized = `${safeBase}${extension}`
   const timestamp = Date.now()
   const path = `${userId}/${module}/${recordId}/${timestamp}_${sanitized}`
 

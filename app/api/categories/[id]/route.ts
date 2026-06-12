@@ -30,7 +30,7 @@ function normalizeCategoryKey(name: string, scope: CategoryScope): string {
 const zUpdateCategorySchema = z.object({
   name:       z.string().trim().min(2).max(80).optional(),
   scope:      zCategoryScope.optional(),
-  icon:       z.string().trim().min(1).max(20).optional(),
+  icon:       z.string().trim().min(1).max(512).optional(),
   color:      z.string().trim().min(4).max(20).optional(),
   sort_order: z.number().int().min(0).max(10_000).optional(),
 }).refine(

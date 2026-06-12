@@ -67,7 +67,7 @@ function dedupeCategories(items: CategoryListItem[]): CategoryListItem[] {
 const zCreateCategorySchema = z.object({
   name:       z.string().trim().min(2).max(80),
   scope:      zCategoryScope.default('EXPENSE'),
-  icon:       z.string().trim().min(1).max(20).default('tag'),
+  icon:       z.string().trim().min(1).max(512).default('tag'),
   color:      z.string().trim().min(4).max(20).default('#6b7280'),
   sort_order: z.number().int().min(0).max(10_000).default(100),
 })

@@ -32,7 +32,7 @@ const zUpdateBankEntitySchema = z.object({
   code: z.string().trim().min(2).max(20).nullable().optional(),
   country: z.string().trim().min(2).max(3).optional(),
   color: z.string().trim().min(4).max(20).optional(),
-  icon: z.string().trim().min(1).max(40).optional(),
+  icon: z.string().trim().min(1).max(512).optional(),
   is_active: z.boolean().optional(),
 }).refine(
   data => Object.keys(data).length > 0,
