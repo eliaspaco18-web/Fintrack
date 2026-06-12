@@ -270,6 +270,10 @@ export class TransactionService {
       if (!budgetValidation.ok) return budgetValidation
     }
 
+    const budgetPeriodId = preparedInput.type === 'EXPENSE'
+      ? await this.resolveExpenseBudgetPeriodId(userId, preparedInput)
+      : null
+
     // ── PASO 4: Verificar saldo para EXPENSE y TRANSFER ─────────────────────
     if ((preparedInput.type === 'EXPENSE' && !usesCreditCardAsSource) || preparedInput.type === 'TRANSFER') {
       const balanceResult = validateSufficientBalance(
@@ -298,6 +302,7 @@ export class TransactionService {
 
     // ── PASO 5: Construir payload atómico ────────────────────────────────────
     const payload = this.buildAtomicPayload(userId, preparedInput)
+    payload.p_budget_period_id = budgetPeriodId
     if (
       creditAdjusted?.op === 'PAYMENT' &&
       selectedCreditCard?.account_id &&
@@ -321,6 +326,10 @@ export class TransactionService {
     }
 
     const ids = rpcResult.data
+
+    if (payload.p_budget_period_id) {
+      await this.attachBudgetPeriodToTransaction(ids.transaction_id, payload.p_budget_period_id)
+    }
 
     // ── PASO 7: Cargar registros creados y retornar ───────────────────────────
     return this.loadCreatedRecords(ids)
@@ -500,6 +509,9 @@ export class TransactionService {
     const expBudgetId = input.type === 'EXPENSE'
       ? (input as CreateExpenseInput).budget_id ?? null
       : null
+    const expBudgetPeriodId = input.type === 'EXPENSE'
+      ? (input as CreateExpenseInput).budget_period_id ?? null
+      : null
 
     const base: AtomicTransactionPayload = {
       p_user_id:                userId,
@@ -507,6 +519,7 @@ export class TransactionService {
       p_destination_account_id: input.type === 'TRANSFER' ? input.destination_account_id : null,
       p_category_id:            input.category_id ?? null,
       p_budget_id:              expBudgetId,
+      p_budget_period_id:       expBudgetPeriodId,
       p_type:                   input.type,
       p_amount:                 input.amount,
       p_currency:               input.currency,
@@ -670,6 +683,7 @@ export class TransactionService {
         destination_account_id: payload.p_destination_account_id,
         category_id: payload.p_category_id,
         budget_id: payload.p_budget_id ?? null,
+        budget_period_id: payload.p_budget_period_id ?? null,
         type: payload.p_type,
         amount: payload.p_amount,
         amount_pen: payload.p_currency === 'USD'
@@ -812,6 +826,50 @@ export class TransactionService {
     const destinationCurrency = destinationAccount?.currency ?? input.currency
     const raw = `Transferencia de ${sourceAccount.name} / ${sourceAccount.currency} a ${destinationName} / ${destinationCurrency}`
     return raw.slice(0, 255)
+  }
+
+  private async resolveExpenseBudgetPeriodId(
+    userId: string,
+    input: CreateExpenseInput,
+  ): Promise<string | null> {
+    if (input.budget_period_id) return input.budget_period_id
+    if (!input.budget_id) return null
+
+    try {
+      const { data, error } = await this.db
+        .from('budget_periods')
+        .select(`
+          id,
+          budget:budget_series(user_id)
+        `)
+        .eq('legacy_budget_id', input.budget_id)
+        .lte('period_start', input.transaction_date)
+        .gte('period_end', input.transaction_date)
+        .limit(1)
+        .maybeSingle()
+
+      if (error || !data) return null
+      const budget = Array.isArray(data.budget) ? data.budget[0] : data.budget
+      if (!budget || budget.user_id !== userId) return null
+
+      return data.id
+    } catch {
+      return null
+    }
+  }
+
+  private async attachBudgetPeriodToTransaction(
+    transactionId: string,
+    budgetPeriodId: string,
+  ): Promise<void> {
+    try {
+      await this.db
+        .from('transactions')
+        .update({ budget_period_id: budgetPeriodId })
+        .eq('id', transactionId)
+    } catch {
+      // Compatibilidad: si la columna aún no existe en un entorno, no bloquea el alta.
+    }
   }
 
   private async validateExpenseBudget(

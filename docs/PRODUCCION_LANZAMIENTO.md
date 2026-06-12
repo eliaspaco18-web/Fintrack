@@ -70,10 +70,15 @@ Requiere `E2E_USER_EMAIL` y `E2E_USER_PASSWORD`.
   - crear entidad bancaria
   - desactivar/reactivar entidad bancaria
 - Presupuestos:
-  - crear presupuesto
+  - crear presupuesto maestro
+  - crear periodo presupuestal
+  - editar importe/estado de un periodo
+  - validar vista de presupuestos agrupada por serie
+  - validar vista de presupuestos por periodo
   - desactivar/reactivar presupuesto
   - eliminar presupuesto
   - ver presupuesto compatible en movimientos
+  - crear egreso asociado a presupuesto y confirmar imputacion al periodo correcto
 - Movimientos:
   - crear egreso
   - crear compra de activo

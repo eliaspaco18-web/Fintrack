@@ -81,6 +81,15 @@ export type ImportTemplateCatalogs = {
     balance: number
   }>
   creditCards: string[]
+  budgets: string[]
+  budgetWindows: Array<{
+    name: string
+    currency: string
+    period_type: string
+    start_date: string
+    end_date: string | null
+    category: string | null
+  }>
   generatedFor: string
 }
 
@@ -330,7 +339,7 @@ function addListSheet(workbook: ExcelJS.Workbook, catalogs: ImportTemplateCatalo
     assetTypes: catalogs.assetTypes,
     portfolios: catalogs.portfolios,
     creditCards: catalogs.creditCards,
-    budgets: [],
+    budgets: catalogs.budgets,
     credits: [],
     debtors: [],
     creditors: [],
@@ -393,6 +402,7 @@ function addCatalogsUserSheet(workbook: ExcelJS.Workbook, catalogs: ImportTempla
     ...catalogs.bankEntities.map(value => ({ tipo: 'entidad_bancaria', valor: value })),
     ...catalogs.assetTypes.map(value => ({ tipo: 'tipo_activo', valor: value })),
     ...catalogs.creditCards.map(value => ({ tipo: 'tarjeta_credito', valor: value })),
+    ...catalogs.budgets.map(value => ({ tipo: 'presupuesto', valor: value })),
   ]
   sheet.addRows(rows)
 }
@@ -462,7 +472,7 @@ export async function loadImportTemplateCatalogs(
   userId: string,
 ): Promise<ImportTemplateCatalogs> {
   const db = supabase as SupabaseClient
-  const [currenciesRes, categoriesRes, bankEntitiesRes, assetTypesRes, accountsRes, creditsRes] = await Promise.all([
+  const [currenciesRes, categoriesRes, bankEntitiesRes, assetTypesRes, accountsRes, creditsRes, budgetsRes] = await Promise.all([
     db
       .from('user_currencies')
       .select('code, name, is_active, is_system')
@@ -492,6 +502,11 @@ export async function loadImportTemplateCatalogs(
       .select('name, credit_type')
       .eq('user_id', userId)
       .eq('credit_type', 'CREDIT_CARD'),
+    db
+      .from('budgets')
+      .select('name, currency, period_type, start_date, end_date, is_active, category:categories(name)')
+      .eq('user_id', userId)
+      .eq('is_active', true),
   ])
 
   const firstError =
@@ -500,7 +515,8 @@ export async function loadImportTemplateCatalogs(
     bankEntitiesRes.error ??
     assetTypesRes.error ??
     accountsRes.error ??
-    creditsRes.error
+    creditsRes.error ??
+    budgetsRes.error
   if (firstError) throw new Error(firstError.message)
 
   const currencies = uniqueSorted(
@@ -539,6 +555,18 @@ export async function loadImportTemplateCatalogs(
 
   const portfolios = uniqueSorted(portfolioSnapshots.map(row => row.name))
   const creditCards = uniqueSorted((creditsRes.data ?? []).map(row => row.name))
+  const budgetWindows = (budgetsRes.data ?? []).map(row => {
+    const category = Array.isArray(row.category) ? row.category[0] : row.category
+    return {
+      name: String(row.name),
+      currency: String(row.currency),
+      period_type: String(row.period_type),
+      start_date: String(row.start_date),
+      end_date: row.end_date ? String(row.end_date) : null,
+      category: category?.name ? String(category.name) : null,
+    }
+  })
+  const budgets = uniqueSorted(budgetWindows.map(row => row.name))
 
   return {
     currencies,
@@ -549,6 +577,8 @@ export async function loadImportTemplateCatalogs(
     portfolios,
     portfolioSnapshots,
     creditCards,
+    budgets,
+    budgetWindows,
     generatedFor: userId,
   }
 }
@@ -636,6 +666,7 @@ export async function buildImportTemplateWorkbook(catalogs: ImportTemplateCatalo
         note: 'Selecciona el portafolio existente desde donde sale el dinero.',
       },
       { key: 'categoria', header: 'Categoria del egreso', width: 28, required: true, list: 'expenseCategories', note: 'Selecciona la categoría de egreso exactamente como existe en FinTrack.' },
+      { key: 'presupuesto', header: 'Presupuesto', width: 30, list: 'budgets', note: 'Opcional. Selecciona el nombre del presupuesto. FinTrack validara que exista un periodo compatible con la fecha, moneda y categoria del egreso.' },
       { key: 'descripcion', header: 'Descripcion', width: 40, required: true, kind: 'text', note: 'Texto corto para identificar el egreso. Ejemplo: Compra supermercado.' },
       { key: 'moneda', header: 'Moneda', width: 14, required: true, list: 'currencies', note: 'Moneda del movimiento.' },
       { key: 'monto', header: 'Monto del egreso', width: 18, required: true, kind: 'money', note: 'Monto positivo del egreso. No uses simbolos de moneda.' },
@@ -698,11 +729,13 @@ export async function buildImportTemplateWorkbook(catalogs: ImportTemplateCatalo
         note: 'Selecciona el portafolio existente desde donde sale el dinero.',
       },
       { key: 'categoria', header: 'Categoria del egreso', width: 28, required: true, list: 'expenseCategories', note: 'Selecciona la categoría de egreso exactamente como existe en FinTrack.' },
+      { key: 'presupuesto', header: 'Presupuesto', width: 30, list: 'budgets', note: 'Opcional. Selecciona el nombre del presupuesto. FinTrack validara que exista un periodo compatible con la fecha, moneda y categoria de la compra.' },
       { key: 'descripcion', header: 'Descripcion', width: 38, required: true, kind: 'text', note: 'Texto corto del movimiento. Ejemplo: Compra laptop Dell.' },
       { key: 'moneda', header: 'Moneda', width: 14, required: true, list: 'currencies', note: 'Moneda de la compra.' },
       { key: 'monto', header: 'Monto de la compra', width: 18, required: true, kind: 'money', note: 'Monto pagado por el activo.' },
       { key: 'forma_pago', header: 'Forma de pago', width: 18, list: 'paymentMethods', note: 'Selecciona DEBIT o CREDIT.' },
       { key: 'tarjeta_credito', header: 'Tarjeta de credito', width: 24, list: 'creditCards', note: 'Solo si forma de pago es CREDIT. Selecciona la tarjeta existente en FinTrack.' },
+      { key: 'destinatario', header: 'Destinatario', width: 26, kind: 'text', note: 'Persona o comercio que recibe el pago. Opcional.' },
       { key: 'nombre_activo', header: 'Nombre del activo', width: 28, required: true, kind: 'text', note: 'Nombre visible del activo que se creará en FinTrack.' },
       { key: 'tipo_activo', header: 'Tipo de activo', width: 24, list: 'assetTypes', note: 'Tipo de activo ya existente en FinTrack. Opcional si luego se ajusta manualmente.' },
       { key: 'valor_actual', header: 'Valor actual', width: 16, required: true, kind: 'money', note: 'Valor actual del activo al momento de importarlo.' },

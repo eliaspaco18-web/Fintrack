@@ -106,6 +106,8 @@ export const zCreateExpenseSchema = zTransactionBase
     receivable: zReceivableModule.optional(),
     // Fase B — vincular egreso con presupuesto activo
     budget_id: zUUID.optional(),
+    // Fase periodos — imputación exacta al periodo presupuestal
+    budget_period_id: zUUID.optional(),
     // PRD v3 — campos adicionales
     recipient: z.string().max(150).trim().optional(),
   })

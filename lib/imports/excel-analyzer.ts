@@ -74,7 +74,7 @@ export type ExcelImportAnalysis = {
 
 type AnalysisCatalogs = Pick<
   ImportTemplateCatalogs,
-  'portfolios' | 'portfolioSnapshots' | 'incomeCategories' | 'expenseCategories' | 'creditCards'
+  'portfolios' | 'portfolioSnapshots' | 'incomeCategories' | 'expenseCategories' | 'creditCards' | 'budgets' | 'budgetWindows'
 >
 
 const PAYMENT_METHODS = ['DEBIT', 'CREDIT'] as const
@@ -96,6 +96,7 @@ const SHEET_RULES: Record<SheetName, ColumnRule[]> = {
     { key: 'fecha', header: 'Fecha del egreso', required: true, type: 'date' },
     { key: 'portafolio_origen', header: 'Portafolio origen', required: true, type: 'text' },
     { key: 'categoria', header: 'Categoria del egreso', required: true, type: 'text' },
+    { key: 'presupuesto', header: 'Presupuesto', type: 'text' },
     { key: 'descripcion', header: 'Descripcion', required: true, type: 'text' },
     { key: 'moneda', header: 'Moneda', required: true, type: 'text' },
     { key: 'monto', header: 'Monto del egreso', required: true, type: 'number' },
@@ -117,11 +118,13 @@ const SHEET_RULES: Record<SheetName, ColumnRule[]> = {
     { key: 'fecha', header: 'Fecha de compra', required: true, type: 'date' },
     { key: 'portafolio_origen', header: 'Portafolio origen', required: true, type: 'text' },
     { key: 'categoria', header: 'Categoria del egreso', required: true, type: 'text' },
+    { key: 'presupuesto', header: 'Presupuesto', type: 'text' },
     { key: 'descripcion', header: 'Descripcion', required: true, type: 'text' },
     { key: 'moneda', header: 'Moneda', required: true, type: 'text' },
     { key: 'monto', header: 'Monto de la compra', required: true, type: 'number' },
     { key: 'forma_pago', header: 'Forma de pago', type: 'text', allowed: PAYMENT_METHODS },
     { key: 'tarjeta_credito', header: 'Tarjeta de credito', type: 'text' },
+    { key: 'destinatario', header: 'Destinatario', type: 'text' },
     { key: 'nombre_activo', header: 'Nombre del activo', required: true, type: 'text' },
     { key: 'tipo_activo', header: 'Tipo de activo', type: 'text' },
     { key: 'valor_actual', header: 'Valor actual', required: true, type: 'number' },
@@ -171,6 +174,22 @@ function normalizeHeader(value: unknown): string {
 
 function normalizeName(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('es')
+}
+
+function budgetMatchesRow(
+  budget: ImportTemplateCatalogs['budgetWindows'][number],
+  payload: Record<string, unknown>,
+): boolean {
+  const transactionDate = textValue(payload.fecha)
+  const currency = textValue(payload.moneda)?.toUpperCase()
+  const category = textValue(payload.categoria)
+
+  if (currency && budget.currency.toUpperCase() !== currency) return false
+  if (transactionDate && transactionDate < budget.start_date) return false
+  if (transactionDate && budget.end_date && transactionDate > budget.end_date) return false
+  if (budget.category && category && normalizeName(budget.category) !== normalizeName(category)) return false
+
+  return true
 }
 
 function isBlank(value: unknown): boolean {
@@ -408,6 +427,14 @@ function addRelationIssues(rows: RowAnalysis[], catalogs: AnalysisCatalogs) {
   const incomeCategories = new Set(catalogs.incomeCategories.map(value => normalizeName(value)))
   const expenseCategories = new Set(catalogs.expenseCategories.map(value => normalizeName(value)))
   const creditCards = new Set(catalogs.creditCards.map(value => normalizeName(value)))
+  const budgets = new Set(catalogs.budgets.map(value => normalizeName(value)))
+  const budgetWindowsByName = new Map<string, ImportTemplateCatalogs['budgetWindows']>()
+  for (const budget of catalogs.budgetWindows) {
+    const key = normalizeName(budget.name)
+    const group = budgetWindowsByName.get(key) ?? []
+    group.push(budget)
+    budgetWindowsByName.set(key, group)
+  }
 
   for (const row of rows) {
     const origin = textValue(row.payload.portafolio_origen)
@@ -415,6 +442,7 @@ function addRelationIssues(rows: RowAnalysis[], catalogs: AnalysisCatalogs) {
     const category = textValue(row.payload.categoria)
     const paymentMethod = textValue(row.payload.forma_pago)
     const creditCard = textValue(row.payload.tarjeta_credito)
+    const budget = textValue(row.payload.presupuesto)
 
     if (row.sheet_name === '03_Ingresos') {
       if (destination && !portfolioNames.has(normalizeName(destination))) {
@@ -434,6 +462,21 @@ function addRelationIssues(rows: RowAnalysis[], catalogs: AnalysisCatalogs) {
       }
       if (paymentMethod === 'CREDIT' && creditCard && !creditCards.has(normalizeName(creditCard))) {
         row.errors.push(issue('ERROR', 'tarjeta_credito', 'UNKNOWN_CREDIT_CARD', 'La tarjeta de credito no existe en FinTrack.'))
+      }
+      if (budget && !budgets.has(normalizeName(budget))) {
+        row.errors.push(issue('ERROR', 'presupuesto', 'UNKNOWN_BUDGET', 'El presupuesto no existe en FinTrack o no esta activo.'))
+      }
+      if (budget && budgets.has(normalizeName(budget))) {
+        const compatible = (budgetWindowsByName.get(normalizeName(budget)) ?? [])
+          .some(candidate => budgetMatchesRow(candidate, row.payload))
+        if (!compatible) {
+          row.errors.push(issue(
+            'ERROR',
+            'presupuesto',
+            'BUDGET_NOT_COMPATIBLE_WITH_ROW',
+            'El presupuesto existe, pero no tiene un periodo compatible con la fecha, moneda y categoria del registro.',
+          ))
+        }
       }
     }
 

@@ -706,6 +706,129 @@ export type Database = {
           },
         ]
       }
+      budget_series: {
+        Row: {
+          category_id: string | null
+          created_at: string
+          currency: string
+          default_amount: number
+          description: string | null
+          end_date: string | null
+          id: string
+          is_active: boolean
+          legacy_series_id: string | null
+          name: string
+          notes: string | null
+          period_type: Database["public"]["Enums"]["budget_period"]
+          start_date: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          category_id?: string | null
+          created_at?: string
+          currency?: string
+          default_amount: number
+          description?: string | null
+          end_date?: string | null
+          id?: string
+          is_active?: boolean
+          legacy_series_id?: string | null
+          name: string
+          notes?: string | null
+          period_type?: Database["public"]["Enums"]["budget_period"]
+          start_date: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          category_id?: string | null
+          created_at?: string
+          currency?: string
+          default_amount?: number
+          description?: string | null
+          end_date?: string | null
+          id?: string
+          is_active?: boolean
+          legacy_series_id?: string | null
+          name?: string
+          notes?: string | null
+          period_type?: Database["public"]["Enums"]["budget_period"]
+          start_date?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_series_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_series_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      budget_periods: {
+        Row: {
+          amount: number
+          budget_id: string
+          created_at: string
+          id: string
+          legacy_budget_id: string | null
+          notes: string | null
+          period_end: string
+          period_start: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          budget_id: string
+          created_at?: string
+          id?: string
+          legacy_budget_id?: string | null
+          notes?: string | null
+          period_end: string
+          period_start: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          budget_id?: string
+          created_at?: string
+          id?: string
+          legacy_budget_id?: string | null
+          notes?: string | null
+          period_end?: string
+          period_start?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_periods_budget_id_fkey"
+            columns: ["budget_id"]
+            isOneToOne: false
+            referencedRelation: "budget_series"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_periods_legacy_budget_id_fkey"
+            columns: ["legacy_budget_id"]
+            isOneToOne: false
+            referencedRelation: "budgets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       categories: {
         Row: {
           color: string
@@ -1331,6 +1454,7 @@ export type Database = {
           amount_pen: number
           attachment_url: string | null
           budget_id: string | null
+          budget_period_id: string | null
           category_id: string | null
           created_at: string
           creditor_id: string | null
@@ -1361,6 +1485,7 @@ export type Database = {
           amount_pen: number
           attachment_url?: string | null
           budget_id?: string | null
+          budget_period_id?: string | null
           category_id?: string | null
           created_at?: string
           creditor_id?: string | null
@@ -1391,6 +1516,7 @@ export type Database = {
           amount_pen?: number
           attachment_url?: string | null
           budget_id?: string | null
+          budget_period_id?: string | null
           category_id?: string | null
           created_at?: string
           creditor_id?: string | null
@@ -1421,6 +1547,13 @@ export type Database = {
             columns: ["budget_id"]
             isOneToOne: false
             referencedRelation: "budgets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_budget_period_id_fkey"
+            columns: ["budget_period_id"]
+            isOneToOne: false
+            referencedRelation: "budget_periods"
             referencedColumns: ["id"]
           },
           {
@@ -2111,6 +2244,8 @@ export type Account = Tables<'accounts'>
 export type Asset = Tables<'assets'>
 export type AssetTypeRow = Tables<'asset_types'>
 export type Budget = Tables<'budgets'>
+export type BudgetSeries = Tables<'budget_series'>
+export type BudgetPeriodRow = Tables<'budget_periods'>
 export type Credit = Tables<'credits'>
 export type Installment = Tables<'installments'>
 export type Loan = Tables<'loans'>

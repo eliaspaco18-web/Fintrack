@@ -62,6 +62,8 @@ export interface CreateExpenseInput extends BaseTransactionInput {
   receivable?: CreateReceivableModuleInput
   /** Fase B — ID del presupuesto activo al que se imputa este egreso */
   budget_id?: string
+  /** Fase periodos — ID explicito del periodo presupuestal, resuelto por backend si se omite */
+  budget_period_id?: string
 }
 
 // ── TRANSFER ──────────────────────────────────────────────────────────────────
@@ -206,6 +208,7 @@ export interface AtomicTransactionPayload {
   p_destination_account_id:   string | null
   p_category_id:              string | null
   p_budget_id:                string | null
+  p_budget_period_id:         string | null
   p_type:                     TransactionType
   p_amount:                   number
   p_currency:                 CurrencyCode

@@ -9,9 +9,11 @@ import {
   apiCreated,
   apiError,
   apiUnauthorized,
+  apiZodError,
   getSessionUserId,
 } from '@/lib/api/response'
 import type { BudgetPeriod } from '@/types/database.types'
+import { z } from 'zod'
 
 interface Params {
   params: { id: string }
@@ -77,10 +79,21 @@ function resolveEffectiveEndDate(budget: BudgetSeriesRow): string {
   return budget.end_date ?? calcEndDate(budget.start_date, budget.period_type)
 }
 
-export async function POST(_req: Request, { params }: Params) {
+const continuationSchema = z.object({
+  amount: z.number().positive().optional(),
+  notes: z.string().trim().nullable().optional(),
+})
+
+export async function POST(req: Request, { params }: Params) {
   const supabase = createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
+
+  const body = await req.json().catch(() => ({}))
+  const parsed = continuationSchema.safeParse(body ?? {})
+  if (!parsed.success) {
+    return apiZodError(parsed.error)
+  }
 
   const { data: sourceBudget, error: sourceError } = await supabase
     .from('budgets')
@@ -159,13 +172,13 @@ export async function POST(_req: Request, { params }: Params) {
       name: sourceBudget.name,
       description: sourceBudget.description,
       category_id: sourceBudget.category_id,
-      amount: sourceBudget.amount,
+      amount: parsed.data.amount ?? sourceBudget.amount,
       currency: sourceBudget.currency,
       period_type: sourceBudget.period_type,
       start_date: nextStartDate,
       end_date: nextEndDate,
       is_active: true,
-      notes: sourceBudget.notes,
+      notes: parsed.data.notes ?? sourceBudget.notes,
     })
     .select(`
       id,

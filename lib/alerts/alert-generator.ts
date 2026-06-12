@@ -15,6 +15,10 @@ import {
   resolveBudgetWindowAtDate,
   type BudgetMetricTransaction,
 } from '@/lib/budgets/budget-metrics'
+import {
+  buildBudgetPeriodMetrics,
+  type BudgetPeriodMetricTransaction,
+} from '@/lib/budgets/budget-periods'
 import type { CurrencyCode } from '@/types/database.types'
 
 // ─── TIPOS INTERNOS ──────────────────────────────────────────────────────────
@@ -43,6 +47,29 @@ type AlertBudgetRow = {
   start_date: string
   end_date: string | null
   period_type: 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY'
+}
+
+type AlertBudgetPeriodRow = {
+  id: string
+  legacy_budget_id: string | null
+  period_start: string
+  period_end: string
+  amount: number
+  status: string
+  budget: {
+    id: string
+    name: string
+    currency: CurrencyCode
+  } | {
+    id: string
+    name: string
+    currency: CurrencyCode
+  }[] | null
+}
+
+function pickSingle<T>(value: T | T[] | null | undefined): T | null {
+  if (Array.isArray(value)) return value[0] ?? null
+  return value ?? null
 }
 
 // ─── FUNCIÓN PRINCIPAL ────────────────────────────────────────────────────────
@@ -178,35 +205,50 @@ export async function generateAlertsForUser(
   // ─── 4. OPERATIVAS: Presupuesto ≥80% del monto ────────────────────────────
   try {
     const todayIso = today.toISOString().slice(0, 10)
+    let usedExplicitPeriods = false
 
-    const { data: budgets, error } = await supabase
-      .from('budgets')
-      .select('id, name, amount, currency, start_date, end_date, period_type')
-      .eq('user_id', userId)
-      .eq('is_active', true)
+    const { data: periods, error: periodsError } = await supabase
+      .from('budget_periods')
+      .select(`
+        id,
+        legacy_budget_id,
+        period_start,
+        period_end,
+        amount,
+        status,
+        budget:budget_series!inner(id,name,currency,user_id,is_active)
+      `)
+      .lte('period_start', todayIso)
+      .gte('period_end', todayIso)
+      .in('status', ['ACTIVE', 'PLANNED'])
+      .eq('budget.user_id', userId)
+      .eq('budget.is_active', true)
 
-    if (error) {
-      result.errors.push(`budgets: ${error.message}`)
-    } else {
-      for (const budget of (budgets ?? []) as AlertBudgetRow[]) {
-        const activeWindow = resolveBudgetWindowAtDate(budget, todayIso)
-        if (!activeWindow) continue
+    if (!periodsError) {
+      usedExplicitPeriods = true
+
+      for (const period of (periods ?? []) as AlertBudgetPeriodRow[]) {
+        const budget = pickSingle(period.budget)
+        if (!budget) continue
 
         const { data: txs, error: txErr } = await supabase
           .from('transactions')
-          .select('amount, currency, exchange_rate, budget_id, transaction_date')
+          .select('amount, currency, exchange_rate, budget_id, budget_period_id, transaction_date')
           .eq('user_id', userId)
           .eq('type', 'EXPENSE')
-          .eq('budget_id', budget.id)
-          .gte('transaction_date', activeWindow.start)
-          .lte('transaction_date', activeWindow.end)
+          .gte('transaction_date', period.period_start)
+          .lte('transaction_date', period.period_end)
+          .or([
+            `budget_period_id.eq.${period.id}`,
+            period.legacy_budget_id ? `budget_id.eq.${period.legacy_budget_id}` : '',
+          ].filter(Boolean).join(','))
 
-        if (txErr) { result.errors.push(`budget txs ${budget.id}: ${txErr.message}`); continue }
+        if (txErr) { result.errors.push(`budget period txs ${period.id}: ${txErr.message}`); continue }
 
-        const metrics = buildBudgetMetrics(
-          budget,
-          (txs ?? []) as BudgetMetricTransaction[],
-          activeWindow,
+        const metrics = buildBudgetPeriodMetrics(
+          { currency: budget.currency },
+          period,
+          (txs ?? []) as BudgetPeriodMetricTransaction[],
         )
         const pct = metrics.progress_percent
 
@@ -214,7 +256,7 @@ export async function generateAlertsForUser(
           candidates.push({
             alert_type:       'OPERATIONAL',
             source_module:    'budgets',
-            source_record_id: budget.id,
+            source_record_id: period.id,
             title:            `Presupuesto excedido`,
             message:          `El presupuesto "${budget.name}" ha sido superado (${pct.toFixed(0)}%).`,
             href:             `/budgets`,
@@ -224,12 +266,69 @@ export async function generateAlertsForUser(
           candidates.push({
             alert_type:       'OPERATIONAL',
             source_module:    'budgets',
-            source_record_id: budget.id,
+            source_record_id: period.id,
             title:            `Presupuesto al ${pct.toFixed(0)}%`,
             message:          `El presupuesto "${budget.name}" ha alcanzado el ${pct.toFixed(0)}% de su límite.`,
             href:             `/budgets`,
             event:            'BUDGET_80_PCT',
           })
+        }
+      }
+    }
+
+    if (!usedExplicitPeriods) {
+      const { data: budgets, error } = await supabase
+        .from('budgets')
+        .select('id, name, amount, currency, start_date, end_date, period_type')
+        .eq('user_id', userId)
+        .eq('is_active', true)
+
+      if (error) {
+        result.errors.push(`budgets: ${error.message}`)
+      } else {
+        for (const budget of (budgets ?? []) as AlertBudgetRow[]) {
+          const activeWindow = resolveBudgetWindowAtDate(budget, todayIso)
+          if (!activeWindow) continue
+
+          const { data: txs, error: txErr } = await supabase
+            .from('transactions')
+            .select('amount, currency, exchange_rate, budget_id, transaction_date')
+            .eq('user_id', userId)
+            .eq('type', 'EXPENSE')
+            .eq('budget_id', budget.id)
+            .gte('transaction_date', activeWindow.start)
+            .lte('transaction_date', activeWindow.end)
+
+          if (txErr) { result.errors.push(`budget txs ${budget.id}: ${txErr.message}`); continue }
+
+          const metrics = buildBudgetMetrics(
+            budget,
+            (txs ?? []) as BudgetMetricTransaction[],
+            activeWindow,
+          )
+          const pct = metrics.progress_percent
+
+          if (pct >= 100) {
+            candidates.push({
+              alert_type:       'OPERATIONAL',
+              source_module:    'budgets',
+              source_record_id: budget.id,
+              title:            `Presupuesto excedido`,
+              message:          `El presupuesto "${budget.name}" ha sido superado (${pct.toFixed(0)}%).`,
+              href:             `/budgets`,
+              event:            'BUDGET_EXCEEDED',
+            })
+          } else if (pct >= 80) {
+            candidates.push({
+              alert_type:       'OPERATIONAL',
+              source_module:    'budgets',
+              source_record_id: budget.id,
+              title:            `Presupuesto al ${pct.toFixed(0)}%`,
+              message:          `El presupuesto "${budget.name}" ha alcanzado el ${pct.toFixed(0)}% de su límite.`,
+              href:             `/budgets`,
+              event:            'BUDGET_80_PCT',
+            })
+          }
         }
       }
     }

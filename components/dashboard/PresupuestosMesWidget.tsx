@@ -20,6 +20,20 @@ type BudgetWidgetItem = {
   period_end: string
 }
 
+type BudgetPeriodWidgetItem = {
+  id: string
+  amount: number
+  spent_amount: number
+  progress_percent: number
+  over_limit: boolean
+  period_start: string
+  period_end: string
+  budget: {
+    name: string
+    currency: 'PEN' | 'USD'
+  }
+}
+
 function formatLocalDate(date: Date) {
   const year = date.getFullYear()
   const month = `${date.getMonth() + 1}`.padStart(2, '0')
@@ -45,14 +59,37 @@ function budgetTone(item: BudgetWidgetItem): 'primary' | 'warning' | 'danger' {
   return 'primary'
 }
 
+function fromBudgetPeriod(item: BudgetPeriodWidgetItem): BudgetWidgetItem {
+  return {
+    id: item.id,
+    name: item.budget.name,
+    amount: item.amount,
+    currency: item.budget.currency,
+    spent_amount: item.spent_amount,
+    progress_percent: item.progress_percent,
+    over_limit: item.over_limit,
+    period_start: item.period_start,
+    period_end: item.period_end,
+  }
+}
+
 export function PresupuestosMesWidget() {
   const localDate = formatLocalDate(new Date())
   const monthLabel = new Date(`${localDate}T12:00:00`).toLocaleDateString('es-PE', {
     month: 'long',
     year: 'numeric',
   })
-  const queryKey = `/api/budgets?is_active=true&transaction_date=${localDate}`
-  const { data, isLoading } = useSWR(queryKey, (url: string) => fetchDashboardData<BudgetWidgetItem[]>(url), {
+  const periodMonth = localDate.slice(0, 7)
+  const legacyQueryKey = `/api/budgets?is_active=true&transaction_date=${localDate}`
+  const queryKey = `/api/budget-periods?period=${periodMonth}`
+  const { data, isLoading } = useSWR(queryKey, async (url: string) => {
+    try {
+      const periodRows = await fetchDashboardData<BudgetPeriodWidgetItem[]>(url)
+      return periodRows.map(fromBudgetPeriod)
+    } catch {
+      return fetchDashboardData<BudgetWidgetItem[]>(legacyQueryKey)
+    }
+  }, {
     revalidateOnFocus: false,
     dedupingInterval: 30_000,
   })

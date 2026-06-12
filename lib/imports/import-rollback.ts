@@ -34,6 +34,8 @@ const DELETE_ORDER = [
   'assets',
   'transactions',
   'credits',
+  'budget_periods',
+  'budget_series',
   'budgets',
   'debtors',
   'creditors',
@@ -223,6 +225,12 @@ async function collectRollbackBlockers(
       findRowsByForeignKey(db, userId, 'recurring_transactions', 'budget_id', budgetIds, listTargetIds(plan, 'recurring_transactions')),
     ])
     if (txs.length > 0 || recurring.length > 0) blockers.push('Hay presupuestos importados que ya quedaron referenciados por movimientos o recurrentes nuevos.')
+  }
+
+  const budgetPeriodIds = listTargetIds(plan, 'budget_periods')
+  if (budgetPeriodIds.length > 0) {
+    const txs = await findRowsByForeignKey(db, userId, 'transactions', 'budget_period_id', budgetPeriodIds, txIds)
+    if (txs.length > 0) blockers.push('Hay periodos presupuestales importados que ya quedaron referenciados por movimientos nuevos.')
   }
 
   const categoryIds = listTargetIds(plan, 'categories')

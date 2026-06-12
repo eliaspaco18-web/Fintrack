@@ -16,6 +16,8 @@ type CommitCounts = Record<
   | 'credits'
   | 'assets'
   | 'budgets'
+  | 'budget_series'
+  | 'budget_periods'
   | 'debtors'
   | 'creditors'
   | 'receivables'
@@ -46,6 +48,8 @@ type BudgetRef = {
   currency: string
   period_type: Database['public']['Enums']['budget_period']
   start_date: string
+  end_date: string | null
+  category_id: string | null
 }
 
 type CounterpartyRef = {
@@ -85,7 +89,7 @@ type NormalizedCatalogs = {
   accountsByRowKey: Map<string, AccountRef>
   creditsByName: Map<string, CreditRef>
   creditsByRowKey: Map<string, CreditRef>
-  budgetsByName: Map<string, BudgetRef>
+  budgetsByName: Map<string, BudgetRef[]>
   budgetsByRowKey: Map<string, BudgetRef>
   debtorsByName: Map<string, CounterpartyRef>
   debtorsByRowKey: Map<string, CounterpartyRef>
@@ -181,7 +185,7 @@ async function loadExistingContext(db: DbClient, userId: string): Promise<Import
     db.from('categories').select('id, name, scope').eq('user_id', userId),
     db.from('asset_types').select('id, name, is_system, user_id').or(`user_id.eq.${userId},is_system.eq.true`),
     db.from('accounts').select('id, name, currency, type, bank_entity_id').eq('user_id', userId),
-    db.from('budgets').select('id, name, currency, period_type, start_date').eq('user_id', userId),
+    db.from('budgets').select('id, name, currency, period_type, start_date, end_date, category_id').eq('user_id', userId),
     db.from('credits').select('id, name, account_id, credit_type').eq('user_id', userId),
     db.from('debtors').select('id, name').eq('user_id', userId),
     db.from('creditors').select('id, name').eq('user_id', userId),
@@ -252,15 +256,22 @@ async function loadExistingContext(db: DbClient, userId: string): Promise<Import
     accountsByName.set(nameKey, group)
   }
 
-  const budgetsByName = new Map<string, BudgetRef>()
+  const budgetsByName = new Map<string, BudgetRef[]>()
+  const budgetsByRowKey = new Map<string, BudgetRef>()
   for (const row of budgetsRes.data ?? []) {
-    budgetsByName.set(normalizeName(String(row.name)), {
+    const entry = {
       id: String(row.id),
       name: String(row.name),
       currency: String(row.currency),
       period_type: row.period_type,
       start_date: String(row.start_date),
-    })
+      end_date: row.end_date ? String(row.end_date) : null,
+      category_id: row.category_id ? String(row.category_id) : null,
+    } satisfies BudgetRef
+    const nameKey = normalizeName(entry.name)
+    const group = budgetsByName.get(nameKey) ?? []
+    group.push(entry)
+    budgetsByName.set(nameKey, group)
   }
 
   const creditsByName = new Map<string, CreditRef>()
@@ -295,7 +306,7 @@ async function loadExistingContext(db: DbClient, userId: string): Promise<Import
     creditsByName,
     creditsByRowKey: new Map(),
     budgetsByName,
-    budgetsByRowKey: new Map(),
+    budgetsByRowKey,
     debtorsByName,
     debtorsByRowKey: new Map(),
     creditorsByName,
@@ -352,14 +363,37 @@ function resolveBankEntityId(ctx: ImportContext, rawValue: unknown): string | nu
   return ctx.bankEntities.get(normalizeName(value))?.id ?? null
 }
 
-function resolveBudgetId(ctx: ImportContext, rawValue: unknown): string | null {
+function resolveBudgetId(
+  ctx: ImportContext,
+  rawValue: unknown,
+  filters?: {
+    transactionDate?: unknown
+    currency?: unknown
+    categoryId?: string | null
+  },
+): string | null {
   const value = trimText(rawValue)
   if (!value) return null
-  return (
-    ctx.budgetsByRowKey.get(value)?.id ??
-    ctx.budgetsByName.get(normalizeName(value))?.id ??
-    null
-  )
+  const direct = ctx.budgetsByRowKey.get(value)
+  if (direct) return direct.id
+
+  const candidates = ctx.budgetsByName.get(normalizeName(value)) ?? []
+  if (candidates.length === 0) return null
+  if (candidates.length === 1) return candidates[0]?.id ?? null
+
+  const transactionDate = trimText(filters?.transactionDate)
+  const currency = toUpperText(filters?.currency)
+  const categoryId = filters?.categoryId ?? null
+
+  const compatible = candidates.find(candidate => {
+    if (currency && candidate.currency.toUpperCase() !== currency) return false
+    if (transactionDate && transactionDate < candidate.start_date) return false
+    if (transactionDate && candidate.end_date && transactionDate > candidate.end_date) return false
+    if (categoryId && candidate.category_id && candidate.category_id !== categoryId) return false
+    return true
+  })
+
+  return compatible?.id ?? null
 }
 
 function resolveCreditId(ctx: ImportContext, rawValue: unknown): string | null {
@@ -694,7 +728,7 @@ async function createOrReuseBudget(
   const compositeKey = normalizeBudgetKey(name, periodType, currency, startDate)
   const existing =
     [...ctx.budgetsByRowKey.values()].find(candidate => normalizeBudgetKey(candidate.name, candidate.period_type, candidate.currency, candidate.start_date) === compositeKey) ??
-    [...ctx.budgetsByName.values()].find(candidate => normalizeBudgetKey(candidate.name, candidate.period_type, candidate.currency, candidate.start_date) === compositeKey)
+    [...ctx.budgetsByName.values()].flat().find(candidate => normalizeBudgetKey(candidate.name, candidate.period_type, candidate.currency, candidate.start_date) === compositeKey)
 
   if (existing) {
     const rowKey = trimText(row.payload.clave_presupuesto)
@@ -730,8 +764,13 @@ async function createOrReuseBudget(
     currency: String(data.currency),
     period_type: data.period_type,
     start_date: String(data.start_date),
+    end_date: trimText(row.payload.fecha_fin),
+    category_id: categoryId,
   }
-  ctx.budgetsByName.set(normalizeName(created.name), created)
+  const nameKey = normalizeName(created.name)
+  const group = ctx.budgetsByName.get(nameKey) ?? []
+  group.push(created)
+  ctx.budgetsByName.set(nameKey, group)
   const rowKey = trimText(row.payload.clave_presupuesto)
   if (rowKey) ctx.budgetsByRowKey.set(rowKey, created)
   return { record: created, created: true }
@@ -1128,10 +1167,11 @@ function preflightCommit(job: ImportJobWithRows, ctx: ImportContext): string[] {
       const origin = resolveAccount(ctx, row.payload.portafolio_origen, row.payload.moneda)
       const paymentMethod = trimText(row.payload.forma_pago)
       const creditRef = trimText(row.payload.tarjeta_credito)
+      const categoryId = resolveCategoryId(ctx, 'EXPENSE', row.payload.categoria)
       if (!origin) {
         errors.push(`Egreso fila ${row.row_number}: el portafolio origen no existe en FinTrack.`)
       }
-      if (!resolveCategoryId(ctx, 'EXPENSE', row.payload.categoria)) {
+      if (!categoryId) {
         errors.push(`Egreso fila ${row.row_number}: la categoría "${trimText(row.payload.categoria) ?? 'vacía'}" no existe en FinTrack.`)
       }
       if (paymentMethod === 'CREDIT' && !creditRef) {
@@ -1139,6 +1179,14 @@ function preflightCommit(job: ImportJobWithRows, ctx: ImportContext): string[] {
       }
       if (creditRef && !resolveCreditId(ctx, creditRef)) {
         errors.push(`Egreso fila ${row.row_number}: la tarjeta_credito "${creditRef}" no se puede resolver en FinTrack.`)
+      }
+      const budgetRef = trimText(row.payload.presupuesto)
+      if (budgetRef && !resolveBudgetId(ctx, budgetRef, {
+        transactionDate: row.payload.fecha,
+        currency: row.payload.moneda,
+        categoryId,
+      })) {
+        errors.push(`Egreso fila ${row.row_number}: el presupuesto "${budgetRef}" no tiene un periodo compatible con la fecha, moneda y categoría.`)
       }
     }
 
@@ -1160,10 +1208,11 @@ function preflightCommit(job: ImportJobWithRows, ctx: ImportContext): string[] {
       const origin = resolveAccount(ctx, row.payload.portafolio_origen, row.payload.moneda)
       const paymentMethod = trimText(row.payload.forma_pago)
       const creditRef = trimText(row.payload.tarjeta_credito)
+      const categoryId = resolveCategoryId(ctx, 'EXPENSE', row.payload.categoria)
       if (!origin) {
         errors.push(`Compra de activo fila ${row.row_number}: el portafolio origen no existe en FinTrack.`)
       }
-      if (!resolveCategoryId(ctx, 'EXPENSE', row.payload.categoria)) {
+      if (!categoryId) {
         errors.push(`Compra de activo fila ${row.row_number}: la categoría "${trimText(row.payload.categoria) ?? 'vacía'}" no existe en FinTrack.`)
       }
       if (paymentMethod === 'CREDIT' && !creditRef) {
@@ -1171,6 +1220,14 @@ function preflightCommit(job: ImportJobWithRows, ctx: ImportContext): string[] {
       }
       if (creditRef && !resolveCreditId(ctx, creditRef)) {
         errors.push(`Compra de activo fila ${row.row_number}: la tarjeta_credito "${creditRef}" no se puede resolver en FinTrack.`)
+      }
+      const budgetRef = trimText(row.payload.presupuesto)
+      if (budgetRef && !resolveBudgetId(ctx, budgetRef, {
+        transactionDate: row.payload.fecha,
+        currency: row.payload.moneda,
+        categoryId,
+      })) {
+        errors.push(`Compra de activo fila ${row.row_number}: el presupuesto "${budgetRef}" no tiene un periodo compatible con la fecha, moneda y categoría.`)
       }
     }
 
@@ -1204,6 +1261,8 @@ async function commitImportJobData(db: DbClient, userId: string, job: ImportJobW
     credits: 0,
     assets: 0,
     budgets: 0,
+    budget_series: 0,
+    budget_periods: 0,
     debtors: 0,
     creditors: 0,
     receivables: 0,
@@ -1344,6 +1403,11 @@ async function commitImportJobData(db: DbClient, userId: string, job: ImportJobW
     const description = trimText(row.payload.descripcion) ?? 'Egreso importado'
     const categoryId = resolveCategoryId(ctx, 'EXPENSE', row.payload.categoria) ?? undefined
     const transactionDate = trimText(row.payload.fecha) ?? new Date().toISOString().slice(0, 10)
+    const budgetId = resolveBudgetId(ctx, row.payload.presupuesto, {
+      transactionDate,
+      currency,
+      categoryId,
+    }) ?? undefined
     const exchangeRate = await resolveImportExchangeRate(db, runtime, currency, transactionDate)
 
     const result = await txService.createTransaction(userId, {
@@ -1360,6 +1424,7 @@ async function commitImportJobData(db: DbClient, userId: string, job: ImportJobW
       credit_card_id: creditCardId,
       credit_operation: paymentMethod === 'CREDIT' ? 'CONSUMPTION' : undefined,
       category_id: categoryId,
+      budget_id: budgetId,
     })
 
     if (!result.ok) throw new Error(result.error.detail ? `${result.error.message} ${result.error.detail}` : result.error.message)
@@ -1421,6 +1486,11 @@ async function commitImportJobData(db: DbClient, userId: string, job: ImportJobW
     const description = trimText(row.payload.descripcion) ?? trimText(row.payload.nombre_activo) ?? 'Compra de activo importada'
     const categoryId = resolveCategoryId(ctx, 'EXPENSE', row.payload.categoria) ?? undefined
     const transactionDate = trimText(row.payload.fecha) ?? new Date().toISOString().slice(0, 10)
+    const budgetId = resolveBudgetId(ctx, row.payload.presupuesto, {
+      transactionDate,
+      currency,
+      categoryId,
+    }) ?? undefined
     const exchangeRate = await resolveImportExchangeRate(db, runtime, currency, transactionDate)
 
     const result = await txService.createTransaction(userId, {
@@ -1436,6 +1506,7 @@ async function commitImportJobData(db: DbClient, userId: string, job: ImportJobW
       credit_card_id: creditCardId,
       credit_operation: paymentMethod === 'CREDIT' ? 'CONSUMPTION' : undefined,
       category_id: categoryId,
+      budget_id: budgetId,
       recipient: trimText(row.payload.destinatario) ?? undefined,
     })
 

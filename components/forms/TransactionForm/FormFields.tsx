@@ -216,6 +216,18 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
 
       if (!placeholder) return mapped
 
+      if (mapped.some(option => option.value === '')) {
+        return mapped.map(option => (
+          option.value === ''
+            ? {
+                ...option,
+                label: option.label.trim().length > 0 ? option.label : placeholder,
+                disabled: option.disabled || Boolean(required),
+              }
+            : option
+        ))
+      }
+
       return [
         {
           value: '',
