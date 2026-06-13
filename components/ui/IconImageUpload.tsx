@@ -7,6 +7,7 @@ import { getFileNameFromPath, validateFile } from '@/lib/utils/file-upload'
 import {
   clamp,
   createDefaultIconEditorState,
+  ICON_SAFE_SCALE,
   loadIconImageAsset,
   renderIconFile,
   type IconEditorState,
@@ -28,6 +29,8 @@ interface IconImageUploadProps {
 }
 
 const FRAME_SIZE = 232
+const CROP_SIZE = 184
+const CROP_MARGIN = (FRAME_SIZE - CROP_SIZE) / 2
 
 function UploadIcon() {
   return (
@@ -110,7 +113,7 @@ export function IconImageUpload({
 
     let cancelled = false
     const timer = window.setTimeout(() => {
-      void renderIconFile({ asset, editor, frameSize: FRAME_SIZE })
+      void renderIconFile({ asset, editor, frameSize: CROP_SIZE })
         .then(file => {
           if (!cancelled) onChange(file)
         })
@@ -129,10 +132,10 @@ export function IconImageUpload({
 
   const baseDimensions = useMemo(() => {
     if (!asset) return null
-    const scale = Math.max(FRAME_SIZE / asset.width, FRAME_SIZE / asset.height)
+    const scale = Math.min(CROP_SIZE / asset.width, CROP_SIZE / asset.height)
     return {
-      width: asset.width * scale,
-      height: asset.height * scale,
+      width: asset.width * scale * ICON_SAFE_SCALE,
+      height: asset.height * scale * ICON_SAFE_SCALE,
     }
   }, [asset])
 
@@ -330,9 +333,47 @@ export function IconImageUpload({
                     />
                   </div>
                 </div>
-                <div className="pointer-events-none absolute inset-[10px] rounded-[18px] border border-white/80 shadow-[inset_0_0_0_1px_rgba(15,23,42,0.08)]" />
-                <div className="pointer-events-none absolute inset-x-1/2 top-0 h-full w-px -translate-x-1/2 bg-[rgba(15,23,42,0.08)]" />
-                <div className="pointer-events-none absolute inset-y-1/2 left-0 h-px w-full -translate-y-1/2 bg-[rgba(15,23,42,0.08)]" />
+                <div className="pointer-events-none absolute left-0 right-0 top-0 bg-[rgba(17,24,39,0.38)]" style={{ height: CROP_MARGIN }} />
+                <div className="pointer-events-none absolute bottom-0 left-0 right-0 bg-[rgba(17,24,39,0.38)]" style={{ height: CROP_MARGIN }} />
+                <div className="pointer-events-none absolute bottom-0 left-0 top-0 bg-[rgba(17,24,39,0.38)]" style={{ width: CROP_MARGIN }} />
+                <div className="pointer-events-none absolute bottom-0 right-0 top-0 bg-[rgba(17,24,39,0.38)]" style={{ width: CROP_MARGIN }} />
+                <div
+                  className="pointer-events-none absolute rounded-[18px] border border-white/90 shadow-[0_0_0_1px_rgba(15,23,42,0.18),0_12px_32px_rgba(15,23,42,0.12),inset_0_0_0_1px_rgba(15,23,42,0.08)]"
+                  style={{
+                    left: CROP_MARGIN,
+                    top: CROP_MARGIN,
+                    width: CROP_SIZE,
+                    height: CROP_SIZE,
+                  }}
+                />
+                <div
+                  className="pointer-events-none absolute rounded-[18px]"
+                  style={{
+                    left: CROP_MARGIN,
+                    top: CROP_MARGIN,
+                    width: CROP_SIZE,
+                    height: CROP_SIZE,
+                    backgroundImage:
+                      'linear-gradient(rgba(15,23,42,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(15,23,42,0.06) 1px, transparent 1px)',
+                    backgroundSize: '24px 24px',
+                  }}
+                />
+                <div
+                  className="pointer-events-none absolute h-full w-px -translate-x-1/2 bg-[rgba(15,23,42,0.12)]"
+                  style={{
+                    left: FRAME_SIZE / 2,
+                    top: CROP_MARGIN,
+                    height: CROP_SIZE,
+                  }}
+                />
+                <div
+                  className="pointer-events-none absolute h-px w-full -translate-y-1/2 bg-[rgba(15,23,42,0.12)]"
+                  style={{
+                    top: FRAME_SIZE / 2,
+                    left: CROP_MARGIN,
+                    width: CROP_SIZE,
+                  }}
+                />
               </div>
             </div>
 

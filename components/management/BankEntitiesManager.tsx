@@ -439,7 +439,7 @@ export function BankEntitiesManager() {
                         width={32}
                         height={32}
                         unoptimized
-                        className="h-8 w-8 rounded-md object-contain"
+                        className="h-9 w-9 rounded-md object-contain"
                       />
                     ) : (
                       <FinancialIcon name={entity.icon} size={17} />

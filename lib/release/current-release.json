@@ -1,16 +1,16 @@
 {
-  "version": "V1.0.0.6",
+  "version": "V1.0.0.7",
   "series": "1.0.0",
-  "build": 6,
-  "title": "Actualización en Bancos",
-  "summary": "Esta versión trae cambios en Bancos para que tus tareas diarias dentro de FinTrack sean más claras, estables y fáciles de seguir.",
+  "build": 7,
+  "title": "descripcion corta",
+  "summary": "release: descripcion corta",
   "highlights": [
     {
-      "module": "Bancos",
-      "type": "fix",
-      "title": "Gestión de bancos y entidades más estable",
-      "detail": "Corregimos el catálogo de entidades bancarias para que crear y usar bancos dentro de la app sea más confiable."
+      "module": "General",
+      "type": "improve",
+      "title": "Actualización general de la plataforma",
+      "detail": "release: descripcion corta"
     }
   ],
-  "releasedAt": "2026-06-12T21:32:37.791Z"
+  "releasedAt": "2026-06-13T02:47:29.466Z"
 }

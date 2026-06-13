@@ -403,7 +403,7 @@ export function CategoriesManager() {
                         width={32}
                         height={32}
                         unoptimized
-                        className="h-8 w-8 rounded-md object-contain"
+                        className="h-9 w-9 rounded-md object-contain"
                       />
                     ) : (
                       <FinancialIcon name={category.icon} size={17} />

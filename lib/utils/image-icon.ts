@@ -13,6 +13,7 @@ export type IconImageAsset = {
 }
 
 const OUTPUT_SIZE = 512
+export const ICON_SAFE_SCALE = 0.86
 
 export function createDefaultIconEditorState(): IconEditorState {
   return {
@@ -55,7 +56,7 @@ export async function renderIconFile(params: {
     throw new Error('No se pudo preparar el editor de imagen.')
   }
 
-  const coverScale = Math.max(OUTPUT_SIZE / asset.width, OUTPUT_SIZE / asset.height)
+  const fitScale = Math.min(OUTPUT_SIZE / asset.width, OUTPUT_SIZE / asset.height)
   const zoomScale = editor.zoom / 100
   const outputRatio = OUTPUT_SIZE / frameSize
 
@@ -66,7 +67,7 @@ export async function renderIconFile(params: {
     OUTPUT_SIZE / 2 + editor.offsetY * outputRatio,
   )
   context.rotate((editor.rotation * Math.PI) / 180)
-  context.scale(coverScale * zoomScale, coverScale * zoomScale)
+  context.scale(fitScale * zoomScale * ICON_SAFE_SCALE, fitScale * zoomScale * ICON_SAFE_SCALE)
   context.drawImage(image, -asset.width / 2, -asset.height / 2, asset.width, asset.height)
   context.restore()
 
