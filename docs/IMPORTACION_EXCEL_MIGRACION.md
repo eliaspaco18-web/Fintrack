@@ -121,6 +121,8 @@ Decisión de producto:
 - Las hojas operativas no deben pedir columnas `clave`.
 - `Recurrentes` queda fuera de este flujo de migración inicial para evitar mezclar historial cargado con plantillas futuras.
 - `00_Instrucciones`, `01_Catalogos` y `_checks` no deben distraer al usuario en pestañas visibles; pueden quedar ocultas o internas.
+- Si un préstamo ya fue creado en la app dentro de `Por cobrar` o `Por pagar`, sus cobros o pagos deben importarse desde `03_Ingresos` o `04_Egresos` usando una referencia al préstamo existente.
+- `07_Por_Cobrar` y `08_Por_Pagar` quedan para saldos o préstamos standalone que todavía no existen en FinTrack.
 
 ## 5. Calidad esperada de la plantilla Excel
 
@@ -466,6 +468,7 @@ Reglas:
 - `monto_cobrado` no puede superar `monto`.
 - Si el estado es `COLLECTED`, el monto cobrado debe igualar el monto total.
 - Si se indica portafolio origen, debe existir en `02_Portafolios`.
+- Si el préstamo ya existe en FinTrack y solo se quiere migrar un cobro, ese movimiento debe ir en `03_Ingresos` enlazando el préstamo relacionado, no aquí.
 
 ### `08_Por_Pagar`
 
@@ -492,6 +495,7 @@ Reglas:
 - `monto_pagado` no puede superar `monto`.
 - Si el estado es `PAID`, el monto pagado debe igualar el monto total.
 - Si se indica portafolio origen, debe existir en `02_Portafolios`.
+- Si el préstamo ya existe en FinTrack y solo se quiere migrar un pago, ese movimiento debe ir en `04_Egresos` enlazando el préstamo relacionado, no aquí.
 
 ### `09_Recurrentes`
 

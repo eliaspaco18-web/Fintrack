@@ -23,7 +23,12 @@ import { FinancialIcon } from '@/components/ui/FinancialIcon'
 import { CountrySelect } from '@/components/ui/CountrySelect'
 import { IconImageUpload } from '@/components/ui/IconImageUpload'
 import { ColorSwatchPicker, IconGridPicker } from '@/components/ui/VisualPickers'
-import { ACCOUNT_COLOR_OPTIONS, ACCOUNT_ICON_OPTIONS } from '@/lib/constants/visual-options'
+import {
+  ACCOUNT_COLOR_OPTIONS,
+  BANK_ENTITY_ICON_OPTIONS,
+  BANK_ENTITY_LOGO_PRESETS,
+  getVisualIconImageSrc,
+} from '@/lib/constants/visual-options'
 import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
 import { ActionIconButton } from '@/components/ui/ActionIconButton'
 import { AppSelect } from '@/components/ui/AppSelect'
@@ -90,6 +95,16 @@ function isUploadedIcon(value: string): boolean {
   return value.includes('/')
 }
 
+function preloadImage(url: string): Promise<void> {
+  if (!url) return Promise.resolve()
+  return new Promise(resolve => {
+    const image = new window.Image()
+    image.onload = () => resolve()
+    image.onerror = () => resolve()
+    image.src = url
+  })
+}
+
 // ─── COMPONENT ────────────────────────────────────────────────────────────────
 
 export function BankEntitiesManager() {
@@ -126,15 +141,19 @@ export function BankEntitiesManager() {
         throw new Error(getApiErrorMessage(json, 'No se pudieron cargar las entidades bancarias'))
       }
       const loaded = json.data as BankEntityItem[]
-      setEntities(loaded)
       const icons = await Promise.all(
         loaded.map(async entity => {
+          const systemIcon = getVisualIconImageSrc(entity.icon)
+          if (systemIcon) return [entity.id, systemIcon] as const
           if (!isUploadedIcon(entity.icon)) return [entity.id, ''] as const
           const signed = await getAttachmentUrl(entity.icon, 3600)
           return [entity.id, signed ?? ''] as const
         })
       )
-      setIconSignedUrls(Object.fromEntries(icons.filter(([, value]) => value.length > 0)))
+      const resolvedIcons = icons.filter(([, value]) => value.length > 0)
+      await Promise.all(resolvedIcons.map(([, value]) => preloadImage(value)))
+      setIconSignedUrls(Object.fromEntries(resolvedIcons))
+      setEntities(loaded)
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'No se pudieron cargar las entidades bancarias'
       setError(message)
@@ -206,6 +225,7 @@ export function BankEntitiesManager() {
   }, [openCreateModal, openFromHeroQuery])
 
   const startEdit = useCallback((entity: BankEntityItem) => {
+    setIconFile(null)
     setEditingId(entity.id)
     setForm({
       name: entity.name,
@@ -428,13 +448,19 @@ export function BankEntitiesManager() {
             <CatalogCell label="Entidad">
               <CatalogIdentity
                 icon={(
+                  (() => {
+                    const resolvedIcon = iconSignedUrls[entity.id] ?? null
+                    const hasImageIcon = Boolean(resolvedIcon)
+                    return (
                   <span
                     className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--c-border)]"
-                    style={{ backgroundColor: `${entity.color}16`, color: entity.color }}
+                    style={hasImageIcon
+                      ? { backgroundColor: 'color-mix(in srgb, var(--c-surface) 86%, white 14%)', color: entity.color }
+                      : { backgroundColor: `${entity.color}16`, color: entity.color }}
                   >
-                    {iconSignedUrls[entity.id] ? (
+                    {resolvedIcon ? (
                       <Image
-                        src={iconSignedUrls[entity.id]!}
+                        src={resolvedIcon}
                         alt={entity.name}
                         width={32}
                         height={32}
@@ -442,9 +468,11 @@ export function BankEntitiesManager() {
                         className="h-9 w-9 rounded-md object-contain"
                       />
                     ) : (
-                      <FinancialIcon name={entity.icon} size={17} />
-                    )}
+                        <FinancialIcon name={entity.icon} size={17} />
+                      )}
                   </span>
+                    )
+                  })()
                 )}
                 title={entity.name}
                 subtitle={entity.short_name ?? undefined}
@@ -474,12 +502,20 @@ export function BankEntitiesManager() {
                   disabled={Boolean(rowActionId)}
                   icon="edit"
                   label="Editar entidad"
+                  title="Editar entidad bancaria"
+                  description="Actualiza nombre, alias, país o apariencia sin afectar los registros ya vinculados."
                 />
                 <ActionIconButton
                   onClick={() => void toggleStatus(entity, !entity.is_active)}
                   disabled={Boolean(rowActionId)}
                   icon={entity.is_active ? 'deactivate' : 'reactivate'}
                   label={entity.is_active ? 'Desactivar' : 'Activar'}
+                  title={entity.is_active
+                    ? 'Desactivar temporalmente'
+                    : 'Reactivar entidad'}
+                  description={entity.is_active
+                    ? 'La oculta de nuevos portafolios y productos, pero conserva el historial existente.'
+                    : 'La vuelve a mostrar para usarla otra vez en nuevos registros.'}
                   variant={entity.is_active ? 'danger' : 'success'}
                 />
                 <ActionIconButton
@@ -487,6 +523,8 @@ export function BankEntitiesManager() {
                   disabled={Boolean(rowActionId)}
                   icon="delete"
                   label="Eliminar entidad"
+                  title="Eliminar de forma permanente"
+                  description="Solo estará disponible cuando la entidad no tenga cuentas ni referencias vinculadas."
                   variant="danger"
                 />
               </div>
@@ -566,7 +604,8 @@ export function BankEntitiesManager() {
             title="Apariencia"
             summary={[
               'Color',
-              'Icono',
+              'Logo banco',
+              'Banco',
               editingId && isUploadedIcon(form.icon) ? 'Icono personalizado' : '',
             ]}
           >
@@ -582,11 +621,34 @@ export function BankEntitiesManager() {
                 />
               </FormField>
 
-              <FormField label="Icono" optional>
+              <FormField
+                label="Logo del banco"
+                optional
+                description="Usa una de las versiones ya encuadradas que ofrece FinTrack para los bancos más comunes."
+              >
                 <IconGridPicker
                   value={form.icon}
-                  onChange={icon => setForm(prev => ({ ...prev, icon }))}
-                  options={ACCOUNT_ICON_OPTIONS}
+                  onChange={icon => {
+                    setIconFile(null)
+                    setForm(prev => ({ ...prev, icon }))
+                  }}
+                  options={BANK_ENTITY_LOGO_PRESETS}
+                  wrapperTestId="bank-entities-logo-options"
+                  optionTestIdPrefix="bank-entities-logo"
+                />
+              </FormField>
+
+              <FormField
+                label="Icono de banco"
+                optional
+              >
+                <IconGridPicker
+                  value={form.icon}
+                  onChange={icon => {
+                    setIconFile(null)
+                    setForm(prev => ({ ...prev, icon }))
+                  }}
+                  options={BANK_ENTITY_ICON_OPTIONS}
                   wrapperTestId="bank-entities-icon-options"
                   optionTestIdPrefix="bank-entities-icon"
                 />
@@ -597,7 +659,7 @@ export function BankEntitiesManager() {
                 existingUrl={editingId && isUploadedIcon(form.icon) ? (iconSignedUrls[editingId] ?? null) : null}
                 onChange={setIconFile}
                 onRemoveExisting={() => setForm(prev => ({ ...prev, icon: 'bank' }))}
-                label="Icono personalizado (opcional)"
+                label="Logo propio (opcional)"
                 allowedMimeTypes={ATTACHMENT_IMAGE_MIME_TYPES}
                 accept=".jpg,.jpeg,.png,.webp,.gif"
                 acceptedTypesDescription="JPG, PNG, WEBP o GIF — Máx 10MB"

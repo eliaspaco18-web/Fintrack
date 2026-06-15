@@ -8,14 +8,15 @@
 
 import type { ActionState }          from '@/lib/contracts/ui.contracts'
 import type { CreateTransactionResult } from '@/modules/transactions/transaction.service.types'
-import { TYPE_CONFIG }               from './TypeSelector'
 import type { TransactionFormValues } from '@/lib/contracts/ui.contracts'
 
 type TxType = TransactionFormValues['type']
+type OperationType = 'income' | 'expense' | 'transfer' | 'asset_purchase' | 'payable' | 'receivable'
 
 interface SubmitButtonProps {
   type:        TxType
   state:       ActionState<CreateTransactionResult>
+  operationType?: OperationType
   disabled?:   boolean
   fullWidth?:  boolean
   className?:  string
@@ -33,8 +34,14 @@ const TYPE_STYLES: Record<TxType, string> = {
   TRANSFER: 'bg-blue-500   hover:bg-blue-400    shadow-blue-500/20',
 }
 
-export function SubmitButton({ type, state, disabled, fullWidth = true, className = '' }: SubmitButtonProps) {
-  const labels = TYPE_LABELS[type]
+const OPERATION_LABELS: Partial<Record<OperationType, { idle: string; loading: string; success: string }>> = {
+  asset_purchase: { idle: 'Registrar compra de activo', loading: 'Registrando…', success: '¡Compra registrada!' },
+  payable:        { idle: 'Registrar cuenta por pagar', loading: 'Registrando…', success: '¡Cuenta por pagar registrada!' },
+  receivable:     { idle: 'Registrar cuenta por cobrar', loading: 'Registrando…', success: '¡Cuenta por cobrar registrada!' },
+}
+
+export function SubmitButton({ type, state, operationType, disabled, fullWidth = true, className = '' }: SubmitButtonProps) {
+  const labels = operationType ? (OPERATION_LABELS[operationType] ?? TYPE_LABELS[type]) : TYPE_LABELS[type]
   const isLoading = state.status === 'loading'
   const isSuccess = state.status === 'success'
 

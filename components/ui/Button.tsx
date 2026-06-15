@@ -20,6 +20,7 @@ interface BaseButtonProps extends ButtonClassNameOptions {
   fullWidth?: boolean
   testId?: string
   ariaLabel?: string
+  title?: string
 }
 
 interface ButtonAsButtonProps
@@ -125,6 +126,7 @@ export function Button(props: ButtonProps) {
     fullWidth = false,
     testId,
     ariaLabel,
+    title,
     variant = 'secondary',
     size = 'md',
     className = '',
@@ -151,6 +153,7 @@ export function Button(props: ButtonProps) {
         prefetch={props.prefetch}
         scroll={props.scroll}
         aria-label={ariaLabel}
+        title={title}
         aria-disabled={props.disabled ? true : undefined}
         data-testid={testId}
         className={joinClasses(props.disabled && 'pointer-events-none', classes)}
@@ -181,6 +184,7 @@ export function Button(props: ButtonProps) {
       type={type}
       disabled={disabled || loading}
       aria-label={ariaLabel}
+      title={title}
       data-testid={testId}
       data-variant={variant}
       className={classes}

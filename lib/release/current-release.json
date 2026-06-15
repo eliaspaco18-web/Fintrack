@@ -1,16 +1,28 @@
 {
-  "version": "V1.0.0.7",
+  "version": "V1.0.0.9",
   "series": "1.0.0",
-  "build": 7,
-  "title": "descripcion corta",
-  "summary": "release: descripcion corta",
+  "build": 9,
+  "title": "Actualización en Portafolio, Importaciones, Plataforma",
+  "summary": "Esta versión trae cambios en Portafolio, Importaciones, Plataforma para que tus tareas diarias dentro de FinTrack sean más claras, estables y fáciles de seguir.",
   "highlights": [
     {
-      "module": "General",
+      "module": "Portafolio",
       "type": "improve",
-      "title": "Actualización general de la plataforma",
-      "detail": "release: descripcion corta"
+      "title": "Gestión de cuentas más clara y estable",
+      "detail": "Mejoramos las acciones de tus cuentas para que editar, revisar y operar en Portafolio sea más confiable."
+    },
+    {
+      "module": "Importaciones",
+      "type": "new",
+      "title": "Base reforzada para futuras importaciones",
+      "detail": "Preparamos el módulo de Importaciones para que la migración de información sea más robusta y guiada."
+    },
+    {
+      "module": "Plataforma",
+      "type": "improve",
+      "title": "Publicaciones y operación más confiables",
+      "detail": "Fortalecimos la plataforma para que las actualizaciones de FinTrack sean más estables y transparentes para todos."
     }
   ],
-  "releasedAt": "2026-06-13T02:47:29.466Z"
+  "releasedAt": "2026-06-15T17:12:04.306Z"
 }

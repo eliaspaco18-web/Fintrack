@@ -170,7 +170,7 @@ export function NestedAccountCreateModal({
     setForm(prev => ({
       ...prev,
       bank_entity_id: bankId,
-      institution: selected ? (selected.short_name ?? selected.name) : prev.institution,
+      institution: selected ? (selected.name ?? selected.short_name ?? prev.institution) : prev.institution,
     }))
   }, [banks])
 
@@ -317,7 +317,7 @@ export function NestedAccountCreateModal({
                 { value: '', label: 'Sin banco' },
                 ...banks.map(bank => ({
                   value: bank.id,
-                  label: bank.short_name ?? bank.name,
+                  label: bank.name ?? bank.short_name ?? 'Sin nombre',
                 })),
               ]}
             />

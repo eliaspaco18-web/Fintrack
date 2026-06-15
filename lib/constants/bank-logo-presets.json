@@ -1,0 +1,37 @@
+[
+  {
+    "value": "bank-bcp",
+    "label": "BCP",
+    "imageSrc": "/banks/bcp.png"
+  },
+  {
+    "value": "bank-bbva",
+    "label": "BBVA",
+    "imageSrc": "/banks/bbva.png"
+  },
+  {
+    "value": "bank-interbank",
+    "label": "Interbank",
+    "imageSrc": "/banks/interbank.png"
+  },
+  {
+    "value": "bank-caja-arequipa",
+    "label": "Caja Arequipa",
+    "imageSrc": "/banks/caja-arequipa.png"
+  },
+  {
+    "value": "bank-global66",
+    "label": "Global66",
+    "imageSrc": "/banks/global66.png"
+  },
+  {
+    "value": "bank-prexpe",
+    "label": "Prexpe",
+    "imageSrc": "/banks/prexpe.png"
+  },
+  {
+    "value": "bank-agora-sip",
+    "label": "SIP",
+    "imageSrc": "/banks/agora-sip.png"
+  }
+]

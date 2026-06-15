@@ -58,7 +58,7 @@ export default async function PortfolioPage() {
     withTimeout(
       supabase
         .from('accounts')
-        .select('id,name,institution,bank_entity_id,type,currency,balance,initial_balance,color,icon,include_in_net_worth,is_active,notes,bank_entity:bank_entities(id,name,short_name,color,icon,is_active)')
+        .select('id,name,institution,bank_entity_id,type,currency,balance,initial_balance,initial_balance_date,color,icon,include_in_net_worth,is_active,notes,created_at,bank_entity:bank_entities(id,name,short_name,color,icon,is_active)')
         .order('created_at', { ascending: false }),
       SERVER_QUERY_TIMEOUT_MS,
     ),

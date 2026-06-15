@@ -90,6 +90,7 @@ const SHEET_RULES: Record<SheetName, ColumnRule[]> = {
     { key: 'moneda', header: 'Moneda', required: true, type: 'text' },
     { key: 'monto', header: 'Monto del ingreso', required: true, type: 'number' },
     { key: 'remitente', header: 'Remitente', type: 'text' },
+    { key: 'prestamo_relacionado', header: 'Prestamo por cobrar relacionado', type: 'text' },
     { key: 'notas', header: 'Notas', type: 'text' },
   ],
   '04_Egresos': [
@@ -103,6 +104,7 @@ const SHEET_RULES: Record<SheetName, ColumnRule[]> = {
     { key: 'forma_pago', header: 'Forma de pago', type: 'text', allowed: PAYMENT_METHODS },
     { key: 'tarjeta_credito', header: 'Tarjeta de credito', type: 'text' },
     { key: 'destinatario', header: 'Destinatario', type: 'text' },
+    { key: 'prestamo_relacionado', header: 'Prestamo por pagar relacionado', type: 'text' },
     { key: 'notas', header: 'Notas', type: 'text' },
   ],
   '05_Transferencias': [

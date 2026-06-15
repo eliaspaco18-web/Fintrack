@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import type { VisualIconOption } from '@/lib/constants/visual-options'
 import { FinancialIcon } from './FinancialIcon'
 
@@ -41,7 +42,18 @@ export function IconGridPicker({
             }`}
           >
             <span className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--c-border)] bg-[var(--c-surface)]">
-              <FinancialIcon name={option.value} size={14}/>
+              {option.imageSrc ? (
+                <Image
+                  src={option.imageSrc}
+                  alt={option.label}
+                  width={20}
+                  height={20}
+                  unoptimized
+                  className="h-5 w-5 object-contain"
+                />
+              ) : (
+                <FinancialIcon name={option.value} size={14}/>
+              )}
             </span>
             <span className="truncate font-semibold">{option.label}</span>
           </button>

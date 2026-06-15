@@ -1,0 +1,117 @@
+{
+  "maintenance": {
+    "enabled": false,
+    "title": "Estamos mejorando FinTrack",
+    "message": "Estamos preparando una experiencia más fluida, clara y confiable. Vuelve en unos minutos para disfrutar las mejoras."
+  },
+  "modules": [
+    {
+      "key": "dashboard",
+      "label": "Dashboard",
+      "href": "/dashboard",
+      "section": "Principal",
+      "objective": "Vista general de saldos, flujo y alertas clave.",
+      "status": "live",
+      "note": ""
+    },
+    {
+      "key": "portfolio",
+      "label": "Portafolio",
+      "href": "/portfolio",
+      "section": "Principal",
+      "objective": "Cuentas bancarias, tarjetas y productos financieros.",
+      "status": "live",
+      "note": ""
+    },
+    {
+      "key": "transactions",
+      "label": "Movimientos",
+      "href": "/transactions",
+      "section": "Principal",
+      "objective": "Registro de ingresos, egresos y transferencias.",
+      "status": "live",
+      "note": ""
+    },
+    {
+      "key": "credits",
+      "label": "Créditos",
+      "href": "/credits",
+      "section": "Principal",
+      "objective": "Control de tarjetas, préstamos y cuotas.",
+      "status": "live",
+      "note": ""
+    },
+    {
+      "key": "budgets",
+      "label": "Presupuestos",
+      "href": "/budgets",
+      "section": "Principal",
+      "objective": "Límites de gasto por categoría y período.",
+      "status": "live",
+      "note": ""
+    },
+    {
+      "key": "assets",
+      "label": "Activos",
+      "href": "/assets",
+      "section": "Principal",
+      "objective": "Patrimonio, bienes e inversiones.",
+      "status": "live",
+      "note": ""
+    },
+    {
+      "key": "receivables",
+      "label": "Por cobrar",
+      "href": "/receivables",
+      "section": "Principal",
+      "objective": "Seguimiento de dinero pendiente por cobrar.",
+      "status": "live",
+      "note": ""
+    },
+    {
+      "key": "payables",
+      "label": "Por pagar",
+      "href": "/payables",
+      "section": "Principal",
+      "objective": "Seguimiento de deudas y pagos pendientes.",
+      "status": "live",
+      "note": ""
+    },
+    {
+      "key": "recurring",
+      "label": "Recurrentes",
+      "href": "/recurring",
+      "section": "Principal",
+      "objective": "Plantillas para movimientos automáticos.",
+      "status": "live",
+      "note": ""
+    },
+    {
+      "key": "alerts",
+      "label": "Alertas",
+      "href": "/alerts",
+      "section": "Principal",
+      "objective": "Riesgos, vencimientos y recomendaciones.",
+      "status": "live",
+      "note": ""
+    },
+    {
+      "key": "admin",
+      "label": "Administración",
+      "href": "/admin",
+      "section": "Sistema",
+      "objective": "Catálogos base y parámetros del sistema.",
+      "status": "live",
+      "note": ""
+    },
+    {
+      "key": "settings",
+      "label": "Configuración",
+      "href": "/settings",
+      "section": "Sistema",
+      "objective": "Perfil, seguridad y preferencias.",
+      "status": "live",
+      "note": ""
+    }
+  ]
+}

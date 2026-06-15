@@ -54,11 +54,13 @@ type AccountItem = {
   currency: CurrencyCode
   balance: number
   initial_balance: number
+  initial_balance_date: string
   color: string
   icon: string
   include_in_net_worth: boolean
   is_active: boolean
   notes: string | null
+  created_at: string
 }
 
 type BankEntityItem = {
@@ -87,10 +89,15 @@ type AccountForm = {
   type: AccountType
   currency: CurrencyCode
   initial_balance: string
+  initial_balance_date: string
   color: string
   icon: string
   include_in_net_worth: boolean
   notes: string
+}
+
+function isoToday() {
+  return new Date().toISOString().slice(0, 10)
 }
 
 const ACCOUNT_TYPE_OPTIONS: Array<{ value: AccountType; label: string }> = [
@@ -143,6 +150,7 @@ const EMPTY_FORM: AccountForm = {
   type: 'CHECKING',
   currency: 'PEN',
   initial_balance: '0.00',
+  initial_balance_date: '',
   color: '#0d6b5e',
   icon: 'wallet',
   include_in_net_worth: true,
@@ -154,8 +162,8 @@ function getIconLabel(icon: string): string {
 }
 
 function displayBankName(account: AccountItem): string {
-  if (account.bank_entity?.short_name) return account.bank_entity.short_name
   if (account.bank_entity?.name) return account.bank_entity.name
+  if (account.bank_entity?.short_name) return account.bank_entity.short_name
   if (account.institution) return account.institution
   return 'Sin banco'
 }
@@ -279,7 +287,10 @@ export function PortfolioManager({
   }, [initialCurrencies])
 
   const resetForm = useCallback(() => {
-    setForm(EMPTY_FORM)
+    setForm({
+      ...EMPTY_FORM,
+      initial_balance_date: isoToday(),
+    })
     setEditingId(null)
   }, [])
 
@@ -388,13 +399,14 @@ export function PortfolioManager({
   }, [accounts, bankFilter, currencyFilter, query, statusFilter, typeFilter])
 
   const openCreateModal = useCallback(() => {
-    resetForm()
-    setForm(prev => ({
-      ...prev,
+    setEditingId(null)
+    setForm({
+      ...EMPTY_FORM,
       currency: (currencyOptions[0]?.value ?? 'PEN') as CurrencyCode,
-    }))
+      initial_balance_date: isoToday(),
+    })
     setModalOpen(true)
-  }, [currencyOptions, resetForm])
+  }, [currencyOptions])
 
   useEffect(() => {
     if (openFromHeroQuery) {
@@ -416,6 +428,7 @@ export function PortfolioManager({
       type: account.type,
       currency: account.currency,
       initial_balance: Number(account.initial_balance ?? 0).toFixed(2),
+      initial_balance_date: account.initial_balance_date || String(account.created_at ?? '').slice(0, 10) || isoToday(),
       color: account.color,
       icon: account.icon,
       include_in_net_worth: account.include_in_net_worth,
@@ -430,7 +443,7 @@ export function PortfolioManager({
     setForm(prev => ({
       ...prev,
       bank_entity_id: bankId,
-      institution: selected ? (selected.short_name ?? selected.name) : prev.institution,
+      institution: selected ? (selected.name ?? selected.short_name ?? prev.institution) : prev.institution,
       color: selected ? selected.color : prev.color,
       icon: selected ? selected.icon : prev.icon,
     }))
@@ -452,8 +465,16 @@ export function PortfolioManager({
       2,
     )
 
-    if (!editingId && !Number.isFinite(parsedInitialBalance)) {
+    if (!Number.isFinite(parsedInitialBalance)) {
       const message = 'El saldo inicial debe ser un numero valido.'
+      setError(message)
+      toast.error('No se pudo guardar la cuenta', message)
+      return
+    }
+
+    const trimmedInitialBalanceDate = form.initial_balance_date.trim()
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmedInitialBalanceDate)) {
+      const message = 'Indica una fecha valida para el saldo inicial.'
       setError(message)
       toast.error('No se pudo guardar la cuenta', message)
       return
@@ -481,6 +502,8 @@ export function PortfolioManager({
           bank_entity_id: form.bank_entity_id || null,
           type: form.type,
           currency: normalizedCurrency,
+          initial_balance: parsedInitialBalance,
+          initial_balance_date: trimmedInitialBalanceDate,
           color: form.color.trim() || '#0d6b5e',
           icon: form.icon.trim() || 'wallet',
           include_in_net_worth: form.include_in_net_worth,
@@ -493,6 +516,7 @@ export function PortfolioManager({
           type: form.type,
           currency: normalizedCurrency,
           initial_balance: parsedInitialBalance,
+          initial_balance_date: trimmedInitialBalanceDate,
           color: form.color.trim() || '#0d6b5e',
           icon: form.icon.trim() || 'wallet',
           include_in_net_worth: form.include_in_net_worth,
@@ -634,7 +658,7 @@ export function PortfolioManager({
   const selectedBankLabel = useMemo(() => {
     if (!form.bank_entity_id) return 'Sin banco asignado'
     const selected = banks.find(bank => bank.id === form.bank_entity_id)
-    return selected ? (selected.short_name ?? selected.name) : form.institution || 'Entidad seleccionada'
+    return selected ? (selected.name ?? selected.short_name ?? form.institution) : form.institution || 'Entidad seleccionada'
   }, [banks, form.bank_entity_id, form.institution])
 
   const formInitialBalanceValue = useMemo(() => {
@@ -777,7 +801,7 @@ export function PortfolioManager({
                     { value: 'none', label: 'Sin banco' },
                     ...banks.map(bank => ({
                       value: bank.id,
-                      label: bank.short_name ?? bank.name,
+                      label: bank.name ?? bank.short_name ?? 'Sin nombre',
                     })),
                   ]}
                 />
@@ -1154,7 +1178,7 @@ export function PortfolioManager({
 
           <FormSection
             title="Contexto financiero"
-            description="Asocia la entidad, fija la moneda y registra el saldo inicial solo cuando la cuenta nace en FinTrack."
+            description="Asocia la entidad, fija la moneda y define el saldo base con su fecha de corte para mantener la trazabilidad financiera."
             columns="1"
             className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
           >
@@ -1170,7 +1194,7 @@ export function PortfolioManager({
                   { value: '', label: 'Sin banco' },
                   ...banks.map(bank => ({
                     value: bank.id,
-                    label: bank.short_name ?? bank.name,
+                    label: bank.name ?? bank.short_name ?? 'Sin nombre',
                   })),
                 ]}
               />
@@ -1193,6 +1217,41 @@ export function PortfolioManager({
               />
             </FormField>
 
+            <FormField
+              label="Saldo inicial"
+              description={
+                editingId
+                  ? 'Corrige el saldo de apertura y la fecha desde la que ese valor representa el punto de partida de la cuenta.'
+                  : 'Usalo para reflejar el punto de partida exacto antes de comenzar a registrar movimientos.'
+              }
+            >
+              <NumericInput
+                step="0.01"
+                decimals={2}
+                value={form.initial_balance}
+                onValueChange={value => setForm(prev => ({ ...prev, initial_balance: value }))}
+                data-testid="portfolio-initial-balance-input"
+                className="field-base ft-form-amount-input w-full"
+              />
+            </FormField>
+
+            <FormField
+              label="Fecha del saldo inicial"
+              description={
+                editingId
+                  ? 'Debe ser igual o anterior al primer movimiento registrado en esta cuenta.'
+                  : 'Usaremos esta fecha como corte del saldo base para reconstruir el historial correctamente.'
+              }
+            >
+              <input
+                type="date"
+                value={form.initial_balance_date}
+                onChange={event => setForm(prev => ({ ...prev, initial_balance_date: event.target.value }))}
+                data-testid="portfolio-initial-balance-date-input"
+                className="field-base ft-form-input w-full"
+              />
+            </FormField>
+
             {editingId ? (
               <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
                 <p className="text-[11px] font-medium text-[var(--ft-form-muted)]">Saldo actual</p>
@@ -1200,24 +1259,10 @@ export function PortfolioManager({
                   {editingAccount ? formatCurrency(editingAccount.balance, editingAccount.currency) : '--'}
                 </p>
                 <p className="mt-2 text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-                  El saldo inicial ya quedó registrado. Desde esta edición solo mostramos el valor operativo vigente.
+                  El saldo operativo vigente se recalculará usando la nueva base de apertura, sin perder la referencia del valor actual.
                 </p>
               </div>
-            ) : (
-              <FormField
-                label="Saldo inicial"
-                description="Úsalo para reflejar el punto de partida exacto antes de comenzar a registrar movimientos."
-              >
-                <NumericInput
-                  step="0.01"
-                  decimals={2}
-                  value={form.initial_balance}
-                  onValueChange={value => setForm(prev => ({ ...prev, initial_balance: value }))}
-                  data-testid="portfolio-initial-balance-input"
-                  className="field-base ft-form-amount-input w-full"
-                />
-              </FormField>
-            )}
+            ) : null}
 
             {!editingId ? (
               <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">

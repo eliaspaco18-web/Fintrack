@@ -2,6 +2,10 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, TablesInsert } from '@/types/database.types'
 import { TransactionService } from '@/modules/transactions/transaction.service'
 import type { ImportJob, ImportJobRow, ImportJobSummary, ImportJobWithRows } from '@/lib/imports/import-types'
+import {
+  buildPayableImportReference,
+  buildReceivableImportReference,
+} from '@/lib/imports/loan-reference'
 import { resolveAccountingUsdPenExchangeRate } from '@/lib/server/exchange-rate'
 
 type DbClient = SupabaseClient<Database>
@@ -57,6 +61,30 @@ type CounterpartyRef = {
   name: string
 }
 
+type ReceivableImportRef = {
+  id: string
+  debtor_name: string
+  concept: string | null
+  currency: string
+  amount: number
+  collected_amount: number
+  collected_date: string | null
+  issue_date: string
+  status: Database['public']['Enums']['receivable_status']
+}
+
+type PayableImportRef = {
+  id: string
+  creditor_name: string
+  concept: string | null
+  currency: string
+  amount: number
+  paid_amount: number
+  paid_date: string | null
+  issue_date: string
+  status: Database['public']['Enums']['payable_status']
+}
+
 type CreatedOrReused<T> = {
   record: T
   created: boolean
@@ -71,6 +99,12 @@ type RowImportCommitMeta = {
   version: 'rollback-v1'
   createdTargets: ImportCommitMetaTarget[]
   reusedTargets?: ImportCommitMetaTarget[]
+  updatedTargets?: Array<{
+    table: string
+    id: string
+    before: Record<string, unknown>
+    after: Record<string, unknown>
+  }>
   creditAdjustment?: {
     creditId: string
     operation: 'CONSUMPTION' | 'PAYMENT'
@@ -95,6 +129,10 @@ type NormalizedCatalogs = {
   debtorsByRowKey: Map<string, CounterpartyRef>
   creditorsByName: Map<string, CounterpartyRef>
   creditorsByRowKey: Map<string, CounterpartyRef>
+  receivablesByImportRef: Map<string, ReceivableImportRef>
+  openReceivablesByDebtorName: Map<string, ReceivableImportRef[]>
+  payablesByImportRef: Map<string, PayableImportRef>
+  openPayablesByCreditorName: Map<string, PayableImportRef[]>
   transactionsByRowKey: Map<string, { id: string }>
 }
 
@@ -146,6 +184,54 @@ function asNumber(value: unknown, fallback = 0): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }
 
+function roundCurrency(value: number): number {
+  return Math.round(value * 100) / 100
+}
+
+function isReceivableOpen(status: Database['public']['Enums']['receivable_status']) {
+  return status === 'PENDING' || status === 'PARTIAL'
+}
+
+function isPayableOpen(status: Database['public']['Enums']['payable_status']) {
+  return status === 'PENDING' || status === 'PARTIAL'
+}
+
+function syncOpenReceivableMap(
+  map: Map<string, ReceivableImportRef[]>,
+  receivable: ReceivableImportRef,
+) {
+  const key = normalizeName(receivable.debtor_name)
+  const nextGroup = (map.get(key) ?? []).filter(item => item.id !== receivable.id)
+
+  if (isReceivableOpen(receivable.status)) {
+    nextGroup.push(receivable)
+  }
+
+  if (nextGroup.length > 0) {
+    map.set(key, nextGroup)
+  } else {
+    map.delete(key)
+  }
+}
+
+function syncOpenPayableMap(
+  map: Map<string, PayableImportRef[]>,
+  payable: PayableImportRef,
+) {
+  const key = normalizeName(payable.creditor_name)
+  const nextGroup = (map.get(key) ?? []).filter(item => item.id !== payable.id)
+
+  if (isPayableOpen(payable.status)) {
+    nextGroup.push(payable)
+  }
+
+  if (nextGroup.length > 0) {
+    map.set(key, nextGroup)
+  } else {
+    map.delete(key)
+  }
+}
+
 function hasConcreteValue(value: unknown): boolean {
   if (typeof value === 'number') return Number.isFinite(value)
   return !!trimText(value)
@@ -179,6 +265,8 @@ async function loadExistingContext(db: DbClient, userId: string): Promise<Import
     creditsRes,
     debtorsRes,
     creditorsRes,
+    receivablesRes,
+    payablesRes,
   ] = await Promise.all([
     db.from('user_currencies').select('id, code').or(`user_id.eq.${userId},is_system.eq.true`),
     db.from('bank_entities').select('id, name, short_name, code').eq('user_id', userId),
@@ -189,6 +277,12 @@ async function loadExistingContext(db: DbClient, userId: string): Promise<Import
     db.from('credits').select('id, name, account_id, credit_type').eq('user_id', userId),
     db.from('debtors').select('id, name').eq('user_id', userId),
     db.from('creditors').select('id, name').eq('user_id', userId),
+    db.from('accounts_receivable')
+      .select('id, debtor_name, concept, currency, amount, collected_amount, collected_date, issue_date, status')
+      .eq('user_id', userId),
+    db.from('accounts_payable')
+      .select('id, creditor_name, concept, currency, amount, paid_amount, paid_date, issue_date, status')
+      .eq('user_id', userId),
   ])
 
   const firstError =
@@ -200,7 +294,9 @@ async function loadExistingContext(db: DbClient, userId: string): Promise<Import
     budgetsRes.error ??
     creditsRes.error ??
     debtorsRes.error ??
-    creditorsRes.error
+    creditorsRes.error ??
+    receivablesRes.error ??
+    payablesRes.error
 
   if (firstError) throw new Error(firstError.message)
 
@@ -294,6 +390,44 @@ async function loadExistingContext(db: DbClient, userId: string): Promise<Import
     creditorsByName.set(normalizeName(String(row.name)), { id: String(row.id), name: String(row.name) })
   }
 
+  const receivablesByImportRef = new Map<string, ReceivableImportRef>()
+  const openReceivablesByDebtorName = new Map<string, ReceivableImportRef[]>()
+  for (const row of receivablesRes.data ?? []) {
+    const entry = {
+      id: String(row.id),
+      debtor_name: String(row.debtor_name ?? ''),
+      concept: trimText(row.concept),
+      currency: String(row.currency ?? 'PEN').toUpperCase(),
+      amount: Number(row.amount ?? 0),
+      collected_amount: Number(row.collected_amount ?? 0),
+      collected_date: trimText(row.collected_date),
+      issue_date: String(row.issue_date ?? ''),
+      status: row.status,
+    } satisfies ReceivableImportRef
+
+    receivablesByImportRef.set(buildReceivableImportReference(entry), entry)
+    syncOpenReceivableMap(openReceivablesByDebtorName, entry)
+  }
+
+  const payablesByImportRef = new Map<string, PayableImportRef>()
+  const openPayablesByCreditorName = new Map<string, PayableImportRef[]>()
+  for (const row of payablesRes.data ?? []) {
+    const entry = {
+      id: String(row.id),
+      creditor_name: String(row.creditor_name ?? ''),
+      concept: trimText(row.concept),
+      currency: String(row.currency ?? 'PEN').toUpperCase(),
+      amount: Number(row.amount ?? 0),
+      paid_amount: Number(row.paid_amount ?? 0),
+      paid_date: trimText(row.paid_date),
+      issue_date: String(row.issue_date ?? ''),
+      status: row.status,
+    } satisfies PayableImportRef
+
+    payablesByImportRef.set(buildPayableImportReference(entry), entry)
+    syncOpenPayableMap(openPayablesByCreditorName, entry)
+  }
+
   return {
     currencies,
     bankEntities,
@@ -311,6 +445,10 @@ async function loadExistingContext(db: DbClient, userId: string): Promise<Import
     debtorsByRowKey: new Map(),
     creditorsByName,
     creditorsByRowKey: new Map(),
+    receivablesByImportRef,
+    openReceivablesByDebtorName,
+    payablesByImportRef,
+    openPayablesByCreditorName,
     transactionsByRowKey: new Map(),
   }
 }
@@ -439,6 +577,18 @@ function resolveDebtor(ctx: ImportContext, rawValue: unknown): CounterpartyRef |
   )
 }
 
+function resolveReceivableImportRef(ctx: ImportContext, rawValue: unknown): ReceivableImportRef | null {
+  const value = trimText(rawValue)
+  if (!value) return null
+  return ctx.receivablesByImportRef.get(value) ?? null
+}
+
+function resolvePayableImportRef(ctx: ImportContext, rawValue: unknown): PayableImportRef | null {
+  const value = trimText(rawValue)
+  if (!value) return null
+  return ctx.payablesByImportRef.get(value) ?? null
+}
+
 function resolveCreditor(ctx: ImportContext, rawValue: unknown): CounterpartyRef | null {
   const value = trimText(rawValue)
   if (!value) return null
@@ -447,6 +597,40 @@ function resolveCreditor(ctx: ImportContext, rawValue: unknown): CounterpartyRef
     ctx.creditorsByName.get(normalizeName(value)) ??
     null
   )
+}
+
+type LinkedLoanResolution<T> =
+  | { state: 'empty'; record: null }
+  | { state: 'resolved'; record: T }
+  | { state: 'missing'; record: null }
+  | { state: 'ambiguous'; record: null }
+
+function resolveLinkedReceivable(ctx: ImportContext, rawValue: unknown): LinkedLoanResolution<ReceivableImportRef> {
+  const value = trimText(rawValue)
+  if (!value) return { state: 'empty', record: null }
+
+  const directMatch = resolveReceivableImportRef(ctx, value)
+  if (directMatch) return { state: 'resolved', record: directMatch }
+
+  const matches = ctx.openReceivablesByDebtorName.get(normalizeName(value)) ?? []
+  const receivableMatch = matches[0] ?? null
+  if (matches.length === 1 && receivableMatch) return { state: 'resolved', record: receivableMatch }
+  if (matches.length > 1) return { state: 'ambiguous', record: null }
+  return { state: 'missing', record: null }
+}
+
+function resolveLinkedPayable(ctx: ImportContext, rawValue: unknown): LinkedLoanResolution<PayableImportRef> {
+  const value = trimText(rawValue)
+  if (!value) return { state: 'empty', record: null }
+
+  const directMatch = resolvePayableImportRef(ctx, value)
+  if (directMatch) return { state: 'resolved', record: directMatch }
+
+  const matches = ctx.openPayablesByCreditorName.get(normalizeName(value)) ?? []
+  const payableMatch = matches[0] ?? null
+  if (matches.length === 1 && payableMatch) return { state: 'resolved', record: payableMatch }
+  if (matches.length > 1) return { state: 'ambiguous', record: null }
+  return { state: 'missing', record: null }
 }
 
 async function markRow(
@@ -1068,6 +1252,168 @@ async function createStandalonePayable(
   return String(data.id)
 }
 
+async function applyReceivableCollection(
+  db: DbClient,
+  userId: string,
+  ctx: ImportContext,
+  row: ImportJobRow,
+  transactionDate: string,
+): Promise<RowImportCommitMeta['updatedTargets']> {
+  const loanReference = trimText(row.payload.prestamo_relacionado)
+  if (!loanReference) return undefined
+
+  const resolution = resolveLinkedReceivable(ctx, loanReference)
+  if (resolution.state === 'missing') {
+    throw new Error(`Ingreso fila ${row.row_number}: el deudor "${loanReference}" no tiene una cuenta por cobrar abierta en FinTrack.`)
+  }
+  if (resolution.state === 'ambiguous') {
+    throw new Error(`Ingreso fila ${row.row_number}: el deudor "${loanReference}" tiene varias cuentas por cobrar abiertas y no se puede decidir cuál cobrar automáticamente.`)
+  }
+  if (resolution.state !== 'resolved') {
+    throw new Error(`Ingreso fila ${row.row_number}: no se pudo resolver el préstamo por cobrar relacionado.`)
+  }
+
+  const receivable = resolution.record
+  if (!isReceivableOpen(receivable.status)) {
+    throw new Error(`Ingreso fila ${row.row_number}: el préstamo por cobrar seleccionado ya no admite más cobros.`)
+  }
+
+  const amount = roundCurrency(asNumber(row.payload.monto))
+  const pendingBefore = roundCurrency(receivable.amount - receivable.collected_amount)
+  if (amount > pendingBefore) {
+    throw new Error(`Ingreso fila ${row.row_number}: el cobro supera el saldo pendiente del préstamo relacionado.`)
+  }
+
+  const rowCurrency = toUpperText(row.payload.moneda) ?? receivable.currency
+  if (rowCurrency !== receivable.currency.toUpperCase()) {
+    throw new Error(`Ingreso fila ${row.row_number}: la moneda del ingreso debe coincidir con la del préstamo relacionado.`)
+  }
+
+  const before = {
+    collected_amount: receivable.collected_amount,
+    collected_date: receivable.collected_date,
+    status: receivable.status,
+  }
+
+  const nextCollectedAmount = roundCurrency(receivable.collected_amount + amount)
+  const nextStatus: Database['public']['Enums']['receivable_status'] =
+    nextCollectedAmount >= roundCurrency(receivable.amount)
+      ? 'COLLECTED'
+      : 'PARTIAL'
+
+  const after = {
+    collected_amount: nextCollectedAmount,
+    collected_date: transactionDate,
+    status: nextStatus,
+  }
+
+  const { error } = await db
+    .from('accounts_receivable')
+    .update(after)
+    .eq('user_id', userId)
+    .eq('id', receivable.id)
+
+  if (error) throw new Error(error.message)
+
+  const updatedReceivable = {
+    ...receivable,
+    collected_amount: nextCollectedAmount,
+    collected_date: transactionDate,
+    status: nextStatus,
+  } satisfies ReceivableImportRef
+
+  ctx.receivablesByImportRef.set(buildReceivableImportReference(updatedReceivable), updatedReceivable)
+  syncOpenReceivableMap(ctx.openReceivablesByDebtorName, updatedReceivable)
+
+  return [{
+    table: 'accounts_receivable',
+    id: receivable.id,
+    before,
+    after,
+  }]
+}
+
+async function applyPayablePayment(
+  db: DbClient,
+  userId: string,
+  ctx: ImportContext,
+  row: ImportJobRow,
+  transactionDate: string,
+): Promise<RowImportCommitMeta['updatedTargets']> {
+  const loanReference = trimText(row.payload.prestamo_relacionado)
+  if (!loanReference) return undefined
+
+  const resolution = resolveLinkedPayable(ctx, loanReference)
+  if (resolution.state === 'missing') {
+    throw new Error(`Egreso fila ${row.row_number}: el acreedor "${loanReference}" no tiene una cuenta por pagar abierta en FinTrack.`)
+  }
+  if (resolution.state === 'ambiguous') {
+    throw new Error(`Egreso fila ${row.row_number}: el acreedor "${loanReference}" tiene varias cuentas por pagar abiertas y no se puede decidir cuál pagar automáticamente.`)
+  }
+  if (resolution.state !== 'resolved') {
+    throw new Error(`Egreso fila ${row.row_number}: no se pudo resolver el préstamo por pagar relacionado.`)
+  }
+
+  const payable = resolution.record
+  if (!isPayableOpen(payable.status)) {
+    throw new Error(`Egreso fila ${row.row_number}: el préstamo por pagar seleccionado ya no admite más pagos.`)
+  }
+
+  const amount = roundCurrency(asNumber(row.payload.monto))
+  const pendingBefore = roundCurrency(payable.amount - payable.paid_amount)
+  if (amount > pendingBefore) {
+    throw new Error(`Egreso fila ${row.row_number}: el pago supera el saldo pendiente del préstamo relacionado.`)
+  }
+
+  const rowCurrency = toUpperText(row.payload.moneda) ?? payable.currency
+  if (rowCurrency !== payable.currency.toUpperCase()) {
+    throw new Error(`Egreso fila ${row.row_number}: la moneda del egreso debe coincidir con la del préstamo relacionado.`)
+  }
+
+  const before = {
+    paid_amount: payable.paid_amount,
+    paid_date: payable.paid_date,
+    status: payable.status,
+  }
+
+  const nextPaidAmount = roundCurrency(payable.paid_amount + amount)
+  const nextStatus: Database['public']['Enums']['payable_status'] =
+    nextPaidAmount >= roundCurrency(payable.amount)
+      ? 'PAID'
+      : 'PARTIAL'
+
+  const after = {
+    paid_amount: nextPaidAmount,
+    paid_date: transactionDate,
+    status: nextStatus,
+  }
+
+  const { error } = await db
+    .from('accounts_payable')
+    .update(after)
+    .eq('user_id', userId)
+    .eq('id', payable.id)
+
+  if (error) throw new Error(error.message)
+
+  const updatedPayable = {
+    ...payable,
+    paid_amount: nextPaidAmount,
+    paid_date: transactionDate,
+    status: nextStatus,
+  } satisfies PayableImportRef
+
+  ctx.payablesByImportRef.set(buildPayableImportReference(updatedPayable), updatedPayable)
+  syncOpenPayableMap(ctx.openPayablesByCreditorName, updatedPayable)
+
+  return [{
+    table: 'accounts_payable',
+    id: payable.id,
+    before,
+    after,
+  }]
+}
+
 async function createRecurringTransaction(
   db: DbClient,
   userId: string,
@@ -1155,11 +1501,22 @@ function preflightCommit(job: ImportJobWithRows, ctx: ImportContext): string[] {
 
     if (row.sheet_name === '03_Ingresos') {
       const destination = resolveAccount(ctx, row.payload.portafolio_destino, row.payload.moneda)
+      const linkedReceivable = resolveLinkedReceivable(ctx, row.payload.prestamo_relacionado)
       if (!destination) {
         errors.push(`Ingreso fila ${row.row_number}: el portafolio destino no existe en FinTrack.`)
       }
       if (!resolveCategoryId(ctx, 'INCOME', row.payload.categoria)) {
         errors.push(`Ingreso fila ${row.row_number}: la categoría "${trimText(row.payload.categoria) ?? 'vacía'}" no existe en FinTrack.`)
+      }
+      const linkedReceivableValue = trimText(row.payload.prestamo_relacionado)
+      if (linkedReceivableValue && linkedReceivable.state === 'missing') {
+        errors.push(`Ingreso fila ${row.row_number}: el deudor "${linkedReceivableValue}" no tiene una cuenta por cobrar abierta en FinTrack.`)
+      }
+      if (linkedReceivableValue && linkedReceivable.state === 'ambiguous') {
+        errors.push(`Ingreso fila ${row.row_number}: el deudor "${linkedReceivableValue}" tiene varias cuentas por cobrar abiertas y no se puede enlazar automáticamente.`)
+      }
+      if (linkedReceivable.state === 'resolved' && !isReceivableOpen(linkedReceivable.record.status)) {
+        errors.push(`Ingreso fila ${row.row_number}: el préstamo por cobrar relacionado ya no admite más cobros.`)
       }
     }
 
@@ -1168,6 +1525,7 @@ function preflightCommit(job: ImportJobWithRows, ctx: ImportContext): string[] {
       const paymentMethod = trimText(row.payload.forma_pago)
       const creditRef = trimText(row.payload.tarjeta_credito)
       const categoryId = resolveCategoryId(ctx, 'EXPENSE', row.payload.categoria)
+      const linkedPayable = resolveLinkedPayable(ctx, row.payload.prestamo_relacionado)
       if (!origin) {
         errors.push(`Egreso fila ${row.row_number}: el portafolio origen no existe en FinTrack.`)
       }
@@ -1187,6 +1545,16 @@ function preflightCommit(job: ImportJobWithRows, ctx: ImportContext): string[] {
         categoryId,
       })) {
         errors.push(`Egreso fila ${row.row_number}: el presupuesto "${budgetRef}" no tiene un periodo compatible con la fecha, moneda y categoría.`)
+      }
+      const linkedPayableValue = trimText(row.payload.prestamo_relacionado)
+      if (linkedPayableValue && linkedPayable.state === 'missing') {
+        errors.push(`Egreso fila ${row.row_number}: el acreedor "${linkedPayableValue}" no tiene una cuenta por pagar abierta en FinTrack.`)
+      }
+      if (linkedPayableValue && linkedPayable.state === 'ambiguous') {
+        errors.push(`Egreso fila ${row.row_number}: el acreedor "${linkedPayableValue}" tiene varias cuentas por pagar abiertas y no se puede enlazar automáticamente.`)
+      }
+      if (linkedPayable.state === 'resolved' && !isPayableOpen(linkedPayable.record.status)) {
+        errors.push(`Egreso fila ${row.row_number}: el préstamo por pagar relacionado ya no admite más pagos.`)
       }
     }
 
@@ -1385,11 +1753,20 @@ async function commitImportJobData(db: DbClient, userId: string, job: ImportJobW
 
     if (!result.ok) throw new Error(result.error.detail ? `${result.error.message} ${result.error.detail}` : result.error.message)
 
+    const updatedTargets = await applyReceivableCollection(
+      db,
+      userId,
+      ctx,
+      row,
+      transactionDate,
+    )
+
     counts.transactions += 1
     if (row.row_key) ctx.transactionsByRowKey.set(row.row_key, { id: result.data.transaction.id })
     await markRow(db, row, 'IMPORTED', 'transactions', result.data.transaction.id, {
       version: 'rollback-v1',
       createdTargets: [{ table: 'transactions', id: result.data.transaction.id }],
+      updatedTargets,
     })
   }
 
@@ -1429,11 +1806,20 @@ async function commitImportJobData(db: DbClient, userId: string, job: ImportJobW
 
     if (!result.ok) throw new Error(result.error.detail ? `${result.error.message} ${result.error.detail}` : result.error.message)
 
+    const updatedTargets = await applyPayablePayment(
+      db,
+      userId,
+      ctx,
+      row,
+      transactionDate,
+    )
+
     counts.transactions += 1
     if (row.row_key) ctx.transactionsByRowKey.set(row.row_key, { id: result.data.transaction.id })
     await markRow(db, row, 'IMPORTED', 'transactions', result.data.transaction.id, {
       version: 'rollback-v1',
       createdTargets: [{ table: 'transactions', id: result.data.transaction.id }],
+      updatedTargets,
       creditAdjustment: paymentMethod === 'CREDIT' && creditCardId
         ? {
             creditId: creditCardId,

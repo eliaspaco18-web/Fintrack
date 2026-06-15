@@ -25,6 +25,7 @@ export type Database = {
           id: string
           include_in_net_worth: boolean
           initial_balance: number
+          initial_balance_date: string
           institution: string | null
           is_active: boolean
           name: string
@@ -43,6 +44,7 @@ export type Database = {
           id?: string
           include_in_net_worth?: boolean
           initial_balance?: number
+          initial_balance_date?: string
           institution?: string | null
           is_active?: boolean
           name: string
@@ -61,6 +63,7 @@ export type Database = {
           id?: string
           include_in_net_worth?: boolean
           initial_balance?: number
+          initial_balance_date?: string
           institution?: string | null
           is_active?: boolean
           name?: string

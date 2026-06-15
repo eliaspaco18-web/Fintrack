@@ -50,13 +50,16 @@ async function createCategory(page: Page, categoryName: string) {
   await expect(page.getByTestId('categories-name-input')).toHaveValue('', { timeout: 15_000 })
 }
 
-async function createBankEntity(page: Page, bankName: string) {
+async function createBankEntity(page: Page, bankName: string, shortName?: string) {
   await page.goto('/admin?tab=banks')
   await expect(page.getByTestId('bank-entities-create-button')).toBeVisible()
 
   await page.getByTestId('bank-entities-create-button').click()
 
   await page.getByTestId('bank-entities-name-input').fill(bankName)
+  if (shortName) {
+    await page.getByLabel('Nombre corto').fill(shortName)
+  }
   await page.getByTestId('bank-entities-code-input').fill(`E2E-${Date.now()}`)
   await page.getByRole('button', { name: 'Crear entidad' }).click()
 
@@ -287,17 +290,18 @@ test.describe('authenticated management connectivity', () => {
     await loginViaUI(page, credentials!)
 
     const bankName = `E2E Banco ${Date.now()}`
-    await createBankEntity(page, bankName)
+    const shortName = `E2E-${Date.now()}`
+    await createBankEntity(page, bankName, shortName)
     await expect(page.getByText(bankName).first()).toBeVisible({ timeout: 15_000 })
 
     await page.goto('/portfolio')
     await expect(page.getByTestId('portfolio-form')).toBeVisible()
 
-    const bankOption = page.locator(
-      '[data-testid="portfolio-bank-entity-select"] option',
-      { hasText: bankName }
-    )
-    await expect(bankOption.first()).toBeVisible()
+    await page.getByTestId('portfolio-bank-entity-select').click()
+    await expect(page.getByRole('option', { name: bankName })).toBeVisible()
+    await expect(page.getByRole('option', { name: shortName })).toHaveCount(0)
+    await page.getByRole('option', { name: bankName }).click()
+    await expect(page.getByTestId('portfolio-bank-entity-select')).toContainText(bankName)
   })
 
   test('can deactivate and reactivate a bank entity from catalog actions', async ({ page }) => {
@@ -366,6 +370,25 @@ test.describe('authenticated management connectivity', () => {
     await expect(page.locator('[data-testid^="portfolio-row-"]').filter({ hasText: accountName })).toHaveCount(0, {
       timeout: 20_000,
     })
+  })
+
+  test('can edit the opening balance and cutoff date of a portfolio account', async ({ page }) => {
+    await loginViaUI(page, credentials!)
+
+    const accountName = `E2E Portfolio Edit ${Date.now()}`
+    await createPortfolioAccount(page, accountName)
+
+    const row = page.locator('[data-testid^="portfolio-row-"]').filter({ hasText: accountName }).first()
+    await expect(row).toBeVisible({ timeout: 15_000 })
+
+    await row.locator('[data-testid^="portfolio-edit-"]').click()
+    await expect(page.getByTestId('portfolio-form')).toBeVisible()
+
+    await page.getByTestId('portfolio-initial-balance-input').fill('400')
+    await page.getByTestId('portfolio-initial-balance-date-input').fill('2026-01-01')
+    await page.getByTestId('portfolio-submit-button').click()
+
+    await expect(row).toContainText('S/ 400.00', { timeout: 20_000 })
   })
 
   test('can delete a custom category using modal confirmation', async ({ page }) => {

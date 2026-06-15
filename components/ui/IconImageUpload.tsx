@@ -102,11 +102,18 @@ export function IconImageUpload({
   const [asset, setAsset] = useState<IconImageAsset | null>(null)
   const [editor, setEditor] = useState<IconEditorState>(createDefaultIconEditorState())
 
+  const revokeAssetUrl = useCallback(() => {
+    if (assetUrlRef.current?.startsWith('blob:')) {
+      URL.revokeObjectURL(assetUrlRef.current)
+    }
+    assetUrlRef.current = null
+  }, [])
+
   useEffect(() => {
     return () => {
-      if (assetUrlRef.current) URL.revokeObjectURL(assetUrlRef.current)
+      revokeAssetUrl()
     }
-  }, [])
+  }, [revokeAssetUrl])
 
   useEffect(() => {
     if (!asset) return
@@ -147,16 +154,16 @@ export function IconImageUpload({
     }
 
     try {
-      if (assetUrlRef.current) URL.revokeObjectURL(assetUrlRef.current)
+      revokeAssetUrl()
       const nextAsset = await loadIconImageAsset(file)
-      assetUrlRef.current = nextAsset.url
+      assetUrlRef.current = nextAsset.url.startsWith('blob:') ? nextAsset.url : null
       setAsset(nextAsset)
       setEditor(createDefaultIconEditorState())
       setError(null)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No se pudo cargar la imagen.')
     }
-  }, [allowedMimeTypes, maxSizeMB])
+  }, [allowedMimeTypes, maxSizeMB, revokeAssetUrl])
 
   const handleInputChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -293,6 +300,13 @@ export function IconImageUpload({
       {asset && baseDimensions ? (
         <div className="rounded-xl border border-[var(--c-border)] bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(248,248,246,0.96))] p-4">
           <div className="space-y-4">
+            <div>
+              <p className="text-[12px] font-medium text-[var(--c-text)]">Vista previa ajustable</p>
+              <p className="text-[11px] text-[var(--c-text-muted)]">
+                Ajusta encuadre, zoom y rotación antes de guardar.
+              </p>
+            </div>
+
             <div className="flex justify-center">
               <div
                 className="relative max-w-full overflow-hidden rounded-[24px] border border-[rgba(17,24,39,0.08)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,247,245,0.98))] shadow-[0_14px_36px_rgba(31,41,55,0.08)]"

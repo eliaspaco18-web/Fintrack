@@ -4,6 +4,8 @@
 // Fuente de verdad para sidebar, breadcrumbs y metadatos de página.
 // =============================================================================
 
+import { DEVELOPER_TOOLS_ENABLED } from '@/lib/developer/tools'
+
 export interface NavItem {
   key:         string
   label:       string
@@ -28,10 +30,11 @@ export type NavIconKey =
   | 'payables'
   | 'recurring'
   | 'alerts'
+  | 'developer'
   | 'admin'
   | 'settings'
 
-export const NAV_ITEMS: NavItem[] = [
+const BASE_NAV_ITEMS: NavItem[] = [
   {
     key:         'dashboard',
     label:       'Dashboard',
@@ -114,6 +117,14 @@ export const NAV_ITEMS: NavItem[] = [
     section:     'main',
   },
   {
+    key:         'developer',
+    label:       'Developer',
+    href:        '/developer',
+    icon:        'developer',
+    description: 'Herramientas locales para preparar presets y assets de la app',
+    section:     'secondary',
+  },
+  {
     key:         'admin',
     label:       'Administración',
     href:        '/admin',
@@ -131,6 +142,10 @@ export const NAV_ITEMS: NavItem[] = [
   },
 ]
 
+export const NAV_ITEMS: NavItem[] = BASE_NAV_ITEMS.filter(item => (
+  item.key !== 'developer' || DEVELOPER_TOOLS_ENABLED
+))
+
 /** Mapa de ruta → item para lookups O(1) */
 export const NAV_BY_HREF = Object.fromEntries(
   NAV_ITEMS.map(item => [item.href, item])
@@ -138,6 +153,12 @@ export const NAV_BY_HREF = Object.fromEntries(
 
 /** Dado un pathname, retorna el NavItem activo (si existe) */
 export function getActiveNavItem(pathname: string): NavItem | null {
+  if (pathname.startsWith('/module-status/')) {
+    const moduleKey = pathname.split('/')[2]
+    const moduleItem = NAV_ITEMS.find(item => item.key === moduleKey)
+    if (moduleItem) return moduleItem
+  }
+
   // Buscar match exacto primero
   const exact = NAV_ITEMS.find(item => item.exact && pathname === item.href)
   if (exact) return exact

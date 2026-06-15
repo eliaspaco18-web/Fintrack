@@ -2081,6 +2081,7 @@ export function TransactionForm({
             <SubmitButton
               type={type}
               state={submitState}
+              operationType={operationType}
               disabled={submitState.status === 'loading'}
               fullWidth={false}
               className="min-w-[190px]"

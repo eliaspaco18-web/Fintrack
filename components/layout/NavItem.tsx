@@ -12,6 +12,7 @@ import { usePathname }                from 'next/navigation'
 import { useCallback }                from 'react'
 import type { NavItem as NavItemType } from '@/lib/constants/nav'
 import { getActiveNavItem }           from '@/lib/constants/nav'
+import { findControlledModuleByKey }   from '@/lib/constants/app-control'
 import { NavIcon }                    from './LayoutIcons'
 import type { SidebarMode }           from '@/lib/hooks/useLayout'
 
@@ -50,6 +51,8 @@ function CollapsedNavItem({
   const tooltipLabel = item.description
     ? `${item.label}: ${item.description}`
     : item.label
+  const moduleStatus = findControlledModuleByKey(item.key)?.status
+  const isLaunch = moduleStatus === 'launch'
 
   return (
     <li>
@@ -61,8 +64,10 @@ function CollapsedNavItem({
         title={item.label}
         className="group sidebar-nav-link sidebar-nav-link-collapsed"
         data-active={isActive ? 'true' : 'false'}
+        data-developer={item.key === 'developer' ? 'true' : undefined}
       >
         <NavIcon name={item.icon} size={17} strokeWidth={1.65} />
+        {isLaunch ? <span className="sidebar-collapsed-new-badge">NEW</span> : null}
         {badge > 0 && (
           <span className="sidebar-collapsed-badge">
             {badge > 9 ? '9+' : badge}
@@ -78,6 +83,9 @@ export function NavItem({ item, mode, badge = 0, onClick }: NavItemProps) {
   const pathname = usePathname()
   const activeItem = getActiveNavItem(pathname)
   const isActive = activeItem?.key === item.key
+  const isDeveloper = item.key === 'developer'
+  const moduleStatus = findControlledModuleByKey(item.key)?.status
+  const isLaunch = moduleStatus === 'launch'
 
   const handleClick = useCallback(() => { onClick?.() }, [onClick])
 
@@ -99,6 +107,7 @@ export function NavItem({ item, mode, badge = 0, onClick }: NavItemProps) {
         onClick={handleClick}
         className="sidebar-nav-link"
         data-active={isActive ? 'true' : 'false'}
+        data-developer={isDeveloper ? 'true' : undefined}
         aria-current={isActive ? 'page' : undefined}
       >
         <span className="sidebar-nav-icon">
@@ -107,6 +116,8 @@ export function NavItem({ item, mode, badge = 0, onClick }: NavItemProps) {
         <span className="text-[13px] font-medium tracking-[-0.01em] flex-1 min-w-0 truncate">
           {item.label}
         </span>
+        {isDeveloper ? <span className="sidebar-dev-badge">DEV</span> : null}
+        {isLaunch ? <span className="sidebar-new-badge">Nuevo</span> : null}
         <SidebarBadge value={badge} active={isActive} />
       </Link>
     </li>

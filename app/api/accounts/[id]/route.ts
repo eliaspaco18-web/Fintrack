@@ -34,6 +34,7 @@ const zAccountType = z.enum([
 ])
 
 const zCurrency = z.string().trim().min(2).max(10).transform(value => value.toUpperCase())
+const zDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)')
 
 const zUpdateAccountSchema = z.object({
   name: z.string().trim().min(2).max(100).optional(),
@@ -41,6 +42,8 @@ const zUpdateAccountSchema = z.object({
   bank_entity_id: z.string().uuid().nullable().optional(),
   type: zAccountType.optional(),
   currency: zCurrency.optional(),
+  initial_balance: z.number().min(-1_000_000_000).max(1_000_000_000).optional(),
+  initial_balance_date: zDate.optional(),
   include_in_net_worth: z.boolean().optional(),
   color: z.string().trim().min(4).max(20).optional(),
   icon: z.string().trim().min(1).max(40).optional(),
@@ -52,10 +55,10 @@ const zUpdateAccountSchema = z.object({
 )
 
 const ACCOUNT_SELECT_BASE =
-  'id,name,institution,type,currency,balance,initial_balance,color,icon,include_in_net_worth,is_active,notes,created_at,updated_at' as const
+  'id,name,institution,type,currency,balance,initial_balance,initial_balance_date,color,icon,include_in_net_worth,is_active,notes,created_at,updated_at' as const
 
 const ACCOUNT_SELECT_WITH_BANK_ID =
-  'id,name,institution,bank_entity_id,type,currency,balance,initial_balance,color,icon,include_in_net_worth,is_active,notes,created_at,updated_at' as const
+  'id,name,institution,bank_entity_id,type,currency,balance,initial_balance,initial_balance_date,color,icon,include_in_net_worth,is_active,notes,created_at,updated_at' as const
 
 const ACCOUNT_SELECT_WITH_BANK =
   `${ACCOUNT_SELECT_WITH_BANK_ID},bank_entity:bank_entities(id,name,short_name,color,icon,is_active)` as const
@@ -66,6 +69,26 @@ interface Params {
 
 const ACCOUNT_LINKED_RECORDS_MESSAGE =
   'Esta cuenta participa en transacciones o creditos. Reasigna esos registros antes de continuar.'
+
+async function getEarliestAccountTransactionDate(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  accountId: string,
+) {
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('transaction_date')
+    .eq('user_id', userId)
+    .or(`source_account_id.eq.${accountId},destination_account_id.eq.${accountId}`)
+    .order('transaction_date', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  return {
+    data: data?.transaction_date ?? null,
+    error,
+  }
+}
 
 async function getAccountBlockers(
   supabase: ReturnType<typeof createClient>,
@@ -121,8 +144,22 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   if (!parsed.success) return apiZodError(parsed.error)
 
   const payload = parsed.data
+  const updatesOpeningBalance =
+    Object.prototype.hasOwnProperty.call(payload, 'initial_balance')
+    || Object.prototype.hasOwnProperty.call(payload, 'initial_balance_date')
   const includesBankEntityField = Object.prototype.hasOwnProperty.call(payload, 'bank_entity_id')
   let resolvedInstitution = payload.institution
+
+  const { data: existingAccount, error: existingAccountError } = await supabase
+    .from('accounts')
+    .select('id, name, balance, initial_balance, initial_balance_date, created_at')
+    .eq('id', params.id)
+    .eq('user_id', userId)
+    .single()
+
+  if (existingAccountError || !existingAccount) {
+    return apiError({ code: 'NOT_FOUND', message: 'Cuenta no encontrada' })
+  }
 
   if (payload.bank_entity_id !== undefined && payload.bank_entity_id !== null) {
     const { data: bank, error: bankError } = await supabase
@@ -171,6 +208,38 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     ...payload,
     institution: resolvedInstitution,
     updated_at: new Date().toISOString(),
+  }
+
+  if (updatesOpeningBalance) {
+    const nextInitialBalance = payload.initial_balance ?? Number(existingAccount.initial_balance ?? 0)
+    const fallbackDate = String(existingAccount.created_at ?? '').slice(0, 10) || new Date().toISOString().slice(0, 10)
+    const nextInitialBalanceDate =
+      payload.initial_balance_date
+      ?? existingAccount.initial_balance_date
+      ?? fallbackDate
+
+    const earliestTransaction = await getEarliestAccountTransactionDate(supabase, userId, params.id)
+    if (earliestTransaction.error) {
+      return apiError({ code: 'DATABASE_ERROR', message: earliestTransaction.error.message })
+    }
+
+    if (earliestTransaction.data && nextInitialBalanceDate > earliestTransaction.data) {
+      return apiError({
+        code: 'BUSINESS_RULE_ERROR',
+        message: 'La fecha del saldo inicial no puede quedar después del primer movimiento.',
+        detail: `El primer movimiento registrado en esta cuenta es ${earliestTransaction.data}.`,
+      })
+    }
+
+    const previousInitialBalance = Number(existingAccount.initial_balance ?? 0)
+    const currentBalance = Number(existingAccount.balance ?? 0)
+    const delta = nextInitialBalance - previousInitialBalance
+
+    baseUpdateData.initial_balance = nextInitialBalance
+    baseUpdateData.initial_balance_date = nextInitialBalanceDate
+    if (delta !== 0) {
+      baseUpdateData.balance = currentBalance + delta
+    }
   }
 
   const runUpdate = (includeBankFeature: boolean, updateData: Record<string, unknown>) => {

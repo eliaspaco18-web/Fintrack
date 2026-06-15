@@ -125,7 +125,14 @@ export const zCreateTransactionSchema = z
     zCreateTransferSchema,
   ])
   .superRefine((d, ctx) => {
-    if ((d.type === 'INCOME' || d.type === 'EXPENSE') && !d.category_id) {
+    const requiresCategory =
+      d.type === 'TRANSFER'
+        ? false
+        : d.type === 'INCOME'
+          ? !d.payable
+          : !d.receivable
+
+    if (requiresCategory && !d.category_id) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['category_id'],

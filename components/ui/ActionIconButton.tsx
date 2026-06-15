@@ -1,6 +1,6 @@
 'use client'
 
-import { type ButtonHTMLAttributes, type ReactNode } from 'react'
+import { type ButtonHTMLAttributes, type ReactNode, useId } from 'react'
 import { Button } from '@/components/ui/Button'
 
 type ActionIcon = 'view' | 'edit' | 'delete' | 'use' | 'deactivate' | 'reactivate' | 'settings'
@@ -13,6 +13,8 @@ interface BaseProps {
   className?: string
   testId?: string
   disabled?: boolean
+  title?: string
+  description?: string
 }
 
 interface ButtonProps extends BaseProps, Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'children'> {
@@ -103,6 +105,12 @@ function resolveButtonVariant(variant: ActionVariant) {
   return 'secondary' as const
 }
 
+function resolveTooltipDot(variant: ActionVariant): string {
+  if (variant === 'danger') return 'bg-[var(--c-danger)]'
+  if (variant === 'success') return 'bg-[var(--c-primary)]'
+  return 'bg-[var(--c-text-faint)]'
+}
+
 export function ActionIconButton(props: ActionIconButtonProps) {
   const {
     label,
@@ -110,40 +118,85 @@ export function ActionIconButton(props: ActionIconButtonProps) {
     variant = 'default',
     className = '',
     testId,
+    title,
+    description,
   } = props
 
+  const tooltipId = useId()
   const classes = baseClasses(variant, className)
   const iconNode = iconSvg(icon)
+  const buttonTitle = title ?? label
+  const hasTooltip = buttonTitle.trim().length > 0 || Boolean(description)
+
+  const tooltip = hasTooltip ? (
+    <span
+      id={tooltipId}
+      role="tooltip"
+      className="
+        pointer-events-none absolute bottom-[calc(100%+10px)] right-0 z-[60] hidden w-56
+        origin-bottom-right rounded-[16px] border border-[var(--c-border)] bg-[var(--c-surface)]
+        px-3.5 py-3 text-left opacity-0 shadow-[var(--shadow-md)]
+        transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]
+        translate-y-1 sm:block group-hover/action:translate-y-0 group-hover/action:opacity-100
+        group-focus-within/action:translate-y-0 group-focus-within/action:opacity-100
+      "
+    >
+      <span
+        aria-hidden="true"
+        className="absolute -bottom-1 right-4 h-2.5 w-2.5 rotate-45 border-b border-r border-[var(--c-border)] bg-[var(--c-surface)]"
+      />
+      <span className="relative block">
+        <span className="mb-1.5 flex items-center gap-2">
+          <span className={`h-1.5 w-1.5 rounded-full ${resolveTooltipDot(variant)}`.trim()} />
+          <span className="text-[11px] font-semibold leading-none tracking-[-0.01em] text-[var(--c-text)]">
+            {buttonTitle}
+          </span>
+        </span>
+        {description ? (
+          <span className="block text-[11px] leading-[1.45] text-[var(--c-text-muted)]">
+            {description}
+          </span>
+        ) : null}
+      </span>
+    </span>
+  ) : null
 
   if ('href' in props && props.href) {
     return (
-      <Button
-        href={props.href}
-        ariaLabel={label}
-        testId={testId}
-        variant={resolveButtonVariant(variant)}
-        size="icon-sm"
-        className={classes}
-      >
-        {iconNode}
-      </Button>
+      <span className="group/action relative inline-flex align-middle">
+        <Button
+          href={props.href}
+          ariaLabel={label}
+          testId={testId}
+          variant={resolveButtonVariant(variant)}
+          size="icon-sm"
+          className={classes}
+        >
+          {iconNode}
+        </Button>
+        {tooltip}
+      </span>
     )
   }
 
   const buttonProps = props as ButtonProps
   const { disabled, onClick } = buttonProps
   return (
-    <Button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      ariaLabel={label}
-      testId={testId}
-      variant={resolveButtonVariant(variant)}
-      size="icon-sm"
-      className={`${classes} disabled:opacity-45`}
-    >
-      {iconNode}
-    </Button>
+    <span className="group/action relative inline-flex align-middle">
+      <Button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        ariaLabel={label}
+        aria-describedby={hasTooltip ? tooltipId : undefined}
+        testId={testId}
+        variant={resolveButtonVariant(variant)}
+        size="icon-sm"
+        className={`${classes} disabled:opacity-45`}
+      >
+        {iconNode}
+      </Button>
+      {tooltip}
+    </span>
   )
 }

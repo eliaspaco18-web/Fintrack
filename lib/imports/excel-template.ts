@@ -1,6 +1,10 @@
 import ExcelJS from 'exceljs'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { IMPORT_TEMPLATE_VERSION } from '@/lib/imports/import-types'
+import {
+  buildPayableImportReference,
+  buildReceivableImportReference,
+} from '@/lib/imports/loan-reference'
 
 const MAX_TEMPLATE_ROWS = 500
 const HEADER_ROW = 4
@@ -45,6 +49,8 @@ type TemplateListKey =
   | 'credits'
   | 'debtors'
   | 'creditors'
+  | 'receivableReferences'
+  | 'payableReferences'
 
 type ColumnKind = 'text' | 'date' | 'money' | 'number' | 'percent' | 'integer'
 
@@ -82,6 +88,10 @@ export type ImportTemplateCatalogs = {
   }>
   creditCards: string[]
   budgets: string[]
+  debtors: string[]
+  creditors: string[]
+  receivableReferences: string[]
+  payableReferences: string[]
   budgetWindows: Array<{
     name: string
     currency: string
@@ -341,8 +351,10 @@ function addListSheet(workbook: ExcelJS.Workbook, catalogs: ImportTemplateCatalo
     creditCards: catalogs.creditCards,
     budgets: catalogs.budgets,
     credits: [],
-    debtors: [],
-    creditors: [],
+    debtors: catalogs.debtors,
+    creditors: catalogs.creditors,
+    receivableReferences: catalogs.receivableReferences,
+    payableReferences: catalogs.payableReferences,
   }
 
   const listKeys = Object.keys(lists) as TemplateListKey[]
@@ -403,6 +415,10 @@ function addCatalogsUserSheet(workbook: ExcelJS.Workbook, catalogs: ImportTempla
     ...catalogs.assetTypes.map(value => ({ tipo: 'tipo_activo', valor: value })),
     ...catalogs.creditCards.map(value => ({ tipo: 'tarjeta_credito', valor: value })),
     ...catalogs.budgets.map(value => ({ tipo: 'presupuesto', valor: value })),
+    ...catalogs.debtors.map(value => ({ tipo: 'deudor', valor: value })),
+    ...catalogs.creditors.map(value => ({ tipo: 'acreedor', valor: value })),
+    ...catalogs.receivableReferences.map(value => ({ tipo: 'prestamo_por_cobrar', valor: value })),
+    ...catalogs.payableReferences.map(value => ({ tipo: 'prestamo_por_pagar', valor: value })),
   ]
   sheet.addRows(rows)
 }
@@ -451,6 +467,7 @@ function addInstructionsSheet(workbook: ExcelJS.Workbook, generatedAt: Date) {
     ['Montos', 'Ingresa numeros sin simbolo de moneda. Ejemplo: 1500.50'],
     ['Portafolios', 'Los portafolios ya existen en FinTrack. Solo selecciona el nombre desde la lista.'],
     ['Categorias', 'Las categorias se muestran como texto simple tal como existen en FinTrack.'],
+    ['Prestamos vinculados', 'Si vas a importar cobros o pagos de prestamos ya creados en FinTrack, selecciona el deudor o acreedor relacionado en la hoja de Ingresos o Egresos.'],
     ['Tipo de cambio', 'No necesitas llenarlo en la plantilla. FinTrack lo resolvera al importar usando la fecha del movimiento cuando exista un registro disponible.'],
     ['Obligatorios', 'Las columnas con * son obligatorias.'],
     ['Validacion', 'Excel ayuda con listas y formatos, pero FinTrack validara todo en el servidor.'],
@@ -472,7 +489,7 @@ export async function loadImportTemplateCatalogs(
   userId: string,
 ): Promise<ImportTemplateCatalogs> {
   const db = supabase as SupabaseClient
-  const [currenciesRes, categoriesRes, bankEntitiesRes, assetTypesRes, accountsRes, creditsRes, budgetsRes] = await Promise.all([
+  const [currenciesRes, categoriesRes, bankEntitiesRes, assetTypesRes, accountsRes, creditsRes, budgetsRes, debtorsRes, creditorsRes, receivablesRes, payablesRes] = await Promise.all([
     db
       .from('user_currencies')
       .select('code, name, is_active, is_system')
@@ -507,6 +524,24 @@ export async function loadImportTemplateCatalogs(
       .select('name, currency, period_type, start_date, end_date, is_active, category:categories(name)')
       .eq('user_id', userId)
       .eq('is_active', true),
+    db
+      .from('debtors')
+      .select('name, is_active')
+      .eq('user_id', userId),
+    db
+      .from('creditors')
+      .select('name, is_active')
+      .eq('user_id', userId),
+    db
+      .from('accounts_receivable')
+      .select('id, debtor_name, concept, currency, amount, issue_date, status')
+      .eq('user_id', userId)
+      .in('status', ['PENDING', 'PARTIAL']),
+    db
+      .from('accounts_payable')
+      .select('id, creditor_name, concept, currency, amount, issue_date, status')
+      .eq('user_id', userId)
+      .in('status', ['PENDING', 'PARTIAL']),
   ])
 
   const firstError =
@@ -516,7 +551,11 @@ export async function loadImportTemplateCatalogs(
     assetTypesRes.error ??
     accountsRes.error ??
     creditsRes.error ??
-    budgetsRes.error
+    budgetsRes.error ??
+    debtorsRes.error ??
+    creditorsRes.error ??
+    receivablesRes.error ??
+    payablesRes.error
   if (firstError) throw new Error(firstError.message)
 
   const currencies = uniqueSorted(
@@ -555,6 +594,28 @@ export async function loadImportTemplateCatalogs(
 
   const portfolios = uniqueSorted(portfolioSnapshots.map(row => row.name))
   const creditCards = uniqueSorted((creditsRes.data ?? []).map(row => row.name))
+  const debtors = uniqueSorted((debtorsRes.data ?? []).map(row => row.name))
+  const creditors = uniqueSorted((creditorsRes.data ?? []).map(row => row.name))
+  const receivableReferences = uniqueSorted(
+    (receivablesRes.data ?? []).map(row => buildReceivableImportReference({
+      id: String(row.id),
+      debtor_name: String(row.debtor_name ?? ''),
+      concept: typeof row.concept === 'string' ? row.concept : null,
+      currency: String(row.currency ?? 'PEN'),
+      amount: typeof row.amount === 'number' ? row.amount : 0,
+      issue_date: String(row.issue_date ?? ''),
+    })),
+  )
+  const payableReferences = uniqueSorted(
+    (payablesRes.data ?? []).map(row => buildPayableImportReference({
+      id: String(row.id),
+      creditor_name: String(row.creditor_name ?? ''),
+      concept: typeof row.concept === 'string' ? row.concept : null,
+      currency: String(row.currency ?? 'PEN'),
+      amount: typeof row.amount === 'number' ? row.amount : 0,
+      issue_date: String(row.issue_date ?? ''),
+    })),
+  )
   const budgetWindows = (budgetsRes.data ?? []).map(row => {
     const category = Array.isArray(row.category) ? row.category[0] : row.category
     return {
@@ -578,6 +639,10 @@ export async function loadImportTemplateCatalogs(
     portfolioSnapshots,
     creditCards,
     budgets,
+    debtors,
+    creditors,
+    receivableReferences,
+    payableReferences,
     budgetWindows,
     generatedFor: userId,
   }
@@ -642,7 +707,20 @@ export async function buildImportTemplateWorkbook(catalogs: ImportTemplateCatalo
       { key: 'descripcion', header: 'Descripcion', width: 40, required: true, kind: 'text', note: 'Texto corto para identificar el ingreso. Ejemplo: Sueldo mayo.' },
       { key: 'moneda', header: 'Moneda', width: 14, required: true, list: 'currencies', note: 'Moneda del movimiento.' },
       { key: 'monto', header: 'Monto del ingreso', width: 18, required: true, kind: 'money', note: 'Monto positivo del ingreso. No uses simbolos de moneda.' },
-      { key: 'remitente', header: 'Remitente', width: 26, kind: 'text', note: 'Persona o entidad que envia el dinero. Opcional.' },
+      {
+        key: 'remitente',
+        header: 'Remitente',
+        width: 26,
+        kind: 'text',
+        note: 'Opcional. Persona o entidad que envia el dinero. Se deja libre porque no todos los ingresos provienen de deudores.',
+      },
+      {
+        key: 'prestamo_relacionado',
+        header: 'Prestamo por cobrar relacionado',
+        width: 42,
+        list: 'debtors',
+        note: 'Opcional. Esta lista sale del registro de deudores existente en FinTrack y se usa para aplicar el cobro a una cuenta abierta relacionada cuando exista una coincidencia unica.',
+      },
       { key: 'notas', header: 'Notas', width: 42, kind: 'text', note: 'Comentario opcional para ampliar contexto.' },
     ],
     [],
@@ -672,7 +750,20 @@ export async function buildImportTemplateWorkbook(catalogs: ImportTemplateCatalo
       { key: 'monto', header: 'Monto del egreso', width: 18, required: true, kind: 'money', note: 'Monto positivo del egreso. No uses simbolos de moneda.' },
       { key: 'forma_pago', header: 'Forma de pago', width: 18, list: 'paymentMethods', note: 'Selecciona DEBIT o CREDIT.' },
       { key: 'tarjeta_credito', header: 'Tarjeta de credito', width: 24, list: 'creditCards', note: 'Solo si forma de pago es CREDIT. Selecciona la tarjeta existente en FinTrack.' },
-      { key: 'destinatario', header: 'Destinatario', width: 26, kind: 'text', note: 'Persona o comercio que recibe el pago. Opcional.' },
+      {
+        key: 'destinatario',
+        header: 'Destinatario',
+        width: 26,
+        kind: 'text',
+        note: 'Opcional. Persona o entidad que recibe el pago. Se deja libre porque no todos los egresos corresponden a acreedores.',
+      },
+      {
+        key: 'prestamo_relacionado',
+        header: 'Prestamo por pagar relacionado',
+        width: 42,
+        list: 'creditors',
+        note: 'Opcional. Esta lista sale del registro de acreedores existente en FinTrack y se usa para aplicar el pago a una cuenta abierta relacionada cuando exista una coincidencia unica.',
+      },
       { key: 'notas', header: 'Notas', width: 42, kind: 'text', note: 'Comentario opcional para ampliar contexto.' },
     ],
     [],
@@ -755,7 +846,7 @@ export async function buildImportTemplateWorkbook(catalogs: ImportTemplateCatalo
     '07 · Por Cobrar',
     'Deudores y cuentas por cobrar. Permite migrar prestamos personales o saldos pendientes.',
     [
-      { key: 'deudor', header: 'Nombre del deudor', width: 30, required: true, kind: 'text', note: 'Nombre de la persona o entidad que debe pagar.' },
+      { key: 'deudor', header: 'Nombre del deudor', width: 30, required: true, list: 'debtors', note: 'Nombre de la persona o entidad que debe pagar. Selecciónalo desde los deudores existentes en FinTrack.' },
       { key: 'relacion', header: 'Relacion', width: 20, kind: 'text', note: 'Opcional. Ejemplo: amigo, cliente, familiar.' },
       { key: 'fecha', header: 'Fecha de origen', width: 16, required: true, kind: 'date', note: 'Fecha en que nace la cuenta por cobrar.' },
       { key: 'fecha_vencimiento', header: 'Fecha de vencimiento', width: 18, kind: 'date', note: 'Fecha límite esperada de cobro. Opcional.' },
@@ -784,7 +875,7 @@ export async function buildImportTemplateWorkbook(catalogs: ImportTemplateCatalo
     '08 · Por Pagar',
     'Acreedores y cuentas por pagar. Permite migrar obligaciones pendientes o historicas.',
     [
-      { key: 'acreedor', header: 'Nombre del acreedor', width: 30, required: true, kind: 'text', note: 'Nombre de la persona o entidad a la que debes pagar.' },
+      { key: 'acreedor', header: 'Nombre del acreedor', width: 30, required: true, list: 'creditors', note: 'Nombre de la persona o entidad a la que debes pagar. Selecciónalo desde los acreedores existentes en FinTrack.' },
       { key: 'relacion', header: 'Relacion', width: 20, kind: 'text', note: 'Opcional. Ejemplo: proveedor, familiar, banco.' },
       { key: 'fecha', header: 'Fecha de origen', width: 16, required: true, kind: 'date', note: 'Fecha en que nace la obligación.' },
       { key: 'fecha_vencimiento', header: 'Fecha de vencimiento', width: 18, kind: 'date', note: 'Fecha límite esperada de pago. Opcional.' },

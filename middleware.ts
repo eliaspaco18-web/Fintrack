@@ -6,6 +6,12 @@
 import { createServerClient }  from '@supabase/ssr'
 import { NextResponse }        from 'next/server'
 import type { NextRequest }    from 'next/server'
+import {
+  APP_CONTROL_CONFIG,
+  findControlledModuleByPath,
+  isDeveloperBypassRoute,
+  isSystemMessageRoute,
+} from '@/lib/constants/app-control'
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -40,9 +46,29 @@ export async function middleware(request: NextRequest) {
   const isApiRoute = pathname.startsWith('/api/')
   const isStaticAsset = pathname.startsWith('/_next') || pathname === '/favicon.ico'
   const isLandingPage = pathname === '/'
+  const isDeveloperRoute = isDeveloperBypassRoute(pathname)
+  const isStateScreenRoute = isSystemMessageRoute(pathname)
+  const isLaunchOpen = request.nextUrl.searchParams.get('ft_launch') === 'open'
+
+  if (APP_CONTROL_CONFIG.maintenance.enabled) {
+    if (isApiRoute && !isDeveloperRoute && !pathname.startsWith('/api/releases/')) {
+      return NextResponse.json({
+        ok: false,
+        error: {
+          code: 'MAINTENANCE_MODE',
+          message: APP_CONTROL_CONFIG.maintenance.message,
+        },
+      }, { status: 503 })
+    }
+
+    if (!isStaticAsset && !isAuthCallbackRoute && !isDeveloperRoute && !isStateScreenRoute) {
+      return NextResponse.redirect(new URL('/maintenance', request.url))
+    }
+  }
 
   // No interceptar rutas estáticas ni API
   if (isStaticAsset || isApiRoute || isAuthCallbackRoute) return response
+  if (isStateScreenRoute) return response
 
   // Landing page: accesible sin sesión; con sesión → dashboard
   if (isLandingPage) {
@@ -60,6 +86,23 @@ export async function middleware(request: NextRequest) {
   // Con sesión → no dejar ir a login
   if (user && isAuthEntryRoute) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
+  }
+
+  const controlledModule = findControlledModuleByPath(pathname)
+  const hasLaunchAccess = controlledModule?.status === 'launch' && (
+    isLaunchOpen || request.cookies.get(`ft_launch_${controlledModule.key}`)?.value === 'open'
+  )
+
+  if (controlledModule?.status === 'launch' && isLaunchOpen) {
+    response.cookies.set(`ft_launch_${controlledModule.key}`, 'open', {
+      maxAge: 60 * 60 * 24 * 30,
+      path: '/',
+      sameSite: 'lax',
+    })
+  }
+
+  if (controlledModule && controlledModule.status !== 'live' && !isDeveloperRoute && !hasLaunchAccess) {
+    return NextResponse.redirect(new URL(`/module-status/${controlledModule.key}`, request.url))
   }
 
   return response

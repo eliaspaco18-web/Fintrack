@@ -34,6 +34,7 @@ const zAccountType = z.enum([
 ])
 
 const zCurrency = z.string().trim().min(2).max(10).transform(value => value.toUpperCase())
+const zDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)')
 
 const zCreateAccountSchema = z.object({
   name:                 z.string().trim().min(2).max(100),
@@ -42,6 +43,7 @@ const zCreateAccountSchema = z.object({
   type:                 zAccountType.default('CHECKING'),
   currency:             zCurrency.default('PEN'),
   initial_balance:      z.number().min(-1_000_000_000).max(1_000_000_000).default(0),
+  initial_balance_date: zDate.optional(),
   include_in_net_worth: z.boolean().default(true),
   color:                z.string().trim().min(4).max(20).default('#10b981'),
   icon:                 z.string().trim().min(1).max(40).default('wallet'),
@@ -49,10 +51,10 @@ const zCreateAccountSchema = z.object({
 })
 
 const ACCOUNT_SELECT_BASE =
-  'id,name,institution,type,currency,balance,initial_balance,color,icon,include_in_net_worth,is_active,notes,created_at,updated_at' as const
+  'id,name,institution,type,currency,balance,initial_balance,initial_balance_date,color,icon,include_in_net_worth,is_active,notes,created_at,updated_at' as const
 
 const ACCOUNT_SELECT_WITH_BANK_ID =
-  'id,name,institution,bank_entity_id,type,currency,balance,initial_balance,color,icon,include_in_net_worth,is_active,notes,created_at,updated_at' as const
+  'id,name,institution,bank_entity_id,type,currency,balance,initial_balance,initial_balance_date,color,icon,include_in_net_worth,is_active,notes,created_at,updated_at' as const
 
 const ACCOUNT_SELECT_WITH_BANK =
   `${ACCOUNT_SELECT_WITH_BANK_ID},bank_entity:bank_entities(id,name,short_name,color,icon,is_active)` as const
@@ -144,6 +146,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return apiZodError(parsed.error)
 
   const payload = parsed.data
+  const initialBalanceDate = payload.initial_balance_date ?? new Date().toISOString().slice(0, 10)
   let resolvedInstitution = payload.institution ?? null
   let resolvedBankEntityId = payload.bank_entity_id ?? null
   let useBankFeature = true
@@ -192,6 +195,7 @@ export async function POST(req: NextRequest) {
           type: payload.type,
           currency: payload.currency,
           initial_balance: payload.initial_balance,
+          initial_balance_date: initialBalanceDate,
           balance: payload.initial_balance,
           include_in_net_worth: payload.include_in_net_worth,
           color: payload.color,
@@ -212,6 +216,7 @@ export async function POST(req: NextRequest) {
         type: payload.type,
         currency: payload.currency,
         initial_balance: payload.initial_balance,
+        initial_balance_date: initialBalanceDate,
         balance: payload.initial_balance,
         include_in_net_worth: payload.include_in_net_worth,
         color: payload.color,

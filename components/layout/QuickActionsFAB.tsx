@@ -111,13 +111,13 @@ export function QuickActionsFAB() {
   `
 
   return (
-    <div ref={ref} className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-3">
+    <div ref={ref} className="pointer-events-none fixed bottom-6 right-6 z-40 flex flex-col items-end gap-3">
       <div
         className={`
           flex max-h-[62vh] flex-col-reverse gap-2 overflow-y-auto pr-1
           transition-all duration-300 ease-out origin-bottom
           ${open
-            ? 'opacity-100 translate-y-0 pointer-events-auto scale-100'
+            ? 'pointer-events-auto opacity-100 translate-y-0 scale-100'
             : 'opacity-0 translate-y-4 pointer-events-none scale-95'
           }
         `}
@@ -169,7 +169,7 @@ export function QuickActionsFAB() {
         aria-label={open ? 'Cerrar acciones rápidas' : 'Abrir acciones rápidas'}
         aria-expanded={open}
         className="
-          relative flex h-14 w-14 items-center justify-center
+          pointer-events-auto relative flex h-14 w-14 items-center justify-center
           rounded-[18px] text-white
           shadow-[0_6px_24px_rgba(13,79,74,0.40)]
           hover:shadow-[0_8px_28px_rgba(13,79,74,0.50)]
@@ -180,7 +180,7 @@ export function QuickActionsFAB() {
       >
         {!open && (
           <span
-            className="absolute inset-0 rounded-[18px] animate-ping opacity-20"
+            className="pointer-events-none absolute inset-0 rounded-[18px] animate-ping opacity-20"
             style={{ backgroundColor: 'var(--c-primary)' }}
           />
         )}

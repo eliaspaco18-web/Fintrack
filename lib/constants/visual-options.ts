@@ -1,6 +1,9 @@
+import bankLogoPresets from '@/lib/constants/bank-logo-presets.json'
+
 export interface VisualIconOption {
   value: string
   label: string
+  imageSrc?: string
 }
 
 export const ACCOUNT_ICON_OPTIONS: readonly VisualIconOption[] = [
@@ -13,6 +16,22 @@ export const ACCOUNT_ICON_OPTIONS: readonly VisualIconOption[] = [
   { value: 'shield', label: 'Caja fuerte' },
   { value: 'chart-line', label: 'Inversion' },
 ]
+
+export const BANK_ENTITY_LOGO_PRESETS: readonly VisualIconOption[] = bankLogoPresets
+
+export const BANK_ENTITY_ICON_OPTIONS: readonly VisualIconOption[] = [
+  { value: 'bank', label: 'Banco' },
+]
+
+const VISUAL_ICON_IMAGE_SRC = new Map<string, string>(
+  BANK_ENTITY_LOGO_PRESETS
+    .filter(option => typeof option.imageSrc === 'string' && option.imageSrc.length > 0)
+    .map(option => [option.value, option.imageSrc as string]),
+)
+
+export function getVisualIconImageSrc(value: string): string | null {
+  return VISUAL_ICON_IMAGE_SRC.get(value) ?? null
+}
 
 export const CATEGORY_ICON_OPTIONS: readonly VisualIconOption[] = [
   { value: 'tag', label: 'Etiqueta' },

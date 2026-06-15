@@ -84,6 +84,15 @@ const NAV_ICON_PATHS: Record<NavIconKey, React.ReactNode> = {
       <path d="M12 3V2"/>
     </>
   ),
+  developer: (
+    <>
+      <path d="M8.5 8 4 12l4.5 4"/>
+      <path d="m15.5 8 4.5 4-4.5 4"/>
+      <path d="m13.5 5-3 14"/>
+      <path d="M4 4.5h16"/>
+      <path d="M4 19.5h16"/>
+    </>
+  ),
   recurring: (
     <>
       <path d="M17 2l4 4-4 4"/>

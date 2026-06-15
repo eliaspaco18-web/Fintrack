@@ -15,6 +15,12 @@ type RollbackMeta = {
   version: 'rollback-v1'
   createdTargets: RollbackTarget[]
   reusedTargets?: RollbackTarget[]
+  updatedTargets?: Array<{
+    table: string
+    id: string
+    before: Record<string, unknown>
+    after: Record<string, unknown>
+  }>
   creditAdjustment?: {
     creditId: string
     operation: 'CONSUMPTION' | 'PAYMENT'
@@ -24,6 +30,7 @@ type RollbackMeta = {
 
 type RollbackPlan = {
   targetsByTable: Map<string, Set<string>>
+  updatedTargetsByKey: Map<string, NonNullable<RollbackMeta['updatedTargets']>[number]>
   transactionAdjustments: Map<string, RollbackMeta['creditAdjustment']>
 }
 
@@ -68,6 +75,25 @@ function readRollbackMeta(payload: Record<string, unknown>): RollbackMeta | null
       .filter(item => item.table.length > 0 && item.id.length > 0)
     : []
 
+  const updatedTargets = Array.isArray(record.updatedTargets)
+    ? record.updatedTargets
+      .filter(item => item && typeof item === 'object')
+      .map(item => {
+        const target = item as Record<string, unknown>
+        return {
+          table: typeof target.table === 'string' ? target.table : '',
+          id: typeof target.id === 'string' ? target.id : '',
+          before: target.before && typeof target.before === 'object'
+            ? { ...(target.before as Record<string, unknown>) }
+            : {},
+          after: target.after && typeof target.after === 'object'
+            ? { ...(target.after as Record<string, unknown>) }
+            : {},
+        }
+      })
+      .filter(item => item.table.length > 0 && item.id.length > 0)
+    : []
+
   const adjustmentRaw = record.creditAdjustment
   const creditAdjustment: RollbackMeta['creditAdjustment'] = adjustmentRaw && typeof adjustmentRaw === 'object'
     ? {
@@ -87,6 +113,7 @@ function readRollbackMeta(payload: Record<string, unknown>): RollbackMeta | null
     version: 'rollback-v1',
     createdTargets,
     reusedTargets: [],
+    updatedTargets,
     creditAdjustment: creditAdjustment && creditAdjustment.creditId && creditAdjustment.amount > 0
       ? creditAdjustment
       : undefined,
@@ -95,6 +122,7 @@ function readRollbackMeta(payload: Record<string, unknown>): RollbackMeta | null
 
 function collectRollbackPlan(job: ImportJobWithRows): RollbackPlan {
   const targetsByTable = new Map<string, Set<string>>()
+  const updatedTargetsByKey = new Map<string, NonNullable<RollbackMeta['updatedTargets']>[number]>()
   const transactionAdjustments = new Map<string, RollbackMeta['creditAdjustment']>()
 
   for (const row of job.rows) {
@@ -118,9 +146,27 @@ function collectRollbackPlan(job: ImportJobWithRows): RollbackPlan {
         transactionAdjustments.set(target.id, meta.creditAdjustment)
       }
     }
+
+    for (const target of meta.updatedTargets ?? []) {
+      const key = `${target.table}:${target.id}`
+      const existing = updatedTargetsByKey.get(key)
+      if (existing) {
+        updatedTargetsByKey.set(key, {
+          ...existing,
+          after: { ...target.after },
+        })
+      } else {
+        updatedTargetsByKey.set(key, {
+          table: target.table,
+          id: target.id,
+          before: { ...target.before },
+          after: { ...target.after },
+        })
+      }
+    }
   }
 
-  return { targetsByTable, transactionAdjustments }
+  return { targetsByTable, updatedTargetsByKey, transactionAdjustments }
 }
 
 function listTargetIds(plan: RollbackPlan, table: string): string[] {
@@ -143,6 +189,50 @@ async function selectExistingIds(
 
   if (error) throw new Error(error.message)
   return new Set((data ?? []).map(row => String((row as { id: string }).id)))
+}
+
+function valuesMatchForRollback(current: unknown, expected: unknown) {
+  if (typeof current === 'number' || typeof expected === 'number') {
+    return Number(current) === Number(expected)
+  }
+  return current === expected
+}
+
+async function collectUpdatedTargetBlockers(
+  db: DbClient,
+  userId: string,
+  plan: RollbackPlan,
+): Promise<string[]> {
+  const blockers: string[] = []
+
+  for (const target of plan.updatedTargetsByKey.values()) {
+    const fields = Object.keys(target.after)
+    const selectFields = ['id', ...fields].join(',')
+    const { data, error } = await untyped(db)
+      .from(target.table)
+      .select(selectFields)
+      .eq('user_id', userId)
+      .eq('id', target.id)
+      .maybeSingle()
+
+    if (error) throw new Error(error.message)
+    if (!data) {
+      blockers.push(`El registro actualizado ${target.table}:${target.id} ya no existe para revertir la importación.`)
+      continue
+    }
+
+    const currentRecord = data as unknown as Record<string, unknown>
+    for (const field of fields) {
+      const currentValue = currentRecord[field]
+      const expectedValue = target.after[field]
+      if (!valuesMatchForRollback(currentValue, expectedValue)) {
+        blockers.push(`El registro actualizado ${target.table}:${target.id} cambió después de la importación y ya no se puede revertir automáticamente.`)
+        break
+      }
+    }
+  }
+
+  return blockers
 }
 
 async function findRowsByForeignKey(
@@ -185,6 +275,8 @@ async function collectRollbackBlockers(
       blockers.push(`Faltan registros en ${table}; la importación ya cambió desde que fue confirmada.`)
     }
   }
+
+  blockers.push(...(await collectUpdatedTargetBlockers(db, userId, plan)))
 
   const txIds = listTargetIds(plan, 'transactions')
   if (txIds.length > 0) {
@@ -382,6 +474,17 @@ export async function rollbackImportJob(
   const counts: Record<string, number> = {}
   const txService = new TransactionService(db)
   const creditRepo = new CreditRepository(db)
+
+  for (const target of plan.updatedTargetsByKey.values()) {
+    const { error } = await untyped(db)
+      .from(target.table)
+      .update(target.before)
+      .eq('user_id', userId)
+      .eq('id', target.id)
+
+    if (error) throw new Error(error.message)
+    counts[`${target.table}_restored`] = (counts[`${target.table}_restored`] ?? 0) + 1
+  }
 
   for (const table of DELETE_ORDER) {
     const ids = listTargetIds(plan, table)
