@@ -17,11 +17,16 @@ import type {
   FormError,
   CategoryOption,
 }                                   from '@/lib/contracts/ui.contracts'
+import type { OperationType }       from '@/components/transactions/OperationTypeSelector'
 import { getModuleTrigger }         from '@/lib/constants/category-keys'
 import { zCreateTransactionSchema } from '@/lib/schemas/transaction.schemas'
 import type { CreateTransactionResult }
   from '@/modules/transactions/transaction.service.types'
-import { createTransactionAction }  from '@/app/actions/transaction.actions'
+import {
+  collectReceivableAction,
+  createTransactionAction,
+  payPayableAction,
+}                                   from '@/app/actions/transaction.actions'
 
 // ─── DEFAULTS ─────────────────────────────────────────────────────────────────
 
@@ -198,6 +203,7 @@ export function useFormOrchestrator(
   options:       TransactionFormOptions,
   onSuccess?:    (result: CreateTransactionResult) => void,
   initialValues?: Partial<TransactionFormValues>,
+  operationType?: OperationType,
 ): UseFormOrchestratorReturn {
   const [submitState, setSubmitState] =
     useState<ActionState<CreateTransactionResult>>({ status: 'idle' })
@@ -263,8 +269,62 @@ export function useFormOrchestrator(
   const submit = form.handleSubmit(async (values) => {
     setSubmitState({ status: 'loading' })
     try {
-      const payload = buildPayload(values, sections, options)
-      const result  = await createTransactionAction(payload)
+      const selectedReceivable = options.pendingReceivables.find(
+        receivable => receivable.value === values.settlement_receivable_id
+      )
+      const selectedPayable = options.pendingPayables.find(
+        payable => payable.value === values.settlement_payable_id
+      )
+
+      if (operationType === 'receivable_collect' && !selectedReceivable) {
+        form.setError('settlement_receivable_id', {
+          type: 'manual',
+          message: 'Selecciona una cuenta puntual o un cobro general',
+        })
+        setSubmitState({
+          status: 'error',
+          error: { code: 'VALIDATION_ERROR', message: 'Selecciona una cuenta puntual o un cobro general.' },
+        })
+        return
+      }
+
+      if (operationType === 'payable_pay' && !selectedPayable) {
+        form.setError('settlement_payable_id', {
+          type: 'manual',
+          message: 'Selecciona la cuenta por pagar',
+        })
+        setSubmitState({
+          status: 'error',
+          error: { code: 'VALIDATION_ERROR', message: 'Selecciona la cuenta por pagar.' },
+        })
+        return
+      }
+
+      const settlementBase = {
+        source_account_id: values.source_account_id,
+        amount: Number(values.amount),
+        currency: values.currency as 'PEN' | 'USD',
+        exchange_rate: values.currency === 'USD' && values.exchange_rate
+          ? Number(values.exchange_rate)
+          : undefined,
+        description: values.description.trim(),
+        transaction_date: values.transaction_date,
+        notes: values.notes?.trim() || undefined,
+      }
+
+      const result =
+        operationType === 'receivable_collect'
+          ? await collectReceivableAction({
+              ...settlementBase,
+              id: values.settlement_receivable_id,
+            })
+          : operationType === 'payable_pay'
+            ? await payPayableAction({
+                ...settlementBase,
+                id: values.settlement_payable_id,
+              })
+            : await createTransactionAction(buildPayload(values, sections, options))
+
       if (result.ok) {
         setSubmitState({ status: 'success', data: result.data })
         onSuccess?.(result.data)

@@ -3,9 +3,11 @@
 // PRD v3 — Módulo 7: Cuentas por Cobrar — PATCH / DELETE por id
 // =============================================================================
 
+import { revalidatePath } from 'next/cache'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient }              from '@/lib/supabase.server'
-import { getSessionUserId }          from '@/lib/api/response'
+import { apiError, apiNoContent, getSessionUserId } from '@/lib/api/response'
+import { TransactionService } from '@/modules/transactions/transaction.service'
 
 const RECEIVABLE_SELECT = `
   *,
@@ -98,12 +100,38 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   const userId   = await getSessionUserId(supabase)
   if (!userId) return NextResponse.json({ ok: false, error: { code: 'UNAUTHORIZED', message: 'No autorizado' } }, { status: 401 })
 
-  const { error } = await supabase
+  const { data: receivable, error: receivableError } = await supabase
     .from('accounts_receivable')
-    .delete()
+    .select('id, transaction_id')
     .eq('id', params.id)
     .eq('user_id', userId)
+    .maybeSingle()
 
-  if (error) return NextResponse.json({ ok: false, error: { code: 'DATABASE_ERROR', message: error.message } }, { status: 500 })
-  return new NextResponse(null, { status: 204 })
+  if (receivableError) {
+    return NextResponse.json({ ok: false, error: { code: 'DATABASE_ERROR', message: receivableError.message } }, { status: 500 })
+  }
+
+  if (!receivable) {
+    return NextResponse.json({ ok: false, error: { code: 'NOT_FOUND', message: 'Registro no encontrado' } }, { status: 404 })
+  }
+
+  if (receivable.transaction_id) {
+    const service = new TransactionService(supabase)
+    const result = await service.deleteTransaction(userId, receivable.transaction_id, { force: false })
+    if (!result.ok) return apiError(result.error)
+  } else {
+    const { error } = await supabase
+      .from('accounts_receivable')
+      .delete()
+      .eq('id', params.id)
+      .eq('user_id', userId)
+
+    if (error) return NextResponse.json({ ok: false, error: { code: 'DATABASE_ERROR', message: error.message } }, { status: 500 })
+  }
+
+  revalidatePath('/dashboard')
+  revalidatePath('/transactions')
+  revalidatePath('/receivables')
+
+  return apiNoContent()
 }

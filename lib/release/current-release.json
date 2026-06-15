@@ -1,28 +1,28 @@
 {
-  "version": "V1.0.0.9",
+  "version": "V1.0.0.10",
   "series": "1.0.0",
-  "build": 9,
-  "title": "Actualización en Portafolio, Importaciones, Plataforma",
-  "summary": "Esta versión trae cambios en Portafolio, Importaciones, Plataforma para que tus tareas diarias dentro de FinTrack sean más claras, estables y fáciles de seguir.",
+  "build": 10,
+  "title": "Actualización en Movimientos, Por pagar, Por cobrar",
+  "summary": "Esta versión trae cambios en Movimientos, Por pagar, Por cobrar para que tus tareas diarias dentro de FinTrack sean más claras, estables y fáciles de seguir.",
   "highlights": [
     {
-      "module": "Portafolio",
+      "module": "Movimientos",
       "type": "improve",
-      "title": "Gestión de cuentas más clara y estable",
-      "detail": "Mejoramos las acciones de tus cuentas para que editar, revisar y operar en Portafolio sea más confiable."
+      "title": "Registro de movimientos más consistente",
+      "detail": "Ajustamos el flujo de Movimientos para que registrar operaciones y revisar información sea más claro en el día a día."
     },
     {
-      "module": "Importaciones",
-      "type": "new",
-      "title": "Base reforzada para futuras importaciones",
-      "detail": "Preparamos el módulo de Importaciones para que la migración de información sea más robusta y guiada."
+      "module": "Por pagar",
+      "type": "fix",
+      "title": "Cuentas por pagar con mejor estabilidad",
+      "detail": "Ajustamos el módulo Por pagar para que las acciones y el seguimiento de pendientes sean más confiables."
     },
     {
-      "module": "Plataforma",
-      "type": "improve",
-      "title": "Publicaciones y operación más confiables",
-      "detail": "Fortalecimos la plataforma para que las actualizaciones de FinTrack sean más estables y transparentes para todos."
+      "module": "Por cobrar",
+      "type": "fix",
+      "title": "Cuentas por cobrar con seguimiento más claro",
+      "detail": "Mejoramos el módulo Por cobrar para que revisar saldos pendientes y su origen sea más simple y estable."
     }
   ],
-  "releasedAt": "2026-06-15T17:12:04.306Z"
+  "releasedAt": "2026-06-15T22:12:35.287Z"
 }

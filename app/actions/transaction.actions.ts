@@ -17,10 +17,42 @@ import {
   zCreateTransactionSchema,
   zUpdateTransactionSchema,
 }                                     from '@/lib/schemas/transaction.schemas'
+import { CategoryKeys }               from '@/lib/constants/category-keys'
 import { type Result, Errors }        from '@/modules/shared/result.types'
 import type { CreateTransactionResult } from '@/modules/transactions/transaction.service.types'
 import type { Transaction }           from '@/types/database.types'
 import { sendTransactionNotificationEmail } from '@/lib/email/send-transaction-email'
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+const zSettlementSchema = z.object({
+  id: z.string().trim().min(1).max(120),
+  source_account_id: z.string().uuid(),
+  amount: z.number().positive(),
+  currency: z.enum(['PEN', 'USD']),
+  exchange_rate: z.number().positive().optional(),
+  description: z.string().trim().min(1).max(255),
+  transaction_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  notes: z.string().max(1000).optional(),
+})
+
+type ReceivableSettlementTarget =
+  | { kind: 'receivable'; receivableId: string }
+  | { kind: 'debtor_total'; debtorId: string; currency: 'PEN' | 'USD' }
+
+type ReceivableSettlementRow = {
+  id: string
+  debtor_id: string | null
+  debtor_name: string
+  concept: string | null
+  amount: number
+  collected_amount: number
+  collected_date: string | null
+  currency: 'PEN' | 'USD'
+  status: 'PENDING' | 'PARTIAL' | 'COLLECTED' | 'WRITTEN_OFF'
+  issue_date: string
+  due_date: string | null
+}
 
 type RecurringInsertPayload = {
   user_id: string
@@ -60,6 +92,97 @@ async function getServiceAndUser() {
   }
 }
 
+async function resolveUserCategoryIdBySystemKey(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  systemKey: string,
+): Promise<Result<string>> {
+  const { data, error } = await supabase
+    .from('categories')
+    .select('id, is_system, user_id')
+    .eq('system_key', systemKey)
+    .or(`user_id.eq.${userId},is_system.eq.true`)
+    .order('is_system', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) return Errors.database(error.message)
+  if (!data?.id) return Errors.notFound('Categoría por defecto')
+  return { ok: true, data: data.id }
+}
+
+function resolveAutomaticCategorySystemKey(
+  input: z.infer<typeof zCreateTransactionSchema>,
+): string | null {
+  if (input.type === 'EXPENSE' && input.receivable) {
+    return CategoryKeys.EXPENSE_RECEIVABLE_ISSUE
+  }
+
+  if (input.type === 'INCOME' && input.payable) {
+    return CategoryKeys.INCOME_PAYABLE_ISSUE
+  }
+
+  return null
+}
+
+function parseReceivableSettlementTarget(rawId: string): ReceivableSettlementTarget | null {
+  const id = rawId.trim()
+  if (UUID_REGEX.test(id)) {
+    return { kind: 'receivable', receivableId: id }
+  }
+
+  const match = /^debtor:([0-9a-f-]{36}):(PEN|USD)$/i.exec(id)
+  if (!match) return null
+  const debtorId = match[1]
+  const currency = match[2]
+  if (!debtorId || !currency) return null
+
+  return {
+    kind: 'debtor_total',
+    debtorId,
+    currency: currency.toUpperCase() as 'PEN' | 'USD',
+  }
+}
+
+function buildReceivableCollectionPlan(
+  receivables: ReceivableSettlementRow[],
+  amountToCollect: number,
+  transactionDate: string,
+) {
+  let remaining = amountToCollect
+  const plan: Array<{
+    row: ReceivableSettlementRow
+    nextCollectedAmount: number
+    nextCollectedDate: string | null
+    nextStatus: ReceivableSettlementRow['status']
+  }> = []
+
+  for (const row of receivables) {
+    if (remaining <= 0) break
+
+    const pendingAmount = Math.max(0, Number(row.amount) - Number(row.collected_amount))
+    if (pendingAmount <= 0) continue
+
+    const appliedAmount = Math.min(remaining, pendingAmount)
+    const nextCollectedAmount = Math.round((Number(row.collected_amount) + appliedAmount) * 100) / 100
+    const isFullyCollected = nextCollectedAmount >= Number(row.amount)
+
+    plan.push({
+      row,
+      nextCollectedAmount,
+      nextCollectedDate: isFullyCollected ? transactionDate : row.collected_date,
+      nextStatus: isFullyCollected ? 'COLLECTED' : 'PARTIAL',
+    })
+
+    remaining = Math.round((remaining - appliedAmount) * 100) / 100
+  }
+
+  return {
+    plan,
+    remaining,
+  }
+}
+
 // ─── CREAR TRANSACCIÓN ────────────────────────────────────────────────────────
 
 /**
@@ -82,36 +205,51 @@ export async function createTransactionAction(
     )
   }
 
-  const result = await service.createTransaction(userId, parsed.data)
+  const transactionInput = { ...parsed.data }
+  if (!transactionInput.category_id) {
+    const automaticCategorySystemKey = resolveAutomaticCategorySystemKey(transactionInput)
+    if (automaticCategorySystemKey) {
+      const categoryResult = await resolveUserCategoryIdBySystemKey(
+        supabase,
+        userId,
+        automaticCategorySystemKey,
+      )
+
+      if (!categoryResult.ok) return categoryResult
+      transactionInput.category_id = categoryResult.data
+    }
+  }
+
+  const result = await service.createTransaction(userId, transactionInput)
 
   if (result.ok) {
-    if (parsed.data.is_recurring && parsed.data.recurring_name?.trim()) {
+    if (transactionInput.is_recurring && transactionInput.recurring_name?.trim()) {
       const subType =
-        parsed.data.type === 'EXPENSE' && parsed.data.receivable
+        transactionInput.type === 'EXPENSE' && transactionInput.receivable
           ? 'RECEIVABLE_LENDING'
-          : parsed.data.type === 'INCOME' && parsed.data.payable
+          : transactionInput.type === 'INCOME' && transactionInput.payable
             ? 'PAYABLE_PAYMENT'
             : null
 
       const recurringPayload: RecurringInsertPayload = {
         user_id: userId,
-        name: parsed.data.recurring_name.trim(),
-        type: parsed.data.type,
+        name: transactionInput.recurring_name.trim(),
+        type: transactionInput.type,
         sub_type: subType,
-        source_account_id: parsed.data.source_account_id,
+        source_account_id: transactionInput.source_account_id,
         destination_account_id:
-          parsed.data.type === 'TRANSFER' ? parsed.data.destination_account_id : null,
-        category_id: parsed.data.category_id ?? null,
-        budget_id: parsed.data.type === 'EXPENSE' ? parsed.data.budget_id ?? null : null,
-        debtor_id: parsed.data.type === 'EXPENSE' ? parsed.data.receivable?.debtor_id ?? null : null,
-        creditor_id: parsed.data.type === 'INCOME' ? parsed.data.payable?.creditor_id ?? null : null,
-        amount: Number(parsed.data.amount),
-        currency: parsed.data.currency,
+          transactionInput.type === 'TRANSFER' ? transactionInput.destination_account_id : null,
+        category_id: transactionInput.category_id ?? null,
+        budget_id: transactionInput.type === 'EXPENSE' ? transactionInput.budget_id ?? null : null,
+        debtor_id: transactionInput.type === 'EXPENSE' ? transactionInput.receivable?.debtor_id ?? null : null,
+        creditor_id: transactionInput.type === 'INCOME' ? transactionInput.payable?.creditor_id ?? null : null,
+        amount: Number(transactionInput.amount),
+        currency: transactionInput.currency,
         description: result.data.transaction.description?.trim() || null,
-        payment_method: parsed.data.type === 'EXPENSE' ? parsed.data.payment_method ?? null : null,
-        recipient: 'recipient' in parsed.data ? parsed.data.recipient?.trim() || null : null,
-        sender: 'sender' in parsed.data ? parsed.data.sender?.trim() || null : null,
-        notes: parsed.data.notes?.trim() || null,
+        payment_method: transactionInput.type === 'EXPENSE' ? transactionInput.payment_method ?? null : null,
+        recipient: 'recipient' in transactionInput ? transactionInput.recipient?.trim() || null : null,
+        sender: 'sender' in transactionInput ? transactionInput.sender?.trim() || null : null,
+        notes: transactionInput.notes?.trim() || null,
         is_active: true,
       }
 
@@ -166,6 +304,268 @@ export async function createTransactionAction(
 
   }
 
+  return result
+}
+
+export async function collectReceivableAction(
+  input: unknown
+): Promise<Result<CreateTransactionResult>> {
+  const { service, userId, supabase } = await getServiceAndUser()
+  if (!service || !userId) return Errors.unauthorized()
+
+  const parsed = zSettlementSchema.safeParse(input)
+  if (!parsed.success) {
+    return Errors.validation(
+      'Datos de cobro inválidos',
+      parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join(' | ')
+    )
+  }
+
+  const payload = parsed.data
+  const target = parseReceivableSettlementTarget(payload.id)
+  if (!target) {
+    return Errors.validation('La cuenta por cobrar seleccionada no es válida.')
+  }
+
+  const receivablesQuery = supabase
+    .from('accounts_receivable')
+    .select('id, debtor_id, debtor_name, concept, amount, collected_amount, collected_date, currency, status, issue_date, due_date')
+    .eq('user_id', userId)
+    .in('status', ['PENDING', 'PARTIAL'])
+
+  const receivablesResponse = target.kind === 'receivable'
+    ? await receivablesQuery
+      .eq('id', target.receivableId)
+      .limit(1)
+    : await receivablesQuery
+      .eq('debtor_id', target.debtorId)
+      .eq('currency', target.currency)
+      .order('due_date', { ascending: true, nullsFirst: false })
+      .order('issue_date', { ascending: true })
+
+  const receivableRows = (receivablesResponse.data ?? []) as ReceivableSettlementRow[]
+  if (receivablesResponse.error || receivableRows.length === 0) {
+    return Errors.notFound('Cuenta por cobrar')
+  }
+
+  const normalizedRows = target.kind === 'receivable'
+    ? receivableRows
+    : [...receivableRows].sort((a, b) => {
+      const byDue = (a.due_date ?? '9999-12-31').localeCompare(b.due_date ?? '9999-12-31')
+      if (byDue !== 0) return byDue
+      return a.issue_date.localeCompare(b.issue_date)
+    })
+  const firstReceivable = normalizedRows[0]
+  if (!firstReceivable) {
+    return Errors.notFound('Cuenta por cobrar')
+  }
+
+  const settlementCurrency = target.kind === 'receivable'
+    ? firstReceivable.currency
+    : target.currency
+
+  if (settlementCurrency !== payload.currency) {
+    return Errors.validation('La moneda del cobro no coincide con la cuenta por cobrar.')
+  }
+
+  const totalPendingAmount = normalizedRows.reduce((sum, row) => (
+    sum + Math.max(0, Number(row.amount) - Number(row.collected_amount))
+  ), 0)
+
+  if (payload.amount > totalPendingAmount) {
+    return Errors.validation(
+      'El cobro supera el saldo pendiente',
+      `Saldo pendiente: ${totalPendingAmount.toFixed(2)} ${settlementCurrency}`
+    )
+  }
+
+  const debtorName = firstReceivable.debtor_name ?? 'Deudor'
+
+  const categoryResult = await resolveUserCategoryIdBySystemKey(
+    supabase,
+    userId,
+    CategoryKeys.INCOME_RECEIVABLE_COLLECTION,
+  )
+  if (!categoryResult.ok) return categoryResult
+
+  const result = await service.createTransaction(userId, {
+    type: 'INCOME',
+    source_account_id: payload.source_account_id,
+    amount: payload.amount,
+    currency: payload.currency,
+    exchange_rate: payload.currency === 'USD' ? payload.exchange_rate : undefined,
+    description: payload.description,
+    transaction_date: payload.transaction_date,
+    category_id: categoryResult.data,
+    notes: payload.notes?.trim() || undefined,
+    sender: debtorName,
+  })
+
+  if (!result.ok) return result
+
+  const { error: transactionPatchError } = await supabase
+    .from('transactions')
+    .update({ debtor_id: firstReceivable.debtor_id })
+    .eq('id', result.data.transaction.id)
+    .eq('user_id', userId)
+
+  if (transactionPatchError) {
+    await service.deleteTransaction(userId, result.data.transaction.id, { force: true })
+    return Errors.database(transactionPatchError.message)
+  }
+
+  const collectionPlan = buildReceivableCollectionPlan(
+    normalizedRows,
+    payload.amount,
+    payload.transaction_date,
+  )
+
+  if (collectionPlan.remaining > 0) {
+    await service.deleteTransaction(userId, result.data.transaction.id, { force: true })
+    return Errors.businessRule(
+      'No se pudo distribuir el cobro sobre las cuentas pendientes.',
+      'Vuelve a abrir el formulario para refrescar los saldos.'
+    )
+  }
+
+  const appliedUpdates: Array<{
+    id: string
+    original: Pick<ReceivableSettlementRow, 'collected_amount' | 'collected_date' | 'status'>
+  }> = []
+
+  try {
+    for (const item of collectionPlan.plan) {
+      const { error: updateError } = await supabase
+        .from('accounts_receivable')
+        .update({
+          collected_amount: item.nextCollectedAmount,
+          collected_date: item.nextCollectedDate,
+          status: item.nextStatus,
+        })
+        .eq('id', item.row.id)
+        .eq('user_id', userId)
+
+      if (updateError) throw updateError
+
+      appliedUpdates.push({
+        id: item.row.id,
+        original: {
+          collected_amount: item.row.collected_amount,
+          collected_date: item.row.collected_date,
+          status: item.row.status,
+        },
+      })
+    }
+  } catch (caught) {
+    await Promise.all(appliedUpdates.map(async applied => {
+      await supabase
+        .from('accounts_receivable')
+        .update(applied.original)
+        .eq('id', applied.id)
+        .eq('user_id', userId)
+    }))
+    await service.deleteTransaction(userId, result.data.transaction.id, { force: true })
+    const message = caught instanceof Error ? caught.message : 'No se pudo actualizar la cuenta por cobrar'
+    return Errors.database(message)
+  }
+
+  revalidatePath('/dashboard')
+  revalidatePath('/transactions')
+  revalidatePath('/receivables')
+  return result
+}
+
+export async function payPayableAction(
+  input: unknown
+): Promise<Result<CreateTransactionResult>> {
+  const { service, userId, supabase } = await getServiceAndUser()
+  if (!service || !userId) return Errors.unauthorized()
+
+  const parsed = zSettlementSchema.safeParse(input)
+  if (!parsed.success) {
+    return Errors.validation(
+      'Datos de pago inválidos',
+      parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join(' | ')
+    )
+  }
+
+  const payload = parsed.data
+  const { data: payable, error: payableError } = await supabase
+    .from('accounts_payable')
+    .select('id, creditor_id, creditor_name, concept, amount, paid_amount, currency, status')
+    .eq('id', payload.id)
+    .eq('user_id', userId)
+    .single()
+
+  if (payableError || !payable) return Errors.notFound('Cuenta por pagar')
+  if (payable.status !== 'PENDING' && payable.status !== 'PARTIAL') {
+    return Errors.businessRule('Esta cuenta por pagar ya no tiene saldo pendiente.')
+  }
+  if (payable.currency !== payload.currency) {
+    return Errors.validation('La moneda del pago no coincide con la cuenta por pagar.')
+  }
+
+  const pendingAmount = Math.max(0, Number(payable.amount) - Number(payable.paid_amount))
+  if (payload.amount > pendingAmount) {
+    return Errors.validation(
+      'El pago supera el saldo pendiente',
+      `Saldo pendiente: ${pendingAmount.toFixed(2)} ${payable.currency}`
+    )
+  }
+
+  const categoryResult = await resolveUserCategoryIdBySystemKey(
+    supabase,
+    userId,
+    CategoryKeys.EXPENSE_PAYABLE_PAYMENT,
+  )
+  if (!categoryResult.ok) return categoryResult
+
+  const result = await service.createTransaction(userId, {
+    type: 'EXPENSE',
+    source_account_id: payload.source_account_id,
+    amount: payload.amount,
+    currency: payload.currency,
+    exchange_rate: payload.currency === 'USD' ? payload.exchange_rate : undefined,
+    description: payload.description,
+    transaction_date: payload.transaction_date,
+    category_id: categoryResult.data,
+    notes: payload.notes?.trim() || undefined,
+    recipient: payable.creditor_name,
+  })
+
+  if (!result.ok) return result
+
+  const { error: transactionPatchError } = await supabase
+    .from('transactions')
+    .update({ creditor_id: payable.creditor_id })
+    .eq('id', result.data.transaction.id)
+    .eq('user_id', userId)
+
+  if (transactionPatchError) {
+    await service.deleteTransaction(userId, result.data.transaction.id, { force: true })
+    return Errors.database(transactionPatchError.message)
+  }
+
+  const nextPaidAmount = Math.round((Number(payable.paid_amount) + payload.amount) * 100) / 100
+  const isFullyPaid = nextPaidAmount >= Number(payable.amount)
+  const { error: updateError } = await supabase
+    .from('accounts_payable')
+    .update({
+      paid_amount: nextPaidAmount,
+      paid_date: isFullyPaid ? payload.transaction_date : null,
+      status: isFullyPaid ? 'PAID' : 'PARTIAL',
+    })
+    .eq('id', payable.id)
+    .eq('user_id', userId)
+
+  if (updateError) {
+    await service.deleteTransaction(userId, result.data.transaction.id, { force: true })
+    return Errors.database(updateError.message)
+  }
+
+  revalidatePath('/dashboard')
+  revalidatePath('/transactions')
+  revalidatePath('/payables')
   return result
 }
 

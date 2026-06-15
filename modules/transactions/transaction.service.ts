@@ -331,6 +331,8 @@ export class TransactionService {
       await this.attachBudgetPeriodToTransaction(ids.transaction_id, payload.p_budget_period_id)
     }
 
+    await this.syncCounterpartyLinks(ids, payload)
+
     // ── PASO 7: Cargar registros creados y retornar ───────────────────────────
     return this.loadCreatedRecords(ids)
   }
@@ -391,8 +393,10 @@ export class TransactionService {
    *
    * Los módulos derivados (activos, créditos, etc.) NO se eliminan
    * automáticamente — se desvinculan (transaction_id → NULL) para preservar
-   * el historial financiero. La excepción son installments, que sí se eliminan
-   * si el préstamo asociado no tiene cuotas pagadas.
+   * el historial financiero. La excepción son las cuentas por cobrar/pagar
+   * originadas por esta transacción, que sí se eliminan junto al movimiento
+   * padre para no dejar saldos huérfanos en sus módulos, y los installments,
+   * que sí se eliminan si el préstamo asociado no tiene cuotas pagadas.
    *
    * El trigger fn_update_account_balance revierte el saldo automáticamente.
    */
@@ -414,10 +418,45 @@ export class TransactionService {
       const hasLockedModules = await this.checkLockedModules(transactionId)
       if (hasLockedModules) {
         return Errors.businessRule(
-          'Esta transacción tiene cuotas pagadas o cobros registrados',
+          'Esta transacción tiene cuotas pagadas vinculadas',
           'Usa force: true para forzar la eliminación, o cancela los registros relacionados primero'
         )
       }
+    }
+
+    // Eliminar cuentas por cobrar / pagar creadas por esta transacción.
+    // Si el usuario borra el movimiento origen desde Movimientos, el módulo
+    // derivado no debe quedarse huérfano con transaction_id = null.
+    const linkedReceivableResult = await this.db
+      .from('accounts_receivable')
+      .select('id')
+      .eq('transaction_id', transactionId)
+      .maybeSingle()
+
+    if (linkedReceivableResult.error) {
+      return Errors.database(linkedReceivableResult.error.message)
+    }
+
+    if (linkedReceivableResult.data?.id) {
+      const deleteReceivableResult = await this.receivableRepo.delete(linkedReceivableResult.data.id)
+      if (!deleteReceivableResult.ok) return deleteReceivableResult
+      unlinked.push('accounts_receivable')
+    }
+
+    const linkedPayableResult = await this.db
+      .from('accounts_payable')
+      .select('id')
+      .eq('transaction_id', transactionId)
+      .maybeSingle()
+
+    if (linkedPayableResult.error) {
+      return Errors.database(linkedPayableResult.error.message)
+    }
+
+    if (linkedPayableResult.data?.id) {
+      const deletePayableResult = await this.payableRepo.delete(linkedPayableResult.data.id)
+      if (!deletePayableResult.ok) return deletePayableResult
+      unlinked.push('accounts_payable')
     }
 
     // Desvincular activo si existe
@@ -428,8 +467,8 @@ export class TransactionService {
     }
 
     // Desvincular otros módulos — usamos queries directas para no crear repos extra
-    const tables: Array<'credits' | 'loans' | 'accounts_receivable' | 'accounts_payable'> = [
-      'credits', 'loans', 'accounts_receivable', 'accounts_payable'
+    const tables: Array<'credits' | 'loans'> = [
+      'credits', 'loans'
     ]
 
     for (const table of tables) {
@@ -707,7 +746,7 @@ export class TransactionService {
       return Errors.atomicityFailure(error?.message ?? 'No se pudo registrar la transacción')
     }
 
-    return ok({
+    const result: AtomicTransactionResult = {
       transaction_id: data.id,
       asset_id: null,
       credit_id: null,
@@ -715,7 +754,117 @@ export class TransactionService {
       receivable_id: null,
       payable_id: null,
       installments_generated: 0,
-    })
+    }
+
+    const rollbackTransaction = async () => {
+      await this.db
+        .from('transactions')
+        .delete()
+        .eq('id', data.id)
+        .eq('user_id', payload.p_user_id)
+    }
+
+    if (payload.p_receivable) {
+      const receivableResult = await this.receivableRepo.create({
+        user_id: payload.p_user_id,
+        transaction_id: data.id,
+        debtor_id: payload.p_receivable.debtor_id ?? null,
+        debtor_name: payload.p_receivable.debtor_name,
+        amount: payload.p_amount,
+        currency: payload.p_currency,
+        issue_date: payload.p_transaction_date,
+        due_date: payload.p_receivable.due_date ?? null,
+        concept: payload.p_receivable.concept ?? null,
+        notes: payload.p_receivable.notes ?? null,
+        status: 'PENDING',
+      })
+
+      if (!receivableResult.ok) {
+        await rollbackTransaction()
+        return Errors.atomicityFailure(
+          receivableResult.error.message || 'No se pudo registrar la cuenta por cobrar'
+        )
+      }
+
+      result.receivable_id = receivableResult.data.id
+    }
+
+    if (payload.p_payable) {
+      const payableResult = await this.payableRepo.create({
+        user_id: payload.p_user_id,
+        transaction_id: data.id,
+        creditor_id: payload.p_payable.creditor_id ?? null,
+        creditor_name: payload.p_payable.creditor_name,
+        amount: payload.p_amount,
+        currency: payload.p_currency,
+        issue_date: payload.p_transaction_date,
+        due_date: payload.p_payable.due_date ?? null,
+        concept: payload.p_payable.concept ?? null,
+        notes: payload.p_payable.notes ?? null,
+        status: 'PENDING',
+      })
+
+      if (!payableResult.ok) {
+        if (result.receivable_id) {
+          await this.receivableRepo.delete(result.receivable_id)
+        }
+        await rollbackTransaction()
+        return Errors.atomicityFailure(
+          payableResult.error.message || 'No se pudo registrar la cuenta por pagar'
+        )
+      }
+
+      result.payable_id = payableResult.data.id
+    }
+
+    return ok(result)
+  }
+
+  /**
+   * Compatibilidad defensiva para entornos donde la función SQL aún no persiste
+   * debtor_id / creditor_id en la transacción o en el módulo derivado.
+   */
+  private async syncCounterpartyLinks(
+    ids: AtomicTransactionResult,
+    payload: AtomicTransactionPayload,
+  ): Promise<void> {
+    try {
+      const transactionPatch: Record<string, string> = {}
+
+      if (payload.p_receivable?.debtor_id) {
+        transactionPatch.debtor_id = payload.p_receivable.debtor_id
+
+        if (ids.receivable_id) {
+          await this.db
+            .from('accounts_receivable')
+            .update({ debtor_id: payload.p_receivable.debtor_id })
+            .eq('id', ids.receivable_id)
+            .eq('user_id', payload.p_user_id)
+        }
+      }
+
+      if (payload.p_payable?.creditor_id) {
+        transactionPatch.creditor_id = payload.p_payable.creditor_id
+
+        if (ids.payable_id) {
+          await this.db
+            .from('accounts_payable')
+            .update({ creditor_id: payload.p_payable.creditor_id })
+            .eq('id', ids.payable_id)
+            .eq('user_id', payload.p_user_id)
+        }
+      }
+
+      if (Object.keys(transactionPatch).length > 0) {
+        await this.db
+          .from('transactions')
+          .update(transactionPatch)
+          .eq('id', ids.transaction_id)
+          .eq('user_id', payload.p_user_id)
+      }
+    } catch {
+      // No bloquea la creación principal; solo corrige vínculos en entornos legacy.
+    }
   }
 
   /**
@@ -766,7 +915,12 @@ export class TransactionService {
 
   /**
    * Verifica si una transacción tiene módulos derivados con estado "pagado"
-   * o "cobrado" que impedirían una eliminación limpia.
+   * que impedirían una eliminación limpia.
+   *
+   * Nota: no bloqueamos por cuentas por cobrar parciales/cobradas porque
+   * los cobros generales se distribuyen sobre esos saldos sin una relación
+   * directa por transacción hija. En esos casos priorizamos permitir el
+   * borrado del movimiento original y desvincular el módulo derivado.
    */
   private async checkLockedModules(transactionId: string): Promise<boolean> {
     try {
@@ -779,16 +933,6 @@ export class TransactionService {
         .limit(1)
 
       if (paidInstallments && paidInstallments.length > 0) return true
-
-      // Cobros registrados en cuentas por cobrar
-      const { data: collectedReceivables } = await this.db
-        .from('accounts_receivable')
-        .select('id')
-        .eq('transaction_id', transactionId)
-        .in('status', ['COLLECTED', 'PARTIAL'])
-        .limit(1)
-
-      if (collectedReceivables && collectedReceivables.length > 0) return true
 
       return false
     } catch {

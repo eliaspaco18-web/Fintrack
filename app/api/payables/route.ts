@@ -159,7 +159,11 @@ export async function POST(req: NextRequest) {
   }
 
   const { id: payableCategoryId, error: payableCategoryError } =
-    await resolveUserCategoryIdBySystemKey(supabase, userId, CategoryKeys.EXPENSE_PAYABLE)
+    await resolveUserCategoryIdBySystemKey(
+      supabase,
+      userId,
+      CategoryKeys.INCOME_PAYABLE_ISSUE,
+    )
 
   if (payableCategoryError) {
     return apiError({ code: 'DATABASE_ERROR', message: payableCategoryError.message })

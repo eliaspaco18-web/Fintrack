@@ -267,6 +267,8 @@ export interface TransactionFormOptions {
   creditCards: FormSelectOption[]
   creditors: FormSelectOption[]
   debtors: FormSelectOption[]
+  pendingReceivables: FormSelectOption[]
+  pendingPayables: FormSelectOption[]
   assetTypes: FormSelectOption[]
   categories: {
     income:  CategoryOption[]
@@ -319,10 +321,12 @@ export interface TransactionFormValues {
   receivable_debtor_id?: string
   receivable_debtor?: string
   receivable_due?:    string
+  settlement_receivable_id?: string
   creates_payable:    boolean
   payable_creditor_id?: string
   payable_creditor?:  string
   payable_due?:       string
+  settlement_payable_id?: string
   // PRD v3 campos adicionales por tipo
   sender?:            string   // Remitente — solo Ingreso (PRD línea 169)
   recipient?:         string   // Destinatario — Egreso y Compra de Activo (PRD líneas 187, 215)

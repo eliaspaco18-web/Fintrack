@@ -254,13 +254,39 @@ export async function resolveTransactionInitialValues(
     initial.creates_asset = false
     initial.creates_payable = false
   } else if (requestedModule === 'payable') {
-    initial.type = 'INCOME'
+    if (requestedType === 'EXPENSE') {
+      initial.type = 'EXPENSE'
+      initial.creates_payable = false
+    } else {
+      initial.type = 'INCOME'
+      initial.creates_payable = true
+    }
     initial.creates_asset = false
     initial.creates_credit = false
-    initial.creates_payable = true
   } else if (requestedModule === 'receivable') {
-    initial.type = 'EXPENSE'
-    initial.creates_receivable = true
+    if (requestedType === 'INCOME') {
+      initial.type = 'INCOME'
+      initial.creates_receivable = false
+    } else {
+      initial.type = 'EXPENSE'
+      initial.creates_receivable = true
+    }
+  }
+
+  const requestedReceivableId = readQueryValue(searchParams.receivable_id)
+  if (
+    requestedReceivableId &&
+    options.pendingReceivables.some(receivable => receivable.value === requestedReceivableId)
+  ) {
+    initial.settlement_receivable_id = requestedReceivableId
+  }
+
+  const requestedPayableId = readQueryValue(searchParams.payable_id)
+  if (
+    requestedPayableId &&
+    options.pendingPayables.some(payable => payable.value === requestedPayableId)
+  ) {
+    initial.settlement_payable_id = requestedPayableId
   }
 
   const requestedCreditKind = readQueryValue(searchParams.credit_kind)
@@ -301,6 +327,8 @@ export async function getTransactionFormOptions(userId: string): Promise<Transac
       { data: credits },
       { data: creditors },
       { data: debtors },
+      { data: pendingReceivables },
+      { data: pendingPayables },
     ] = await Promise.all([
       supabase
         .from('accounts')
@@ -339,6 +367,18 @@ export async function getTransactionFormOptions(userId: string): Promise<Transac
         .eq('user_id', userId)
         .eq('is_active', true)
         .order('name'),
+      supabase
+        .from('accounts_receivable')
+        .select('id, debtor_id, debtor_name, concept, amount, collected_amount, currency, due_date, issue_date, status')
+        .eq('user_id', userId)
+        .in('status', ['PENDING', 'PARTIAL'])
+        .order('due_date', { ascending: true, nullsFirst: false }),
+      supabase
+        .from('accounts_payable')
+        .select('id, creditor_id, creditor_name, concept, amount, paid_amount, currency, due_date, issue_date, status')
+        .eq('user_id', userId)
+        .in('status', ['PENDING', 'PARTIAL'])
+        .order('due_date', { ascending: true, nullsFirst: false }),
     ])
 
   const toAccountOption = (a: {
@@ -422,11 +462,126 @@ export async function getTransactionFormOptions(userId: string): Promise<Transac
     },
   }))
 
+  const pendingReceivablesByDebtor = new Map<string, Array<{
+    id: string
+    debtor_id: string | null
+    debtor_name: string
+    concept: string | null
+    amount: number
+    collected_amount: number
+    currency: string
+    due_date: string | null
+    issue_date: string
+    status: string
+  }>>()
+
+  for (const receivable of pendingReceivables ?? []) {
+    const debtorKey = receivable.debtor_id ?? receivable.debtor_name
+    const key = `${debtorKey}::${receivable.currency}`
+    const current = pendingReceivablesByDebtor.get(key) ?? []
+    current.push(receivable)
+    pendingReceivablesByDebtor.set(key, current)
+  }
+
+  const pendingReceivableOptions: FormSelectOption[] = []
+
+  for (const receivables of pendingReceivablesByDebtor.values()) {
+    const ordered = [...receivables].sort((a, b) => {
+      const byDue = (a.due_date ?? '9999-12-31').localeCompare(b.due_date ?? '9999-12-31')
+      if (byDue !== 0) return byDue
+      return a.issue_date.localeCompare(b.issue_date)
+    })
+
+    const debtorId = ordered[0]?.debtor_id ?? null
+    const debtorName = ordered[0]?.debtor_name ?? 'Deudor'
+    const currency = ordered[0]?.currency ?? 'PEN'
+    const totalPendingAmount = ordered.reduce((sum, receivable) => (
+      sum + Math.max(0, Number(receivable.amount ?? 0) - Number(receivable.collected_amount ?? 0))
+    ), 0)
+
+    if (debtorId) {
+      pendingReceivableOptions.push({
+        value: `debtor:${debtorId}:${currency}`,
+        label: `Cobro general · ${debtorName} · saldo total ${formatNumber(totalPendingAmount)} ${currency} · ${ordered.length} ${ordered.length === 1 ? 'cuenta' : 'cuentas'}`,
+        icon: 'wallet',
+        color: '#0f766e',
+        meta: {
+          kind: 'debtor_total',
+          debtor_id: debtorId,
+          debtor_name: debtorName,
+          concept: `Cobro general (${ordered.length} cuentas)`,
+          pending_amount: totalPendingAmount,
+          currency,
+          lines_count: ordered.length,
+          settlement_strategy: 'oldest_first',
+        },
+      })
+    }
+
+    for (const receivable of ordered) {
+      const pendingAmount = Math.max(0, Number(receivable.amount ?? 0) - Number(receivable.collected_amount ?? 0))
+      const concept = typeof receivable.concept === 'string' && receivable.concept.trim().length > 0
+        ? receivable.concept.trim()
+        : 'Sin concepto'
+      const dueSuffix = receivable.due_date ? ` · vence ${receivable.due_date}` : ''
+
+      pendingReceivableOptions.push({
+        value: receivable.id,
+        label: `Cuenta puntual · ${receivable.debtor_name} · ${concept} · pendiente ${formatNumber(pendingAmount)} ${receivable.currency}${dueSuffix}`,
+        icon: 'wallet',
+        color: '#06b6d4',
+        meta: {
+          kind: 'receivable',
+          debtor_id: receivable.debtor_id,
+          debtor_name: receivable.debtor_name,
+          concept,
+          amount: Number(receivable.amount ?? 0),
+          collected_amount: Number(receivable.collected_amount ?? 0),
+          pending_amount: pendingAmount,
+          currency: receivable.currency,
+          due_date: receivable.due_date,
+          issue_date: receivable.issue_date,
+          status: receivable.status,
+          lines_count: 1,
+        },
+      })
+    }
+  }
+
+  const pendingPayableOptions: FormSelectOption[] = (pendingPayables ?? []).map(payable => {
+    const pendingAmount = Math.max(0, Number(payable.amount ?? 0) - Number(payable.paid_amount ?? 0))
+    const concept = typeof payable.concept === 'string' && payable.concept.trim().length > 0
+      ? payable.concept.trim()
+      : 'Sin concepto'
+    const dueSuffix = payable.due_date ? ` · vence ${payable.due_date}` : ''
+
+    return {
+      value: payable.id,
+      label: `${payable.creditor_name} · ${concept} · pendiente ${formatNumber(pendingAmount)} ${payable.currency}${dueSuffix}`,
+      icon: 'briefcase',
+      color: '#f97316',
+      meta: {
+        creditor_id: payable.creditor_id,
+        creditor_name: payable.creditor_name,
+        concept,
+        amount: Number(payable.amount ?? 0),
+        paid_amount: Number(payable.paid_amount ?? 0),
+        pending_amount: pendingAmount,
+        currency: payable.currency,
+        due_date: payable.due_date,
+        issue_date: payable.issue_date,
+        status: payable.status,
+      },
+    }
+  })
+
     return {
       accounts: (accounts ?? []).map(toAccountOption),
       creditCards,
       creditors: creditorOptions,
       debtors: debtorOptions,
+      pendingReceivables: pendingReceivableOptions,
+      pendingPayables: pendingPayableOptions,
       assetTypes: dedupedAssetTypes.map(toAssetTypeOption),
       categories: {
         income: dedupedCategories

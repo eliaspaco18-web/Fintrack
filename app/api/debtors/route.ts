@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient }              from '@/lib/supabase.server'
 import { getSessionUserId }          from '@/lib/api/response'
+import { repairLegacyReceivableLinks } from '@/lib/server/receivable-link-repair'
 
 export async function GET(_req: NextRequest) {
   const supabase = createClient()
@@ -21,6 +22,12 @@ export async function GET(_req: NextRequest) {
     .order('name', { ascending: true })
 
   if (debtorError) return NextResponse.json({ ok: false, error: { code: 'DATABASE_ERROR', message: debtorError.message } }, { status: 500 })
+
+  await repairLegacyReceivableLinks(
+    supabase,
+    userId,
+    (debtors ?? []).map(debtor => ({ id: debtor.id, name: debtor.name })),
+  )
 
   // Traer cuentas por cobrar para agregar por deudor
   const { data: receivables, error: arError } = await supabase

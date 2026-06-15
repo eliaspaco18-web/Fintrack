@@ -80,11 +80,27 @@ function toNextUrl(pathname: string, params: URLSearchParams): string {
   return qs.length > 0 ? `${pathname}?${qs}` : pathname
 }
 
-function inferOperationType(initialValues: Partial<TransactionFormValues> | undefined): OperationType | null {
+function inferOperationType(
+  initialValues: Partial<TransactionFormValues> | undefined,
+  searchParams: URLSearchParams,
+): OperationType | null {
+  const requestedModule = searchParams.get('module')
+  const requestedType = searchParams.get('type')
+
+  if (requestedModule === 'receivable') {
+    if (requestedType === 'INCOME') return 'receivable_collect'
+    if (requestedType === 'EXPENSE') return 'receivable_issue'
+  }
+
+  if (requestedModule === 'payable') {
+    if (requestedType === 'EXPENSE') return 'payable_pay'
+    if (requestedType === 'INCOME') return 'payable_issue'
+  }
+
   if (!initialValues) return null
   if (initialValues.type === 'TRANSFER') return 'transfer'
-  if (initialValues.creates_receivable) return 'receivable'
-  if (initialValues.creates_payable) return 'payable'
+  if (initialValues.creates_receivable) return 'receivable_issue'
+  if (initialValues.creates_payable) return 'payable_issue'
   if (initialValues.creates_asset) return 'asset_purchase'
   if (initialValues.type === 'INCOME') return 'income'
   if (initialValues.type === 'EXPENSE') return 'expense'
@@ -143,8 +159,8 @@ export function TransactionsWorkspace({
     [searchParams],
   )
   const prefilledOperationType = useMemo(
-    () => inferOperationType(initialValues),
-    [initialValues]
+    () => inferOperationType(initialValues, searchParams),
+    [initialValues, searchParams]
   )
 
   const clearCreateQueryParams = useCallback(() => {
@@ -254,8 +270,10 @@ export function TransactionsWorkspace({
       case 'transfer':
         return 'max-w-[min(96vw,920px)]'
       case 'asset_purchase':
-      case 'payable':
-      case 'receivable':
+      case 'payable_issue':
+      case 'payable_pay':
+      case 'receivable_issue':
+      case 'receivable_collect':
         return 'max-w-[min(96vw,960px)]'
       default:
         return 'max-w-[min(96vw,920px)]'

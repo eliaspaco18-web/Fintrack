@@ -39,6 +39,7 @@ import {
   CatalogTable,
 } from '@/components/management/catalog'
 import { getApiErrorMessage } from '@/lib/api/error-message'
+import { isLockedCategorySystemKey } from '@/lib/constants/category-keys'
 import { createClient } from '@/lib/supabase.client'
 import {
   ATTACHMENT_IMAGE_MIME_TYPES,
@@ -101,7 +102,13 @@ function normalizeCategoryScope(scope: string): CategoryScope {
 }
 
 function isProtectedCategory(category: CategoryItem): boolean {
-  return category.is_system || category.user_id === null
+  return category.is_system || category.user_id === null || isLockedCategorySystemKey(category.system_key)
+}
+
+function getOriginBadge(category: CategoryItem): { tone: 'muted' | 'info'; label: string } {
+  if (category.is_system) return { tone: 'muted', label: 'Sistema' }
+  if (isLockedCategorySystemKey(category.system_key)) return { tone: 'muted', label: 'Protegida' }
+  return { tone: 'info', label: 'Personalizada' }
 }
 
 // ─── COMPONENT ────────────────────────────────────────────────────────────────
@@ -160,8 +167,11 @@ export function CategoriesManager() {
 
   // ─── COMPUTED ─────────────────────────────────────────────────────────────
 
-  const userCategories = useMemo(() => categories.filter(category => !isProtectedCategory(category)), [categories])
-  const systemCount = categories.length - userCategories.length
+  const userCategories = useMemo(
+    () => categories.filter(category => !isProtectedCategory(category)),
+    [categories],
+  )
+  const protectedCount = categories.length - userCategories.length
   const incomeCount = useMemo(
     () => userCategories.filter(c => c.scope === 'INCOME').length,
     [userCategories]
@@ -304,7 +314,7 @@ export function CategoriesManager() {
             <StatusBadge tone="success">{incomeCount} para ingreso</StatusBadge>
             <StatusBadge tone="danger">{expenseCount} para egreso</StatusBadge>
             <StatusBadge tone="info">{userCategories.length} personalizadas</StatusBadge>
-            {systemCount > 0 ? <StatusBadge tone="muted">{systemCount} del sistema</StatusBadge> : null}
+            {protectedCount > 0 ? <StatusBadge tone="muted">{protectedCount} protegidas</StatusBadge> : null}
           </>
         )}
         primaryAction={(
@@ -383,74 +393,78 @@ export function CategoriesManager() {
         ]}
         gridClassName="md:grid-cols-[minmax(0,1.7fr)_160px_170px_auto] md:items-center"
       >
-        {filtered.map(category => (
-          <CatalogRow
-            key={category.id}
-            gridClassName="md:grid-cols-[minmax(0,1.7fr)_160px_170px_auto] md:items-center"
-            accentColor={category.color}
-          >
-            <CatalogCell label="Categoría">
-              <CatalogIdentity
-                icon={(
-                  <span
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--c-border)]"
-                    style={{ backgroundColor: `${category.color}16`, color: category.color }}
-                  >
-                    {iconSignedUrls[category.id] ? (
-                      <Image
-                        src={iconSignedUrls[category.id]!}
-                        alt={category.name}
-                        width={32}
-                        height={32}
-                        unoptimized
-                        className="h-9 w-9 rounded-md object-contain"
-                      />
-                    ) : (
-                      <FinancialIcon name={category.icon} size={17} />
-                    )}
-                  </span>
+        {filtered.map(category => {
+          const originBadge = getOriginBadge(category)
+
+          return (
+            <CatalogRow
+              key={category.id}
+              gridClassName="md:grid-cols-[minmax(0,1.7fr)_160px_170px_auto] md:items-center"
+              accentColor={category.color}
+            >
+              <CatalogCell label="Categoría">
+                <CatalogIdentity
+                  icon={(
+                    <span
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--c-border)]"
+                      style={{ backgroundColor: `${category.color}16`, color: category.color }}
+                    >
+                      {iconSignedUrls[category.id] ? (
+                        <Image
+                          src={iconSignedUrls[category.id]!}
+                          alt={category.name}
+                          width={32}
+                          height={32}
+                          unoptimized
+                          className="h-9 w-9 rounded-md object-contain"
+                        />
+                      ) : (
+                        <FinancialIcon name={category.icon} size={17} />
+                      )}
+                    </span>
+                  )}
+                  title={category.name}
+                />
+              </CatalogCell>
+
+              <CatalogCell label="Alcance">
+                <StatusBadge tone={SCOPE_TONES[category.scope] ?? 'muted'}>
+                  {SCOPE_LABELS[category.scope] ?? category.scope}
+                </StatusBadge>
+              </CatalogCell>
+
+              <CatalogCell label="Origen">
+                <StatusBadge tone={originBadge.tone}>
+                  {originBadge.label}
+                </StatusBadge>
+              </CatalogCell>
+
+              <CatalogCell label="Acciones" align="right">
+                {!isProtectedCategory(category) ? (
+                  <div className="flex items-center gap-1.5 md:justify-end">
+                    <ActionIconButton
+                      onClick={() => startEdit(category)}
+                      disabled={Boolean(rowActionId)}
+                      icon="edit"
+                      label="Editar categoría"
+                    />
+                    <ActionIconButton
+                      onClick={() => setPendingDelete(category)}
+                      disabled={Boolean(rowActionId)}
+                      icon="delete"
+                      label="Eliminar categoría"
+                      variant="danger"
+                    />
+                  </div>
+                ) : (
+                  <div className="md:text-right">
+                    <StatusBadge tone="muted">Protegida</StatusBadge>
+                  </div>
                 )}
-                title={category.name}
-              />
-            </CatalogCell>
-
-            <CatalogCell label="Alcance">
-              <StatusBadge tone={SCOPE_TONES[category.scope] ?? 'muted'}>
-                {SCOPE_LABELS[category.scope] ?? category.scope}
-              </StatusBadge>
-            </CatalogCell>
-
-            <CatalogCell label="Origen">
-              <StatusBadge tone={category.is_system ? 'muted' : 'info'}>
-                {category.is_system ? 'Sistema' : 'Personalizada'}
-              </StatusBadge>
-            </CatalogCell>
-
-            <CatalogCell label="Acciones" align="right">
-              {!isProtectedCategory(category) ? (
-                <div className="flex items-center gap-1.5 md:justify-end">
-                  <ActionIconButton
-                    onClick={() => startEdit(category)}
-                    disabled={Boolean(rowActionId)}
-                    icon="edit"
-                    label="Editar categoría"
-                  />
-                  <ActionIconButton
-                    onClick={() => setPendingDelete(category)}
-                    disabled={Boolean(rowActionId)}
-                    icon="delete"
-                    label="Eliminar categoría"
-                    variant="danger"
-                  />
-                </div>
-              ) : (
-                <div className="md:text-right">
-                  <StatusBadge tone="muted">Protegida</StatusBadge>
-                </div>
-              )}
-            </CatalogCell>
-          </CatalogRow>
-        ))}
+              </CatalogCell>
+            </CatalogRow>
+          )
+        })}
       </CatalogTable>
 
       {/* Create/Edit Modal */}

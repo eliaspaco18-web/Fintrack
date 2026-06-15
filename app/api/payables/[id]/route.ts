@@ -3,9 +3,11 @@
 // PRD v3 — Módulo 8: Cuentas por Pagar — GET / PATCH / DELETE por id
 // =============================================================================
 
+import { revalidatePath } from 'next/cache'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient }              from '@/lib/supabase.server'
-import { apiError, apiUnauthorized, getSessionUserId } from '@/lib/api/response'
+import { apiError, apiNoContent, apiUnauthorized, getSessionUserId } from '@/lib/api/response'
+import { TransactionService } from '@/modules/transactions/transaction.service'
 
 const PAYABLE_SELECT = `
   *,
@@ -98,12 +100,33 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   const userId   = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
-  const { error } = await supabase
+  const { data: payable, error: payableError } = await supabase
     .from('accounts_payable')
-    .delete()
+    .select('id, transaction_id')
     .eq('id', params.id)
     .eq('user_id', userId)
+    .maybeSingle()
 
-  if (error) return apiError({ code: 'DATABASE_ERROR', message: error.message })
-  return new NextResponse(null, { status: 204 })
+  if (payableError) return apiError({ code: 'DATABASE_ERROR', message: payableError.message })
+  if (!payable) return apiError({ code: 'NOT_FOUND', message: 'Registro no encontrado' })
+
+  if (payable.transaction_id) {
+    const service = new TransactionService(supabase)
+    const result = await service.deleteTransaction(userId, payable.transaction_id, { force: false })
+    if (!result.ok) return apiError(result.error)
+  } else {
+    const { error } = await supabase
+      .from('accounts_payable')
+      .delete()
+      .eq('id', params.id)
+      .eq('user_id', userId)
+
+    if (error) return apiError({ code: 'DATABASE_ERROR', message: error.message })
+  }
+
+  revalidatePath('/dashboard')
+  revalidatePath('/transactions')
+  revalidatePath('/payables')
+
+  return apiNoContent()
 }

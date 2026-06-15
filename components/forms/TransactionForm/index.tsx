@@ -47,12 +47,13 @@ import {
 }                                     from './sections/ModuleSections'
 import { SubmitButton, SuccessSummary } from './SubmitButton'
 import { useToast } from '@/lib/toast/toast'
-import { getModuleTrigger } from '@/lib/constants/category-keys'
+import { CategoryKeys, getModuleTrigger } from '@/lib/constants/category-keys'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { hasAtMostDecimals, parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 import { Button } from '@/components/ui/Button'
 import { FormActions, OptionalSection } from '@/components/forms/primitives'
 import { RecordModalFooter } from '@/components/ui/RecordModal'
+import type { OperationType } from '@/components/transactions/OperationTypeSelector'
 import {
   NestedAccountCreateModal,
   NestedCategoryCreateModal,
@@ -101,6 +102,13 @@ function normalizeCategoryLabel(raw: string): string {
   return normalized.length > 0 ? normalized : clean
 }
 
+const FIXED_CATEGORY_BY_OPERATION: Partial<Record<OperationType, string>> = {
+  receivable_issue: CategoryKeys.EXPENSE_RECEIVABLE_ISSUE,
+  receivable_collect: CategoryKeys.INCOME_RECEIVABLE_COLLECTION,
+  payable_issue: CategoryKeys.INCOME_PAYABLE_ISSUE,
+  payable_pay: CategoryKeys.EXPENSE_PAYABLE_PAYMENT,
+}
+
 // ─── PROPS ────────────────────────────────────────────────────────────────────
 
 interface TransactionFormProps {
@@ -115,7 +123,7 @@ interface TransactionFormProps {
   /** PRD: ocultar el selector de tipo cuando ya se eligió desde OperationTypeSelector */
   hideTypeSelector?: boolean
   /** PRD: tipo de operación elegido (para condicionar campos según PRD v3) */
-  operationType?: 'income' | 'expense' | 'transfer' | 'asset_purchase' | 'payable' | 'receivable'
+  operationType?: OperationType
   /** Permite cerrar el modal desde la barra de acciones del formulario */
   onCancel?: () => void
 }
@@ -170,7 +178,7 @@ export function TransactionForm({
     submit,
     resetForm,
     setType,
-  } = useFormOrchestrator(formOptions, onSuccess, initialValues)
+  } = useFormOrchestrator(formOptions, onSuccess, initialValues, operationType)
 
   const { register, watch, setValue, formState: { errors } } = form
 
@@ -187,6 +195,8 @@ export function TransactionForm({
   const createsAsset = watch('creates_asset')
   const createsReceivable = watch('creates_receivable')
   const createsPayable = watch('creates_payable')
+  const settlementReceivableId = watch('settlement_receivable_id')
+  const settlementPayableId = watch('settlement_payable_id')
   const exchangeRateInput = watch('exchange_rate')
   const transactionDate = watch('transaction_date')
   const destinationAccountId = watch('destination_account_id')
@@ -320,17 +330,38 @@ export function TransactionForm({
   useEffect(() => {
     if (!operationType) return
     const typeMap: Record<typeof operationType, TransactionFormValues['type']> = {
-      income:        'INCOME',
-      expense:       'EXPENSE',
-      transfer:      'TRANSFER',
-      asset_purchase: 'EXPENSE',
-      payable:       'INCOME',
-      receivable:    'EXPENSE',
+      income:             'INCOME',
+      expense:            'EXPENSE',
+      transfer:           'TRANSFER',
+      asset_purchase:     'EXPENSE',
+      receivable_issue:   'EXPENSE',
+      receivable_collect: 'INCOME',
+      payable_issue:      'INCOME',
+      payable_pay:        'EXPENSE',
     }
     const targetType = typeMap[operationType]
     if (targetType && form.getValues('type') !== targetType) {
       setType(targetType)
     }
+  // Solo al montar — operationType no cambia durante la vida del componente
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (!operationType) return
+
+    setValue('creates_asset', operationType === 'asset_purchase', {
+      shouldDirty: false,
+      shouldValidate: false,
+    })
+    setValue('creates_receivable', operationType === 'receivable_issue', {
+      shouldDirty: false,
+      shouldValidate: false,
+    })
+    setValue('creates_payable', operationType === 'payable_issue', {
+      shouldDirty: false,
+      shouldValidate: false,
+    })
   // Solo al montar — operationType no cambia durante la vida del componente
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -382,49 +413,6 @@ export function TransactionForm({
   // ── Filtrar cuentas destino (excluir cuenta origen) ──────────────────────
 
   const destinationAccounts = formOptions.accounts.filter(a => a.value !== sourceAccountId)
-  const filteredSourceAccounts = useMemo(() => {
-    if (type !== 'EXPENSE' || paymentMethod === 'CREDIT') return formOptions.accounts
-
-    const debitEligibleTypes = new Set([
-      'CHECKING',
-      'SAVINGS',
-      'CASH',
-      'INVESTMENT',
-      'STOCKS',
-      'ETF',
-      'CRYPTO',
-    ])
-
-    return formOptions.accounts.filter(account => {
-      const accountType = typeof account.meta?.type === 'string' ? account.meta.type : ''
-      return debitEligibleTypes.has(accountType)
-    })
-  }, [formOptions.accounts, paymentMethod, type])
-
-  const visibleCategoryOptions = useMemo(
-    () =>
-      (type === 'INCOME' ? categoryOptions.income : categoryOptions.expense).map(category => ({
-        ...category,
-        label: normalizeCategoryLabel(category.label),
-      })),
-    [type, categoryOptions.income, categoryOptions.expense]
-  )
-  const selectedCategory = useMemo(
-    () => visibleCategoryOptions.find(category => category.value === categoryId) ?? null,
-    [categoryId, visibleCategoryOptions]
-  )
-  const autoModule = getModuleTrigger(selectedCategory?.system_key)
-  const activeExpenseModule = useMemo<'asset' | 'receivable' | null>(() => {
-    if (createsAsset) return 'asset'
-    if (createsReceivable) return 'receivable'
-    if (autoModule === 'asset' || autoModule === 'receivable') return autoModule
-    return null
-  }, [autoModule, createsAsset, createsReceivable])
-  const activeIncomeModule = useMemo<'payable' | null>(() => {
-    if (autoModule === 'payable') return 'payable'
-    return createsPayable ? 'payable' : null
-  }, [autoModule, createsPayable])
-  const isExpenseCreditPayment = type === 'EXPENSE' && paymentMethod === 'CREDIT'
   const creditCardOptions = useMemo(
     () => formOptions.creditCards ?? [],
     [formOptions.creditCards]
@@ -437,6 +425,122 @@ export function TransactionForm({
     () => formOptions.debtors ?? [],
     [formOptions.debtors]
   )
+  const pendingReceivableOptions = useMemo(
+    () => formOptions.pendingReceivables ?? [],
+    [formOptions.pendingReceivables]
+  )
+  const pendingPayableOptions = useMemo(
+    () => formOptions.pendingPayables ?? [],
+    [formOptions.pendingPayables]
+  )
+  const selectedSettlementReceivable = useMemo(
+    () => pendingReceivableOptions.find(option => option.value === settlementReceivableId) ?? null,
+    [pendingReceivableOptions, settlementReceivableId]
+  )
+  const selectedSettlementPayable = useMemo(
+    () => pendingPayableOptions.find(option => option.value === settlementPayableId) ?? null,
+    [pendingPayableOptions, settlementPayableId]
+  )
+  const selectedSettlementKind = String(selectedSettlementReceivable?.meta?.kind ?? 'receivable')
+  const selectedSettlementLinesCount = Number(selectedSettlementReceivable?.meta?.lines_count ?? 1)
+  const selectedSettlementCurrency = (
+    selectedSettlementReceivable?.meta?.currency ??
+    selectedSettlementPayable?.meta?.currency ??
+    null
+  ) as 'PEN' | 'USD' | null
+  const selectedSettlementPendingAmount = Number(
+    selectedSettlementReceivable?.meta?.pending_amount ??
+    selectedSettlementPayable?.meta?.pending_amount ??
+    0
+  )
+  const selectedSettlementConcept = String(
+    selectedSettlementReceivable?.meta?.concept ??
+    selectedSettlementPayable?.meta?.concept ??
+    ''
+  )
+  const selectedSettlementCounterparty = String(
+    selectedSettlementReceivable?.meta?.debtor_name ??
+    selectedSettlementPayable?.meta?.creditor_name ??
+    ''
+  )
+  const filteredSourceAccounts = useMemo(() => {
+    const currencyFilteredAccounts = selectedSettlementCurrency
+      ? formOptions.accounts.filter(account => account.meta?.currency === selectedSettlementCurrency)
+      : formOptions.accounts
+
+    if (operationType === 'receivable_collect') return currencyFilteredAccounts
+    if (operationType === 'payable_pay' && paymentMethod === 'CREDIT') return currencyFilteredAccounts
+    if (type !== 'EXPENSE' || paymentMethod === 'CREDIT') return currencyFilteredAccounts
+
+    const debitEligibleTypes = new Set([
+      'CHECKING',
+      'SAVINGS',
+      'CASH',
+      'INVESTMENT',
+      'STOCKS',
+      'ETF',
+      'CRYPTO',
+    ])
+
+    return currencyFilteredAccounts.filter(account => {
+      const accountType = typeof account.meta?.type === 'string' ? account.meta.type : ''
+      return debitEligibleTypes.has(accountType)
+    })
+  }, [formOptions.accounts, operationType, paymentMethod, selectedSettlementCurrency, type])
+  const visibleCategoryOptions = useMemo(
+    () =>
+      (type === 'INCOME' ? categoryOptions.income : categoryOptions.expense).map(category => ({
+        ...category,
+        label: normalizeCategoryLabel(category.label),
+      })),
+    [type, categoryOptions.income, categoryOptions.expense]
+  )
+  const selectedCategory = useMemo(
+    () => visibleCategoryOptions.find(category => category.value === categoryId) ?? null,
+    [categoryId, visibleCategoryOptions]
+  )
+
+  useEffect(() => {
+    if (!operationType) return
+
+    const fixedCategorySystemKey = FIXED_CATEGORY_BY_OPERATION[operationType]
+    if (!fixedCategorySystemKey) return
+
+    const fixedCategory = visibleCategoryOptions.find(category => (
+      category.system_key === fixedCategorySystemKey
+    ))
+
+    if (!fixedCategory) return
+
+    if (
+      categoryId === fixedCategory.value &&
+      form.getValues('category_system_key') === fixedCategory.system_key
+    ) {
+      return
+    }
+
+    setValue('category_id', fixedCategory.value, {
+      shouldDirty: false,
+      shouldValidate: false,
+    })
+    setValue('category_system_key', fixedCategory.system_key ?? null, {
+      shouldDirty: false,
+      shouldValidate: false,
+    })
+  }, [categoryId, form, operationType, setValue, visibleCategoryOptions])
+
+  const autoModule = getModuleTrigger(selectedCategory?.system_key)
+  const activeExpenseModule = useMemo<'asset' | 'receivable' | null>(() => {
+    if (createsAsset) return 'asset'
+    if (createsReceivable) return 'receivable'
+    if (autoModule === 'asset' || autoModule === 'receivable') return autoModule
+    return null
+  }, [autoModule, createsAsset, createsReceivable])
+  const activeIncomeModule = useMemo<'payable' | null>(() => {
+    if (autoModule === 'payable') return 'payable'
+    return createsPayable ? 'payable' : null
+  }, [autoModule, createsPayable])
+  const isExpenseCreditPayment = type === 'EXPENSE' && paymentMethod === 'CREDIT'
   const selectedCreditCardOption = useMemo(
     () => creditCardOptions.find(option => option.value === selectedCreditCardId) ?? null,
     [creditCardOptions, selectedCreditCardId]
@@ -446,26 +550,30 @@ export function TransactionForm({
   const hasCreditCards = creditCardOptions.length > 0
   const hasCreditors = creditorOptions.length > 0
   const hasDebtors = debtorOptions.length > 0
+  const hasPendingReceivables = pendingReceivableOptions.length > 0
+  const hasPendingPayables = pendingPayableOptions.length > 0
   const hasVisibleCategories = visibleCategoryOptions.length > 0
   const showDerivedSections =
     (sections.assetModule && operationType !== 'asset_purchase') ||
-    (sections.receivableModule && operationType !== 'receivable') ||
-    (sections.payableModule && operationType !== 'payable')
+    (sections.receivableModule && operationType !== 'receivable_issue') ||
+    (sections.payableModule && operationType !== 'payable_issue')
   const layoutMode = useMemo<
-    'income' | 'expense' | 'transfer' | 'asset_purchase' | 'payable' | 'receivable'
+    OperationType
   >(() => {
     if (operationType) return operationType
     if (type === 'TRANSFER') return 'transfer'
-    if (type === 'INCOME') return createsPayable ? 'payable' : 'income'
+    if (type === 'INCOME') return createsPayable ? 'payable_issue' : 'income'
     if (createsAsset) return 'asset_purchase'
-    if (createsReceivable) return 'receivable'
+    if (createsReceivable) return 'receivable_issue'
     return 'expense'
   }, [createsAsset, createsPayable, createsReceivable, operationType, type])
   const usesProgressiveOptionalSection =
     layoutMode === 'income' ||
     layoutMode === 'expense' ||
     layoutMode === 'transfer' ||
-    layoutMode === 'asset_purchase'
+    layoutMode === 'asset_purchase' ||
+    layoutMode === 'receivable_collect' ||
+    layoutMode === 'payable_pay'
   const optionalSummary = useMemo(() => {
     switch (layoutMode) {
       case 'income':
@@ -474,6 +582,10 @@ export function TransactionForm({
         return ['Destinatario', 'Presupuesto', 'Notas', 'Recurrencia', 'Comprobante']
       case 'asset_purchase':
         return ['Proveedor', 'Notas', 'Comprobante']
+      case 'receivable_collect':
+        return ['Notas', 'Comprobante']
+      case 'payable_pay':
+        return ['Notas', 'Comprobante']
       case 'transfer':
         return ['Notas', 'Comprobante']
       default:
@@ -490,9 +602,11 @@ export function TransactionForm({
   const sourceAccountLabel = useMemo(() => {
     switch (layoutMode) {
       case 'income':
+      case 'receivable_collect':
         return 'Cuenta destino'
       case 'expense':
       case 'asset_purchase':
+      case 'payable_pay':
         return 'Cuenta origen'
       default:
         return sections.sourceAccountLabel
@@ -508,14 +622,94 @@ export function TransactionForm({
         return 'Ej: Transferencia a cuenta de ahorros'
       case 'asset_purchase':
         return 'Ej: Compra de equipo para operaciones'
-      case 'payable':
+      case 'payable_issue':
         return 'Ej: Servicio de internet mayo'
-      case 'receivable':
+      case 'payable_pay':
+        return 'Ej: Pago de servicio pendiente'
+      case 'receivable_issue':
         return 'Ej: Factura F001-184 pendiente'
+      case 'receivable_collect':
+        return 'Ej: Cobro de factura pendiente'
       default:
         return '¿En qué o con quién?'
     }
   }, [layoutMode])
+
+  useEffect(() => {
+    if (operationType !== 'receivable_collect') return
+
+    if (!selectedSettlementReceivable) {
+      setValue('amount', '' as TransactionFormValues['amount'], {
+        shouldDirty: false,
+        shouldValidate: false,
+      })
+      setValue('description', '', {
+        shouldDirty: false,
+        shouldValidate: false,
+      })
+      setValue('sender', undefined, {
+        shouldDirty: false,
+        shouldValidate: false,
+      })
+      return
+    }
+
+    if (selectedSettlementCurrency) {
+      setValue('currency', selectedSettlementCurrency, { shouldDirty: false, shouldValidate: true })
+    }
+    if (Number.isFinite(selectedSettlementPendingAmount) && selectedSettlementPendingAmount > 0) {
+      setValue('amount', roundToDecimals(selectedSettlementPendingAmount, 2), {
+        shouldDirty: false,
+        shouldValidate: true,
+      })
+    }
+    setValue(
+      'description',
+      (
+        selectedSettlementKind === 'debtor_total'
+          ? `Cobro general a ${selectedSettlementCounterparty}`
+          : `Cobro de ${selectedSettlementConcept || 'cuenta por cobrar'} - ${selectedSettlementCounterparty}`
+      ).slice(0, 255),
+      { shouldDirty: false, shouldValidate: true }
+    )
+    setValue('sender', selectedSettlementCounterparty, { shouldDirty: false, shouldValidate: false })
+  }, [
+    operationType,
+    selectedSettlementConcept,
+    selectedSettlementCounterparty,
+    selectedSettlementCurrency,
+    selectedSettlementKind,
+    selectedSettlementPendingAmount,
+    selectedSettlementReceivable,
+    setValue,
+  ])
+
+  useEffect(() => {
+    if (operationType !== 'payable_pay' || !selectedSettlementPayable) return
+    if (selectedSettlementCurrency) {
+      setValue('currency', selectedSettlementCurrency, { shouldDirty: false, shouldValidate: true })
+    }
+    if (Number.isFinite(selectedSettlementPendingAmount) && selectedSettlementPendingAmount > 0) {
+      setValue('amount', roundToDecimals(selectedSettlementPendingAmount, 2), {
+        shouldDirty: false,
+        shouldValidate: true,
+      })
+    }
+    setValue(
+      'description',
+      `Pago de ${selectedSettlementConcept || 'cuenta por pagar'} - ${selectedSettlementCounterparty}`.slice(0, 255),
+      { shouldDirty: false, shouldValidate: true }
+    )
+    setValue('recipient', selectedSettlementCounterparty, { shouldDirty: false, shouldValidate: false })
+  }, [
+    operationType,
+    selectedSettlementConcept,
+    selectedSettlementCounterparty,
+    selectedSettlementCurrency,
+    selectedSettlementPayable,
+    selectedSettlementPendingAmount,
+    setValue,
+  ])
 
   useEffect(() => {
     if (type === 'EXPENSE') {
@@ -764,6 +958,13 @@ export function TransactionForm({
                 const n = Number(v)
                 return hasAtMostDecimals(n, 2) || 'Máximo 2 decimales'
               },
+              pendingLimit: v => {
+                if (operationType !== 'receivable_collect' && operationType !== 'payable_pay') return true
+                if (operationType === 'receivable_collect' && !settlementReceivableId) return true
+                if (operationType === 'payable_pay' && !settlementPayableId) return true
+                const n = Number(v)
+                return n <= selectedSettlementPendingAmount || 'El monto no puede superar el saldo pendiente'
+              },
             },
           })}
         />
@@ -875,7 +1076,7 @@ export function TransactionForm({
     </div>
   )
 
-  const paymentMethodField = type === 'EXPENSE' && operationType !== 'transfer' && operationType !== 'asset_purchase' && operationType !== 'payable' && operationType !== 'receivable' ? (
+  const paymentMethodField = type === 'EXPENSE' && operationType !== 'transfer' && operationType !== 'asset_purchase' && operationType !== 'payable_issue' && operationType !== 'receivable_issue' && operationType !== 'receivable_collect' ? (
     <div className={`rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] ${isCompactLayout ? 'px-3 py-2' : 'px-3.5 py-3'}`}>
       <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">
         Forma de pago
@@ -1059,7 +1260,7 @@ export function TransactionForm({
               + Crear cuenta
             </button>
           </div>
-          {type === 'EXPENSE' && hasCreditCards && operationType !== 'asset_purchase' && operationType !== 'payable' && operationType !== 'receivable' && (
+          {type === 'EXPENSE' && hasCreditCards && operationType !== 'asset_purchase' && operationType !== 'payable_issue' && operationType !== 'receivable_issue' && operationType !== 'receivable_collect' && (
             <div className="mt-3 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface)] p-2.5">
               <button
                 type="button"
@@ -1153,7 +1354,7 @@ export function TransactionForm({
     </div>
   ) : null
 
-  const categoryField = operationType !== 'transfer' && type !== 'TRANSFER' && operationType !== 'asset_purchase' && operationType !== 'payable' && operationType !== 'receivable' ? (
+  const categoryField = operationType !== 'transfer' && type !== 'TRANSFER' && operationType !== 'asset_purchase' && operationType !== 'payable_issue' && operationType !== 'payable_pay' && operationType !== 'receivable_issue' && operationType !== 'receivable_collect' ? (
     <FieldWrapper
       label="Categoría"
       required
@@ -1666,7 +1867,7 @@ export function TransactionForm({
     </OptionalSection>
   ) : null
 
-  const payableField = operationType === 'payable' ? (
+  const payableIssueField = operationType === 'payable_issue' ? (
     <FieldWrapper
       label="Acreedor"
       required
@@ -1699,7 +1900,7 @@ export function TransactionForm({
     </FieldWrapper>
   ) : null
 
-  const receivableField = operationType === 'receivable' ? (
+  const receivableIssueField = operationType === 'receivable_issue' ? (
     <FieldWrapper
       label="Deudor"
       required
@@ -1730,6 +1931,109 @@ export function TransactionForm({
         </div>
       )}
     </FieldWrapper>
+  ) : null
+
+  const receivableCollectField = operationType === 'receivable_collect' ? (
+    <div className="space-y-3">
+      <FieldWrapper
+        label="Cuenta por cobrar o saldo del deudor"
+        required
+        error={errors.settlement_receivable_id?.message}
+        hint="Elige `Cobro general` para aplicar el pago al saldo total del deudor, o `Cuenta puntual` si quieres cobrar una sola deuda."
+      >
+        <Select
+          data-testid="transaction-settlement-receivable-select"
+          error={errors.settlement_receivable_id?.message}
+          {...register('settlement_receivable_id', {
+            required: 'Selecciona una cuenta puntual o un cobro general',
+          })}
+        >
+          <option value="">Seleccionar cobro...</option>
+          {pendingReceivableOptions.map(receivable => (
+            <option key={receivable.value} value={receivable.value}>
+              {receivable.label}
+            </option>
+          ))}
+        </Select>
+        {!hasPendingReceivables && (
+          <div className="mt-2">
+            <InlineFeedback
+              type="info"
+              message="No tienes cuentas por cobrar pendientes."
+              detail="Primero registra una cuenta por cobrar para poder aplicar un cobro."
+            />
+          </div>
+        )}
+      </FieldWrapper>
+
+      {selectedSettlementReceivable && (
+        <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3.5 py-3">
+          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+            Saldo a cobrar
+          </p>
+          <p className="mt-1 text-[15px] font-semibold tabular-nums text-[var(--c-primary)]">
+            {formatCurrency(selectedSettlementPendingAmount, selectedSettlementCurrency ?? 'PEN')}
+          </p>
+          <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">
+            {selectedSettlementCounterparty}{selectedSettlementConcept ? ` · ${selectedSettlementConcept}` : ''}
+          </p>
+          {selectedSettlementKind === 'debtor_total' && selectedSettlementLinesCount > 1 ? (
+            <p className="mt-1 text-[10px] text-[var(--c-text-faint)]">
+              El cobro se aplicará automáticamente a {selectedSettlementLinesCount} cuentas abiertas, empezando por las más antiguas.
+            </p>
+          ) : null}
+        </div>
+      )}
+    </div>
+  ) : null
+
+  const payablePayField = operationType === 'payable_pay' ? (
+    <div className="space-y-3">
+      <FieldWrapper
+        label="Cuenta por pagar"
+        required
+        error={errors.settlement_payable_id?.message}
+        hint="Elige la obligación pendiente que estás pagando."
+      >
+        <Select
+          data-testid="transaction-settlement-payable-select"
+          error={errors.settlement_payable_id?.message}
+          {...register('settlement_payable_id', {
+            required: 'Selecciona la cuenta por pagar',
+          })}
+        >
+          <option value="">Seleccionar cuenta pendiente...</option>
+          {pendingPayableOptions.map(payable => (
+            <option key={payable.value} value={payable.value}>
+              {payable.label}
+            </option>
+          ))}
+        </Select>
+        {!hasPendingPayables && (
+          <div className="mt-2">
+            <InlineFeedback
+              type="info"
+              message="No tienes cuentas por pagar pendientes."
+              detail="Primero registra una cuenta por pagar para poder aplicar un pago."
+            />
+          </div>
+        )}
+      </FieldWrapper>
+
+      {selectedSettlementPayable && (
+        <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3.5 py-3">
+          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+            Saldo a pagar
+          </p>
+          <p className="mt-1 text-[15px] font-semibold tabular-nums text-red-300">
+            {formatCurrency(selectedSettlementPendingAmount, selectedSettlementCurrency ?? 'PEN')}
+          </p>
+          <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">
+            {selectedSettlementCounterparty}{selectedSettlementConcept ? ` · ${selectedSettlementConcept}` : ''}
+          </p>
+        </div>
+      )}
+    </div>
   ) : null
 
   const inlineOptionalField = !usesProgressiveOptionalSection ? (
@@ -1972,8 +2276,10 @@ export function TransactionForm({
   const primaryContextZone = (
     <>
       {layoutMode === 'expense' ? paymentMethodField : null}
-      {layoutMode === 'payable' ? payableField : null}
-      {layoutMode === 'receivable' ? receivableField : null}
+      {layoutMode === 'payable_issue' ? payableIssueField : null}
+      {layoutMode === 'payable_pay' ? payablePayField : null}
+      {layoutMode === 'receivable_issue' ? receivableIssueField : null}
+      {layoutMode === 'receivable_collect' ? receivableCollectField : null}
       {layoutMode === 'asset_purchase' ? assetPurchaseField : null}
       {layoutMode === 'transfer' ? transferAccountsField : accountField}
       {layoutMode === 'transfer' ? transferSummaryField : null}
@@ -2045,12 +2351,12 @@ export function TransactionForm({
       )}
 
       {/* Cuenta por cobrar */}
-      {sections.receivableModule && operationType !== 'receivable' && (
+      {sections.receivableModule && operationType !== 'receivable_issue' && (
         <ReceivableSection form={form} debtors={debtorOptions}/>
       )}
 
       {/* Cuenta por pagar */}
-      {sections.payableModule && operationType !== 'payable' && (
+      {sections.payableModule && operationType !== 'payable_issue' && (
         <PayableSection form={form} creditors={creditorOptions}/>
       )}
 

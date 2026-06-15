@@ -11,7 +11,15 @@ import type { CreateTransactionResult } from '@/modules/transactions/transaction
 import type { TransactionFormValues } from '@/lib/contracts/ui.contracts'
 
 type TxType = TransactionFormValues['type']
-type OperationType = 'income' | 'expense' | 'transfer' | 'asset_purchase' | 'payable' | 'receivable'
+type OperationType =
+  | 'income'
+  | 'expense'
+  | 'transfer'
+  | 'asset_purchase'
+  | 'receivable_issue'
+  | 'receivable_collect'
+  | 'payable_issue'
+  | 'payable_pay'
 
 interface SubmitButtonProps {
   type:        TxType
@@ -35,9 +43,11 @@ const TYPE_STYLES: Record<TxType, string> = {
 }
 
 const OPERATION_LABELS: Partial<Record<OperationType, { idle: string; loading: string; success: string }>> = {
-  asset_purchase: { idle: 'Registrar compra de activo', loading: 'Registrando…', success: '¡Compra registrada!' },
-  payable:        { idle: 'Registrar cuenta por pagar', loading: 'Registrando…', success: '¡Cuenta por pagar registrada!' },
-  receivable:     { idle: 'Registrar cuenta por cobrar', loading: 'Registrando…', success: '¡Cuenta por cobrar registrada!' },
+  asset_purchase:     { idle: 'Registrar compra de activo', loading: 'Registrando…', success: '¡Compra registrada!' },
+  payable_issue:      { idle: 'Registrar cuenta por pagar', loading: 'Registrando…', success: '¡Cuenta por pagar registrada!' },
+  payable_pay:        { idle: 'Registrar pago', loading: 'Registrando…', success: '¡Pago registrado!' },
+  receivable_issue:   { idle: 'Registrar cuenta por cobrar', loading: 'Registrando…', success: '¡Cuenta por cobrar registrada!' },
+  receivable_collect: { idle: 'Registrar cobro', loading: 'Registrando…', success: '¡Cobro registrado!' },
 }
 
 export function SubmitButton({ type, state, operationType, disabled, fullWidth = true, className = '' }: SubmitButtonProps) {

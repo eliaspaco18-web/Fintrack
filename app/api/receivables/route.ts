@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase.server'
 import { CategoryKeys } from '@/lib/constants/category-keys'
 import { TransactionService } from '@/modules/transactions/transaction.service'
+import { repairLegacyReceivableLinks } from '@/lib/server/receivable-link-repair'
 import {
   apiCreated,
   apiError,
@@ -85,6 +86,19 @@ export async function GET(req: NextRequest) {
     return apiError({ code: 'VALIDATION_ERROR', message: 'Parámetro status inválido' })
   }
 
+  if (debtorId) {
+    const { data: debtor } = await supabase
+      .from('debtors')
+      .select('id, name')
+      .eq('id', debtorId)
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (debtor) {
+      await repairLegacyReceivableLinks(supabase, userId, [debtor])
+    }
+  }
+
   let query = supabase
     .from('accounts_receivable')
     .select(RECEIVABLE_SELECT)
@@ -159,7 +173,11 @@ export async function POST(req: NextRequest) {
   }
 
   const { id: receivableCategoryId, error: receivableCategoryError } =
-    await resolveUserCategoryIdBySystemKey(supabase, userId, CategoryKeys.INCOME_RECEIVABLE)
+    await resolveUserCategoryIdBySystemKey(
+      supabase,
+      userId,
+      CategoryKeys.EXPENSE_RECEIVABLE_ISSUE,
+    )
 
   if (receivableCategoryError) {
     return apiError({ code: 'DATABASE_ERROR', message: receivableCategoryError.message })

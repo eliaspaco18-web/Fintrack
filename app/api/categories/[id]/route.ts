@@ -7,6 +7,7 @@
 import { NextRequest }                from 'next/server'
 import { z }                          from 'zod'
 import { createClient }               from '@/lib/supabase.server'
+import { isLockedCategorySystemKey }  from '@/lib/constants/category-keys'
 import {
   apiError,
   apiNoContent,
@@ -59,14 +60,20 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
   const { data: currentCategory, error: currentError } = await supabase
     .from('categories')
-    .select('id, name, scope')
+    .select('id, name, scope, is_system, user_id, system_key')
     .eq('id', params.id)
     .eq('user_id', userId)
-    .eq('is_system', false)
     .single()
 
   if (currentError || !currentCategory) {
     return apiError({ code: 'DATABASE_ERROR', message: currentError?.message ?? 'Categoría no encontrada' })
+  }
+
+  if (currentCategory.is_system || currentCategory.user_id === null || isLockedCategorySystemKey(currentCategory.system_key)) {
+    return apiError({
+      code: 'BUSINESS_RULE_ERROR',
+      message: 'Esta categoría está protegida y no se puede editar.',
+    })
   }
 
   const nextName = parsed.data.name ?? currentCategory.name
@@ -97,7 +104,6 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     .update(parsed.data)
     .eq('id', params.id)
     .eq('user_id', userId)
-    .eq('is_system', false)
     .select('id, name, scope, icon, color, sort_order, is_system, user_id, system_key, created_at')
     .single()
 
@@ -110,12 +116,29 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
   const userId   = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
+  const { data: currentCategory, error: currentError } = await supabase
+    .from('categories')
+    .select('id, is_system, user_id, system_key')
+    .eq('id', params.id)
+    .eq('user_id', userId)
+    .single()
+
+  if (currentError || !currentCategory) {
+    return apiError({ code: 'DATABASE_ERROR', message: currentError?.message ?? 'Categoría no encontrada' })
+  }
+
+  if (currentCategory.is_system || currentCategory.user_id === null || isLockedCategorySystemKey(currentCategory.system_key)) {
+    return apiError({
+      code: 'BUSINESS_RULE_ERROR',
+      message: 'Esta categoría está protegida y no se puede eliminar.',
+    })
+  }
+
   const { error } = await supabase
     .from('categories')
     .delete()
     .eq('id', params.id)
     .eq('user_id', userId)
-    .eq('is_system', false)
 
   if (error) return apiError({ code: 'DATABASE_ERROR', message: error.message })
   return apiNoContent()

@@ -19,8 +19,12 @@ export const CategoryKeys = {
   INCOME_FREELANCE:  'income_freelance',
   INCOME_INVESTMENT: 'income_investment',
   INCOME_RENTAL:     'income_rental',
-  /** Activa el módulo de cuenta por cobrar */
+  /** Legacy: categoría genérica histórica de cuentas por cobrar */
   INCOME_RECEIVABLE: 'income_receivable',
+  /** Cobro de préstamos */
+  INCOME_RECEIVABLE_COLLECTION: 'income_receivable_collection',
+  /** Préstamos otorgados (De terceros) */
+  INCOME_PAYABLE_ISSUE: 'income_payable_issue',
   INCOME_OTHER:      'income_other',
 
   // ── Egresos ─────────────────────────────────────────────────────────────────
@@ -34,8 +38,12 @@ export const CategoryKeys = {
   EXPENSE_ASSET:     'expense_asset',
   /** Activa el módulo de crédito (y opcionalmente préstamo) */
   EXPENSE_CREDIT:    'expense_credit',
-  /** Activa el módulo de cuenta por pagar */
+  /** Legacy: categoría genérica histórica de cuentas por pagar */
   EXPENSE_PAYABLE:   'expense_payable',
+  /** Préstamos otorgados (A terceros) */
+  EXPENSE_RECEIVABLE_ISSUE: 'expense_receivable_issue',
+  /** Pago de préstamos */
+  EXPENSE_PAYABLE_PAYMENT: 'expense_payable_payment',
   EXPENSE_OTHER:     'expense_other',
 } as const
 
@@ -47,12 +55,23 @@ export type CategoryKey = (typeof CategoryKeys)[keyof typeof CategoryKeys]
 
 export type DerivedModule = 'asset' | 'credit' | 'receivable' | 'payable'
 
+export const LOCKED_CATEGORY_KEYS = [
+  CategoryKeys.INCOME_RECEIVABLE_COLLECTION,
+  CategoryKeys.EXPENSE_RECEIVABLE_ISSUE,
+  CategoryKeys.INCOME_PAYABLE_ISSUE,
+  CategoryKeys.EXPENSE_PAYABLE_PAYMENT,
+] as const
+
+const LOCKED_CATEGORY_KEY_SET = new Set<string>(LOCKED_CATEGORY_KEYS)
+
 export const MODULE_TRIGGERS: Record<CategoryKey, DerivedModule | null> = {
   [CategoryKeys.INCOME_SALARY]:     null,
   [CategoryKeys.INCOME_FREELANCE]:  null,
   [CategoryKeys.INCOME_INVESTMENT]: null,
   [CategoryKeys.INCOME_RENTAL]:     null,
   [CategoryKeys.INCOME_RECEIVABLE]: 'receivable',
+  [CategoryKeys.INCOME_RECEIVABLE_COLLECTION]: 'receivable',
+  [CategoryKeys.INCOME_PAYABLE_ISSUE]: 'payable',
   [CategoryKeys.INCOME_OTHER]:      null,
   [CategoryKeys.EXPENSE_FOOD]:      null,
   [CategoryKeys.EXPENSE_TRANSPORT]: null,
@@ -63,6 +82,8 @@ export const MODULE_TRIGGERS: Record<CategoryKey, DerivedModule | null> = {
   [CategoryKeys.EXPENSE_ASSET]:     'asset',
   [CategoryKeys.EXPENSE_CREDIT]:    'credit',
   [CategoryKeys.EXPENSE_PAYABLE]:   'payable',
+  [CategoryKeys.EXPENSE_RECEIVABLE_ISSUE]: 'receivable',
+  [CategoryKeys.EXPENSE_PAYABLE_PAYMENT]: 'payable',
   [CategoryKeys.EXPENSE_OTHER]:     null,
 }
 
@@ -73,4 +94,9 @@ export const MODULE_TRIGGERS: Record<CategoryKey, DerivedModule | null> = {
 export function getModuleTrigger(systemKey: string | null | undefined): DerivedModule | null {
   if (!systemKey) return null
   return MODULE_TRIGGERS[systemKey as CategoryKey] ?? null
+}
+
+export function isLockedCategorySystemKey(systemKey: string | null | undefined): boolean {
+  if (!systemKey) return false
+  return LOCKED_CATEGORY_KEY_SET.has(systemKey)
 }

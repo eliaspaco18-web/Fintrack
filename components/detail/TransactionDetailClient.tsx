@@ -475,7 +475,7 @@ export function TransactionDetailClient({
       <ConfirmDialog
         open={showForceDelete}
         title="Forzar eliminación"
-        message="Esta transacción tiene cuotas pagadas o cobros registrados. Al forzar la eliminación, esos registros quedarán desvinculados. ¿Continuar?"
+        message="Esta transacción tiene cuotas pagadas vinculadas. Al forzar la eliminación, esos registros quedarán desvinculados. ¿Continuar?"
         onConfirm={() => handleDelete(true)}
         onCancel={() => setShowForceDelete(false)}
         loading={deleteLoading}

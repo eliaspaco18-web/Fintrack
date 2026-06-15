@@ -37,6 +37,8 @@ export default async function TransactionsPage({
           creditCards: [],
           creditors: [],
           debtors: [],
+          pendingReceivables: [],
+          pendingPayables: [],
           assetTypes: [],
           categories: { income: [], expense: [] },
           currencies: [
