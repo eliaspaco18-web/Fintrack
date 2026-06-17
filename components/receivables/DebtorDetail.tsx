@@ -2,22 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AppSelect } from '@/components/ui/AppSelect'
-import { ActionIconButton } from '@/components/ui/ActionIconButton'
 import { Button } from '@/components/ui/Button'
 import { RecordModal } from '@/components/ui/RecordModal'
 import {
-  AmountCell,
-  ConfirmDialog,
   ControlsBar,
   DataSearchField,
   EmptyState,
   FilterBar,
-  ProgressMetric,
   StatusBadge,
 } from '@/components/finance'
 import { formatCurrency } from '@/lib/contracts/ui.contracts'
 import { getApiErrorMessage } from '@/lib/api/error-message'
-import { useToast } from '@/lib/toast/toast'
 import type { DebtorRow } from './DebtorForm'
 import { ReceivableForm } from './ReceivableForm'
 
@@ -47,6 +42,19 @@ type ReceivableRow = {
   source_account?: { id: string; name: string } | null
 }
 
+type LedgerRow = {
+  id: string
+  type: 'INCOME' | 'EXPENSE'
+  amount: number
+  currency: 'PEN' | 'USD'
+  description: string | null
+  notes: string | null
+  transaction_date: string
+  created_at: string
+  source_account?: { id: string; name: string; color?: string | null; icon?: string | null } | null
+  category?: { id: string; name: string; color?: string | null; icon?: string | null } | null
+}
+
 type AccountOption = { id: string; name: string }
 
 type Props = {
@@ -63,55 +71,192 @@ function formatDate(iso: string) {
   })
 }
 
-function resolveStatus(status: string) {
-  const tones = {
-    PENDING: { label: 'Pendiente', tone: 'warning' as const },
-    PARTIAL: { label: 'Parcial', tone: 'info' as const },
-    COLLECTED: { label: 'Cobrado', tone: 'success' as const },
-    WRITTEN_OFF: { label: 'Castigado', tone: 'muted' as const },
-  } as const
-
-  return tones[status as keyof typeof tones] ?? { label: status, tone: 'muted' as const }
-}
-
 function isOverdue(row: ReceivableRow) {
   if (!row.due_date || row.status === 'COLLECTED') return false
   return new Date(`${row.due_date}T12:00:00`).getTime() < Date.now()
 }
 
-export function DebtorDetail({ debtor, exchangeRate, onChanged }: Props) {
-  const { toast } = useToast()
+function matchesText(value: string | null | undefined, query: string) {
+  if (!query) return true
+  return (value ?? '').toLowerCase().includes(query)
+}
 
+function formatSignedCurrency(value: number, currency: 'PEN' | 'USD') {
+  const absolute = formatCurrency(Math.abs(value), currency)
+  if (value > 0) return absolute
+  if (value < 0) return `-${absolute}`
+  return absolute
+}
+
+function resolveLedgerMeta(row: LedgerRow) {
+  if (row.type === 'INCOME') {
+    return {
+      label: 'Ingreso',
+      tone: 'success' as const,
+      detail: 'Cobro registrado',
+      signedAmount: `+${formatCurrency(row.amount, row.currency)}`,
+    }
+  }
+
+  return {
+    label: 'Egreso',
+    tone: 'warning' as const,
+    detail: 'Prestamo entregado',
+    signedAmount: `-${formatCurrency(row.amount, row.currency)}`,
+  }
+}
+
+function RecoveryVisual({
+  total,
+  collected,
+  pending,
+  className = '',
+}: {
+  total: number
+  collected: number
+  pending: number
+  className?: string
+}) {
+  const safeTotal = Math.max(total, 0)
+  const safeCollected = Math.max(collected, 0)
+  const safePending = Math.max(pending, 0)
+  const progress = safeTotal > 0 ? Math.min(100, (safeCollected / safeTotal) * 100) : 0
+  const circumference = 2 * Math.PI * 54
+  const progressOffset = circumference - (progress / 100) * circumference
+  const summaryLabel = safePending > 0
+    ? `Faltan ${formatCurrency(safePending, 'PEN')} para liquidar`
+    : 'Cuenta liquidada'
+
+  return (
+    <section
+      className={`rounded-[22px] border border-[var(--c-border)] bg-[var(--c-surface)] px-4 py-4 ${className}`.trim()}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+            Avance de recuperacion
+          </p>
+          <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">{summaryLabel}</p>
+        </div>
+        <StatusBadge tone={safePending > 0 ? 'warning' : 'success'} dot={false}>
+          {safePending > 0 ? 'Saldo abierto' : 'Liquidado'}
+        </StatusBadge>
+      </div>
+
+      <div className="mt-3.5 flex flex-col items-center gap-3">
+        <div className="relative h-[156px] w-[156px]">
+          <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_center,color-mix(in_srgb,var(--c-success)_9%,transparent)_0%,transparent_64%)]" />
+          <svg viewBox="0 0 140 140" className="relative z-[1] h-full w-full -rotate-90">
+            <circle
+              cx="70"
+              cy="70"
+              r="54"
+              fill="none"
+              stroke="color-mix(in srgb, var(--c-border) 78%, transparent)"
+              strokeWidth="12"
+            />
+            <circle
+              cx="70"
+              cy="70"
+              r="54"
+              fill="none"
+              stroke="var(--c-success)"
+              strokeWidth="12"
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={progressOffset}
+              style={{ transition: 'stroke-dashoffset 220ms cubic-bezier(0.22, 1, 0.36, 1)' }}
+            />
+          </svg>
+          <div className="absolute inset-0 z-[2] flex flex-col items-center justify-center text-center">
+            <p className="font-mono text-[29px] font-semibold tracking-[-0.05em] text-[var(--c-text)]">
+              {progress.toFixed(1)}%
+            </p>
+            <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+              Recuperado
+            </p>
+          </div>
+        </div>
+
+        <div className="w-full rounded-[18px] border border-[var(--c-border)] bg-[color-mix(in_srgb,var(--c-warning-soft)_45%,var(--c-surface))] px-3 py-2">
+          <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+            Pendiente
+          </p>
+          <div className="mt-1.5 flex items-end justify-between gap-3">
+            <p className="min-w-0 whitespace-nowrap font-mono text-[22px] font-semibold tracking-[-0.04em] text-[var(--c-warning)]">
+              {formatCurrency(safePending, 'PEN')}
+            </p>
+            <p className="shrink-0 text-[10px] font-medium text-[var(--c-text-muted)]">
+              {progress.toFixed(1)}% recuperado
+            </p>
+          </div>
+        </div>
+
+        <div className="grid w-full grid-cols-2 gap-2.5">
+          <div className="min-w-0 rounded-[18px] border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
+            <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+              Prestado
+            </p>
+            <p className="mt-1.5 truncate whitespace-nowrap font-mono text-[15px] font-semibold tabular-nums text-[var(--c-text)]">
+              {formatCurrency(safeTotal, 'PEN')}
+            </p>
+          </div>
+          <div className="min-w-0 rounded-[18px] border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
+            <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+              Cobrado
+            </p>
+            <p className="mt-1.5 truncate whitespace-nowrap font-mono text-[15px] font-semibold tabular-nums text-[var(--c-success)]">
+              {formatCurrency(safeCollected, 'PEN')}
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+export function DebtorDetail({ debtor, exchangeRate, onChanged }: Props) {
   const [rows, setRows] = useState<ReceivableRow[]>([])
+  const [ledgerRows, setLedgerRows] = useState<LedgerRow[]>([])
   const [accounts, setAccounts] = useState<AccountOption[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [rowActionId, setRowActionId] = useState<string | null>(null)
 
   const [query, setQuery] = useState('')
   const [accountFilter, setAccountFilter] = useState('all')
+  const [movementFilter, setMovementFilter] = useState<'all' | 'income' | 'expense'>('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
 
-  const [editingRow, setEditingRow] = useState<ReceivableRow | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
-  const [pendingDelete, setPendingDelete] = useState<ReceivableRow | null>(null)
 
   const loadRows = useCallback(async () => {
     setLoading(true)
     setError(null)
 
     try {
-      const res = await fetch(`/api/receivables?debtor_id=${debtor.id}`, { cache: 'no-store' })
-      const json = await res.json().catch(() => null)
+      const [receivablesRes, ledgerRes] = await Promise.all([
+        fetch(`/api/receivables?debtor_id=${debtor.id}`, { cache: 'no-store' }),
+        fetch(`/api/debtors/${debtor.id}/ledger`, { cache: 'no-store' }),
+      ])
 
-      if (!res.ok || !json?.ok) {
-        throw new Error(getApiErrorMessage(json, 'No se pudieron cargar las cuentas por cobrar'))
+      const [receivablesJson, ledgerJson] = await Promise.all([
+        receivablesRes.json().catch(() => null),
+        ledgerRes.json().catch(() => null),
+      ])
+
+      if (!receivablesRes.ok || !receivablesJson?.ok) {
+        throw new Error(getApiErrorMessage(receivablesJson, 'No se pudieron cargar las cuentas por cobrar'))
       }
 
-      setRows((json.data as ReceivableRow[]) ?? [])
+      if (!ledgerRes.ok || !ledgerJson?.ok) {
+        throw new Error(getApiErrorMessage(ledgerJson, 'No se pudo cargar el historial del deudor'))
+      }
+
+      setRows((receivablesJson.data as ReceivableRow[]) ?? [])
+      setLedgerRows((ledgerJson.data as LedgerRow[]) ?? [])
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al cargar cuentas por cobrar')
+      setError(err instanceof Error ? err.message : 'Error al cargar el detalle del deudor')
     } finally {
       setLoading(false)
     }
@@ -127,404 +272,320 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged }: Props) {
       .catch(() => null)
   }, [loadRows])
 
-  const filtered = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase()
+  const normalizedQuery = query.trim().toLowerCase()
+  const accountOptions = useMemo(
+    () => [
+      { value: 'all', label: 'Todos los portafolios' },
+      ...accounts.map(account => ({
+        value: account.id,
+        label: account.name,
+      })),
+    ],
+    [accounts],
+  )
 
-    return rows.filter(row => {
+  const filteredLedger = useMemo(() => {
+    return ledgerRows.filter(row => {
+      if (movementFilter === 'income' && row.type !== 'INCOME') return false
+      if (movementFilter === 'expense' && row.type !== 'EXPENSE') return false
+      if (accountFilter !== 'all' && row.source_account?.id !== accountFilter) return false
+      if (dateFrom && row.transaction_date < dateFrom) return false
+      if (dateTo && row.transaction_date > dateTo) return false
+
       if (
         normalizedQuery &&
-        !(row.concept ?? '').toLowerCase().includes(normalizedQuery) &&
-        !row.debtor_name.toLowerCase().includes(normalizedQuery)
+        !matchesText(row.description, normalizedQuery) &&
+        !matchesText(row.notes, normalizedQuery) &&
+        !matchesText(row.category?.name, normalizedQuery) &&
+        !matchesText(row.source_account?.name, normalizedQuery)
       ) {
         return false
       }
 
-      if (accountFilter !== 'all' && row.source_account?.id !== accountFilter) return false
-      if (dateFrom && row.issue_date < dateFrom) return false
-      if (dateTo && row.issue_date > dateTo) return false
-
       return true
     })
-  }, [accountFilter, dateFrom, dateTo, query, rows])
+  }, [accountFilter, dateFrom, dateTo, ledgerRows, movementFilter, normalizedQuery])
 
-  const filteredTotal = useMemo(
-    () => filtered.reduce((sum, row) => sum + Number(row.amount), 0),
-    [filtered],
+  const filteredLedgerIncome = useMemo(
+    () => filteredLedger.filter(row => row.type === 'INCOME').reduce((sum, row) => sum + Number(row.amount), 0),
+    [filteredLedger],
   )
-
-  const filteredCollected = useMemo(
-    () => filtered.reduce((sum, row) => sum + Number(row.collected_amount), 0),
-    [filtered],
+  const filteredLedgerExpense = useMemo(
+    () => filteredLedger.filter(row => row.type === 'EXPENSE').reduce((sum, row) => sum + Number(row.amount), 0),
+    [filteredLedger],
   )
-
-  const filteredPending = Math.max(0, filteredTotal - filteredCollected)
-  const overdueCount = useMemo(() => filtered.filter(isOverdue).length, [filtered])
-  const accountOptions = useMemo(
-    () => [{ value: 'all', label: 'Portafolio' }, ...accounts.map(account => ({
-      value: account.id,
-      label: account.name,
-    }))],
-    [accounts],
+  const overdueCount = useMemo(
+    () => rows.filter(isOverdue).length,
+    [rows],
   )
+  const openAccountsCount = rows.filter(row => row.status !== 'COLLECTED').length
+  const filteredLedgerBalance = filteredLedgerExpense - filteredLedgerIncome
 
   const syncParent = useCallback(async () => {
     if (!onChanged) return
     await onChanged()
   }, [onChanged])
 
-  const handleDelete = useCallback(async () => {
-    if (!pendingDelete) return
-
-    setRowActionId(pendingDelete.id)
-
-    try {
-      const res = await fetch(`/api/receivables/${pendingDelete.id}`, { method: 'DELETE' })
-
-      if (!res.ok && res.status !== 204) {
-        const json = await res.json().catch(() => null)
-        throw new Error(getApiErrorMessage(json, 'No se pudo eliminar la cuenta por cobrar'))
-      }
-
-      toast.success('Cuenta por cobrar eliminada', undefined, { persist: false })
-      setPendingDelete(null)
-      await loadRows()
-      await syncParent()
-    } catch (err) {
-      toast.error('Error', err instanceof Error ? err.message : 'No se pudo eliminar la cuenta por cobrar')
-    } finally {
-      setRowActionId(null)
-    }
-  }, [loadRows, pendingDelete, syncParent, toast])
-
-  const handleMarkCollected = useCallback(async (row: ReceivableRow) => {
-    setRowActionId(row.id)
-
-    try {
-      const res = await fetch(`/api/receivables/${row.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: 'COLLECTED',
-          collected_amount: row.amount,
-          collected_date: new Date().toISOString().slice(0, 10),
-        }),
-      })
-      const json = await res.json().catch(() => null)
-
-      if (!res.ok || !json?.ok) {
-        throw new Error(getApiErrorMessage(json, 'No se pudo actualizar la cuenta por cobrar'))
-      }
-
-      toast.success('Cuenta marcada como cobrada', undefined, { persist: false })
-      await loadRows()
-      await syncParent()
-    } catch (err) {
-      toast.error('Error', err instanceof Error ? err.message : 'No se pudo actualizar la cuenta por cobrar')
-    } finally {
-      setRowActionId(null)
-    }
-  }, [loadRows, syncParent, toast])
-
   const handleFormSuccess = useCallback(async () => {
-    setEditingRow(null)
     setCreateOpen(false)
     await loadRows()
     await syncParent()
   }, [loadRows, syncParent])
 
+  const clearFilters = useCallback(() => {
+    setQuery('')
+    setAccountFilter('all')
+    setMovementFilter('all')
+    setDateFrom('')
+    setDateTo('')
+  }, [])
+
   return (
-    <div className="space-y-4">
-      <section className="rounded-[14px] border border-[var(--c-border)] bg-[var(--c-surface)] p-4">
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="grid h-full min-h-0 gap-4 overflow-hidden xl:grid-cols-[388px_minmax(0,1fr)] 2xl:grid-cols-[404px_minmax(0,1fr)]">
+      <aside className="min-h-0 overflow-hidden">
+        <section className="flex h-full flex-col rounded-[24px] border border-[var(--c-border)] bg-[linear-gradient(180deg,var(--c-surface),var(--c-surface-2))] px-4 py-3.5">
+          <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-                Resumen de cobranza
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+                Detalle del deudor
               </p>
-              <p className="mt-1 text-sm leading-6 text-[var(--c-text-muted)]">
-                {debtor.relationship?.trim() || 'Sin relacion registrada'}.
-                {' '}
-                {debtor.count_pending > 0
-                  ? `${debtor.count_pending} cuenta${debtor.count_pending === 1 ? '' : 's'} pendiente${debtor.count_pending === 1 ? '' : 's'}.`
-                  : 'Todas las cuentas estan liquidadas.'}
-              </p>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <StatusBadge tone={debtor.all_collected ? 'success' : 'warning'}>
-                  {debtor.all_collected ? 'Cobranza cerrada' : 'Cobranza abierta'}
-                </StatusBadge>
-                <StatusBadge tone={debtor.is_active ? 'primary' : 'muted'} dot={false}>
-                  {debtor.is_active ? 'Deudor activo' : 'Deudor inactivo'}
-                </StatusBadge>
+              <div className="mt-2">
+                <p className="break-words text-[20px] font-semibold tracking-[-0.03em] text-[var(--c-text)]">
+                  {debtor.relationship?.trim() || 'Sin relacion registrada'}
+                </p>
+                <p className="mt-1 text-[13px] text-[var(--c-text-muted)]">
+                  {openAccountsCount} cuenta{openAccountsCount === 1 ? '' : 's'} abierta{openAccountsCount === 1 ? '' : 's'}
+                  {' · '}
+                  {ledgerRows.length} movimiento{ledgerRows.length === 1 ? '' : 's'}
+                </p>
               </div>
             </div>
-
             <Button
               type="button"
               onClick={() => setCreateOpen(true)}
               variant="secondary"
               size="sm"
+              className="shrink-0"
             >
               Nueva cuenta
             </Button>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-3">
-              <AmountCell
-                label="Total prestado"
-                value={formatCurrency(debtor.total_lent, 'PEN')}
-                align="left"
-              />
-            </div>
-            <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-3">
-              <AmountCell
-                label="Cobrado"
-                value={formatCurrency(debtor.total_collected, 'PEN')}
-                tone="success"
-                align="left"
-              />
-            </div>
-            <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-3">
-              <AmountCell
-                label="Por cobrar"
-                value={formatCurrency(debtor.pending_amount, 'PEN')}
-                tone={debtor.all_collected ? 'neutral' : 'warning'}
-                align="left"
-              />
-            </div>
+          <div className="mt-3.5 flex flex-wrap items-center gap-2">
+            <StatusBadge tone={debtor.all_collected ? 'success' : 'warning'}>
+              {debtor.all_collected ? 'Cobranza cerrada' : 'Cobranza abierta'}
+            </StatusBadge>
+            <StatusBadge tone={debtor.is_active ? 'primary' : 'muted'} dot={false}>
+              {debtor.is_active ? 'Deudor activo' : 'Deudor inactivo'}
+            </StatusBadge>
+            {overdueCount > 0 ? (
+              <StatusBadge tone="danger" dot={false}>
+                {overdueCount} vencida{overdueCount === 1 ? '' : 's'}
+              </StatusBadge>
+            ) : null}
           </div>
 
-          <ProgressMetric
-            value={debtor.progress_pct}
-            label="Avance de cobro"
-            valueLabel={`${debtor.progress_pct.toFixed(1)}%`}
-            tone={debtor.all_collected ? 'success' : 'warning'}
-            description={`${debtor.receivables_count} movimiento${debtor.receivables_count === 1 ? '' : 's'} asociado${debtor.receivables_count === 1 ? '' : 's'}.`}
+          <RecoveryVisual
+            total={debtor.total_lent}
+            collected={debtor.total_collected}
+            pending={debtor.pending_amount}
+            className="mt-3.5"
           />
-        </div>
-      </section>
 
-      <section className="rounded-[14px] border border-[var(--c-border)] bg-[var(--c-surface)]">
-        <div className="border-b border-[var(--c-border)] px-4 py-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        </section>
+      </aside>
+
+      <div className="min-h-0 min-w-0 overflow-y-auto pr-1">
+        <div className="space-y-4">
+        <ControlsBar
+          className="rounded-[18px] px-3.5 py-2.5"
+          presets={(
+            <>
+              <StatusBadge tone="muted" dot={false}>
+                Ledger {filteredLedger.length}
+              </StatusBadge>
+              <StatusBadge tone={filteredLedgerBalance > 0 ? 'warning' : 'success'} dot={false}>
+                Saldo {formatSignedCurrency(filteredLedgerBalance, 'PEN')}
+              </StatusBadge>
+            </>
+          )}
+          search={(
+            <DataSearchField
+              value={query}
+              onChange={setQuery}
+              placeholder="Buscar concepto, categoria, nota o portafolio"
+              data-testid="debtor-detail-search"
+            />
+          )}
+          filters={(
+            <FilterBar>
+              <AppSelect
+                value={accountFilter}
+                onChange={setAccountFilter}
+                options={accountOptions}
+                compact
+                searchable={false}
+                className="w-[210px]"
+              />
+              <AppSelect
+                value={movementFilter}
+                onChange={value => setMovementFilter(value as 'all' | 'income' | 'expense')}
+                options={[
+                  { value: 'all', label: 'Todos los movimientos' },
+                  { value: 'expense', label: 'Solo egresos' },
+                  { value: 'income', label: 'Solo ingresos' },
+                ]}
+                compact
+                searchable={false}
+                className="w-[220px]"
+              />
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={event => setDateFrom(event.target.value)}
+                className="field-base h-9 w-[140px]"
+                title="Fecha desde"
+                data-testid="debtor-detail-date-from"
+              />
+              <input
+                type="date"
+                value={dateTo}
+                onChange={event => setDateTo(event.target.value)}
+                className="field-base h-9 w-[140px]"
+                title="Fecha hasta"
+                data-testid="debtor-detail-date-to"
+              />
+            </FilterBar>
+          )}
+          actions={(
+            <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
+              Limpiar filtros
+            </Button>
+          )}
+        />
+
+        {error ? (
+          <div className="rounded-[18px] border border-[rgba(184,74,74,0.22)] bg-[var(--c-danger-soft)] px-4 py-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-[12px] font-medium text-[var(--c-danger)]">{error}</p>
+              <Button type="button" onClick={() => void loadRows()} variant="danger" size="sm">
+                Reintentar
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        <section className="overflow-hidden rounded-[18px] border border-[var(--c-border)] bg-[var(--c-surface)]">
+          <div className="flex flex-col gap-2.5 border-b border-[var(--c-border)] px-3.5 py-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="text-sm font-semibold tracking-[-0.02em] text-[var(--c-text)]">
-                Cuentas por cobrar
+              <p className="text-base font-semibold tracking-[-0.02em] text-[var(--c-text)]">
+                Movimientos del deudor
               </p>
               <p className="mt-1 text-[12px] leading-5 text-[var(--c-text-muted)]">
-                {filtered.length} registro{filtered.length === 1 ? '' : 's'} visibles.
-                {' '}
-                {overdueCount > 0 ? `${overdueCount} vencid${overdueCount === 1 ? 'a' : 'as'}.` : 'Sin vencimientos criticos.'}
+                Una sola vista para leer prestamos entregados y cobros recibidos, con saldo consolidado al cierre.
               </p>
             </div>
-            <StatusBadge tone={filteredPending > 0 ? 'warning' : 'success'} dot={false}>
-              Pendiente {formatCurrency(filteredPending, 'PEN')}
-            </StatusBadge>
-          </div>
-        </div>
-
-        <div className="p-4">
-          <ControlsBar
-            search={(
-              <DataSearchField
-                value={query}
-                onChange={setQuery}
-                placeholder="Buscar concepto o deudor"
-                data-testid="debtor-detail-search"
-              />
-            )}
-            filters={(
-              <FilterBar>
-                <AppSelect
-                  value={accountFilter}
-                  onChange={setAccountFilter}
-                  options={accountOptions}
-                  compact
-                  searchable={false}
-                  className="w-[190px]"
-                />
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={event => setDateFrom(event.target.value)}
-                  className="field-base h-9 w-[150px]"
-                  title="Fecha desde"
-                  data-testid="debtor-detail-date-from"
-                />
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={event => setDateTo(event.target.value)}
-                  className="field-base h-9 w-[150px]"
-                  title="Fecha hasta"
-                  data-testid="debtor-detail-date-to"
-                />
-              </FilterBar>
-            )}
-            actions={(
-              <StatusBadge tone="muted" dot={false}>
-                Cobrado {formatCurrency(filteredCollected, 'PEN')}
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge tone="warning" dot={false}>
+                Egresos {formatCurrency(filteredLedgerExpense, 'PEN')}
               </StatusBadge>
-            )}
-          />
-
-          {error ? (
-            <div className="mt-3 rounded-xl border border-[rgba(184,74,74,0.22)] bg-[var(--c-danger-soft)] px-3 py-2">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-[12px] font-medium text-[var(--c-danger)]">{error}</p>
-                <Button type="button" onClick={() => void loadRows()} variant="danger" size="sm">
-                  Reintentar
-                </Button>
-              </div>
+              <StatusBadge tone="success" dot={false}>
+                Ingresos {formatCurrency(filteredLedgerIncome, 'PEN')}
+              </StatusBadge>
+              <StatusBadge tone={filteredLedgerBalance > 0 ? 'warning' : 'success'} dot={false}>
+                Saldo {formatSignedCurrency(filteredLedgerBalance, 'PEN')}
+              </StatusBadge>
             </div>
-          ) : null}
+          </div>
 
-          <div className="mt-3 space-y-3">
-            {loading ? (
-              <div className="space-y-3">
-                {[0, 1, 2].map(item => (
-                  <div
-                    key={item}
-                    className="rounded-[14px] border border-[var(--c-border)] bg-[var(--c-surface-2)] px-4 py-4"
-                  >
-                    <div className="flex animate-pulse flex-col gap-3">
-                      <div className="h-4 w-32 rounded-full bg-[var(--c-border)]/45" />
-                      <div className="h-3 w-full rounded-full bg-[var(--c-border)]/30" />
-                      <div className="h-3 w-2/3 rounded-full bg-[var(--c-border)]/30" />
-                    </div>
+          {loading ? (
+            <div className="divide-y divide-[var(--c-border)]">
+              {[0, 1, 2, 3].map(item => (
+                <div key={item} className="px-3.5 py-3">
+                  <div className="flex animate-pulse flex-col gap-2">
+                    <div className="h-4 w-36 rounded-full bg-[var(--c-surface-2)]" />
+                    <div className="h-3 w-full rounded-full bg-[var(--c-surface-2)]" />
                   </div>
-                ))}
-              </div>
-            ) : filtered.length === 0 ? (
+                </div>
+              ))}
+            </div>
+          ) : filteredLedger.length === 0 ? (
+            <div className="p-3.5">
               <EmptyState
-                title={query || accountFilter !== 'all' || dateFrom || dateTo
-                  ? 'No encontramos cuentas con esos filtros.'
-                  : 'Este deudor aun no tiene cuentas registradas.'}
-                description={query || accountFilter !== 'all' || dateFrom || dateTo
-                  ? 'Prueba con otro rango, otro portafolio o una busqueda mas amplia.'
-                  : 'Registra una cuenta por cobrar para mantener este seguimiento dentro del mismo ledger.'}
-                action={{
-                  label: query || accountFilter !== 'all' || dateFrom || dateTo
-                    ? 'Limpiar filtros'
-                    : 'Nueva cuenta',
-                  onClick: query || accountFilter !== 'all' || dateFrom || dateTo
-                    ? () => {
-                        setQuery('')
-                        setAccountFilter('all')
-                        setDateFrom('')
-                        setDateTo('')
-                      }
-                    : () => setCreateOpen(true),
-                }}
+                title={query || accountFilter !== 'all' || movementFilter !== 'all' || dateFrom || dateTo
+                  ? 'No encontramos movimientos con esos filtros.'
+                  : 'Este deudor aun no tiene movimientos asociados.'}
+                description={query || accountFilter !== 'all' || movementFilter !== 'all' || dateFrom || dateTo
+                  ? 'Prueba con otro rango, otro tipo de movimiento o una busqueda mas amplia.'
+                  : 'Cuando registres prestamos o cobros, aqui veras el historial completo del deudor.'}
                 compact
               />
-            ) : (
-              filtered.map(row => {
-                const pendingAmount = Math.max(0, row.amount - row.collected_amount)
-                const progress = row.amount > 0 ? (row.collected_amount / row.amount) * 100 : 0
-                const status = resolveStatus(row.status)
-                const overdue = isOverdue(row)
+            </div>
+          ) : (
+            <div>
+              <div className="hidden border-b border-[var(--c-border)] bg-[var(--c-surface-2)] px-3.5 py-2.5 lg:grid lg:grid-cols-[96px_minmax(0,2.35fr)_150px_190px_112px_120px] lg:gap-3">
+                {['Tipo', 'Descripcion', 'Portafolio', 'Categoria', 'Fecha', 'Monto'].map(label => (
+                  <p key={label} className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+                    {label}
+                  </p>
+                ))}
+              </div>
 
-                return (
-                  <article
-                    key={row.id}
-                    className={`rounded-[14px] border px-4 py-4 transition-colors ${
-                      overdue
-                        ? 'border-[rgba(184,74,74,0.24)] bg-[rgba(184,74,74,0.04)]'
-                        : 'border-[var(--c-border)] bg-[var(--c-surface)]'
-                    }`}
-                  >
-                    <div className="flex flex-col gap-4">
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-sm font-semibold text-[var(--c-text)]">
-                              {row.concept?.trim() || 'Cuenta sin descripcion'}
-                            </p>
-                            <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
-                            {overdue ? (
-                              <StatusBadge tone="danger" dot={false}>
-                                Vencida
-                              </StatusBadge>
-                            ) : null}
-                          </div>
-                          <p className="mt-1 text-[12px] leading-5 text-[var(--c-text-muted)]">
-                            {row.source_account?.name || 'Sin portafolio asociado'}
-                            {' · '}
-                            Emitida {formatDate(row.issue_date)}
-                            {row.due_date ? ` · Vence ${formatDate(row.due_date)}` : ' · Sin vencimiento'}
+              <div className="divide-y divide-[var(--c-border)]">
+                {filteredLedger.map(row => {
+                  const meta = resolveLedgerMeta(row)
+                  return (
+                    <article key={row.id} className="px-3.5 py-3">
+                      <div className="grid gap-3 lg:grid-cols-[96px_minmax(0,2.35fr)_150px_190px_112px_120px] lg:items-center lg:gap-3">
+                        <div>
+                          <StatusBadge tone={meta.tone} dot={false}>
+                            {meta.label}
+                          </StatusBadge>
+                          <p className="mt-2 text-[12px] text-[var(--c-text-muted)] lg:hidden">
+                            {meta.detail}
                           </p>
                         </div>
 
-                        <div className="flex items-center gap-1 self-start">
-                          {row.status !== 'COLLECTED' ? (
-                            <ActionIconButton
-                              onClick={() => void handleMarkCollected(row)}
-                              disabled={rowActionId !== null}
-                              icon="use"
-                              label="Marcar cobrada"
-                              variant="success"
-                            />
-                          ) : null}
-                          <ActionIconButton
-                            onClick={() => setEditingRow(row)}
-                            disabled={rowActionId !== null}
-                            icon="edit"
-                            label="Editar cuenta"
-                          />
-                          <ActionIconButton
-                            onClick={() => setPendingDelete(row)}
-                            disabled={rowActionId !== null}
-                            icon="delete"
-                            label="Eliminar cuenta"
-                            variant="danger"
-                          />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-[var(--c-text)]">
+                            {row.description?.trim() || 'Movimiento sin descripcion'}
+                          </p>
+                          <p className="mt-1 truncate text-[12px] leading-5 text-[var(--c-text-muted)]">
+                            {row.notes?.trim() || meta.detail}
+                          </p>
+                        </div>
+
+                        <div className="min-w-0">
+                          <p className="text-[12px] font-medium text-[var(--c-text)]">
+                            {row.source_account?.name || 'Sin portafolio'}
+                          </p>
+                        </div>
+
+                        <div className="min-w-0">
+                          <p className="truncate text-[12px] text-[var(--c-text)]">
+                            {row.category?.name || 'Sin categoria'}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[12px] text-[var(--c-text)]">{formatDate(row.transaction_date)}</p>
+                        </div>
+
+                        <div className="lg:text-right">
+                          <p className={`font-mono text-sm font-semibold tabular-nums ${row.type === 'INCOME' ? 'text-[var(--c-success)]' : 'text-[var(--c-warning)]'}`}>
+                            {meta.signedAmount}
+                          </p>
                         </div>
                       </div>
-
-                      <div className="grid gap-3 sm:grid-cols-3">
-                        <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-3">
-                          <AmountCell
-                            label="Monto"
-                            value={formatCurrency(row.amount, row.currency as 'PEN' | 'USD')}
-                            align="left"
-                          />
-                        </div>
-                        <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-3">
-                          <AmountCell
-                            label="Cobrado"
-                            value={formatCurrency(row.collected_amount, row.currency as 'PEN' | 'USD')}
-                            tone="success"
-                            align="left"
-                          />
-                        </div>
-                        <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-3">
-                          <AmountCell
-                            label="Pendiente"
-                            value={formatCurrency(pendingAmount, row.currency as 'PEN' | 'USD')}
-                            tone={pendingAmount > 0 ? 'warning' : 'neutral'}
-                            align="left"
-                          />
-                        </div>
-                      </div>
-
-                      <ProgressMetric
-                        value={progress}
-                        label="Progreso"
-                        valueLabel={`${progress.toFixed(1)}%`}
-                        tone={row.status === 'COLLECTED' ? 'success' : row.status === 'PARTIAL' ? 'info' : 'warning'}
-                        description={overdue
-                          ? 'Requiere seguimiento inmediato por vencimiento.'
-                          : row.notes?.trim() || 'Sin observaciones adicionales.'}
-                      />
-                    </div>
-                  </article>
-                )
-              })
-            )}
-          </div>
+                    </article>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </section>
         </div>
-      </section>
+      </div>
 
       <RecordModal
         open={createOpen}
@@ -542,35 +603,6 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged }: Props) {
           onCancel={() => setCreateOpen(false)}
         />
       </RecordModal>
-
-      <RecordModal
-        open={!!editingRow}
-        onClose={() => setEditingRow(null)}
-        eyebrow="Cuentas por cobrar"
-        title="Editar cuenta por cobrar"
-        subtitle="Actualiza importes, fechas y estado sin salir del detalle."
-        size="lg"
-      >
-        <ReceivableForm
-          receivable={editingRow ?? undefined}
-          debtors={[debtor]}
-          exchangeRate={exchangeRate}
-          defaultDebtorId={debtor.id}
-          onSuccess={handleFormSuccess}
-          onCancel={() => setEditingRow(null)}
-        />
-      </RecordModal>
-
-      <ConfirmDialog
-        open={!!pendingDelete}
-        title="Eliminar cuenta por cobrar"
-        message={`Esta accion eliminara "${pendingDelete?.concept?.trim() || 'esta cuenta'}" del ledger del deudor.`}
-        onConfirm={() => void handleDelete()}
-        onCancel={() => setPendingDelete(null)}
-        loading={rowActionId !== null}
-        danger
-        confirmLabel="Eliminar"
-      />
     </div>
   )
 }

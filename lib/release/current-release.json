@@ -1,15 +1,15 @@
 {
-  "version": "V1.0.0.10",
+  "version": "V1.0.0.11",
   "series": "1.0.0",
-  "build": 10,
-  "title": "Actualización en Movimientos, Por pagar, Por cobrar",
-  "summary": "Esta versión trae cambios en Movimientos, Por pagar, Por cobrar para que tus tareas diarias dentro de FinTrack sean más claras, estables y fáciles de seguir.",
+  "build": 11,
+  "title": "Actualización en Presupuestos, Por pagar, Por cobrar",
+  "summary": "Esta versión trae cambios en Presupuestos, Por pagar, Por cobrar para que tus tareas diarias dentro de FinTrack sean más claras, estables y fáciles de seguir.",
   "highlights": [
     {
-      "module": "Movimientos",
+      "module": "Presupuestos",
       "type": "improve",
-      "title": "Registro de movimientos más consistente",
-      "detail": "Ajustamos el flujo de Movimientos para que registrar operaciones y revisar información sea más claro en el día a día."
+      "title": "Control de presupuestos más fácil de seguir",
+      "detail": "Refinamos el módulo de Presupuestos para que entiendas mejor tus límites, avance y acciones disponibles."
     },
     {
       "module": "Por pagar",
@@ -24,5 +24,5 @@
       "detail": "Mejoramos el módulo Por cobrar para que revisar saldos pendientes y su origen sea más simple y estable."
     }
   ],
-  "releasedAt": "2026-06-15T22:12:35.287Z"
+  "releasedAt": "2026-06-17T21:55:54.289Z"
 }

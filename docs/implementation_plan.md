@@ -1,255 +1,328 @@
-# Plan de Implementación: FinTrack PRD v3 — Reconstrucción Total
+# DASHBOARD REDESIGN PROPOSAL — FinTrack
 
-## Visión General
-
-El usuario quiere que la app se reconstruya completamente según el PRD v3. Se trata de mantener la infraestructura (Next.js, Supabase, Tailwind, middleware, auth) y reconstruir TODOS los módulos funcionales desde cero según las especificaciones del documento.
-
----
-
-## Auditoría: PRD v3 vs. Estado Actual
-
-### Módulos del PRD v3 (11 módulos)
-
-| # | Módulo PRD | Ruta actual | Estado actual | Acción |
-|---|-----------|-------------|---------------|--------|
-| 1 | Dashboard | `/dashboard` | Funcional parcial | **Reconstruir** - Nuevos widgets, panel derecho nuevo |
-| 2 | Portafolio | `/portfolio` | Parcial (PortfolioManager) | **Reconstruir** - Filtros, vista lista/tarjetas |
-| 3 | Transacciones | `/transactions` | Funcional parcial | **Reconstruir** - 6 tipos de operación, nuevos campos |
-| 4 | Créditos | `/credits` | Parcial | **Reconstruir** - Tarjeta/Bancario, ciclos facturación, cronograma |
-| 5 | Activos | `/assets` | Básico | **Reconstruir** - Nuevo flujo con tipos de activo |
-| 6 | Presupuestos | `/budgets` | Básico | **Reconstruir** - Períodos, tracking de ejecución |
-| 7 | Cuentas por Cobrar | `/receivables` | Básico | **Reconstruir** - Deudores, barra progreso |
-| 8 | Cuentas por Pagar | `/payables` | Básico | **Reconstruir** - Acreedores, barra progreso |
-| 9 | Alertas | `/alerts` | Básico | **Reconstruir** - 3 tipos (Crítica/Operativa/Sugerencia) |
-| 10 | Administración | `/admin` | Parcial | **Reconstruir** - 4 secciones con CRUD completo |
-| 11 | Trans. Recurrentes | *(no existe)* | No existe | **Crear desde cero** |
-
-### Lo que NO está en PRD v3 (eliminar)
-
-| Elemento | Ubicación | Acción |
-|----------|-----------|--------|
-| Settings/Configuración | `/settings`, `components/settings/*` | **Mantener** — confirmado por usuario |
-| Design Review | `app/design-review/` | **Eliminar** |
-| Landing Page | `app/LandingPage.tsx` | **Mantener** (entrada pública) |
-| Mockups | `components/mockups/` | **Eliminar** |
-| Nav item "Configuración" | `lib/constants/nav.ts` | **Mantener** |
-| Módulo loans separado | `modules/loans/` | **Consolidar en Créditos** |
-| Email templates | `supabase/email-templates/` | **Mantener** |
-| NotificationsPanel | `components/settings/` | **Mover a Alertas** |
+> **Fase 2** — Propuesta de rediseño basada en la auditoría aprobada.
+> Define arquitectura de información, jerarquía visual, selección de gráficos, y comportamiento responsive.
 
 ---
 
-## Fases de Implementación
+## Filosofía de diseño
 
-### Fase 0: Limpieza y Preparación
+### Principio rector
+
+> **El dashboard financiero debe responder tres preguntas en orden:**
+> 1. **¿Hay algo que requiere mi acción ahora?** (alertas, vencimientos, presupuestos excedidos)
+> 2. **¿Cómo está mi dinero hoy?** (patrimonio, balance, liquidez)
+> 3. **¿Cómo ha evolucionado?** (tendencias, distribución, salud financiera)
+
+### Referencia estética
+
+- **Linear** para densidad informativa y sidebar persistente (ya implementado).
+- **Mercury** para jerarquía financiera: tipografía tabular, tonos sobrios, datos que respiran.
+- Sistema canónico: **`--ft-*` tokens exclusivamente**. Los aliases `--c-*` se mantienen por compatibilidad pero no se usan en código nuevo.
+
+### Reglas inamovibles
+
+1. No se modifica lógica de negocio de otros módulos.
+2. El dashboard solo consume datos existentes vía endpoints actuales.
+3. Moneda base: PEN con equivalencia USD.
+4. Se reutiliza `PremiumCard` como contenedor visual.
+5. Se reutilizan primitivos de `finance/primitives.tsx` y `dashboard/primitives.tsx`.
+
+---
+
+## User Review Required
+
 > [!IMPORTANT]
-> Eliminar todo lo que no está en PRD, agregar la ruta de Transacciones Recurrentes
+> **Eliminación de 3 widgets redundantes**: Se propone eliminar `MetricCards`, `ModulesMiniCards`, y `DailyBalanceDeltaChart` del layout. Sus datos se absorben en otros widgets mejorados. ¿Estás de acuerdo o prefieres conservar alguno?
 
-**Tareas:**
-- [ ] Eliminar `app/design-review/`
-- [ ] Eliminar `components/mockups/`
-- [ ] **Mantener** `app/(dashboard)/settings/` y `components/settings/` (confirmado por usuario)
-- [ ] Actualizar `nav.ts`: agregar "recurring" (Transacciones Recurrentes), mantener "settings"
-- [ ] Actualizar `middleware.ts`: quitar `isDesignReviewRoute`
-- [ ] Crear ruta `app/(dashboard)/recurring/page.tsx` (placeholder)
-- [ ] Limpiar `Sidebar.tsx` y `LayoutIcons.tsx` si tienen referencia a settings/design-review
-
-### Fase 1: Administración (Módulo 10)
-> Fundación — todas las entidades maestras se crean aquí
-
-**Tareas:**
-- [ ] Reconstruir `AdminWorkspace.tsx` con 4 tabs: Entidad Bancaria, Moneda, Categoría, Tipo de Activo
-- [ ] Reconstruir `BankEntitiesManager.tsx` según PRD (nombre, nombre corto, país, color, icono)
-- [ ] Reconstruir `CurrenciesManager.tsx` según PRD (país + moneda del catálogo)
-- [ ] Reconstruir `CategoriesManager.tsx` según PRD (nombre, tipo ingreso/egreso, color, icono)
-- [ ] Reconstruir `AssetTypesManager.tsx` según PRD (defaults: Tecnología, Vehículo, Inmueble, Otro)
-- [ ] Cada entidad: Editar, Eliminar (con restricción), Desactivar/Activar
-- [ ] Server actions para CRUD de cada entidad
-
-### Fase 2: Portafolio (Módulo 2)
-> Depende de: Administración (entidad bancaria, moneda)
-
-**Tareas:**
-- [ ] Reconstruir `PortfolioManager.tsx`:
-  - Resumen superior: cuentas activas/inactivas
-  - Botón crear portafolio → modal con campos del PRD
-  - Barra filtros (buscar, entidad bancaria, tipo, moneda, estado)
-  - Iconos vista lista / vista tarjetas
-  - Lista/tarjetas con: nombre, icono, entidad, tipo, moneda, saldo, estado
-  - Acciones: editar, eliminar (sin transacciones), desactivar/activar
-- [ ] Reconstruir `portfolio.repository.ts`
-- [ ] Server actions para portafolio CRUD
-
-### Fase 3: Transacciones (Módulo 3)
-> Depende de: Portafolio, Administración, Presupuestos (parcial), Por Cobrar, Por Pagar
-
-**Tareas:**
-- [ ] Reconstruir `TransactionsWorkspace.tsx`:
-  - Resumen superior: total egresos/ingresos/transferencias
-  - 6 tipos de operación: Ingreso, Egreso, Transferencia, Compra de Activo, Cuentas por Pagar, Cuentas por Cobrar
-  - Cada tipo con sus campos específicos según PRD
-  - Botón "guardar como recurrente" en cada formulario
-  - Adjuntar archivos
-- [ ] Reconstruir `TransactionTable.tsx`:
-  - Filtros: buscar, tipo, portafolio, categoría, fecha desde/hasta
-  - Iconos color por tipo (rojo/verde/azul)
-  - Acciones: editar, eliminar
-- [ ] Reconstruir formularios de transacción
-- [ ] Reconstruir server actions y repositorio
-
-### Fase 4: Créditos (Módulo 4)
-> Depende de: Portafolio, Administración
-
-**Tareas:**
-- [ ] Reconstruir `CreditsManager.tsx`:
-  - Dos tipos: Tarjeta de Crédito y Crédito Bancario
-  - **Tarjeta**: nombre, portafolio TC, entidad auto, línea, consumo, ciclos facturación
-  - **Bancario**: nombre, entidad, cuenta destino, moneda auto, fechas, cuotas, cronograma
-  - Filtros: buscar, tipo, estado, entidad
-  - Vista lista / tarjetas
-  - Barra progreso por crédito
-  - Acciones: editar, eliminar (sin transacciones), desactivar/activar
-  - Panel lateral de alertas de vencimientos
-- [ ] Consolidar módulo `loans/` dentro de créditos
-- [ ] Server actions para créditos CRUD + ciclos + cronograma
-
-### Fase 5: Activos (Módulo 5) ✅
-> Depende de: Portafolio, Administración
-
-**Tareas:**
-- [x] Reconstruir página de activos:
-  - Resumen: activos activos y dados de baja
-  - Crear activo = crear egreso + bien
-  - Filtros: buscar, tipo activo, fecha desde/hasta
-  - Vista lista / tarjetas por tipo
-  - Acciones: editar, eliminar (con transacción), desactivar/activar
-- [x] Reconstruir `asset.repository.ts`
-- [x] Server actions (`/api/assets`, `/api/assets/[id]`, `/api/asset-types`)
-
-### Fase 6: Presupuestos (Módulo 6) ✅
-> Depende de: Administración (categorías)
-
-**Tareas:**
-- [x] Reconstruir `BudgetsManager.tsx`:
-  - Crear: nombre, categoría, periodicidad, monto, moneda, fecha inicio, fecha fin auto
-  - Períodos múltiples con continuidad automática
-  - Ver transacciones por período
-  - Filtros: buscar, moneda, categoría, estado
-  - Vista lista / tarjetas
-  - Acciones: editar, eliminar (sin transacciones), desactivar/activar
-- [x] Server actions (`/api/budgets`, `/api/budgets/[id]`)
-
-### Fase 7: Cuentas por Cobrar (Módulo 7)
-> Depende de: Portafolio
-
-**Tareas:**
-- [ ] Reconstruir página:
-  - Resumen: cobradas y pendientes
-  - Crear registro = egreso (préstamo a deudor)
-  - Crear deudor: nombre, deuda inicial, relación
-  - Filtros: estado, ordenar por monto
-  - Vista lista / tarjetas
-  - Click en deudor → detalle con transacciones
-  - Barra progreso por deudor
-- [ ] Server actions para deudores y cuentas por cobrar
-
-### Fase 8: Cuentas por Pagar (Módulo 8)
-> Depende de: Portafolio
-
-**Tareas:**
-- [ ] Reconstruir página (espejo de Por Cobrar):
-  - Resumen: pagadas y pendientes
-  - Crear registro = ingreso (pago a acreedor)
-  - Crear acreedor: nombre, deuda inicial, relación
-  - Filtros: estado, ordenar por monto
-  - Vista lista / tarjetas
-  - Click en acreedor → detalle con transacciones
-  - Barra progreso por acreedor
-- [ ] Server actions para acreedores y cuentas por pagar
-
-### Fase 9: Alertas (Módulo 9)
-> Depende de: Todos los módulos
-
-**Tareas:**
-- [ ] Reconstruir `AlertsCenter.tsx`:
-  - Resumen: leídas/pendientes por tipo (Críticas, Operativas, Sugerencias)
-  - Filtros: tipo, estado, módulo
-  - Lista ordenada por fecha (recientes primero)
-  - Cada alerta: tipo con color, módulo, descripción, fecha, estado
-  - Botón acción directa → navegar al registro origen
-  - Generación automática según reglas del PRD
-
-### Fase 10: Transacciones Recurrentes (Módulo 11) — NUEVO
-> Depende de: Transacciones
-
-**Tareas:**
-- [ ] Crear módulo completo desde cero:
-  - Resumen del total de recurrentes
-  - Solo se crean desde Transacciones (no hay botón crear aquí)
-  - Filtros: buscar, tipo operación, portafolio
-  - Lista con: nombre, tipo (color), portafolio, monto, moneda
-  - Acciones: Usar (pre-llena formulario), Editar, Eliminar
-- [ ] Server actions para recurrentes CRUD
-
-### Fase 11: Dashboard (Módulo 1)
-> Depende de: Todos los módulos (datos consolidados)
-
-**Tareas:**
-- [ ] Reconstruir `DashboardClient.tsx` con todas las secciones del PRD:
-  - **Panel central**: Balance consolidado + resultado mensual
-  - **Money Flow 6 meses**: Gráfico línea con toggle acumulado
-  - **Cards indicadores**: Ingresos/Egresos/Alertas del mes
-  - **Saldos por día**: Gráfico con período seleccionable (5D/1M/3M/6M/1A)
-  - **Métricas período**: 4 tarjetas (patrimonio, ingresos, egresos, balance)
-  - **Resumen módulos**: 4 mini-tarjetas + expansión
-  - **Panel derecho**: Saldos bancarios, Por Cobrar vs Pagar, Egresos por categoría, Vencimientos próximos, Presupuestos del mes, Créditos uso rápido
-- [ ] Reconstruir `dashboard.service.ts`
-- [ ] Server actions para dashboard
-
----
-
-## Elementos Transversales (mantener/actualizar)
-
-| Elemento | Acción |
-|----------|--------|
-| Auth (login/register) | **Mantener** |
-| Middleware | **Mantener** (quitar design-review) |
-| Supabase client/server | **Mantener** |
-| Tailwind + design tokens | **Mantener** |
-| Toast system | **Mantener** |
-| Providers | **Mantener** |
-| Theme toggle | **Mantener** |
-| UI primitives (modals, selects, etc.) | **Mantener y extender** |
-| Database schema (v2 migration) | **Mantener** — tablas ya creadas |
-| Types (database.types.ts) | **Mantener** |
-| File upload utilities | **Mantener** |
-| Currency formatting | **Mantener** |
-
----
-
-## Orden de Ejecución Recomendado
-
-```mermaid
-graph TD
-    A[Fase 0: Limpieza] --> B[Fase 1: Administración]
-    B --> C[Fase 2: Portafolio]
-    B --> F[Fase 6: Presupuestos]
-    C --> D[Fase 3: Transacciones]
-    C --> E[Fase 4: Créditos]
-    C --> G[Fase 5: Activos]
-    C --> H[Fase 7: Por Cobrar]
-    C --> I[Fase 8: Por Pagar]
-    D --> J[Fase 10: Recurrentes]
-    E --> K[Fase 9: Alertas]
-    F --> K
-    G --> K
-    H --> K
-    I --> K
-    K --> L[Fase 11: Dashboard]
-```
+> [!IMPORTANT]
+> **Integración de AlertsWidget**: Se propone activar el widget existente en `widgets/AlertsWidget.tsx` (actualmente muerto) como banner superior del dashboard. Esto requiere que los datos de alertas (cuotas vencidas, por cobrar/pagar urgentes) estén disponibles en la carga del workspace. ¿Quieres que use el endpoint `/api/dashboard/sidebar` existente o prefiero crear uno dedicado?
 
 > [!WARNING]
-> Este es un proyecto de gran escala. Cada fase incluye: database queries, server actions, repositorios, componentes UI, y estilos. Se recomienda implementar fase por fase, validando cada módulo antes de avanzar.
+> **FlujoPendienteWidget se reubica**: Pasa de posición premium (lado derecho del hero) a la zona de módulos. Es un cambio significativo para usuarios que usan activamente por cobrar/por pagar.
+
+---
+
+## Open Questions
 
 > [!IMPORTANT]
-> ¿Quieres que empiece con **Fase 0 (Limpieza)** + **Fase 1 (Administración)** ahora?
+> **¿Proyección de flujo futuro?** La auditoría identificó que el dashboard no proyecta flujo forward. ¿Quieres que incluya en esta fase un widget de "Próximos 30 días" que combine recurrentes + por cobrar + por pagar + cuotas de crédito, o lo dejamos como fase posterior?
+
+> [!IMPORTANT]
+> **¿Integración de recurrentes?** El módulo `/recurring` existe pero el dashboard no lo consume. ¿Incluyo un indicador de "gastos recurrentes programados este mes" dentro del Command Strip, o lo dejamos para después?
+
+---
+
+## Proposed Changes
+
+### Arquitectura de información: 4 zonas semánticas
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  ZONA 0 · ALERT BANNER (condicional)                        │
+│  Solo aparece si hay alertas críticas (cuotas vencidas,      │
+│  presupuestos excedidos >100%, vencimientos hoy/mañana)      │
+└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  ZONA 1 · COMMAND STRIP                                      │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐│
+│  │Patrimonio│ │Ingresos  │ │Egresos   │ │Balance del Mes   ││
+│  │Neto      │ │del Mes   │ │del Mes   │ │(con sparkline)   ││
+│  │S/ 45,230 │ │S/ 12,800 │ │S/ 8,340  │ │S/ +4,460         ││
+│  │Eq.$12,061│ │↑12% vs   │ │↓3% vs    │ │[───▁▂▃▅▇]       ││
+│  └──────────┘ └──────────┘ └──────────┘ └──────────────────┘│
+└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────┬────────────────────────────┐
+│  ZONA 2 · OPERATIONAL CORE    │  ZONA 2 · RIGHT PANEL     │
+│  ┌────────────────────────────┐│  ┌────────────────────────┐│
+│  │  MoneyFlowChart            ││  │  FinancialHealthScore  ││
+│  │  (acumulado/mensual 6m)    ││  │  (radial + 4 factores) ││
+│  │  [toggle + tooltip]        ││  │  Score: 72/100          ││
+│  └────────────────────────────┘│  └────────────────────────┘│
+│  ┌────────────────────────────┐│  ┌────────────────────────┐│
+│  │  SaldosDiaChart            ││  │  VencimientosWidget    ││
+│  │  (selector 5D-1A)          ││  │  (timeline con urgencia)││
+│  │  + promedio + gradiente    ││  │  Hoy: 2 · 7d: 3 · 30d:1││
+│  └────────────────────────────┘│  └────────────────────────┘│
+├────────────────────────────────┴────────────────────────────┤
+│  ZONA 3 · ANALYSIS LAYER (3 columnas iguales)               │
+│  ┌─────────────┐ ┌──────────────┐ ┌────────────────────────┐│
+│  │EgresosCat   │ │TopCategorías │ │SavingsRateTrend        ││
+│  │(donut +     │ │(ranking top5 │ │(área 6m + ref 20%)     ││
+│  │ barras)     │ │ con barras)  │ │                        ││
+│  └─────────────┘ └──────────────┘ └────────────────────────┘│
+├─────────────────────────────────────────────────────────────┤
+│  ZONA 4 · MODULE SNAPSHOTS (3 columnas iguales)             │
+│  ┌─────────────┐ ┌──────────────┐ ┌────────────────────────┐│
+│  │Presupuestos │ │Créditos      │ │Saldos Bancarios        ││
+│  │del Mes      │ │Uso Rápido    │ │(distribución portafolio)││
+│  │+ progreso   │ │+ utilización │ │+ total consolidado      ││
+│  └─────────────┘ └──────────────┘ └────────────────────────┘│
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Zona 0 — Alert Banner (condicional)
+
+#### [MODIFY] [DashboardWorkspace.tsx](file:///Users/eliasgustavopacopauccara/Documents/Fintrack_v1/fintrack/components/dashboard/DashboardWorkspace.tsx)
+
+**Cambio**: Integrar `AlertsWidget` del directorio `widgets/` como banner condicional al top del dashboard.
+
+**Lógica de visibilidad**:
+- Se muestra SOLO si existen alertas con urgencia `OVERDUE` o `DUE_SOON`.
+- Si no hay alertas críticas, la zona no se renderiza (0px de alto).
+- Datos provienen de los endpoints existentes (`sidebar.vencimientos_proximos`, `summary.alertas_pendientes`).
+
+**Diseño**:
+- Banner horizontal full-width con borde `--ft-danger` sutil.
+- Fondo: `color-mix(in srgb, var(--ft-danger) 6%, var(--ft-surface))`.
+- Lista colapsable: muestra hasta 3 items con "Ver todo" que expande.
+- Cada item: tipo + nombre + monto + badge de urgencia + link.
+- Animación de entrada: `translateY(-8px) → 0` con `--ease-out`.
+
+---
+
+### Zona 1 — Command Strip
+
+#### [MODIFY] [DashboardWorkspace.tsx](file:///Users/eliasgustavopacopauccara/Documents/Fintrack_v1/fintrack/components/dashboard/DashboardWorkspace.tsx)
+
+**Cambio**: Reemplazar el `DashboardHeader` hero card actual por un strip de 4 KPI cards compactas.
+
+**Razón**: El hero actual intenta mostrar todo (balance, resultado, sparkline, ingresos, egresos, alertas) en un solo componente denso. El strip distribuye la información en cards independientes con jerarquía clara.
+
+#### [MODIFY] [DashboardHeader.tsx](file:///Users/eliasgustavopacopauccara/Documents/Fintrack_v1/fintrack/components/dashboard/DashboardHeader.tsx)
+
+**Cambio**: Refactorizar de hero card monolítico a 4 `CommandStripCard` independientes.
+
+**Cada card contiene**:
+| Card | Dato principal | Dato secundario | Indicador visual |
+|------|---------------|-----------------|------------------|
+| **Patrimonio Neto** | `S/ 45,230.00` | `Eq. USD 12,061` | Dot de tono (verde si positivo, rojo si negativo) |
+| **Ingresos del Mes** | `S/ 12,800.00` | `↑12% vs mes anterior` | Mini trend arrow con porcentaje |
+| **Egresos del Mes** | `S/ 8,340.00` | `↓3% vs mes anterior` | Mini trend arrow con porcentaje |
+| **Balance del Mes** | `S/ +4,460.00` | Sparkline inline de 6 meses | Micro area chart (la sparkline actual del hero, relocada aquí) |
+
+**Diseño de cada card**:
+- `PremiumCard` con `p-4`.
+- Label: `text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--ft-text-subtle)]`.
+- Valor: `text-[1.35rem] font-semibold tabular-nums tracking-[-0.03em]`.
+- Secundario: `text-[11px] text-[var(--ft-text-muted)]`.
+- Grid: `grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4`.
+
+**Elimina**:
+- ❌ `MetricCards.tsx` — datos absorbidos aquí.
+- ❌ `ModulesMiniCards.tsx` — datos redundantes con Zona 4.
+
+---
+
+### Zona 2 — Operational Core
+
+#### [MODIFY] [DashboardWorkspace.tsx](file:///Users/eliasgustavopacopauccara/Documents/Fintrack_v1/fintrack/components/dashboard/DashboardWorkspace.tsx)
+
+**Cambio**: Layout 2 columnas (7/5 en 12-col grid) con los 4 widgets operativos.
+
+**Columna izquierda (7col)**:
+1. **MoneyFlowChart** — se mantiene sin cambios. Toggle acumulado/mensual funciona bien.
+2. **SaldosDiaChart** — se mantiene con selector de período. Se ajusta el bajo contraste del gradiente en light mode (stopOpacity de 0.26 → 0.18 para suavizar).
+
+**Columna derecha (5col)**:
+1. **FinancialHealthScore** — se mantiene. Se agrega contexto: "↑3 pts vs mes anterior" al lado del score radial.
+2. **VencimientosWidget** — se mantiene. Ya tiene excelente diseño con timeline de urgencia.
+
+**Elimina de esta zona**:
+- ❌ `FlujoPendienteWidget` — se absorbe en el `AlertsWidget` de Zona 0 (las contrapartes top 3 están disponibles en sidebar data).
+
+#### [MODIFY] [MoneyFlowChart.tsx](file:///Users/eliasgustavopacopauccara/Documents/Fintrack_v1/fintrack/components/dashboard/MoneyFlowChart.tsx)
+
+- Cambio menor: migrar `--c-*` tokens a `--ft-*` equivalentes.
+- Sin cambios funcionales.
+
+#### [MODIFY] [SaldosDiaChart.tsx](file:///Users/eliasgustavopacopauccara/Documents/Fintrack_v1/fintrack/components/dashboard/SaldosDiaChart.tsx)
+
+- Reducir `stopOpacity` del gradiente de 0.26 → 0.18.
+- Migrar tokens `--c-*` → `--ft-*`.
+
+#### [MODIFY] [FinancialHealthScore.tsx](file:///Users/eliasgustavopacopauccara/Documents/Fintrack_v1/fintrack/components/dashboard/FinancialHealthScore.tsx)
+
+- Agregar indicador delta vs mes anterior al lado del score.
+- Migrar tokens `--c-*` → `--ft-*`.
+
+---
+
+### Zona 3 — Analysis Layer
+
+#### [MODIFY] [DashboardWorkspace.tsx](file:///Users/eliasgustavopacopauccara/Documents/Fintrack_v1/fintrack/components/dashboard/DashboardWorkspace.tsx)
+
+**Cambio**: 3 columnas iguales (`grid-cols-1 md:grid-cols-3 gap-3`).
+
+1. **EgresosCategoriasWidget** — se mantiene con donut + barras. Se agrega fallback para 1 categoría: mostrar barra horizontal en vez de donut cuando `categories.length < 3`.
+2. **TopCategoriesWidget** — se mantiene. Ranking top 5 con barras de concentración.
+3. **SavingsRateTrendChart** — se mantiene. Área de tendencia con referencia a 20%.
+
+**Elimina**:
+- ❌ `DailyBalanceDeltaChart` — las barras de variación diaria son redundantes con `SaldosDiaChart` (mismo endpoint, mismos datos, representación diferente). El dato de "movimiento más intenso" se puede integrar como tooltip o nota al pie en `SaldosDiaChart`.
+
+#### [MODIFY] [EgresosCategoriasWidget.tsx](file:///Users/eliasgustavopacopauccara/Documents/Fintrack_v1/fintrack/components/dashboard/EgresosCategoriasWidget.tsx)
+
+- Fallback para `categories.length < 3`: renderizar barras horizontales en vez de donut.
+- Migrar tokens restantes a `--ft-*`.
+
+---
+
+### Zona 4 — Module Snapshots
+
+#### [MODIFY] [DashboardWorkspace.tsx](file:///Users/eliasgustavopacopauccara/Documents/Fintrack_v1/fintrack/components/dashboard/DashboardWorkspace.tsx)
+
+**Cambio**: 3 columnas iguales (`grid-cols-1 md:grid-cols-3 gap-3`) para snapshots de módulos.
+
+1. **PresupuestosMesWidget** — se mantiene. Definido vs ejecutado + progreso.
+2. **CreditosUsoRapidoWidget** — se mantiene. Cupo total/usado + utilización.
+3. **SaldosBancariosWidget** — se mantiene. Distribución por portafolio.
+
+**Mejoras transversales en Zona 4**:
+- Cada widget tiene botón "Ir a [módulo]" ya implementado.
+- Agregar empty states con CTA:
+  - Presupuestos vacío → "Crear primer presupuesto" → `/budgets`
+  - Créditos vacío → "Registrar línea de crédito" → `/credits`
+  - Saldos vacío → "Agregar portafolio" → `/portfolio`
+
+---
+
+### Cambios transversales
+
+#### [MODIFY] [chartTheme.ts](file:///Users/eliasgustavopacopauccara/Documents/Fintrack_v1/fintrack/components/dashboard/chartTheme.ts)
+
+- Migrar todas las referencias de `--c-*` a `--ft-*` equivalentes.
+- No cambia funcionalidad porque `--c-primary: var(--ft-primary)`, pero estandariza.
+
+#### [MODIFY] [primitives.tsx](file:///Users/eliasgustavopacopauccara/Documents/Fintrack_v1/fintrack/components/dashboard/primitives.tsx) (dashboard)
+
+- Reemplazar colores hardcodeados en `KpiCard`:
+  - `'#C14554'` → `'var(--ft-danger)'`
+  - `'#B88435'` → `'var(--ft-warning)'`
+  - `'#3F68A7'` → `'var(--ft-info)'`
+
+#### Empty states mejorados (todos los widgets)
+
+Patrón unificado para empty states:
+
+```tsx
+<EmptyWidget
+  message="No hay presupuestos activos para este período."
+  hint="Los presupuestos te ayudan a controlar gasto por categoría."
+  action={{ label: 'Crear presupuesto', href: '/budgets' }}
+/>
+```
+
+---
+
+### Resumen de cambios en archivos
+
+| Acción | Archivo | Descripción |
+|--------|---------|-------------|
+| **MODIFY** | `DashboardWorkspace.tsx` | Restructurar grid a 4 zonas, eliminar widgets redundantes, integrar AlertsWidget |
+| **MODIFY** | `DashboardHeader.tsx` | Refactorizar de hero card a Command Strip de 4 KPI cards |
+| **MODIFY** | `MoneyFlowChart.tsx` | Migrar tokens `--c-*` → `--ft-*` |
+| **MODIFY** | `SaldosDiaChart.tsx` | Reducir opacidad gradiente, migrar tokens |
+| **MODIFY** | `FinancialHealthScore.tsx` | Agregar delta vs mes anterior, migrar tokens |
+| **MODIFY** | `EgresosCategoriasWidget.tsx` | Fallback para pocas categorías, migrar tokens |
+| **MODIFY** | `SavingsRateTrendChart.tsx` | Migrar tokens |
+| **MODIFY** | `TopCategoriesWidget.tsx` | Migrar tokens |
+| **MODIFY** | `VencimientosWidget.tsx` | Migrar tokens |
+| **MODIFY** | `PresupuestosMesWidget.tsx` | Empty state con CTA, migrar tokens |
+| **MODIFY** | `CreditosUsoRapidoWidget.tsx` | Empty state con CTA, migrar tokens |
+| **MODIFY** | `SaldosBancariosWidget.tsx` | Empty state con CTA, migrar tokens |
+| **MODIFY** | `chartTheme.ts` | Estandarizar a `--ft-*` tokens |
+| **MODIFY** | `primitives.tsx` (dashboard) | Eliminar colores hardcodeados |
+| **DELETE** | `MetricCards.tsx` | Datos absorbidos en Command Strip |
+| **DELETE** | `ModulesMiniCards.tsx` | Datos redundantes con Module Snapshots |
+| **DELETE** | `DailyBalanceDeltaChart.tsx` | Redundante con SaldosDiaChart |
+
+---
+
+### Responsive behavior
+
+| Viewport | Zona 1 | Zona 2 | Zona 3 | Zona 4 |
+|----------|--------|--------|--------|--------|
+| **≥1280px (xl)** | 4 columnas | 7/5 grid | 3 columnas | 3 columnas |
+| **≥768px (md)** | 2×2 grid | Stack vertical (12col cada uno) | 2+1 o stack | Stack vertical |
+| **<768px (sm)** | Stack vertical | Stack vertical | Stack vertical | Stack vertical |
+
+**Mobile-first considerations**:
+- Zona 0 (alertas): siempre full-width, collapsible en mobile.
+- Zona 1 (KPIs): `grid-cols-2` en tablet, `grid-cols-1` en mobile.
+- Gráficos: mantienen su `ResponsiveContainer` existente, alturas fijas de 220-286px.
+- Vencimientos: scroll interno limitado a 4 items en mobile con "Ver más".
+
+---
+
+## Verification Plan
+
+### Automated Tests
+
+```bash
+# Build check — asegurar que compila sin errores después de los cambios
+npm run build
+
+# Type check
+npx tsc --noEmit
+
+# Lint
+npm run lint
+```
+
+### Manual Verification
+
+1. **Verificar datos**: Abrir dashboard con datos reales y confirmar que los 4 KPIs del Command Strip muestran los mismos valores que el hero card actual.
+2. **Verificar vacíos**: Crear un usuario nuevo sin datos y confirmar que todos los empty states muestran CTAs correctos.
+3. **Verificar responsive**: Probar en 3 breakpoints (1440px, 768px, 375px).
+4. **Verificar dark mode**: Todos los tokens `--ft-*` tienen variantes dark, confirmar que no hay colores hardcodeados visibles.
+5. **Verificar performance**: Confirmar que la carga del dashboard no agrega endpoints nuevos (mismos 4 fetches paralelos).
+
+### Rollout strategy
+
+1. **Fase A**: Restructurar el grid y eliminar redundantes (DashboardWorkspace + DashboardHeader).
+2. **Fase B**: Migrar tokens en todos los widgets (chartTheme, primitives, cada widget).
+3. **Fase C**: Mejorar empty states y fallbacks (donut, alertas).
+4. **Fase D**: Verificar responsive y dark mode.

@@ -602,6 +602,7 @@ export function DetailDrawer({
   footer,
   width = 520,
   side = 'right',
+  inset = false,
 }: {
   open: boolean
   title: string
@@ -611,6 +612,7 @@ export function DetailDrawer({
   footer?: ReactNode
   width?: number
   side?: 'right' | 'left'
+  inset?: boolean
 }) {
   const titleId = useId()
   const descriptionId = useId()
@@ -631,17 +633,23 @@ export function DetailDrawer({
       }}
     >
       <FocusTrap active={open} onEscape={onClose}>
-        <div className={`flex min-h-full ${side === 'right' ? 'justify-end' : 'justify-start'}`}>
+        <div
+          className={`flex min-h-full ${side === 'right' ? 'justify-end' : 'justify-start'} ${inset ? 'p-3 sm:p-4' : ''}`}
+        >
           <aside
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
             aria-describedby={descriptionId}
-            className={`${surfaceClassName('flex h-dvh w-full max-w-full flex-col rounded-none border-y-0 shadow-[var(--shadow-lg)] md:rounded-none')} ${
-              side === 'right' ? 'border-r-0' : 'border-l-0'
-            }`}
+            className={surfaceClassName(
+              `flex w-full max-w-full flex-col shadow-[var(--shadow-lg)] ${
+                inset
+                  ? 'h-[calc(100dvh-24px)] rounded-[24px] border'
+                  : `h-dvh rounded-none border-y-0 md:rounded-none ${side === 'right' ? 'border-r-0' : 'border-l-0'}`
+              }`,
+            )}
             style={{
-              width: `min(100vw, ${width}px)`,
+              width: inset ? `min(calc(100vw - 24px), ${width}px)` : `min(100vw, ${width}px)`,
               transform: open
                 ? 'translateX(0)'
                 : side === 'right'

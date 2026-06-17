@@ -1,7 +1,8 @@
 'use client'
 
+import { useMemo } from 'react'
 import useSWR from 'swr'
-import { Area, AreaChart, ResponsiveContainer } from 'recharts'
+import { formatAxisValue, smoothPath, type SvgPoint } from '@/lib/charts/svg-utils'
 import { formatCurrency, formatNumber } from '@/lib/contracts/ui.contracts'
 import type {
   DashboardSummary as DashboardSummaryContract,
@@ -10,7 +11,6 @@ import type {
 } from '@/lib/dashboard/types'
 import { fetchDashboardData } from './api'
 import { PremiumCard } from './PremiumCard'
-import { chartTheme } from './chartTheme'
 
 type MoneyFlowResponse = {
   mode: MoneyFlowMode
@@ -18,84 +18,245 @@ type MoneyFlowResponse = {
   series: MoneyFlowPoint[]
 }
 
+type RecurringRow = {
+  id: string
+  type: string
+  amount: number | string
+  currency: 'PEN' | 'USD' | string
+  is_active: boolean
+}
+
+type DeltaTone = 'positive' | 'negative' | 'neutral'
+type TileTone = 'primary' | 'success' | 'danger' | 'neutral'
+
 const summaryFetcher = (url: string) => fetchDashboardData<DashboardSummaryContract>(url)
 const moneyFlowFetcher = (url: string) => fetchDashboardData<MoneyFlowResponse>(url)
+const recurringFetcher = (url: string) => fetchDashboardData<RecurringRow[]>(url)
 
-function BalanceSparkline({ series }: { series: MoneyFlowPoint[] }) {
-  const data = series.map((point) => ({
-    month: point.month,
-    value: point.saldo_acumulado,
+const TREND_W = 260
+const TREND_H = 58
+
+function toMoney(value: number) {
+  return formatCurrency(value, 'PEN')
+}
+
+function boundedDomain(values: number[]) {
+  if (values.length === 0) return { min: 0, max: 1 }
+
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  if (min === max) {
+    const padding = Math.max(Math.abs(max) * 0.08, 1)
+    return { min: min - padding, max: max + padding }
+  }
+
+  const spread = max - min
+  return { min: min - spread * 0.12, max: max + spread * 0.12 }
+}
+
+function pointsForSeries(values: number[], width: number, height: number, pad = 5): SvgPoint[] {
+  if (values.length === 0) return []
+
+  const domain = boundedDomain(values)
+  const span = domain.max - domain.min || 1
+  const plotWidth = width - pad * 2
+  const plotHeight = height - pad * 2
+
+  return values.map((value, index) => ({
+    x: values.length === 1 ? width / 2 : pad + (index / (values.length - 1)) * plotWidth,
+    y: pad + ((domain.max - value) / span) * plotHeight,
   }))
+}
 
-  if (data.length === 0) {
+function areaPath(points: SvgPoint[], height: number) {
+  const line = smoothPath(points)
+  const first = points[0]
+  const last = points.at(-1)
+  if (!line || !first || !last) return ''
+
+  return `${line} L ${last.x} ${height} L ${first.x} ${height} Z`
+}
+
+function baselineY(domain: { min: number; max: number }, height: number, pad = 6) {
+  if (domain.min >= 0 || domain.max <= 0) return null
+  const span = domain.max - domain.min || 1
+  return pad + ((domain.max - 0) / span) * (height - pad * 2)
+}
+
+function deltaPercent(current: number, previous: number): number | null {
+  if (Math.abs(previous) < 0.01) return Math.abs(current) < 0.01 ? 0 : null
+  return ((current - previous) / Math.abs(previous)) * 100
+}
+
+function deltaTone(current: number, previous: number, goodWhenHigher = true): DeltaTone {
+  const delta = current - previous
+  if (Math.abs(delta) < 0.01) return 'neutral'
+  return (delta > 0) === goodWhenHigher ? 'positive' : 'negative'
+}
+
+function deltaLabel(current: number, previous: number) {
+  const pct = deltaPercent(current, previous)
+  const delta = current - previous
+  const sign = delta > 0 ? '+' : ''
+
+  if (pct == null) return `${sign}${formatAxisValue(delta, 'PEN')}`
+  return `${sign}${formatNumber(pct, { maximumFractionDigits: 1 })}%`
+}
+
+function tileAccent(tone: TileTone) {
+  return {
+    primary: 'var(--ft-primary)',
+    success: 'var(--ft-success)',
+    danger: 'var(--ft-danger)',
+    neutral: 'var(--ft-text-muted)',
+  }[tone]
+}
+
+function KpiTile({
+  index,
+  label,
+  value,
+  tone,
+  children,
+}: {
+  index: number
+  label: string
+  value: string
+  tone: TileTone
+  children?: React.ReactNode
+}) {
+  return (
+    <PremiumCard
+      className="command-strip-tile min-w-0"
+      innerClassName="relative min-h-[178px] overflow-hidden p-4"
+    >
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 h-14 opacity-80"
+        style={{
+          background: `linear-gradient(180deg, color-mix(in oklch, ${tileAccent(tone)} 9%, transparent), transparent)`,
+        }}
+      />
+      <div
+        className="relative z-10 flex h-full min-h-[146px] flex-col"
+        style={{
+          animation: 'commandTileEnter 520ms cubic-bezier(0.32,0.72,0,1) both',
+          animationDelay: `${index * 80}ms`,
+        }}
+      >
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--ft-text-subtle)]">
+          {label}
+        </p>
+        <p
+          className="mt-3 text-[1.35rem] font-semibold leading-none tabular-nums tracking-[-0.03em] text-[var(--ft-text)] xl:text-[1.45rem]"
+          title={value}
+        >
+          {value}
+        </p>
+        <div className="mt-auto pt-3">{children}</div>
+      </div>
+    </PremiumCard>
+  )
+}
+
+function KpiTrendPanel({
+  values,
+  tone,
+  footerLeft,
+  footerRight,
+  ariaLabel,
+  gradientId,
+}: {
+  values: number[]
+  tone: TileTone
+  footerLeft: string
+  footerRight: string
+  ariaLabel: string
+  gradientId: string
+}) {
+  const color = tileAccent(tone)
+  const safeValues = values.length > 0 ? values : [0, 0]
+  const domain = boundedDomain(safeValues)
+  const points = pointsForSeries(safeValues, TREND_W, TREND_H, 6)
+  const path = smoothPath(points)
+  const fill = areaPath(points, TREND_H - 3)
+  const last = points.at(-1)
+  const baseY = baselineY(domain, TREND_H, 6)
+
+  if (!path) {
     return (
-      <div className="flex h-[96px] items-center justify-center rounded-[20px] border border-dashed border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-4 text-[11px] text-[var(--ft-text-muted)]">
-        La tendencia aparecerá cuando haya datos suficientes.
+      <div className="rounded-[14px] bg-[color-mix(in_oklch,var(--ft-surface-muted)_68%,transparent)] px-3 py-2">
+        <div className="h-[58px] rounded-[10px] bg-[var(--ft-surface-muted)]" />
+        <div className="mt-2 flex items-center justify-between gap-3 text-[10px] text-[var(--ft-text-muted)]">
+          <span className="min-w-0 truncate">{footerLeft}</span>
+          <span className="shrink-0 tabular-nums">{footerRight}</span>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="rounded-[20px] border border-[var(--ft-border)] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--ft-primary)_9%,transparent),transparent)] px-2 pb-2 pt-3">
-      <div className="h-[96px] w-full">
-        <ResponsiveContainer>
-          <AreaChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
-            <defs>
-              <linearGradient id="balanceSparkline" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--ft-primary)" stopOpacity={0.24} />
-                <stop offset="70%" stopColor="var(--ft-primary)" stopOpacity={0.06} />
-                <stop offset="100%" stopColor="var(--ft-primary)" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <Area
-              type="monotone"
-              dataKey="value"
-              stroke="var(--ft-primary)"
-              strokeWidth={2.5}
-              fill="url(#balanceSparkline)"
-              dot={false}
-              isAnimationActive
-              animationDuration={700}
-              animationEasing="ease-out"
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+    <div className="rounded-[14px] bg-[color-mix(in_oklch,var(--ft-surface-muted)_68%,transparent)] px-3 py-2">
+      <svg
+        aria-label={ariaLabel}
+        className="h-[58px] w-full overflow-visible"
+        viewBox={`0 0 ${TREND_W} ${TREND_H}`}
+        preserveAspectRatio="none"
+      >
+        <defs>
+          <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.18" />
+            <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        {[0.25, 0.5, 0.75].map((ratio) => (
+          <line
+            key={ratio}
+            x1="0"
+            x2={TREND_W}
+            y1={TREND_H * ratio}
+            y2={TREND_H * ratio}
+            stroke="var(--ft-border)"
+            strokeOpacity="0.42"
+            strokeDasharray="3 8"
+          />
+        ))}
+        {baseY != null && (
+          <line
+            x1="0"
+            x2={TREND_W}
+            y1={baseY}
+            y2={baseY}
+            stroke="var(--ft-text-subtle)"
+            strokeOpacity="0.46"
+          />
+        )}
+        <path d={fill} fill={`url(#${gradientId})`} />
+        <path
+          d={path}
+          fill="none"
+          stroke={color}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2.4"
+          vectorEffect="non-scaling-stroke"
+        />
+        {last && (
+          <circle
+            cx={last.x}
+            cy={last.y}
+            r="4"
+            fill="var(--ft-surface)"
+            stroke={color}
+            strokeWidth="2"
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
+      </svg>
+      <div className="mt-2 flex items-center justify-between gap-3 text-[10px] text-[var(--ft-text-muted)]">
+        <span className="min-w-0 truncate">{footerLeft}</span>
+        <span className="shrink-0 tabular-nums">{footerRight}</span>
       </div>
-
-      <div className="mt-1 flex items-center justify-between gap-3 px-2">
-        <span className="text-[10px] uppercase tracking-[0.16em] text-[var(--ft-text-subtle)]">
-          Últimos 6 meses
-        </span>
-        <span className="text-[11px] font-medium text-[var(--ft-text-muted)]">
-          Saldo acumulado
-        </span>
-      </div>
-    </div>
-  )
-}
-
-interface HeroStatProps {
-  label: string
-  value: string
-  tone?: 'neutral' | 'positive' | 'negative' | 'warning'
-}
-
-function HeroStat({ label, value, tone = 'neutral' }: HeroStatProps) {
-  const toneClass = {
-    neutral: 'text-[var(--ft-text)]',
-    positive: 'text-[var(--ft-primary)]',
-    negative: 'text-[var(--ft-danger)]',
-    warning: 'text-[var(--ft-warning)]',
-  }[tone]
-
-  return (
-    <div className="rounded-[18px] border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-4 py-3">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--ft-text-subtle)]">
-        {label}
-      </p>
-      <p className={`mt-2 text-[1rem] font-semibold tabular-nums tracking-[-0.02em] ${toneClass}`}>
-        {value}
-      </p>
     </div>
   )
 }
@@ -111,144 +272,132 @@ export function DashboardHeader() {
     dedupingInterval: 30_000,
   })
 
-  const balancePen = summary?.balance_consolidado.pen ?? 0
-  const balanceUsd = summary?.balance_consolidado.usd ?? 0
-  const monthlyVariation = summary?.monthly_balance_variation
-  const resultadoMensual = summary?.resultado_mensual ?? 0
-  const ingresosMes = summary?.ingresos_mes ?? 0
-  const egresosMes = summary?.egresos_mes ?? 0
-  const alertasPendientes = summary?.alertas_pendientes ?? 0
-  const variationAmount = monthlyVariation?.amount_pen ?? 0
-  const variationPercent = monthlyVariation?.percent ?? null
-  const variationTrend = monthlyVariation?.trend ?? 'flat'
-  const variationPositive = variationTrend === 'up'
-  const variationPrefix = variationTrend === 'up' ? '+' : ''
-  const variationColor = variationTrend === 'up'
-    ? chartTheme.positive
-    : variationTrend === 'down'
-      ? chartTheme.negative
-      : 'var(--ft-text-muted)'
-  const variationBg = variationTrend === 'up'
-    ? 'bg-[color-mix(in_srgb,var(--ft-primary)_10%,transparent)]'
-    : variationTrend === 'down'
-      ? 'bg-[color-mix(in_srgb,var(--ft-danger)_10%,transparent)]'
-      : 'bg-[var(--ft-surface-muted)]'
-  const variationBorder = variationTrend === 'up'
-    ? 'border-[color-mix(in_srgb,var(--ft-primary)_18%,transparent)]'
-    : variationTrend === 'down'
-      ? 'border-[color-mix(in_srgb,var(--ft-danger)_20%,transparent)]'
-      : 'border-[var(--ft-border)]'
+  const { data: recurring } = useSWR('/api/recurring?type=EXPENSE', recurringFetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 30_000,
+  })
 
   const series = moneyFlow?.series ?? []
   const lastPoint = series.at(-1)
   const previousPoint = series.at(-2)
-  const trendDelta = lastPoint && previousPoint
-    ? lastPoint.saldo_acumulado - previousPoint.saldo_acumulado
-    : resultadoMensual
-  const trendPositive = trendDelta >= 0
+
+  const patrimonioPen = summary?.patrimonio_neto.pen ?? summary?.balance_consolidado.pen ?? 0
+  const ingresosMes = summary?.ingresos_mes ?? lastPoint?.ingresos ?? 0
+  const egresosMes = summary?.egresos_mes ?? lastPoint?.egresos ?? 0
+  const balanceMes = summary?.balance_mes ?? summary?.resultado_mensual ?? lastPoint?.saldo_mensual ?? 0
+  const previousIncome = previousPoint?.ingresos ?? 0
+  const previousExpense = previousPoint?.egresos ?? 0
+
+  const recurringExpensePen = useMemo(() => {
+    return (recurring ?? []).reduce((sum, item) => {
+      if (!item.is_active || item.currency !== 'PEN') return sum
+      const amount = Number(item.amount ?? 0)
+      return Number.isFinite(amount) ? sum + amount : sum
+    }, 0)
+  }, [recurring])
+
+  const incomeTone = deltaTone(ingresosMes, previousIncome, true)
+  const expenseTone = deltaTone(egresosMes, previousExpense, false)
+  const balancePositive = balanceMes >= 0
+  const patrimonioValues = series.map((point) => point.saldo_acumulado)
+  const incomeValues = series.map((point) => point.ingresos)
+  const expenseValues = series.map((point) => point.egresos)
+  const balanceValues = series.map((point) => point.saldo_mensual)
 
   if (summaryLoading && !summary) {
     return (
-      <PremiumCard innerClassName="p-5 md:p-6 lg:p-7">
-        <div className="animate-pulse space-y-5">
-          <div className="h-3 w-36 rounded bg-[var(--ft-surface-muted)]" />
-          <div className="h-14 w-64 rounded bg-[var(--ft-surface-muted)]" />
-          <div className="h-[96px] rounded-[20px] bg-[var(--ft-surface-muted)]" />
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            {Array.from({ length: 3 }).map((_, idx) => (
-              <div key={idx} className="h-[76px] rounded-[18px] bg-[var(--ft-surface-muted)]" />
-            ))}
-          </div>
-        </div>
-      </PremiumCard>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <PremiumCard key={index} innerClassName="min-h-[154px] p-4">
+            <div className="animate-pulse">
+              <div className="h-3 w-24 rounded bg-[var(--ft-surface-muted)]" />
+              <div className="mt-4 h-7 w-32 rounded bg-[var(--ft-surface-muted)]" />
+              <div className="mt-8 h-9 rounded-[12px] bg-[var(--ft-surface-muted)]" />
+            </div>
+          </PremiumCard>
+        ))}
+      </div>
     )
   }
 
   return (
-    <PremiumCard
-      className="overflow-hidden"
-      innerClassName="relative overflow-hidden p-5 md:p-6 lg:p-7"
-    >
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-[radial-gradient(circle_at_top_left,color-mix(in_srgb,var(--ft-primary)_16%,transparent),transparent_60%)]"
-      />
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <style jsx>{`
+        @keyframes commandTileEnter {
+          from {
+            opacity: 0;
+            transform: translateY(12px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
 
-      <div className="relative grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_220px] lg:items-start">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="inline-flex rounded-full border border-[var(--ft-primary-border)] bg-[var(--ft-primary-soft)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--ft-primary)]">
-                Balance consolidado
-              </p>
-              <h2 className="mt-4 text-[2.65rem] font-semibold leading-none tracking-[-0.055em] text-[var(--ft-text)] sm:text-[3.25rem]">
-                {formatCurrency(balancePen, 'PEN')}
-              </h2>
-              <p className="mt-3 text-[13px] text-[var(--ft-text-muted)]">
-                Equivalencia USD: <span className="font-medium tabular-nums text-[var(--ft-text)]">{formatCurrency(balanceUsd, 'USD')}</span>
-              </p>
-              <div className={`mt-3 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-medium ${variationBg} ${variationBorder}`}>
-                <span
-                  className="h-1.5 w-1.5 rounded-full"
-                  style={{ backgroundColor: variationColor }}
-                />
-                <span className="tabular-nums" style={{ color: variationColor }}>
-                  {variationPrefix}S/ {formatNumber(variationAmount, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                  {variationPercent != null ? ` (${variationPrefix}${formatNumber(variationPercent, { maximumFractionDigits: 1 })}%)` : ''}
-                </span>
-                <span className="text-[var(--ft-text-muted)]">vs mes anterior</span>
-              </div>
-            </div>
+      <KpiTile
+        index={0}
+        label="Patrimonio neto"
+        value={toMoney(patrimonioPen)}
+        tone="primary"
+      >
+        <KpiTrendPanel
+          values={patrimonioValues}
+          tone="primary"
+          footerLeft="Últimos 6 meses"
+          footerRight={formatAxisValue(patrimonioPen, 'PEN')}
+          ariaLabel="Tendencia del patrimonio neto de los últimos seis meses"
+          gradientId="kpi-trend-patrimonio"
+        />
+      </KpiTile>
 
-            <div
-              className={`min-w-[196px] rounded-[20px] border px-4 py-4 ${
-                resultadoMensual >= 0
-                  ? 'border-[var(--ft-primary-border)] bg-[var(--ft-primary-soft)]'
-                  : 'border-[color-mix(in_srgb,var(--ft-danger)_24%,transparent)] bg-[color-mix(in_srgb,var(--ft-danger)_10%,transparent)]'
-              }`}
-            >
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--ft-text-subtle)]">
-                Resultado mensual
-              </p>
-              <p
-                className="mt-2 text-[1.55rem] font-semibold leading-none tabular-nums tracking-[-0.03em]"
-                style={{ color: resultadoMensual >= 0 ? 'var(--ft-primary)' : 'var(--ft-danger)' }}
-              >
-                {formatCurrency(resultadoMensual, 'PEN')}
-              </p>
-              <p className="mt-2 text-[11px] leading-5 text-[var(--ft-text-muted)]">
-                {trendPositive ? 'Mes en expansión' : 'Mes bajo presión'} · {trendPositive ? '+' : ''}
-                S/ {formatNumber(trendDelta, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-              </p>
-            </div>
-          </div>
+      <KpiTile
+        index={1}
+        label="Ingresos del mes"
+        value={toMoney(ingresosMes)}
+        tone="success"
+      >
+        <KpiTrendPanel
+          values={incomeValues}
+          tone={incomeTone === 'negative' ? 'danger' : 'success'}
+          footerLeft="Vs mes anterior"
+          footerRight={deltaLabel(ingresosMes, previousIncome)}
+          ariaLabel="Tendencia de ingresos mensuales"
+          gradientId="kpi-trend-ingresos"
+        />
+      </KpiTile>
 
-          <div className="mt-5">
-            <BalanceSparkline series={series} />
-          </div>
-        </div>
+      <KpiTile
+        index={2}
+        label="Egresos del mes"
+        value={toMoney(egresosMes)}
+        tone="danger"
+      >
+        <KpiTrendPanel
+          values={expenseValues}
+          tone={expenseTone === 'positive' ? 'success' : 'danger'}
+          footerLeft={`${formatAxisValue(recurringExpensePen, 'PEN')} recurrentes`}
+          footerRight={deltaLabel(egresosMes, previousExpense)}
+          ariaLabel="Tendencia de egresos mensuales"
+          gradientId="kpi-trend-egresos"
+        />
+      </KpiTile>
 
-        <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
-          <HeroStat
-            label="Ingresos"
-            value={formatCurrency(ingresosMes, 'PEN')}
-            tone="positive"
-          />
-          <HeroStat
-            label="Egresos"
-            value={formatCurrency(egresosMes, 'PEN')}
-            tone="negative"
-          />
-          <HeroStat
-            label="Alertas"
-            value={String(alertasPendientes)}
-            tone={alertasPendientes > 0 ? 'warning' : 'neutral'}
-          />
-        </div>
-      </div>
-    </PremiumCard>
+      <KpiTile
+        index={3}
+        label="Balance neto"
+        value={toMoney(balanceMes)}
+        tone={balancePositive ? 'primary' : 'danger'}
+      >
+        <KpiTrendPanel
+          values={balanceValues}
+          tone={balancePositive ? 'primary' : 'danger'}
+          footerLeft="Resultado mensual"
+          footerRight={deltaLabel(balanceMes, previousPoint?.saldo_mensual ?? 0)}
+          ariaLabel="Tendencia del balance neto mensual"
+          gradientId="kpi-trend-balance"
+        />
+      </KpiTile>
+    </div>
   )
 }

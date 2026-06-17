@@ -354,7 +354,8 @@ export function PayablesWorkspace({ exchangeRate = 3.7 }: { exchangeRate?: numbe
             setSelectedCreditorId(null)
             clearDrawerQuery()
           },
-          width: 720,
+          width: 1520,
+          inset: true,
           content: (
             <CreditorDetail
               creditor={selectedCreditor}

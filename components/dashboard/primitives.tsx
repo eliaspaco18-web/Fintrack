@@ -6,6 +6,7 @@
 
 'use client'
 
+import Link from 'next/link'
 import { type ReactNode } from 'react'
 import { formatPercent } from '@/lib/contracts/ui.contracts'
 import { PremiumCard } from './PremiumCard'
@@ -49,12 +50,12 @@ export function SectionHeader({ title, action, accent }: SectionHeaderProps) {
             style={{ backgroundColor: accent }}
           />
         )}
-        <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--c-text-muted)]">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--ft-text-muted)]">
           {title}
         </h2>
       </div>
       {action && (
-        <div className="text-[11px] text-[var(--c-text-muted)]">{action}</div>
+        <div className="text-[11px] text-[var(--ft-text-muted)]">{action}</div>
       )}
     </div>
   )
@@ -77,33 +78,33 @@ const ACCENT_STYLES: Record<KpiCardProps['accent'], {
   value: string; badge: string; iconBg: string; ring: string
 }> = {
   emerald: {
-    value:  'text-[var(--c-primary)]',
-    badge:  'bg-[var(--c-primary-soft)] text-[var(--c-primary)]',
-    iconBg: 'bg-[var(--c-primary-soft)] text-[var(--c-primary)]',
+    value:  'text-[var(--ft-primary)]',
+    badge:  'bg-[var(--ft-primary-soft)] text-[var(--ft-primary)]',
+    iconBg: 'bg-[var(--ft-primary-soft)] text-[var(--ft-primary)]',
     ring:   '',
   },
   red: {
-    value:  'text-[#C14554]',
-    badge:  'bg-[rgba(193,69,84,0.10)] text-[#C14554]',
-    iconBg: 'bg-[rgba(193,69,84,0.10)] text-[#C14554]',
+    value:  'text-[var(--ft-danger)]',
+    badge:  'bg-[color-mix(in_srgb,var(--ft-danger)_10%,transparent)] text-[var(--ft-danger)]',
+    iconBg: 'bg-[color-mix(in_srgb,var(--ft-danger)_10%,transparent)] text-[var(--ft-danger)]',
     ring:   '',
   },
   amber: {
-    value:  'text-[#B88435]',
-    badge:  'bg-amber-500/10 text-[#B88435]',
-    iconBg: 'bg-amber-500/10 text-[#B88435]',
+    value:  'text-[var(--ft-warning)]',
+    badge:  'bg-[color-mix(in_srgb,var(--ft-warning)_12%,transparent)] text-[var(--ft-warning)]',
+    iconBg: 'bg-[color-mix(in_srgb,var(--ft-warning)_12%,transparent)] text-[var(--ft-warning)]',
     ring:   '',
   },
   blue: {
-    value:  'text-[#3F68A7]',
-    badge:  'bg-blue-500/10 text-[#3F68A7]',
-    iconBg: 'bg-blue-500/10 text-[#3F68A7]',
+    value:  'text-[var(--ft-info)]',
+    badge:  'bg-[color-mix(in_srgb,var(--ft-info)_11%,transparent)] text-[var(--ft-info)]',
+    iconBg: 'bg-[color-mix(in_srgb,var(--ft-info)_11%,transparent)] text-[var(--ft-info)]',
     ring:   '',
   },
   white: {
-    value:  'text-[var(--c-text)]',
-    badge:  'bg-[var(--c-surface-2)] text-[var(--c-text-muted)]',
-    iconBg: 'bg-[var(--c-surface-2)]',
+    value:  'text-[var(--ft-text)]',
+    badge:  'bg-[var(--ft-surface-2)] text-[var(--ft-text-muted)]',
+    iconBg: 'bg-[var(--ft-surface-2)]',
     ring:   '',
   },
 }
@@ -117,9 +118,9 @@ export function KpiCard({
     return (
       <WidgetShell>
         <div className="animate-pulse space-y-3">
-          <div className="h-3 w-24 rounded bg-[var(--c-primary-soft)]"/>
-          <div className="h-7 w-32 rounded bg-[rgba(13,79,74,0.06)]"/>
-          <div className="h-3 w-16 rounded bg-[rgba(13,79,74,0.04)]"/>
+          <div className="h-3 w-24 rounded bg-[var(--ft-primary-soft)]"/>
+          <div className="h-7 w-32 rounded bg-[color-mix(in_srgb,var(--ft-primary)_8%,transparent)]"/>
+          <div className="h-3 w-16 rounded bg-[color-mix(in_srgb,var(--ft-primary)_5%,transparent)]"/>
         </div>
       </WidgetShell>
     )
@@ -130,18 +131,18 @@ export function KpiCard({
     : null
 
   return (
-    <WidgetShell className="hover:shadow-[var(--shadow-md)] transition-shadow duration-200">
+    <WidgetShell className="transition-shadow duration-200 hover:shadow-[0_18px_48px_color-mix(in_srgb,var(--ft-shadow)_62%,transparent)]">
       <div className="flex items-start justify-between gap-3">
         {/* Label + values */}
         <div className="flex-1 min-w-0">
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--c-text-faint)]">
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--ft-text-faint)]">
             {label}
           </p>
           <p className={`text-[1.25rem] font-bold tabular-nums leading-none tracking-[-0.025em] md:text-[1.52rem] ${s.value}`}>
             {value}
           </p>
           {subvalue && (
-            <p className="mt-1 text-[10px] text-[var(--c-text-faint)] tabular-nums">{subvalue}</p>
+            <p className="mt-1 text-[10px] text-[var(--ft-text-faint)] tabular-nums">{subvalue}</p>
           )}
           {changeLabel && (
             <div className={`inline-flex items-center gap-1 mt-2 px-1.5 py-0.5 rounded-md text-[10px] font-bold ${s.badge}`}>
@@ -181,7 +182,7 @@ function TrendArrow({ direction }: { direction: 'up' | 'down' }) {
 // ─── DIVIDER ROW ─────────────────────────────────────────────────────────────
 
 export function WidgetDivider() {
-  return <div className="h-px my-4 bg-[var(--c-border)]"/>
+  return <div className="h-px my-4 bg-[var(--ft-border)]"/>
 }
 
 // ─── MONEY ROW ───────────────────────────────────────────────────────────────
@@ -204,9 +205,9 @@ export function MoneyRow({ label, sublabel, amount, badge, accent, onClick }: Mo
       onClick={onClick}
       className={`
         w-full flex items-center justify-between gap-3 py-2
-        border-b border-[var(--c-border)] last:border-0
+        border-b border-[var(--ft-border)] last:border-0
         text-left
-        ${onClick ? 'hover:bg-[var(--c-surface-2)] -mx-5 px-5 rounded-lg cursor-pointer transition-colors' : ''}
+        ${onClick ? 'hover:bg-[var(--ft-surface-2)] -mx-5 px-5 rounded-lg cursor-pointer transition-colors' : ''}
       `}
     >
       <div className="flex-1 min-w-0">
@@ -214,14 +215,14 @@ export function MoneyRow({ label, sublabel, amount, badge, accent, onClick }: Mo
           {accent && (
             <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: accent }}/>
           )}
-          <p className="text-[12px] text-[var(--c-text)] font-medium truncate">{label}</p>
+          <p className="text-[12px] text-[var(--ft-text)] font-medium truncate">{label}</p>
           {badge}
         </div>
         {sublabel && (
-          <p className="text-[10px] text-[var(--c-text-faint)] mt-0.5 ml-3.5 truncate">{sublabel}</p>
+          <p className="text-[10px] text-[var(--ft-text-faint)] mt-0.5 ml-3.5 truncate">{sublabel}</p>
         )}
       </div>
-      <span className="text-[12px] font-semibold tabular-nums text-[var(--c-text)] flex-shrink-0">{amount}</span>
+      <span className="text-[12px] font-semibold tabular-nums text-[var(--ft-text)] flex-shrink-0">{amount}</span>
     </Tag>
   )
 }
@@ -234,9 +235,9 @@ export function UrgencyBadge({ urgency }: { urgency: UrgencyLevel }) {
   if (!urgency) return null
 
   const styles = {
-    OVERDUE:  'bg-[rgba(193,69,84,0.14)] text-[#C14554]',
-    DUE_SOON: 'bg-amber-500/12 text-amber-700',
-    UPCOMING: 'bg-[var(--c-primary-soft)] text-[var(--c-primary)]',
+    OVERDUE:  'bg-[color-mix(in_srgb,var(--ft-danger)_14%,transparent)] text-[var(--ft-danger)]',
+    DUE_SOON: 'bg-[color-mix(in_srgb,var(--ft-warning)_12%,transparent)] text-[var(--ft-warning)]',
+    UPCOMING: 'bg-[var(--ft-primary-soft)] text-[var(--ft-primary)]',
   } as const
 
   const labels = {
@@ -262,19 +263,33 @@ interface EmptyWidgetProps {
   icon?:   ReactNode
   message: string
   hint?:   string
+  action?: {
+    label: string
+    href:  string
+  }
 }
 
-export function EmptyWidget({ icon, message, hint }: EmptyWidgetProps) {
+export function EmptyWidget({ icon, message, hint, action }: EmptyWidgetProps) {
   return (
     <div className="flex min-h-[120px] flex-col items-center justify-center py-5 text-center">
       {icon && (
-        <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-[0.9rem] border border-[var(--c-border)] bg-[var(--c-surface-2)]
-          flex items-center justify-center mb-3 text-[var(--c-text-faint)]">
+        <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-[0.9rem] border border-[var(--ft-border)] bg-[var(--ft-surface-2)] text-[var(--ft-text-faint)]">
           {icon}
         </div>
       )}
-      <p className="text-[13px] text-[var(--c-text)] font-medium">{message}</p>
-      {hint && <p className="mt-1 text-[10px] text-[var(--c-text-faint)]">{hint}</p>}
+      <p className="text-[13px] text-[var(--ft-text)] font-medium">{message}</p>
+      {hint && <p className="mt-1 max-w-[18rem] text-[10px] text-[var(--ft-text-faint)]">{hint}</p>}
+      {action && (
+        <Link
+          href={action.href}
+          className="mt-4 inline-flex items-center gap-2 rounded-full border border-[var(--ft-border-strong)] bg-[var(--ft-primary-soft)] px-3 py-2 text-[11px] font-semibold text-[var(--ft-primary)] transition-[background,border-color,transform] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:-translate-y-0.5 hover:border-[var(--ft-primary)] hover:bg-[color-mix(in_srgb,var(--ft-primary)_12%,var(--ft-surface))]"
+        >
+          {action.label}
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--ft-surface)] text-[var(--ft-primary)] shadow-[0_6px_18px_color-mix(in_srgb,var(--ft-shadow)_35%,transparent)]">
+            ↗
+          </span>
+        </Link>
+      )}
     </div>
   )
 }
@@ -288,23 +303,23 @@ interface ProgressBarProps {
   label?:  string
 }
 
-export function ProgressBar({ value, color = '#0D4F4A', height = 4, label }: ProgressBarProps) {
+export function ProgressBar({ value, color = 'var(--ft-primary)', height = 4, label }: ProgressBarProps) {
   const clamped = Math.min(100, Math.max(0, value))
 
   return (
     <div>
       {label && (
-        <div className="flex justify-between text-[10px] text-[var(--c-text-muted)] mb-1">
+        <div className="flex justify-between text-[10px] text-[var(--ft-text-muted)] mb-1">
           <span>{label}</span>
           <span className="tabular-nums">{formatPercent(clamped, { fractionDigits: 0 })}</span>
         </div>
       )}
       <div
         className="w-full rounded-full overflow-hidden"
-        style={{ backgroundColor: 'var(--c-primary-soft)', height }}
+        style={{ backgroundColor: 'var(--ft-primary-soft)', height }}
       >
         <div
-          className="h-full rounded-full transition-all duration-700 ease-out"
+          className="h-full rounded-full transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)]"
           style={{ width: `${clamped}%`, backgroundColor: color }}
         />
       </div>

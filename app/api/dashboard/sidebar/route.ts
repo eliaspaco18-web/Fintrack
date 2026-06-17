@@ -4,6 +4,7 @@
 // Fase 11.1: datos del panel derecho del dashboard.
 // =============================================================================
 
+import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase.server'
 import { DashboardService } from '@/modules/dashboard/dashboard.service'
 import { measureServerOperation } from '@/lib/server/observability'
@@ -31,6 +32,22 @@ function toDateUtc(dateIso: string): Date {
 function startOfTodayUtc(): Date {
   const now = new Date()
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+}
+
+function monthStartFromPeriod(period: string | null, fallback: Date): Date {
+  if (!period || !/^\d{4}-\d{2}$/.test(period)) {
+    return new Date(Date.UTC(fallback.getUTCFullYear(), fallback.getUTCMonth(), 1))
+  }
+
+  const [yearRaw, monthRaw] = period.split('-')
+  const year = Number(yearRaw)
+  const month = Number(monthRaw)
+
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    return new Date(Date.UTC(fallback.getUTCFullYear(), fallback.getUTCMonth(), 1))
+  }
+
+  return new Date(Date.UTC(year, month - 1, 1))
 }
 
 function getDaysUntil(dueDateIso: string, todayUtc: Date): number {
@@ -63,7 +80,7 @@ function normalizeCategoryBreakdown(
   }))
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   return measureServerOperation('api.dashboard.sidebar', async () => {
     const supabase = createClient()
     const userId = await getSessionUserId(supabase)
@@ -85,8 +102,7 @@ export async function GET() {
     next30DaysUtc.setUTCDate(next30DaysUtc.getUTCDate() + 30)
     const todayIso = todayUtc.toISOString().slice(0, 10)
     const next30DaysIso = next30DaysUtc.toISOString().slice(0, 10)
-    const monthStart = new Date(todayUtc)
-    monthStart.setUTCDate(1)
+    const monthStart = monthStartFromPeriod(req.nextUrl.searchParams.get('period'), todayUtc)
     const nextMonthStart = new Date(Date.UTC(
       monthStart.getUTCFullYear(),
       monthStart.getUTCMonth() + 1,

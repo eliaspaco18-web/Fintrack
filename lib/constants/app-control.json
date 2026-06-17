@@ -65,8 +65,8 @@
       "href": "/receivables",
       "section": "Principal",
       "objective": "Seguimiento de dinero pendiente por cobrar.",
-      "status": "launch",
-      "note": "Por cobrar ya está disponible. Entra para explorar sus novedades, organizar mejor tu información y aprovechar esta nueva experiencia dentro de FinTrack."
+      "status": "live",
+      "note": ""
     },
     {
       "key": "payables",

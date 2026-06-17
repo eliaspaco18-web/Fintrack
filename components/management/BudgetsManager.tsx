@@ -136,6 +136,21 @@ const PERIOD_LABEL: Record<BudgetPeriod, string> = {
   YEARLY: 'Anual',
 }
 
+const MONTH_OPTIONS = [
+  { value: '01', label: 'Enero' },
+  { value: '02', label: 'Febrero' },
+  { value: '03', label: 'Marzo' },
+  { value: '04', label: 'Abril' },
+  { value: '05', label: 'Mayo' },
+  { value: '06', label: 'Junio' },
+  { value: '07', label: 'Julio' },
+  { value: '08', label: 'Agosto' },
+  { value: '09', label: 'Septiembre' },
+  { value: '10', label: 'Octubre' },
+  { value: '11', label: 'Noviembre' },
+  { value: '12', label: 'Diciembre' },
+]
+
 // Calcula la fecha de fin automática según periodicidad (PRD: "automática según periodicidad")
 function calcEndDate(startDate: string, period: BudgetPeriod): string {
   if (!startDate) return ''
@@ -156,6 +171,13 @@ function calcEndDate(startDate: string, period: BudgetPeriod): string {
 
 function isoToday(): string {
   return new Date().toISOString().slice(0, 10)
+}
+
+function updateMonthKeyPart(periodKey: string, patch: { month?: string; year?: string }): string {
+  const [currentYear, currentMonth] = periodKey.split('-')
+  const nextYear = patch.year ?? currentYear ?? isoToday().slice(0, 4)
+  const nextMonth = patch.month ?? currentMonth ?? isoToday().slice(5, 7)
+  return `${nextYear}-${nextMonth}`
 }
 
 const EMPTY_FORM: BudgetForm = {
@@ -506,6 +528,31 @@ export function BudgetsManager() {
     [budgetSeries],
   )
 
+  const periodYearOptions = useMemo(() => {
+    const years = new Set<string>()
+    const currentYear = Number(isoToday().slice(0, 4))
+    const selectedYear = Number(periodMonth.slice(0, 4))
+
+    for (let year = currentYear - 2; year <= currentYear + 2; year += 1) {
+      years.add(String(year))
+    }
+    if (Number.isFinite(selectedYear)) years.add(String(selectedYear))
+
+    for (const budget of budgets) {
+      const starts = [budget.start_date, budget.period_start]
+      const ends = [budget.end_date, budget.period_end]
+      for (const dateValue of [...starts, ...ends]) {
+        if (dateValue && /^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+          years.add(dateValue.slice(0, 4))
+        }
+      }
+    }
+
+    return Array.from(years)
+      .sort((left, right) => Number(right) - Number(left))
+      .map(year => ({ value: year, label: year }))
+  }, [budgets, periodMonth])
+
   const filteredBudgetSeries = useMemo(() => {
     const q = query.trim().toLowerCase()
 
@@ -849,16 +896,25 @@ export function BudgetsManager() {
           </div>
 
           {workspaceView === 'periods' ? (
-            <div className="flex items-center gap-2">
-              <label className="text-[11px] font-medium text-[var(--c-text-muted)]" htmlFor="budget-period-month">
-                Mes
-              </label>
-              <input
-                id="budget-period-month"
-                type="month"
-                value={periodMonth}
-                onChange={event => setPeriodMonth(event.target.value)}
-                className="field-base h-9 w-[150px]"
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-medium text-[var(--ft-text-muted)]">
+                Periodo
+              </span>
+              <AppSelect
+                value={periodMonth.slice(5, 7)}
+                onChange={value => setPeriodMonth(current => updateMonthKeyPart(current, { month: value }))}
+                className="filters-control w-[140px]"
+                compact
+                searchable={false}
+                options={MONTH_OPTIONS}
+              />
+              <AppSelect
+                value={periodMonth.slice(0, 4)}
+                onChange={value => setPeriodMonth(current => updateMonthKeyPart(current, { year: value }))}
+                className="filters-control w-[104px]"
+                compact
+                searchable={false}
+                options={periodYearOptions}
               />
               <Button
                 type="button"

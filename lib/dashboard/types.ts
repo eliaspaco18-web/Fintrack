@@ -116,3 +116,66 @@ export interface DashboardSidebar {
     monto: number
   }>
 }
+
+export type ProjectionHorizon = '30D' | '60D' | '90D'
+
+export type ProjectionEventType =
+  | 'recurring_income'
+  | 'recurring_expense'
+  | 'receivable'
+  | 'payable'
+  | 'installment'
+  | 'billing_cycle'
+
+export interface CashFlowProjectionEvent {
+  id: string
+  label: string
+  amount: number
+  amountPen: number
+  currency: 'PEN' | 'USD'
+  date: string
+  type: ProjectionEventType
+}
+
+export interface CashFlowProjectionPoint {
+  date: string
+  horizon: ProjectionHorizon
+  projectedBalance: number
+  inflows: number
+  outflows: number
+  confidence: number
+  events: CashFlowProjectionEvent[]
+}
+
+export interface CashFlowProjectionResponse {
+  currentBalance: number
+  recurringMonthlyExpense: number
+  recurringMonthlyIncome: number
+  projectionPoints: CashFlowProjectionPoint[]
+}
+
+export type DashboardAlertType =
+  | 'installment'
+  | 'receivable'
+  | 'payable'
+  | 'budget_exceeded'
+
+export type DashboardAlertUrgency = 'OVERDUE' | 'DUE_SOON'
+
+export interface DashboardAlertItem {
+  id: string
+  type: DashboardAlertType
+  label: string
+  amount: number
+  amountPen: number
+  currency: 'PEN' | 'USD'
+  dueDate: string | null
+  urgency: DashboardAlertUrgency
+  href: string
+}
+
+export interface DashboardAlertsResponse {
+  criticalCount: number
+  totalAmountPen: number
+  alerts: DashboardAlertItem[]
+}

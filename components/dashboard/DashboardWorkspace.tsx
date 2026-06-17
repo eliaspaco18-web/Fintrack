@@ -10,19 +10,16 @@ import type {
   MoneyFlowPoint,
 } from '@/lib/dashboard/types'
 import { fetchDashboardData } from './api'
+import { AlertBanner } from './AlertBanner'
 import { DashboardHeader } from './DashboardHeader'
 import { MoneyFlowChart } from './MoneyFlowChart'
+import { CashFlowProjectionWidget } from './CashFlowProjectionWidget'
 import { SaldosDiaChart } from './SaldosDiaChart'
-import { MetricCards } from './MetricCards'
-import { ModulesMiniCards } from './ModulesMiniCards'
 import { SaldosBancariosWidget } from './SaldosBancariosWidget'
-import { FlujoPendienteWidget } from './FlujoPendienteWidget'
 import { EgresosCategoriasWidget } from './EgresosCategoriasWidget'
 import { VencimientosWidget } from './VencimientosWidget'
 import { FinancialHealthScore } from './FinancialHealthScore'
-import { TopCategoriesWidget } from './TopCategoriesWidget'
 import { SavingsRateTrendChart } from './SavingsRateTrendChart'
-import { DailyBalanceDeltaChart } from './DailyBalanceDeltaChart'
 import { PresupuestosMesWidget } from './PresupuestosMesWidget'
 import { CreditosUsoRapidoWidget } from './CreditosUsoRapidoWidget'
 
@@ -59,35 +56,40 @@ async function fetchWorkspaceData(): Promise<DashboardWorkspaceData> {
 
 function WorkspaceSkeleton() {
   return (
-    <div className="space-y-4">
-      <div className="h-10 w-48 animate-pulse rounded-lg bg-[var(--c-primary-soft)]" />
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="h-8 w-44 animate-pulse rounded-lg bg-[var(--ft-surface-muted)]" />
+        <div className="h-8 w-24 animate-pulse rounded-lg bg-[var(--ft-surface-muted)]" />
+      </div>
 
-      <section className="dashboard-grid grid grid-cols-1 gap-4 lg:grid-cols-12 lg:gap-5">
-        <div className="h-[236px] animate-pulse rounded-[24px] border border-[var(--c-border)] bg-[var(--c-surface)] lg:col-span-8" />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div key={index} className="h-[154px] animate-pulse rounded-[24px] border border-[var(--ft-border)] bg-[var(--ft-surface)]" />
+        ))}
+      </div>
 
-        <div className="grid gap-4 lg:col-span-4">
-          <div className="h-[196px] animate-pulse rounded-[24px] border border-[var(--c-border)] bg-[var(--c-surface)]" />
-          <div className="h-[264px] animate-pulse rounded-[24px] border border-[var(--c-border)] bg-[var(--c-surface)]" />
+      <section className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[7fr_5fr]">
+        <div className="grid gap-3">
+          <div className="h-[370px] animate-pulse rounded-[24px] border border-[var(--ft-border)] bg-[var(--ft-surface)]" />
+          <div className="h-[352px] animate-pulse rounded-[24px] border border-[var(--ft-border)] bg-[var(--ft-surface)]" />
+          <div className="h-[360px] animate-pulse rounded-[24px] border border-[var(--ft-border)] bg-[var(--ft-surface)]" />
         </div>
-
-        <div className="h-[372px] animate-pulse rounded-[24px] border border-[var(--c-border)] bg-[var(--c-surface)] lg:col-span-7" />
-        <div className="h-[220px] animate-pulse rounded-[24px] border border-[var(--c-border)] bg-[var(--c-surface)] lg:col-span-5" />
-
-        <div className="h-[352px] animate-pulse rounded-[24px] border border-[var(--c-border)] bg-[var(--c-surface)] lg:col-span-7" />
-        <div className="h-[352px] animate-pulse rounded-[24px] border border-[var(--c-border)] bg-[var(--c-surface)] lg:col-span-5" />
-
-        <div className="h-[278px] animate-pulse rounded-[24px] border border-[var(--c-border)] bg-[var(--c-surface)] lg:col-span-4" />
-        <div className="h-[278px] animate-pulse rounded-[24px] border border-[var(--c-border)] bg-[var(--c-surface)] lg:col-span-4" />
-        <div className="h-[278px] animate-pulse rounded-[24px] border border-[var(--c-border)] bg-[var(--c-surface)] lg:col-span-4" />
-
-        <div className="h-[236px] animate-pulse rounded-[24px] border border-[var(--c-border)] bg-[var(--c-surface)] lg:col-span-7" />
-        <div className="h-[236px] animate-pulse rounded-[24px] border border-[var(--c-border)] bg-[var(--c-surface)] lg:col-span-5" />
-
-        <div className="h-[268px] animate-pulse rounded-[24px] border border-[var(--c-border)] bg-[var(--c-surface)] lg:col-span-7" />
-        <div className="h-[268px] animate-pulse rounded-[24px] border border-[var(--c-border)] bg-[var(--c-surface)] lg:col-span-5" />
-
-        <div className="h-[212px] animate-pulse rounded-[24px] border border-[var(--c-border)] bg-[var(--c-surface)] lg:col-span-12" />
+        <div className="grid gap-3">
+          <div className="h-[420px] animate-pulse rounded-[24px] border border-[var(--ft-border)] bg-[var(--ft-surface)]" />
+          <div className="h-[260px] animate-pulse rounded-[24px] border border-[var(--ft-border)] bg-[var(--ft-surface)]" />
+        </div>
       </section>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="h-[360px] animate-pulse rounded-[24px] border border-[var(--ft-border)] bg-[var(--ft-surface)]" />
+        <div className="h-[260px] animate-pulse rounded-[24px] border border-[var(--ft-border)] bg-[var(--ft-surface)]" />
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <div key={index} className="h-[278px] animate-pulse rounded-[24px] border border-[var(--ft-border)] bg-[var(--ft-surface)]" />
+        ))}
+      </div>
     </div>
   )
 }
@@ -113,7 +115,7 @@ function DashboardWorkspaceContent({
 
   return (
     <SWRConfig value={{ fallback }}>
-      <div className="dashboard-uniform space-y-4 font-[var(--font-body)]">
+      <div className="dashboard-uniform space-y-3 font-[var(--font-body)]">
         <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
           <h1 className="text-[1.1rem] font-semibold tracking-[-0.018em] text-[var(--ft-text)] md:text-[1.22rem]">
             Vista general
@@ -128,62 +130,61 @@ function DashboardWorkspaceContent({
           </button>
         </div>
 
-        <section className="dashboard-grid grid grid-cols-1 items-start gap-4 lg:grid-cols-12 lg:gap-5">
-          <div className="min-w-0 dashboard-enter lg:col-span-8">
-            <DashboardHeader />
+        <div className="dashboard-enter">
+          <AlertBanner />
+        </div>
+
+        <section className="dashboard-enter dashboard-enter-delay-1">
+          <DashboardHeader />
+        </section>
+
+        <section className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[7fr_5fr]">
+          <div className="grid min-w-0 gap-3">
+            <div className="min-w-0 dashboard-enter dashboard-enter-delay-1">
+              <MoneyFlowChart />
+            </div>
+
+            <div className="min-w-0 dashboard-enter dashboard-enter-delay-2">
+              <SaldosDiaChart />
+            </div>
+
+            <div className="min-w-0 dashboard-enter dashboard-enter-delay-2">
+              <CashFlowProjectionWidget />
+            </div>
           </div>
 
-          <div className="grid min-w-0 gap-4 dashboard-enter dashboard-enter-delay-1 lg:col-span-4">
-            <FlujoPendienteWidget />
-            <VencimientosWidget />
-          </div>
+          <div className="grid min-w-0 gap-3">
+            <div className="min-w-0 dashboard-enter dashboard-enter-delay-2">
+              <FinancialHealthScore />
+            </div>
 
-          <div className="min-w-0 dashboard-enter dashboard-enter-delay-1 lg:col-span-7">
-            <MoneyFlowChart />
+            <div className="min-w-0 dashboard-enter dashboard-enter-delay-3">
+              <VencimientosWidget />
+            </div>
           </div>
+        </section>
 
-          <div className="min-w-0 dashboard-enter dashboard-enter-delay-2 lg:col-span-5">
-            <FinancialHealthScore />
-          </div>
-
-          <div className="min-w-0 dashboard-enter dashboard-enter-delay-2 lg:col-span-7">
-            <SaldosDiaChart />
-          </div>
-
-          <div className="min-w-0 dashboard-enter dashboard-enter-delay-3 lg:col-span-5">
+        <section className="grid grid-cols-1 items-start gap-3 md:grid-cols-2">
+          <div className="min-w-0 dashboard-enter dashboard-enter-delay-2">
             <EgresosCategoriasWidget />
           </div>
 
-          <div className="min-w-0 dashboard-enter dashboard-enter-delay-1 lg:col-span-4">
+          <div className="min-w-0 dashboard-enter dashboard-enter-delay-3">
             <SavingsRateTrendChart />
           </div>
+        </section>
 
-          <div className="min-w-0 dashboard-enter dashboard-enter-delay-2 lg:col-span-4">
-            <DailyBalanceDeltaChart />
-          </div>
-
-          <div className="min-w-0 dashboard-enter dashboard-enter-delay-3 lg:col-span-4">
-            <TopCategoriesWidget />
-          </div>
-
-          <div className="min-w-0 dashboard-enter dashboard-enter-delay-2 lg:col-span-7">
-            <MetricCards />
-          </div>
-
-          <div className="min-w-0 dashboard-enter dashboard-enter-delay-3 lg:col-span-5">
-            <SaldosBancariosWidget />
-          </div>
-
-          <div className="min-w-0 dashboard-enter dashboard-enter-delay-2 lg:col-span-7">
+        <section className="grid grid-cols-1 items-start gap-3 md:grid-cols-3">
+          <div className="min-w-0 dashboard-enter dashboard-enter-delay-2">
             <PresupuestosMesWidget />
           </div>
 
-          <div className="min-w-0 dashboard-enter dashboard-enter-delay-3 lg:col-span-5">
+          <div className="min-w-0 dashboard-enter dashboard-enter-delay-3">
             <CreditosUsoRapidoWidget />
           </div>
 
-          <div className="min-w-0 dashboard-enter dashboard-enter-delay-3 lg:col-span-12">
-            <ModulesMiniCards />
+          <div className="min-w-0 dashboard-enter dashboard-enter-delay-3">
+            <SaldosBancariosWidget />
           </div>
         </section>
       </div>
@@ -230,7 +231,7 @@ export function DashboardWorkspace() {
 
   if (!seed) {
     return (
-      <div className="rounded-2xl border border-[color-mix(in_srgb,var(--c-danger)_24%,transparent)] bg-[color-mix(in_srgb,var(--c-danger)_10%,transparent)] px-4 py-3 text-[13px] text-[var(--c-danger)]">
+      <div className="rounded-2xl border border-[color-mix(in_oklch,var(--ft-danger)_24%,transparent)] bg-[color-mix(in_oklch,var(--ft-danger)_10%,transparent)] px-4 py-3 text-[13px] text-[var(--ft-danger)]">
         Error al cargar dashboard: {error ?? 'Error desconocido'}
       </div>
     )
@@ -248,6 +249,7 @@ export function DashboardWorkspace() {
           mutate('/api/dashboard/saldos-dia?period=3M'),
           mutate('/api/dashboard/saldos-dia?period=6M'),
           mutate('/api/dashboard/saldos-dia?period=1A'),
+          mutate('/api/dashboard/alerts'),
         ])
       }}
     />

@@ -1,26 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import useSWR from 'swr'
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
+import { clamp, formatAxisValue, smoothPath } from '@/lib/charts/svg-utils'
 import { formatNumber } from '@/lib/contracts/ui.contracts'
 import type { SaldoDiaPeriod, SaldoDiaPoint } from '@/lib/dashboard/types'
 import { fetchDashboardData } from './api'
 import { PremiumCard } from './PremiumCard'
-import {
-  chartAxisTick,
-  chartCursor,
-  chartTheme,
-} from './chartTheme'
+
+type SaldoDiaVisualPoint = SaldoDiaPoint & {
+  min_saldo?: number
+  max_saldo?: number
+}
 
 type SaldoDiaResponse = {
   period: SaldoDiaPeriod
@@ -31,38 +22,53 @@ type SaldoDiaResponse = {
   }
 }
 
+type PlottedPoint = {
+  point: SaldoDiaVisualPoint
+  x: number
+  closeY: number
+  minY: number
+  maxY: number
+  hasRange: boolean
+  label: string
+}
+
 const PERIODS: SaldoDiaPeriod[] = ['5D', '1M', '3M', '6M', '1A']
 const fetcher = (url: string) => fetchDashboardData<SaldoDiaResponse>(url)
 
-function SaldosTooltip({ active, payload, label, avgSaldo }: any) {
-  if (!active || !payload?.length) return null
+const CHART_WIDTH = 680
+const CHART_HEIGHT = 286
+const PADDING = { top: 24, right: 28, bottom: 40, left: 64 }
 
-  const row = payload[0]?.payload
-  if (!row) return null
+function formatDateLabel(value: string) {
+  return new Date(`${value}T12:00:00`)
+    .toLocaleDateString('es-PE', { day: '2-digit', month: 'short' })
+    .replace('.', '')
+}
 
-  const diff = row.saldo - avgSaldo
+function buildDomain(points: SaldoDiaVisualPoint[], average: number) {
+  const values = points.flatMap((point) => [
+    point.saldo,
+    point.min_saldo ?? point.saldo,
+    point.max_saldo ?? point.saldo,
+  ])
 
-  return (
-    <div className="rounded-[18px] border border-[var(--c-border)] bg-[var(--c-surface)] px-3.5 py-3 shadow-[var(--shadow-md)]">
-      <p className="text-[11px] text-[var(--c-text-muted)]">
-        {new Date(`${label}T12:00:00`).toLocaleDateString('es-PE', {
-          day: '2-digit',
-          month: 'long',
-          year: 'numeric',
-        })}
-      </p>
-      <p className="mt-1 text-[1.15rem] font-semibold tabular-nums tracking-[-0.03em] text-[var(--c-text)]">
-        S/ {formatNumber(row.saldo, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-      </p>
-      <p className={`mt-2 text-[11px] ${diff >= 0 ? 'text-[var(--c-primary)]' : 'text-[var(--c-danger)]'}`}>
-        {diff >= 0 ? '+' : ''}S/ {formatNumber(diff, { maximumFractionDigits: 0 })} vs promedio
-      </p>
-    </div>
-  )
+  if (average > 0) values.push(average)
+  if (values.length === 0) return { min: 0, max: 1 }
+
+  const rawMin = Math.min(...values)
+  const rawMax = Math.max(...values)
+  const spread = rawMax - rawMin
+  const padding = spread > 0 ? spread * 0.14 : Math.max(Math.abs(rawMax) * 0.08, 1)
+
+  return {
+    min: rawMin - padding,
+    max: rawMax + padding,
+  }
 }
 
 export function SaldosDiaChart() {
   const [period, setPeriod] = useState<SaldoDiaPeriod>('1M')
+  const activePeriodIndex = PERIODS.indexOf(period)
 
   const { data, isLoading } = useSWR(
     `/api/dashboard/saldos-dia?period=${period}`,
@@ -73,18 +79,79 @@ export function SaldosDiaChart() {
     }
   )
 
-  const points = data?.points ?? []
+  const points = useMemo(
+    () => (data?.points ?? []) as SaldoDiaVisualPoint[],
+    [data?.points]
+  )
   const totals = data?.totals ?? { ingresos: 0, egresos: 0 }
   const avgSaldo = points.length
     ? points.reduce((sum, point) => sum + point.saldo, 0) / points.length
     : 0
 
+  const chart = useMemo(() => {
+    const plotWidth = CHART_WIDTH - PADDING.left - PADDING.right
+    const plotHeight = CHART_HEIGHT - PADDING.top - PADDING.bottom
+    const domain = buildDomain(points, avgSaldo)
+    const domainSpan = domain.max - domain.min || 1
+    const y = (value: number) =>
+      PADDING.top + ((domain.max - value) / domainSpan) * plotHeight
+    const x = (index: number) =>
+      points.length <= 1
+        ? PADDING.left + plotWidth / 2
+        : PADDING.left + (index / (points.length - 1)) * plotWidth
+
+    const plotted: PlottedPoint[] = points.map((point, index) => {
+      const minSaldo = point.min_saldo ?? point.saldo
+      const maxSaldo = point.max_saldo ?? point.saldo
+      const hasRange =
+        Number.isFinite(point.min_saldo) &&
+        Number.isFinite(point.max_saldo) &&
+        Math.abs(maxSaldo - minSaldo) > 0.01
+
+      return {
+        point,
+        x: x(index),
+        closeY: y(point.saldo),
+        minY: y(minSaldo),
+        maxY: y(maxSaldo),
+        hasRange,
+        label: formatDateLabel(point.date),
+      }
+    })
+
+    const yTicks = Array.from({ length: 4 }, (_, index) => {
+      const ratio = index / 3
+      const value = domain.max - ratio * domainSpan
+
+      return {
+        value,
+        y: y(value),
+      }
+    })
+
+    const labelEvery = Math.max(1, Math.ceil(points.length / 5))
+    const xLabels = plotted.filter((_, index) => (
+      index === 0 ||
+      index === plotted.length - 1 ||
+      index % labelEvery === 0
+    ))
+
+    return {
+      plotted,
+      yTicks,
+      xLabels,
+      averageY: y(avgSaldo),
+      hasRangeBars: plotted.some((item) => item.hasRange),
+      closePath: smoothPath(plotted.map((item) => ({ x: item.x, y: item.closeY }))),
+    }
+  }, [avgSaldo, points])
+
   if (isLoading && points.length === 0) {
     return (
       <PremiumCard innerClassName="p-5 md:p-6">
         <div className="animate-pulse">
-          <div className="h-4 w-44 rounded bg-[var(--c-surface-2)]" />
-          <div className="mt-4 h-[290px] rounded-[20px] bg-[var(--c-surface-2)]" />
+          <div className="h-4 w-44 rounded bg-[var(--ft-surface-muted)]" />
+          <div className="mt-4 h-[286px] rounded-[20px] bg-[var(--ft-surface-muted)]" />
         </div>
       </PremiumCard>
     )
@@ -94,24 +161,32 @@ export function SaldosDiaChart() {
     <PremiumCard innerClassName="p-5 md:p-6">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--c-text-faint)]">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ft-text-tertiary)]">
             Saldos por día
           </p>
-          <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">
-            Liquidez diaria con referencia visual de tu nivel normal.
+          <p className="mt-1 text-[12px] text-[var(--ft-text-secondary)]">
+            Cierre diario con referencia visual de tu nivel normal.
           </p>
         </div>
 
-        <div className="inline-flex rounded-full border border-[var(--c-border)] bg-[var(--c-surface-2)] p-1">
+        <div className="relative grid grid-cols-5 rounded-full border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] p-1">
+          <span
+            aria-hidden="true"
+            className="absolute inset-y-1 left-1 rounded-full bg-[var(--ft-primary)] shadow-[0_10px_24px_color-mix(in_srgb,var(--ft-primary)_22%,transparent)] transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"
+            style={{
+              width: `calc((100% - 0.5rem) / ${PERIODS.length})`,
+              transform: `translateX(${clamp(activePeriodIndex, 0, PERIODS.length - 1) * 100}%)`,
+            }}
+          />
           {PERIODS.map((item) => (
             <button
               key={item}
               type="button"
               onClick={() => setPeriod(item)}
-              className={`rounded-full px-2.5 py-1.5 text-[11px] font-semibold transition-[background-color,color,transform] duration-150 ease-[var(--ease-out)] active:scale-[0.98] ${
+              className={`relative z-10 min-w-9 rounded-full px-2.5 py-1.5 text-[11px] font-semibold transition-colors duration-200 ${
                 period === item
-                  ? 'bg-[var(--c-primary)] text-[var(--c-text-on-primary)]'
-                  : 'text-[var(--c-text-muted)] hover:text-[var(--c-text)]'
+                  ? 'text-[var(--ft-text-inverse)]'
+                  : 'text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)]'
               }`}
             >
               {item}
@@ -120,74 +195,148 @@ export function SaldosDiaChart() {
         </div>
       </div>
 
-      <div className="h-[286px] w-full">
-        <ResponsiveContainer>
-          <AreaChart data={points} margin={{ top: 12, right: 18, left: 0, bottom: 8 }}>
+      <div className="relative h-[286px] w-full overflow-hidden rounded-[20px] border border-[var(--ft-border)] bg-[var(--ft-surface-subtle)]">
+        {chart.plotted.length === 0 ? (
+          <div className="flex h-full items-center justify-center px-6 text-center text-[12px] text-[var(--ft-text-secondary)]">
+            Sin saldos para el periodo seleccionado.
+          </div>
+        ) : (
+          <svg
+            role="img"
+            aria-label="Saldos diarios del periodo seleccionado"
+            className="h-full w-full"
+            viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+            preserveAspectRatio="none"
+          >
             <defs>
-              <linearGradient id="dailyBalanceGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--c-accent-landing)" stopOpacity={0.26} />
-                <stop offset="100%" stopColor="var(--c-accent-landing)" stopOpacity={0.02} />
+              <linearGradient id="saldosCloseStroke" x1="0" x2="1" y1="0" y2="0">
+                <stop offset="0%" stopColor="var(--ft-info)" />
+                <stop offset="55%" stopColor="var(--ft-primary)" />
+                <stop offset="100%" stopColor="var(--ft-success)" />
               </linearGradient>
             </defs>
-            <CartesianGrid vertical={false} stroke={chartTheme.grid} />
-            <ReferenceLine
-              y={avgSaldo}
-              stroke="var(--c-warning)"
-              strokeDasharray="5 5"
-              label={{
-                value: 'Promedio',
-                position: 'insideTopRight',
-                fill: 'var(--c-text-muted)',
-                fontSize: 11,
-              }}
+
+            {chart.yTicks.map((tick) => (
+              <g key={tick.value}>
+                <line
+                  x1={PADDING.left}
+                  x2={CHART_WIDTH - PADDING.right}
+                  y1={tick.y}
+                  y2={tick.y}
+                  stroke="var(--ft-border)"
+                  strokeDasharray="2 8"
+                  strokeOpacity={0.75}
+                />
+                <text
+                  x={PADDING.left - 12}
+                  y={tick.y + 4}
+                  textAnchor="end"
+                  className="fill-[var(--ft-text-tertiary)] text-[10px] font-medium"
+                >
+                  {formatAxisValue(tick.value, 'PEN')}
+                </text>
+              </g>
+            ))}
+
+            <line
+              x1={PADDING.left}
+              x2={CHART_WIDTH - PADDING.right}
+              y1={chart.averageY}
+              y2={chart.averageY}
+              stroke="var(--ft-warning)"
+              strokeDasharray="5 7"
+              strokeLinecap="round"
+              strokeWidth={1.4}
             />
-            <XAxis
-              dataKey="date"
-              tickLine={false}
-              axisLine={false}
-              tick={chartAxisTick}
-              tickFormatter={(value: string) => {
-                const date = new Date(`${value}T12:00:00`)
-                return date.toLocaleDateString('es-PE', { day: '2-digit', month: 'short' }).replace('.', '')
-              }}
-            />
-            <YAxis
-              tickLine={false}
-              axisLine={false}
-              tick={chartAxisTick}
-              tickFormatter={(value: number) => formatNumber(value, { maximumFractionDigits: 0 })}
-            />
-            <Tooltip
-              cursor={chartCursor}
-              content={<SaldosTooltip avgSaldo={avgSaldo} />}
-            />
-            <Area
-              type="monotone"
-              dataKey="saldo"
-              stroke="var(--c-accent-landing)"
-              strokeWidth={2.5}
-              fill="url(#dailyBalanceGradient)"
-              activeDot={{
-                r: 5,
-                strokeWidth: 2,
-                stroke: 'var(--c-surface)',
-                fill: 'var(--c-accent-landing)',
-              }}
-              animationDuration={700}
-              animationEasing="ease-out"
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+            <g transform={`translate(${CHART_WIDTH - PADDING.right - 126} ${chart.averageY - 12})`}>
+              <rect
+                width="126"
+                height="24"
+                rx="12"
+                fill="var(--ft-surface)"
+                stroke="color-mix(in_srgb,var(--ft-warning)_34%,transparent)"
+              />
+              <text
+                x="63"
+                y="16"
+                textAnchor="middle"
+                className="fill-[var(--ft-text-secondary)] text-[10px] font-semibold"
+              >
+                Prom: {formatAxisValue(avgSaldo, 'PEN')}
+              </text>
+            </g>
+
+            {chart.hasRangeBars ? (
+              chart.plotted.map((item) => (
+                <g key={item.point.date}>
+                  <line
+                    x1={item.x}
+                    x2={item.x}
+                    y1={item.maxY}
+                    y2={item.minY}
+                    stroke="color-mix(in_srgb,var(--ft-primary)_46%,var(--ft-surface-muted))"
+                    strokeLinecap="round"
+                    strokeWidth={7}
+                  />
+                  <circle
+                    cx={item.x}
+                    cy={item.closeY}
+                    r={4.5}
+                    fill={item.point.saldo >= avgSaldo ? 'var(--ft-success)' : 'var(--ft-danger)'}
+                    stroke="var(--ft-surface)"
+                    strokeWidth={2}
+                  />
+                </g>
+              ))
+            ) : (
+              <>
+                <path
+                  d={chart.closePath}
+                  fill="none"
+                  stroke="url(#saldosCloseStroke)"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2.6}
+                  vectorEffect="non-scaling-stroke"
+                />
+                {chart.plotted.map((item) => (
+                  <circle
+                    key={item.point.date}
+                    cx={item.x}
+                    cy={item.closeY}
+                    r={4.8}
+                    fill={item.point.saldo >= avgSaldo ? 'var(--ft-success)' : 'var(--ft-primary)'}
+                    stroke="var(--ft-surface)"
+                    strokeWidth={2}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ))}
+              </>
+            )}
+
+            {chart.xLabels.map((item) => (
+              <text
+                key={item.point.date}
+                x={item.x}
+                y={CHART_HEIGHT - 14}
+                textAnchor="middle"
+                className="fill-[var(--ft-text-tertiary)] text-[10px] font-medium"
+              >
+                {item.label}
+              </text>
+            ))}
+          </svg>
+        )}
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-3 text-[12px] sm:grid-cols-2">
-        <div className="rounded-[18px] border border-[var(--c-primary-border)] bg-[var(--c-primary-soft)] px-4 py-3 text-[var(--c-primary)]">
+        <div className="rounded-[18px] border border-[color-mix(in_srgb,var(--ft-primary)_24%,transparent)] bg-[color-mix(in_srgb,var(--ft-primary)_10%,var(--ft-surface))] px-4 py-3 text-[var(--ft-primary)]">
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] opacity-80">Ingresos acumulados</p>
           <p className="mt-2 text-[1rem] font-semibold tabular-nums">
             S/ {formatNumber(totals.ingresos, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </p>
         </div>
-        <div className="rounded-[18px] border border-[color-mix(in_srgb,var(--c-danger)_24%,transparent)] bg-[color-mix(in_srgb,var(--c-danger)_10%,transparent)] px-4 py-3 text-[var(--c-danger)]">
+        <div className="rounded-[18px] border border-[color-mix(in_srgb,var(--ft-danger)_24%,transparent)] bg-[color-mix(in_srgb,var(--ft-danger)_10%,var(--ft-surface))] px-4 py-3 text-[var(--ft-danger)]">
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] opacity-80">Egresos acumulados</p>
           <p className="mt-2 text-[1rem] font-semibold tabular-nums">
             S/ {formatNumber(totals.egresos, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

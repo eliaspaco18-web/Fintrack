@@ -363,7 +363,8 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
             setSelectedDebtorId(null)
             clearDrawerQuery()
           },
-          width: 720,
+          width: 1520,
+          inset: true,
           content: (
             <DebtorDetail
               debtor={selectedDebtor}

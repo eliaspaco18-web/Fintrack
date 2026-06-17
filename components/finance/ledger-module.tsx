@@ -31,6 +31,7 @@ interface LedgerDetailConfig {
   content: ReactNode
   footer?: ReactNode
   width?: number
+  inset?: boolean
 }
 
 interface LedgerModuleProps {
@@ -126,6 +127,7 @@ export function LedgerModule({
           onClose={detail.onClose}
           footer={detail.footer}
           width={detail.width ?? 640}
+          inset={detail.inset ?? false}
         >
           {detail.content}
         </DetailDrawer>
