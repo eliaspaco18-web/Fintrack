@@ -20,6 +20,21 @@ const PAD = { top: 24, right: 18, bottom: 42, left: 64 }
 const PLOT_W = VIEW_W - PAD.left - PAD.right
 const PLOT_H = VIEW_H - PAD.top - PAD.bottom
 const BASE_Y = PAD.top + PLOT_H
+const HORIZON_RANK: Record<ProjectionHorizon, number> = {
+  '30D': 1,
+  '60D': 2,
+  '90D': 3,
+}
+const HORIZON_SUMMARY_INDEX: Record<ProjectionHorizon, number> = {
+  '30D': 30,
+  '60D': 60,
+  '90D': 90,
+}
+
+type CashFlowProjectionWidgetProps = {
+  variant?: 'full' | 'compact'
+  horizon?: ProjectionHorizon
+}
 
 type WeeklyPoint = {
   id: string
@@ -101,43 +116,45 @@ function buildBandPath(points: WeeklyPoint[], yScale: (value: number) => number)
   return `M ${first.x} ${first.y} ${upper.slice(1).map((point) => `L ${point.x} ${point.y}`).join(' ')} ${lower.map((point) => `L ${point.x} ${point.y}`).join(' ')} Z`
 }
 
-function ProjectionSkeleton() {
+function ProjectionSkeleton({ compact = false }: { compact?: boolean }) {
   return (
-    <PremiumCard innerClassName="p-5 md:p-6">
-      <div className="animate-pulse space-y-5">
+    <PremiumCard innerClassName={compact ? 'p-4' : 'p-5 md:p-6'}>
+      <div className={compact ? 'animate-pulse space-y-4' : 'animate-pulse space-y-5'}>
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-2">
             <div className="h-3 w-44 rounded-full bg-[var(--ft-surface-muted)]" />
             <div className="h-4 w-64 rounded-full bg-[var(--ft-surface-muted)]" />
           </div>
-          <div className="h-7 w-40 rounded-full bg-[var(--ft-surface-muted)]" />
+          <div className="h-7 w-32 rounded-full bg-[var(--ft-surface-muted)]" />
         </div>
-        <div className="h-[276px] rounded-[22px] bg-[var(--ft-surface-muted)]" />
-        <div className="grid gap-2 sm:grid-cols-3">
-          <div className="h-10 rounded-full bg-[var(--ft-surface-muted)]" />
-          <div className="h-10 rounded-full bg-[var(--ft-surface-muted)]" />
-          <div className="h-10 rounded-full bg-[var(--ft-surface-muted)]" />
-        </div>
+        <div className={compact ? 'h-[214px] rounded-[18px] bg-[var(--ft-surface-muted)]' : 'h-[276px] rounded-[22px] bg-[var(--ft-surface-muted)]'} />
+        {!compact && (
+          <div className="grid gap-2 sm:grid-cols-3">
+            <div className="h-10 rounded-full bg-[var(--ft-surface-muted)]" />
+            <div className="h-10 rounded-full bg-[var(--ft-surface-muted)]" />
+            <div className="h-10 rounded-full bg-[var(--ft-surface-muted)]" />
+          </div>
+        )}
       </div>
     </PremiumCard>
   )
 }
 
-function EmptyProjection() {
+function EmptyProjection({ compact = false }: { compact?: boolean }) {
   return (
-    <PremiumCard innerClassName="p-5 md:p-6">
+    <PremiumCard innerClassName={compact ? 'p-4' : 'p-5 md:p-6'}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ft-text-subtle)]">
-            Proyección de flujo
+            {compact ? 'Proyección 30D' : 'Proyección de flujo'}
           </p>
           <p className="mt-1 text-[12px] text-[var(--ft-text-muted)]">
-            Sin eventos futuros suficientes para proyectar caja.
+            {compact ? 'Sin señales cercanas suficientes para proyectar caja.' : 'Sin eventos futuros suficientes para proyectar caja.'}
           </p>
         </div>
       </div>
 
-      <div className="mt-5 grid min-h-[248px] place-items-center rounded-[22px] border border-dashed border-[var(--ft-border)] bg-[var(--ft-surface-muted)] p-6 text-center">
+      <div className={`${compact ? 'mt-4 min-h-[208px] rounded-[18px] p-5' : 'mt-5 min-h-[248px] rounded-[22px] p-6'} grid place-items-center border border-dashed border-[var(--ft-border)] bg-[var(--ft-surface-muted)] text-center`}>
         <div>
           <div className="mx-auto grid h-12 w-12 place-items-center rounded-full border border-[var(--ft-border)] bg-[var(--ft-surface)] text-[var(--ft-primary)]">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -161,7 +178,11 @@ function EmptyProjection() {
   )
 }
 
-export function CashFlowProjectionWidget() {
+export function CashFlowProjectionWidget({
+  variant = 'full',
+  horizon = '30D',
+}: CashFlowProjectionWidgetProps = {}) {
+  const compact = variant === 'compact'
   const [hoveredWeek, setHoveredWeek] = useState<number | null>(null)
   const { data, isLoading } = useSWR('/api/dashboard/projection', fetcher, {
     revalidateOnFocus: false,
@@ -171,12 +192,16 @@ export function CashFlowProjectionWidget() {
   const chartData = useMemo(() => {
     const points = data?.projectionPoints ?? []
     if (!data || points.length === 0) return null
+    const visiblePoints = compact
+      ? points.filter((point) => HORIZON_RANK[point.horizon] <= HORIZON_RANK[horizon])
+      : points
+    if (visiblePoints.length === 0) return null
 
     const weeklyRaw: Array<Omit<WeeklyPoint, 'x' | 'yStart' | 'yEnd'>> = []
     let previousBalance = data.currentBalance
 
-    for (let start = 0; start < points.length; start += 7) {
-      const slice = points.slice(start, start + 7)
+    for (let start = 0; start < visiblePoints.length; start += 7) {
+      const slice = visiblePoints.slice(start, start + 7)
       const last = slice.at(-1)
       const first = slice[0]
       if (!first || !last) continue
@@ -238,50 +263,59 @@ export function CashFlowProjectionWidget() {
       yGrid,
       yScale,
       linePath: smoothPath(weekly.map((point) => ({ x: point.x, y: point.yEnd }))),
-      bands: (['30D', '60D', '90D'] as ProjectionHorizon[]).map((horizon) => {
-        const bandPoints = weekly.filter((point) => point.horizon === horizon)
+      bands: (compact ? [horizon] : (['30D', '60D', '90D'] as ProjectionHorizon[])).map((bandHorizon) => {
+        const bandPoints = weekly.filter((point) => point.horizon === bandHorizon)
         return {
-          horizon,
+          horizon: bandHorizon,
           path: buildBandPath(bandPoints, yScale),
-          opacity: confidenceOpacity(horizon),
+          opacity: confidenceOpacity(bandHorizon),
         }
       }),
     }
-  }, [data])
+  }, [compact, data, horizon])
 
-  if (isLoading && !data) return <ProjectionSkeleton />
+  if (isLoading && !data) return <ProjectionSkeleton compact={compact} />
 
   const hasSignals = (data?.projectionPoints ?? []).some((point) => point.inflows > 0 || point.outflows > 0)
     || (data?.recurringMonthlyExpense ?? 0) > 0
     || (data?.recurringMonthlyIncome ?? 0) > 0
 
-  if (!data || !chartData || !hasSignals) return <EmptyProjection />
+  if (!data || !chartData || !hasSignals) return <EmptyProjection compact={compact} />
 
   const activeIndex = hoveredWeek ?? chartData.weekly.length - 1
   const active = chartData.weekly[activeIndex] ?? chartData.weekly.at(-1)!
   const hitWidth = Math.max(36, PLOT_W / Math.max(chartData.weekly.length, 8))
+  const projectedPoint = projectionAt(data.projectionPoints, HORIZON_SUMMARY_INDEX[horizon])
+  const projectedBalance = projectedPoint?.projectedBalance ?? data.currentBalance
+  const projectedDelta = projectedBalance - data.currentBalance
+  const eventCount = chartData.weekly.reduce((sum, point) => sum + point.events.length, 0)
   const summary30 = projectionAt(data.projectionPoints, 30)
   const summary60 = projectionAt(data.projectionPoints, 60)
   const summary90 = projectionAt(data.projectionPoints, 90)
 
   return (
-    <PremiumCard innerClassName="p-5 md:p-6">
+    <PremiumCard innerClassName={compact ? 'p-4' : 'p-5 md:p-6'}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ft-text-subtle)]">
-            Proyección de flujo
+            {compact ? `Proyección ${horizon}` : 'Proyección de flujo'}
           </p>
           <p className="mt-1 text-[12px] text-[var(--ft-text-muted)]">
-            Waterfall de eventos esperados a 30, 60 y 90 días.
+            {compact ? 'Eventos cercanos y cambio esperado de caja.' : 'Waterfall de eventos esperados a 30, 60 y 90 días.'}
           </p>
         </div>
         <span className="inline-flex rounded-full border border-[var(--ft-warning)]/20 bg-[color-mix(in_oklch,var(--ft-warning)_9%,transparent)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ft-warning)]">
-          {formatPen(data.recurringMonthlyExpense)}/mes en recurrentes
+          {compact ? `${formatPen(projectedBalance)} en ${horizon}` : `${formatPen(data.recurringMonthlyExpense)}/mes en recurrentes`}
         </span>
       </div>
 
-      <div className="relative mt-5 overflow-hidden rounded-[22px] bg-[color-mix(in_oklch,var(--ft-surface-muted)_52%,transparent)] px-2 py-2" onMouseLeave={() => setHoveredWeek(null)}>
-        <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} className="h-[286px] w-full" role="img" aria-label="Proyección de caja en formato waterfall">
+      <div className={`${compact ? 'mt-4 rounded-[18px]' : 'mt-5 rounded-[22px]'} relative overflow-hidden bg-[color-mix(in_oklch,var(--ft-surface-muted)_52%,transparent)] px-2 py-2`} onMouseLeave={() => setHoveredWeek(null)}>
+        <svg
+          viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
+          className={compact ? 'h-[198px] w-full md:h-[214px]' : 'h-[286px] w-full'}
+          role="img"
+          aria-label={`Proyección de caja en formato waterfall ${compact ? horizon : 'a 30, 60 y 90 días'}`}
+        >
           {chartData.yGrid.map((line, index) => (
             <g key={index}>
               <line
@@ -369,53 +403,74 @@ export function CashFlowProjectionWidget() {
           <circle cx={active.x} cy={active.yEnd} r="5" fill="var(--ft-accent-landing)" stroke="var(--ft-surface)" strokeWidth="2" />
         </svg>
 
-        <div
-          className="pointer-events-none absolute w-[232px] rounded-[16px] border border-[var(--ft-border)] bg-[var(--ft-surface)] px-3 py-2 shadow-[var(--shadow-lg)]"
-          style={{
-            left: `${clamp((active.x / VIEW_W) * 100, 4, 72)}%`,
-            top: `${clamp((active.yEnd / VIEW_H) * 100, 8, 62)}%`,
-          }}
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-[11px] font-semibold text-[var(--ft-text)]">Semana {active.label}</p>
-              <p className={`mt-1 text-[18px] font-semibold leading-none tabular-nums ${active.net >= 0 ? 'text-[var(--ft-primary)]' : 'text-[var(--ft-danger)]'}`}>
-                {active.net >= 0 ? '+' : '-'}{formatPen(Math.abs(active.net))}
-              </p>
-            </div>
-            <span className="rounded-full bg-[var(--ft-surface-muted)] px-2 py-1 text-[10px] font-semibold text-[var(--ft-text-subtle)]">
-              {active.horizon}
-            </span>
-          </div>
-          <div className="mt-2 space-y-1 text-[10.5px] leading-4 text-[var(--ft-text-muted)]">
-            {active.events.length === 0 ? (
-              <p>Sin eventos agrupados esta semana.</p>
-            ) : (
-              active.events.slice(0, 3).map((event) => (
-                <p key={event.id} className="truncate">
-                  {eventTypeLabel(event.type)} · {event.label} · {formatPen(event.amountPen)}
+        {!compact && (
+          <div
+            className="pointer-events-none absolute w-[232px] rounded-[16px] border border-[var(--ft-border)] bg-[var(--ft-surface)] px-3 py-2 shadow-[var(--shadow-lg)]"
+            style={{
+              left: `${clamp((active.x / VIEW_W) * 100, 4, 72)}%`,
+              top: `${clamp((active.yEnd / VIEW_H) * 100, 8, 62)}%`,
+            }}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-semibold text-[var(--ft-text)]">Semana {active.label}</p>
+                <p className={`mt-1 text-[18px] font-semibold leading-none tabular-nums ${active.net >= 0 ? 'text-[var(--ft-primary)]' : 'text-[var(--ft-danger)]'}`}>
+                  {active.net >= 0 ? '+' : '-'}{formatPen(Math.abs(active.net))}
                 </p>
-              ))
-            )}
+              </div>
+              <span className="rounded-full bg-[var(--ft-surface-muted)] px-2 py-1 text-[10px] font-semibold text-[var(--ft-text-subtle)]">
+                {active.horizon}
+              </span>
+            </div>
+            <div className="mt-2 space-y-1 text-[10.5px] leading-4 text-[var(--ft-text-muted)]">
+              {active.events.length === 0 ? (
+                <p>Sin eventos agrupados esta semana.</p>
+              ) : (
+                active.events.slice(0, 3).map((event) => (
+                  <p key={event.id} className="truncate">
+                    {eventTypeLabel(event.type)} · {event.label} · {formatPen(event.amountPen)}
+                  </p>
+                ))
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
-      <div className="mt-4 grid gap-2 sm:grid-cols-3">
-        {[
-          ['30D', summary30],
-          ['60D', summary60],
-          ['90D', summary90],
-        ].map(([label, point]) => {
-          const projected = typeof point === 'object' && point ? point.projectedBalance : 0
-          return (
-            <div key={label as string} className={`rounded-full border px-3 py-2 text-[11px] font-semibold tabular-nums ${horizonTone(projected)}`}>
-              <span className="mr-2 text-[10px] uppercase tracking-[0.14em]">{label as string}</span>
-              {formatPen(projected)}
-            </div>
-          )
-        })}
-      </div>
+      {compact ? (
+        <div className="mt-3 grid grid-cols-3 gap-2 text-[11px]">
+          <div className="rounded-[14px] border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-3 py-2">
+            <p className="font-semibold uppercase tracking-[0.13em] text-[var(--ft-text-subtle)]">Saldo</p>
+            <p className="mt-1 font-semibold tabular-nums text-[var(--ft-text)]">{formatPen(projectedBalance)}</p>
+          </div>
+          <div className="rounded-[14px] border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-3 py-2">
+            <p className="font-semibold uppercase tracking-[0.13em] text-[var(--ft-text-subtle)]">Cambio</p>
+            <p className={`mt-1 font-semibold tabular-nums ${projectedDelta >= 0 ? 'text-[var(--ft-primary)]' : 'text-[var(--ft-danger)]'}`}>
+              {projectedDelta >= 0 ? '+' : '-'}{formatPen(Math.abs(projectedDelta))}
+            </p>
+          </div>
+          <div className="rounded-[14px] border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-3 py-2">
+            <p className="font-semibold uppercase tracking-[0.13em] text-[var(--ft-text-subtle)]">Eventos</p>
+            <p className="mt-1 font-semibold tabular-nums text-[var(--ft-text)]">{eventCount}</p>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          {[
+            ['30D', summary30],
+            ['60D', summary60],
+            ['90D', summary90],
+          ].map(([label, point]) => {
+            const projected = typeof point === 'object' && point ? point.projectedBalance : 0
+            return (
+              <div key={label as string} className={`rounded-full border px-3 py-2 text-[11px] font-semibold tabular-nums ${horizonTone(projected)}`}>
+                <span className="mr-2 text-[10px] uppercase tracking-[0.14em]">{label as string}</span>
+                {formatPen(projected)}
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       <style jsx>{`
         .waterfall-block {

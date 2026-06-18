@@ -13,21 +13,16 @@
 
 import { useState, useCallback }     from 'react'
 import { useRouter }                 from 'next/navigation'
-import { useForm }                   from 'react-hook-form'
 import { useCurrency }               from '@/lib/hooks/useDashboard'
 import { formatCurrency, formatNumber } from '@/lib/contracts/ui.contracts'
-import {
-  updateTransactionAction,
-  deleteTransactionAction,
-}                                    from '@/app/actions/transaction.actions'
+import { deleteTransactionAction }   from '@/app/actions/transaction.actions'
+import { TransactionEditModal }      from '@/components/forms/TransactionEditModal'
 import {
   BackLink,
   DetailShell,
   DetailCard,
-  DetailSection,
   DetailField,
   FieldGrid,
-  ActionBar,
   ActionButton,
   ConfirmDialog,
   LinkedModuleBadge,
@@ -45,13 +40,6 @@ interface LinkedModules {
   payable?:    { id: string; creditor_name: string; amount: number; status: string } | null
 }
 
-interface EditFormValues {
-  description:      string
-  category_id?:     string
-  notes?:           string
-  transaction_date: string
-}
-
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 const TYPE_LABELS = {
@@ -64,123 +52,6 @@ function formatDate(d: string) {
   return new Date(d + 'T12:00:00').toLocaleDateString('es-PE', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   })
-}
-
-// ─── INLINE EDIT FORM ─────────────────────────────────────────────────────────
-
-interface InlineEditFormProps {
-  tx:       TransactionWithRelations
-  onSave:   () => void
-  onCancel: () => void
-}
-
-function InlineEditForm({ tx, onSave, onCancel }: InlineEditFormProps) {
-  const [loading, setLoading] = useState(false)
-  const [error,   setError]   = useState<string | null>(null)
-
-  const { register, handleSubmit, formState: { errors } } = useForm<EditFormValues>({
-    defaultValues: {
-      description:      tx.description,
-      category_id:      tx.category_id ?? undefined,
-      notes:            tx.notes ?? '',
-      transaction_date: tx.transaction_date,
-    },
-  })
-
-  const fieldClass = `
-    w-full px-3 py-2 rounded-lg text-sm bg-white/[0.05] border
-    border-white/[0.09] text-white/80 placeholder:text-white/20
-    focus:outline-none focus:ring-1 focus:ring-[rgba(14,79,70,0.25)]
-    focus:border-[var(--c-primary-border)] transition-all
-  `
-
-  const onSubmit = handleSubmit(async (values) => {
-    setLoading(true)
-    setError(null)
-    const result = await updateTransactionAction(tx.id, values)
-    setLoading(false)
-    if (result.ok) {
-      onSave()
-    } else {
-      setError(result.error.message)
-    }
-  })
-
-  return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      {/* Aviso de restricción */}
-      <div className="rounded-xl bg-amber-500/[0.07] border border-amber-500/20 px-4 py-3">
-        <p className="text-[11px] text-amber-400/80">
-          El monto, tipo y cuentas no pueden modificarse. Para cambiarlos,
-          elimina esta transacción y créala de nuevo.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div className="col-span-2">
-          <label className="block text-[10px] font-semibold uppercase tracking-wide text-white/30 mb-1">
-            Descripción *
-          </label>
-          <input
-            {...register('description', { required: true, maxLength: 255 })}
-            className={fieldClass}
-            placeholder="Descripción"
-          />
-          {errors.description && (
-            <p className="text-[11px] text-red-400 mt-1">Requerida, máx. 255 caracteres</p>
-          )}
-        </div>
-
-        <div className="col-span-2">
-          <label className="block text-[10px] font-semibold uppercase tracking-wide text-white/30 mb-1">
-            Fecha
-          </label>
-          <input
-            type="date"
-            {...register('transaction_date')}
-            className={fieldClass}
-          />
-          <p className="text-[10px] text-white/20 mt-1">
-            Solo se puede cambiar dentro del mismo mes
-          </p>
-        </div>
-
-        <div className="col-span-2">
-          <label className="block text-[10px] font-semibold uppercase tracking-wide text-white/30 mb-1">
-            Notas
-          </label>
-          <textarea
-            {...register('notes')}
-            rows={2}
-            className={`${fieldClass} resize-none`}
-            placeholder="Observaciones opcionales…"
-          />
-        </div>
-      </div>
-
-      {error && <InlineError message={error}/>}
-
-      <div className="flex gap-3 justify-end pt-1">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="px-4 py-2 rounded-xl text-sm text-white/40 hover:text-white/65
-            bg-white/[0.04] hover:bg-white/[0.07] transition-all"
-        >
-          Cancelar
-        </button>
-        <button
-          type="submit"
-          disabled={loading}
-          className="px-4 py-2 rounded-xl text-sm font-bold
-            bg-[var(--c-primary)] hover:bg-[var(--c-primary-hover)] text-black
-            disabled:opacity-40 transition-all"
-        >
-          {loading ? 'Guardando…' : 'Guardar cambios'}
-        </button>
-      </div>
-    </form>
-  )
 }
 
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────────────────────────
@@ -246,18 +117,16 @@ export function TransactionDetailClient({
             {/* Acciones */}
             <DetailCard className="p-5">
               <h3 className="text-[11px] font-bold uppercase tracking-[0.1em]
-                text-white/25 mb-4">
+                text-[var(--c-text-muted)] mb-4">
                 Acciones
               </h3>
               <div className="space-y-2">
-                {!editing && (
-                  <ActionButton
-                    label="Editar transacción"
-                    variant="secondary"
-                    onClick={() => setEditing(true)}
-                    icon={<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>}
-                  />
-                )}
+                <ActionButton
+                  label="Editar transacción"
+                  variant="secondary"
+                  onClick={() => setEditing(true)}
+                  icon={<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>}
+                />
                 <ActionButton
                   label="Eliminar transacción"
                   variant="danger"
@@ -277,7 +146,7 @@ export function TransactionDetailClient({
             {hasLinkedModules && (
               <DetailCard className="p-5">
                 <h3 className="text-[11px] font-bold uppercase tracking-[0.1em]
-                  text-white/25 mb-4">
+                  text-[var(--c-text-muted)] mb-4">
                   Módulos generados
                 </h3>
                 <div className="space-y-2">
@@ -324,7 +193,7 @@ export function TransactionDetailClient({
       >
         {/* ── HEADER ───────────────────────────────────────────────────── */}
         <DetailCard>
-          <div className="p-6 border-b border-white/[0.05]">
+          <div className="p-6 border-b border-[var(--c-border)]">
             <div className="flex items-start gap-4">
               {/* Icono tipo */}
               <div
@@ -351,16 +220,16 @@ export function TransactionDetailClient({
                     {typeConfig.label}
                   </span>
                   {tx.category && (
-                    <span className="text-[10px] text-white/30 bg-white/[0.05]
+                    <span className="text-[10px] text-[var(--c-text-muted)] bg-[var(--c-surface-2)]
                       px-2 py-0.5 rounded-full">
                       {tx.category.name}
                     </span>
                   )}
                 </div>
-                <h1 className="text-lg font-bold text-white/85 leading-tight">
+                <h1 className="text-lg font-bold text-[var(--c-text)] leading-tight">
                   {tx.description}
                 </h1>
-                <p className="text-sm text-white/35 mt-0.5">
+                <p className="text-sm text-[var(--c-text-muted)] mt-0.5">
                   {formatDate(tx.transaction_date)}
                 </p>
               </div>
@@ -374,7 +243,7 @@ export function TransactionDetailClient({
                   {typeConfig.prefix}{formatCurrency(format(amountPen), preferred)}
                 </p>
                 {tx.currency !== 'PEN' && (
-                  <p className="text-[11px] text-white/25 mt-0.5 tabular-nums">
+                  <p className="text-[11px] text-[var(--c-text-faint)] mt-0.5 tabular-nums">
                     {formatCurrency(tx.amount, tx.currency as 'PEN' | 'USD')}
                   </p>
                 )}
@@ -390,72 +259,72 @@ export function TransactionDetailClient({
 
           {/* ── CAMPOS DE DETALLE ──────────────────────────────────────── */}
           <div className="p-6">
-            {editing ? (
-              <InlineEditForm
-                tx={tx}
-                onSave={handleEditSave}
-                onCancel={() => setEditing(false)}
-              />
-            ) : (
-              <FieldGrid>
-                <DetailField label="Cuenta">
+            <FieldGrid>
+              <DetailField label="Cuenta">
+                <div className="flex items-center gap-2">
+                  {tx.source_account && (
+                    <span
+                      className="w-3 h-3 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: tx.source_account.color }}
+                    />
+                  )}
+                  {tx.source_account?.name ?? '—'}
+                </div>
+              </DetailField>
+
+              {tx.destination_account && (
+                <DetailField label="Cuenta destino">
                   <div className="flex items-center gap-2">
-                    {tx.source_account && (
-                      <span
-                        className="w-3 h-3 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: tx.source_account.color }}
-                      />
-                    )}
-                    {tx.source_account?.name ?? '—'}
+                    <span
+                      className="w-3 h-3 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: tx.destination_account.color }}
+                    />
+                    {tx.destination_account.name}
                   </div>
                 </DetailField>
+              )}
 
-                {tx.destination_account && (
-                  <DetailField label="Cuenta destino">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="w-3 h-3 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: tx.destination_account.color }}
-                      />
-                      {tx.destination_account.name}
-                    </div>
-                  </DetailField>
+              <DetailField label="Moneda" mono>
+                {tx.currency}
+                {tx.currency === 'USD' && (
+                  <span className="text-[var(--c-text-muted)] text-[11px] ml-2">
+                    · TC {formatNumber(Number(tx.exchange_rate ?? 0), { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN
+                  </span>
                 )}
+              </DetailField>
 
-                <DetailField label="Moneda" mono>
-                  {tx.currency}
-                  {tx.currency === 'USD' && (
-                    <span className="text-white/30 text-[11px] ml-2">
-                      · TC {formatNumber(Number(tx.exchange_rate ?? 0), { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN
-                    </span>
-                  )}
+              <DetailField label="Equivalente en PEN" mono>
+                {formatCurrency(amountPen, 'PEN')}
+              </DetailField>
+
+              {tx.notes && (
+                <DetailField label="Notas" full>
+                  <p className="text-[var(--c-text-muted)] text-sm leading-relaxed">{tx.notes}</p>
                 </DetailField>
+              )}
 
-                <DetailField label="Equivalente en PEN" mono>
-                  {formatCurrency(amountPen, 'PEN')}
-                </DetailField>
+              <DetailField label="Registrado" mono>
+                {new Date(tx.created_at).toLocaleDateString('es-PE', {
+                  day: 'numeric', month: 'short', year: 'numeric',
+                  hour: '2-digit', minute: '2-digit',
+                })}
+              </DetailField>
 
-                {tx.notes && (
-                  <DetailField label="Notas" full>
-                    <p className="text-white/50 text-sm leading-relaxed">{tx.notes}</p>
-                  </DetailField>
-                )}
-
-                <DetailField label="Registrado" mono>
-                  {new Date(tx.created_at).toLocaleDateString('es-PE', {
-                    day: 'numeric', month: 'short', year: 'numeric',
-                    hour: '2-digit', minute: '2-digit',
-                  })}
-                </DetailField>
-
-                <DetailField label="ID" mono>
-                  <span className="text-[11px] text-white/25 font-mono">{tx.id}</span>
-                </DetailField>
-              </FieldGrid>
-            )}
+              <DetailField label="ID" mono>
+                <span className="text-[11px] text-[var(--c-text-faint)] font-mono">{tx.id}</span>
+              </DetailField>
+            </FieldGrid>
           </div>
         </DetailCard>
       </DetailShell>
+
+      <TransactionEditModal
+        open={editing}
+        transactionId={tx.id}
+        initialTransaction={tx}
+        onClose={() => setEditing(false)}
+        onUpdated={handleEditSave}
+      />
 
       {/* Confirm eliminar */}
       <ConfirmDialog

@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { SWRConfig, useSWRConfig } from 'swr'
 import type {
@@ -10,7 +11,6 @@ import type {
   MoneyFlowPoint,
 } from '@/lib/dashboard/types'
 import { fetchDashboardData } from './api'
-import { AlertBanner } from './AlertBanner'
 import { DashboardHeader } from './DashboardHeader'
 import { MoneyFlowChart } from './MoneyFlowChart'
 import { CashFlowProjectionWidget } from './CashFlowProjectionWidget'
@@ -22,6 +22,15 @@ import { FinancialHealthScore } from './FinancialHealthScore'
 import { SavingsRateTrendChart } from './SavingsRateTrendChart'
 import { PresupuestosMesWidget } from './PresupuestosMesWidget'
 import { CreditosUsoRapidoWidget } from './CreditosUsoRapidoWidget'
+import { FlujoPendienteWidget } from './FlujoPendienteWidget'
+import { OverviewRiskStrip } from './OverviewRiskStrip'
+import {
+  DashboardTabs,
+  getDashboardPanelId,
+  getDashboardTabId,
+  type DashboardTabId,
+  type DashboardWorkspaceTabId,
+} from './DashboardTabs'
 
 type MoneyFlowResponse = {
   mode: MoneyFlowMode
@@ -94,6 +103,31 @@ function WorkspaceSkeleton() {
   )
 }
 
+function TabPanel({
+  activeTab,
+  tabId,
+  children,
+}: {
+  activeTab: DashboardWorkspaceTabId
+  tabId: DashboardTabId
+  children: ReactNode
+}) {
+  const isActive = activeTab === tabId
+
+  return (
+    <section
+      id={getDashboardPanelId(tabId)}
+      role="tabpanel"
+      aria-labelledby={getDashboardTabId(tabId)}
+      hidden={!isActive}
+      tabIndex={0}
+      className="space-y-3 focus-visible:outline-none"
+    >
+      {isActive ? children : null}
+    </section>
+  )
+}
+
 function DashboardWorkspaceContent({
   seed,
   onRefresh,
@@ -103,6 +137,7 @@ function DashboardWorkspaceContent({
   onRefresh: () => Promise<void>
   refreshing: boolean
 }) {
+  const [activeTab, setActiveTab] = useState<DashboardWorkspaceTabId>('overview')
   const fallback = useMemo(
     () => ({
       [DASHBOARD_KEYS.summary]: seed.summary,
@@ -118,7 +153,7 @@ function DashboardWorkspaceContent({
       <div className="dashboard-uniform space-y-3 font-[var(--font-body)]">
         <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
           <h1 className="text-[1.1rem] font-semibold tracking-[-0.018em] text-[var(--ft-text)] md:text-[1.22rem]">
-            Vista general
+            Dashboard
           </h1>
           <button
             type="button"
@@ -130,63 +165,83 @@ function DashboardWorkspaceContent({
           </button>
         </div>
 
-        <div className="dashboard-enter">
-          <AlertBanner />
-        </div>
+        <DashboardTabs
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+        />
 
-        <section className="dashboard-enter dashboard-enter-delay-1">
-          <DashboardHeader />
-        </section>
+        <TabPanel activeTab={activeTab} tabId="overview">
+          <section className="dashboard-enter dashboard-enter-delay-1">
+            <DashboardHeader />
+          </section>
 
-        <section className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[7fr_5fr]">
-          <div className="grid min-w-0 gap-3">
-            <div className="min-w-0 dashboard-enter dashboard-enter-delay-1">
-              <MoneyFlowChart />
-            </div>
-
-            <div className="min-w-0 dashboard-enter dashboard-enter-delay-2">
-              <SaldosDiaChart />
-            </div>
-
-            <div className="min-w-0 dashboard-enter dashboard-enter-delay-2">
-              <CashFlowProjectionWidget />
-            </div>
-          </div>
-
-          <div className="grid min-w-0 gap-3">
+          <section className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[5fr_4fr]">
             <div className="min-w-0 dashboard-enter dashboard-enter-delay-2">
               <FinancialHealthScore />
             </div>
 
-            <div className="min-w-0 dashboard-enter dashboard-enter-delay-3">
-              <VencimientosWidget />
+            <div className="grid min-w-0 gap-3">
+              <CashFlowProjectionWidget variant="compact" horizon="30D" />
             </div>
-          </div>
-        </section>
+          </section>
 
-        <section className="grid grid-cols-1 items-start gap-3 md:grid-cols-2">
-          <div className="min-w-0 dashboard-enter dashboard-enter-delay-2">
-            <EgresosCategoriasWidget />
+          <div className="dashboard-enter dashboard-enter-delay-3">
+            <OverviewRiskStrip />
           </div>
+        </TabPanel>
 
-          <div className="min-w-0 dashboard-enter dashboard-enter-delay-3">
-            <SavingsRateTrendChart />
-          </div>
-        </section>
+        <TabPanel activeTab={activeTab} tabId="transactions">
+          <section className="dashboard-enter dashboard-enter-delay-1">
+            <MoneyFlowChart />
+          </section>
 
-        <section className="grid grid-cols-1 items-start gap-3 md:grid-cols-3">
-          <div className="min-w-0 dashboard-enter dashboard-enter-delay-2">
+          <section className="grid grid-cols-1 items-start gap-3 md:grid-cols-2">
+            <div className="min-w-0 dashboard-enter dashboard-enter-delay-2">
+              <SaldosDiaChart />
+            </div>
+
+            <div className="min-w-0 dashboard-enter dashboard-enter-delay-3">
+              <EgresosCategoriasWidget />
+            </div>
+          </section>
+        </TabPanel>
+
+        <TabPanel activeTab={activeTab} tabId="budgets">
+          <section className="max-w-[720px] dashboard-enter dashboard-enter-delay-1">
             <PresupuestosMesWidget />
-          </div>
+          </section>
+        </TabPanel>
 
-          <div className="min-w-0 dashboard-enter dashboard-enter-delay-3">
+        <TabPanel activeTab={activeTab} tabId="credits">
+          <section className="max-w-[760px] dashboard-enter dashboard-enter-delay-1">
             <CreditosUsoRapidoWidget />
-          </div>
+          </section>
+        </TabPanel>
 
-          <div className="min-w-0 dashboard-enter dashboard-enter-delay-3">
-            <SaldosBancariosWidget />
-          </div>
-        </section>
+        <TabPanel activeTab={activeTab} tabId="cash-due">
+          <section className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[4fr_5fr]">
+            <div className="grid min-w-0 gap-3">
+              <VencimientosWidget />
+              <FlujoPendienteWidget />
+            </div>
+
+            <div className="min-w-0 dashboard-enter dashboard-enter-delay-3">
+              <CashFlowProjectionWidget />
+            </div>
+          </section>
+        </TabPanel>
+
+        <TabPanel activeTab={activeTab} tabId="wealth">
+          <section className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[4fr_5fr]">
+            <div className="min-w-0 dashboard-enter dashboard-enter-delay-2">
+              <SavingsRateTrendChart />
+            </div>
+
+            <div className="min-w-0 dashboard-enter dashboard-enter-delay-3">
+              <SaldosBancariosWidget />
+            </div>
+          </section>
+        </TabPanel>
       </div>
     </SWRConfig>
   )

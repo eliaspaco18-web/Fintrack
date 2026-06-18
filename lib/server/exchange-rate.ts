@@ -27,6 +27,7 @@ export interface ExchangeRateSnapshot {
 interface ExternalRateResult {
   rate: number
   source: string
+  fetchedAt?: string | null
 }
 
 type UntypedDbClient = SupabaseClient
@@ -97,6 +98,29 @@ async function fetchExchangeRateApiUsdPenRate(): Promise<ExternalRateResult | nu
   }
 }
 
+async function fetchExchangeRateApiUsdPenRateForDate(effectiveDate: string): Promise<ExternalRateResult | null> {
+  const apiKey = normalizeEnvValue(process.env.EXCHANGE_RATE_API_KEY)
+  const apiUrl = normalizeEnvValue(process.env.EXCHANGE_RATE_API_URL)
+  if (!apiKey || !apiUrl) return null
+
+  const [year, month, day] = effectiveDate.split('-')
+  if (!year || !month || !day) return null
+
+  try {
+    const res = await fetch(`${apiUrl}/${apiKey}/history/USD/${year}/${month}/${day}`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(EXCHANGE_RATE_TIMEOUT_MS),
+    })
+    if (!res.ok) return null
+    const json = await res.json()
+    const rate = Number(json?.conversion_rates?.PEN)
+    if (!Number.isFinite(rate) || rate <= 0) return null
+    return { rate, source: 'exchangerate-api-history', fetchedAt: `${effectiveDate}T12:00:00.000Z` }
+  } catch {
+    return null
+  }
+}
+
 async function fetchOpenErApiUsdPenRate(): Promise<ExternalRateResult | null> {
   try {
     const res = await fetch('https://open.er-api.com/v6/latest/USD', {
@@ -108,6 +132,25 @@ async function fetchOpenErApiUsdPenRate(): Promise<ExternalRateResult | null> {
     const rate = Number(json?.rates?.PEN)
     if (!Number.isFinite(rate) || rate <= 0) return null
     return { rate, source: 'open-er-api' }
+  } catch {
+    return null
+  }
+}
+
+async function fetchCurrencyApiUsdPenRateForDate(effectiveDate: string): Promise<ExternalRateResult | null> {
+  try {
+    const res = await fetch(
+      `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${effectiveDate}/v1/currencies/usd.json`,
+      {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(EXCHANGE_RATE_TIMEOUT_MS),
+      }
+    )
+    if (!res.ok) return null
+    const json = await res.json()
+    const rate = Number(json?.usd?.pen)
+    if (!Number.isFinite(rate) || rate <= 0) return null
+    return { rate, source: 'currency-api-history', fetchedAt: `${effectiveDate}T12:00:00.000Z` }
   } catch {
     return null
   }
@@ -132,6 +175,25 @@ async function fetchExchangeRateHostUsdPenRate(): Promise<ExternalRateResult | n
   }
 }
 
+async function fetchExchangeRateHostUsdPenRateForDate(effectiveDate: string): Promise<ExternalRateResult | null> {
+  try {
+    const res = await fetch(
+      `https://api.exchangerate.host/${effectiveDate}?base=USD&symbols=PEN`,
+      {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(EXCHANGE_RATE_TIMEOUT_MS),
+      }
+    )
+    if (!res.ok) return null
+    const json = await res.json()
+    const rate = Number(json?.rates?.PEN)
+    if (!Number.isFinite(rate) || rate <= 0) return null
+    return { rate, source: 'exchangerate-host-history', fetchedAt: `${effectiveDate}T12:00:00.000Z` }
+  } catch {
+    return null
+  }
+}
+
 async function fetchExternalUsdPenRate(): Promise<ExternalRateResult | null> {
   const primary = await fetchExchangeRateApiUsdPenRate()
   if (primary) return primary
@@ -140,6 +202,19 @@ async function fetchExternalUsdPenRate(): Promise<ExternalRateResult | null> {
   if (secondary) return secondary
 
   return fetchExchangeRateHostUsdPenRate()
+}
+
+async function fetchExternalUsdPenRateForDate(effectiveDate: string): Promise<ExternalRateResult | null> {
+  const today = getLimaDateString()
+  if (effectiveDate === today) return fetchExternalUsdPenRate()
+
+  const primary = await fetchExchangeRateApiUsdPenRateForDate(effectiveDate)
+  if (primary) return primary
+
+  const secondary = await fetchCurrencyApiUsdPenRateForDate(effectiveDate)
+  if (secondary) return secondary
+
+  return fetchExchangeRateHostUsdPenRateForDate(effectiveDate)
 }
 
 async function getLatestLegacyRateFromDb(): Promise<ExchangeRateSnapshot | null> {
@@ -386,9 +461,14 @@ export async function ensureAccountingUsdPenExchangeRate(
   const existing = await getDailyRateByDate(effectiveDate)
   if (existing) return existing
 
-  const fresh = await fetchExternalUsdPenRate()
+  const fresh = await fetchExternalUsdPenRateForDate(effectiveDate)
   if (fresh) {
-    const stored = await persistDailyRateIfMissing(fresh.rate, fresh.source, effectiveDate)
+    const stored = await persistDailyRateIfMissing(
+      fresh.rate,
+      fresh.source,
+      effectiveDate,
+      fresh.fetchedAt,
+    )
     if (stored) {
       return { ...stored, refreshed: true }
     }
@@ -403,7 +483,11 @@ export async function ensureAccountingUsdPenExchangeRate(
   }
 
   const latestLegacy = await getLatestLegacyRateFromDb()
-  if (latestLegacy?.rate && latestLegacy.rate > 0) {
+  if (
+    latestLegacy?.rate &&
+    latestLegacy.rate > 0 &&
+    latestLegacy.effective_date === effectiveDate
+  ) {
     const stored = await persistDailyRateIfMissing(
       latestLegacy.rate,
       latestLegacy.source,
@@ -413,6 +497,13 @@ export async function ensureAccountingUsdPenExchangeRate(
 
     if (stored) return stored
     return { ...latestLegacy, effective_date: effectiveDate }
+  }
+
+  const prior = await getDailyRateOnOrBefore(effectiveDate)
+  if (prior) return prior
+
+  if (latestLegacy?.rate && latestLegacy.rate > 0) {
+    return latestLegacy
   }
 
   return fallbackSnapshot(effectiveDate)
@@ -426,9 +517,8 @@ export async function resolveAccountingUsdPenExchangeRate(
   } = {},
 ): Promise<ExchangeRateSnapshot> {
   const effectiveDate = normalizeEffectiveDate(opts.date)
-  const today = getLimaDateString()
 
-  if (opts.ensureForToday !== false && effectiveDate === today) {
+  if (opts.ensureForToday !== false) {
     return ensureAccountingUsdPenExchangeRate({ date: effectiveDate })
   }
 

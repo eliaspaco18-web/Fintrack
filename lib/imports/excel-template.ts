@@ -51,6 +51,8 @@ type TemplateListKey =
   | 'creditors'
   | 'receivableReferences'
   | 'payableReferences'
+  | 'receivableSettlementTargets'
+  | 'payableSettlementTargets'
 
 type ColumnKind = 'text' | 'date' | 'money' | 'number' | 'percent' | 'integer'
 
@@ -355,6 +357,8 @@ function addListSheet(workbook: ExcelJS.Workbook, catalogs: ImportTemplateCatalo
     creditors: catalogs.creditors,
     receivableReferences: catalogs.receivableReferences,
     payableReferences: catalogs.payableReferences,
+    receivableSettlementTargets: uniqueSorted([...catalogs.debtors, ...catalogs.receivableReferences]),
+    payableSettlementTargets: uniqueSorted([...catalogs.creditors, ...catalogs.payableReferences]),
   }
 
   const listKeys = Object.keys(lists) as TemplateListKey[]
@@ -467,7 +471,7 @@ function addInstructionsSheet(workbook: ExcelJS.Workbook, generatedAt: Date) {
     ['Montos', 'Ingresa numeros sin simbolo de moneda. Ejemplo: 1500.50'],
     ['Portafolios', 'Los portafolios ya existen en FinTrack. Solo selecciona el nombre desde la lista.'],
     ['Categorias', 'Las categorias se muestran como texto simple tal como existen en FinTrack.'],
-    ['Prestamos vinculados', 'Si vas a importar cobros o pagos de prestamos ya creados en FinTrack, selecciona el deudor o acreedor relacionado en la hoja de Ingresos o Egresos.'],
+    ['Prestamos vinculados', 'En Ingresos y Egresos puedes usar el nombre del deudor o acreedor para una aplicacion general, o la referencia exacta REC-... / PAY-... para una cuenta puntual.'],
     ['Tipo de cambio', 'No necesitas llenarlo en la plantilla. FinTrack lo resolvera al importar usando la fecha del movimiento cuando exista un registro disponible.'],
     ['Obligatorios', 'Las columnas con * son obligatorias.'],
     ['Validacion', 'Excel ayuda con listas y formatos, pero FinTrack validara todo en el servidor.'],
@@ -718,8 +722,8 @@ export async function buildImportTemplateWorkbook(catalogs: ImportTemplateCatalo
         key: 'prestamo_relacionado',
         header: 'Prestamo por cobrar relacionado',
         width: 42,
-        list: 'debtors',
-        note: 'Opcional. Esta lista sale del registro de deudores existente en FinTrack y se usa para aplicar el cobro a una cuenta abierta relacionada cuando exista una coincidencia unica.',
+        list: 'receivableSettlementTargets',
+        note: 'Opcional. Puedes elegir el nombre del deudor para un cobro general al saldo abierto en esa moneda, o pegar la referencia exacta REC-... para cobrar una cuenta puntual.',
       },
       { key: 'notas', header: 'Notas', width: 42, kind: 'text', note: 'Comentario opcional para ampliar contexto.' },
     ],
@@ -761,8 +765,8 @@ export async function buildImportTemplateWorkbook(catalogs: ImportTemplateCatalo
         key: 'prestamo_relacionado',
         header: 'Prestamo por pagar relacionado',
         width: 42,
-        list: 'creditors',
-        note: 'Opcional. Esta lista sale del registro de acreedores existente en FinTrack y se usa para aplicar el pago a una cuenta abierta relacionada cuando exista una coincidencia unica.',
+        list: 'payableSettlementTargets',
+        note: 'Opcional. Puedes elegir el nombre del acreedor para que FinTrack resuelva una cuenta abierta unica, o pegar la referencia exacta PAY-... para pagar una cuenta puntual.',
       },
       { key: 'notas', header: 'Notas', width: 42, kind: 'text', note: 'Comentario opcional para ampliar contexto.' },
     ],

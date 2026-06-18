@@ -35,9 +35,9 @@ type PlottedPoint = {
 const PERIODS: SaldoDiaPeriod[] = ['5D', '1M', '3M', '6M', '1A']
 const fetcher = (url: string) => fetchDashboardData<SaldoDiaResponse>(url)
 
-const CHART_WIDTH = 680
-const CHART_HEIGHT = 286
-const PADDING = { top: 24, right: 28, bottom: 40, left: 64 }
+const CHART_WIDTH = 960
+const CHART_HEIGHT = 292
+const PADDING = { top: 34, right: 36, bottom: 46, left: 74 }
 
 function formatDateLabel(value: string) {
   return new Date(`${value}T12:00:00`)
@@ -64,6 +64,50 @@ function buildDomain(points: SaldoDiaVisualPoint[], average: number) {
     min: rawMin - padding,
     max: rawMax + padding,
   }
+}
+
+function buildAreaPath(path: string, plotted: PlottedPoint[]) {
+  const first = plotted[0]
+  const last = plotted.at(-1)
+
+  if (!path || !first || !last) return ''
+  return `${path} L ${last.x} ${CHART_HEIGHT - PADDING.bottom} L ${first.x} ${CHART_HEIGHT - PADDING.bottom} Z`
+}
+
+function shouldShowMarker(item: PlottedPoint, index: number, plotted: PlottedPoint[]) {
+  const lastIndex = plotted.length - 1
+  const previous = plotted[index - 1]
+  const next = plotted[index + 1]
+
+  if (index === 0 || index === lastIndex) return true
+
+  const isLocalPeak =
+    previous &&
+    next &&
+    item.point.saldo > previous.point.saldo &&
+    item.point.saldo > next.point.saldo
+  const isLocalValley =
+    previous &&
+    next &&
+    item.point.saldo < previous.point.saldo &&
+    item.point.saldo < next.point.saldo
+
+  return Boolean(isLocalPeak || isLocalValley)
+}
+
+function averageLabelPosition(averageY: number) {
+  const labelWidth = 116
+  const labelHeight = 24
+  const x = CHART_WIDTH - PADDING.right - labelWidth
+  const y = clamp(
+    averageY < PADDING.top + labelHeight + 10
+      ? averageY + 10
+      : averageY - labelHeight - 10,
+    PADDING.top,
+    CHART_HEIGHT - PADDING.bottom - labelHeight
+  )
+
+  return { x, y, width: labelWidth, height: labelHeight }
 }
 
 export function SaldosDiaChart() {
@@ -141,6 +185,7 @@ export function SaldosDiaChart() {
       yTicks,
       xLabels,
       averageY: y(avgSaldo),
+      averageLabel: averageLabelPosition(y(avgSaldo)),
       hasRangeBars: plotted.some((item) => item.hasRange),
       closePath: smoothPath(plotted.map((item) => ({ x: item.x, y: item.closeY }))),
     }
@@ -195,7 +240,7 @@ export function SaldosDiaChart() {
         </div>
       </div>
 
-      <div className="relative h-[286px] w-full overflow-hidden rounded-[20px] border border-[var(--ft-border)] bg-[var(--ft-surface-subtle)]">
+      <div className="relative h-[292px] w-full overflow-hidden rounded-[20px] border border-[var(--ft-border)] bg-[var(--ft-surface-subtle)]">
         {chart.plotted.length === 0 ? (
           <div className="flex h-full items-center justify-center px-6 text-center text-[12px] text-[var(--ft-text-secondary)]">
             Sin saldos para el periodo seleccionado.
@@ -206,13 +251,17 @@ export function SaldosDiaChart() {
             aria-label="Saldos diarios del periodo seleccionado"
             className="h-full w-full"
             viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-            preserveAspectRatio="none"
+            preserveAspectRatio="xMidYMid meet"
           >
             <defs>
               <linearGradient id="saldosCloseStroke" x1="0" x2="1" y1="0" y2="0">
                 <stop offset="0%" stopColor="var(--ft-info)" />
                 <stop offset="55%" stopColor="var(--ft-primary)" />
                 <stop offset="100%" stopColor="var(--ft-success)" />
+              </linearGradient>
+              <linearGradient id="saldosCloseArea" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor="var(--ft-primary)" stopOpacity="0.13" />
+                <stop offset="100%" stopColor="var(--ft-primary)" stopOpacity="0.015" />
               </linearGradient>
             </defs>
 
@@ -248,16 +297,16 @@ export function SaldosDiaChart() {
               strokeLinecap="round"
               strokeWidth={1.4}
             />
-            <g transform={`translate(${CHART_WIDTH - PADDING.right - 126} ${chart.averageY - 12})`}>
+            <g transform={`translate(${chart.averageLabel.x} ${chart.averageLabel.y})`}>
               <rect
-                width="126"
-                height="24"
+                width={chart.averageLabel.width}
+                height={chart.averageLabel.height}
                 rx="12"
                 fill="var(--ft-surface)"
                 stroke="color-mix(in_srgb,var(--ft-warning)_34%,transparent)"
               />
               <text
-                x="63"
+                x={chart.averageLabel.width / 2}
                 y="16"
                 textAnchor="middle"
                 className="fill-[var(--ft-text-secondary)] text-[10px] font-semibold"
@@ -291,20 +340,24 @@ export function SaldosDiaChart() {
             ) : (
               <>
                 <path
+                  d={buildAreaPath(chart.closePath, chart.plotted)}
+                  fill="url(#saldosCloseArea)"
+                />
+                <path
                   d={chart.closePath}
                   fill="none"
                   stroke="url(#saldosCloseStroke)"
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  strokeWidth={2.6}
+                  strokeWidth={2.8}
                   vectorEffect="non-scaling-stroke"
                 />
-                {chart.plotted.map((item) => (
+                {chart.plotted.filter((item, index) => shouldShowMarker(item, index, chart.plotted)).map((item) => (
                   <circle
                     key={item.point.date}
                     cx={item.x}
                     cy={item.closeY}
-                    r={4.8}
+                    r={5.2}
                     fill={item.point.saldo >= avgSaldo ? 'var(--ft-success)' : 'var(--ft-primary)'}
                     stroke="var(--ft-surface)"
                     strokeWidth={2}

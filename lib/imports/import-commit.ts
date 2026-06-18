@@ -70,6 +70,7 @@ type ReceivableImportRef = {
   collected_amount: number
   collected_date: string | null
   issue_date: string
+  due_date: string | null
   status: Database['public']['Enums']['receivable_status']
 }
 
@@ -82,6 +83,7 @@ type PayableImportRef = {
   paid_amount: number
   paid_date: string | null
   issue_date: string
+  due_date: string | null
   status: Database['public']['Enums']['payable_status']
 }
 
@@ -278,10 +280,10 @@ async function loadExistingContext(db: DbClient, userId: string): Promise<Import
     db.from('debtors').select('id, name').eq('user_id', userId),
     db.from('creditors').select('id, name').eq('user_id', userId),
     db.from('accounts_receivable')
-      .select('id, debtor_name, concept, currency, amount, collected_amount, collected_date, issue_date, status')
+      .select('id, debtor_name, concept, currency, amount, collected_amount, collected_date, issue_date, due_date, status')
       .eq('user_id', userId),
     db.from('accounts_payable')
-      .select('id, creditor_name, concept, currency, amount, paid_amount, paid_date, issue_date, status')
+      .select('id, creditor_name, concept, currency, amount, paid_amount, paid_date, issue_date, due_date, status')
       .eq('user_id', userId),
   ])
 
@@ -402,6 +404,7 @@ async function loadExistingContext(db: DbClient, userId: string): Promise<Import
       collected_amount: Number(row.collected_amount ?? 0),
       collected_date: trimText(row.collected_date),
       issue_date: String(row.issue_date ?? ''),
+      due_date: trimText(row.due_date),
       status: row.status,
     } satisfies ReceivableImportRef
 
@@ -421,6 +424,7 @@ async function loadExistingContext(db: DbClient, userId: string): Promise<Import
       paid_amount: Number(row.paid_amount ?? 0),
       paid_date: trimText(row.paid_date),
       issue_date: String(row.issue_date ?? ''),
+      due_date: trimText(row.due_date),
       status: row.status,
     } satisfies PayableImportRef
 
@@ -605,6 +609,26 @@ type LinkedLoanResolution<T> =
   | { state: 'missing'; record: null }
   | { state: 'ambiguous'; record: null }
 
+type ReceivableCollectionResolution =
+  | {
+      state: 'empty'
+      debtorId: null
+      debtorName: null
+      rows: []
+    }
+  | {
+      state: 'missing'
+      debtorId: null
+      debtorName: null
+      rows: []
+    }
+  | {
+      state: 'resolved'
+      debtorId: string | null
+      debtorName: string
+      rows: ReceivableImportRef[]
+    }
+
 function resolveLinkedReceivable(ctx: ImportContext, rawValue: unknown): LinkedLoanResolution<ReceivableImportRef> {
   const value = trimText(rawValue)
   if (!value) return { state: 'empty', record: null }
@@ -617,6 +641,67 @@ function resolveLinkedReceivable(ctx: ImportContext, rawValue: unknown): LinkedL
   if (matches.length === 1 && receivableMatch) return { state: 'resolved', record: receivableMatch }
   if (matches.length > 1) return { state: 'ambiguous', record: null }
   return { state: 'missing', record: null }
+}
+
+function orderReceivablesOldestFirst(receivables: ReceivableImportRef[]) {
+  return [...receivables].sort((a, b) => {
+    const byDue = (a.due_date ?? '9999-12-31').localeCompare(b.due_date ?? '9999-12-31')
+    if (byDue !== 0) return byDue
+    return a.issue_date.localeCompare(b.issue_date)
+  })
+}
+
+function resolveReceivableCollection(ctx: ImportContext, rawValue: unknown, rawCurrency: unknown): ReceivableCollectionResolution {
+  const value = trimText(rawValue)
+  if (!value) {
+    return {
+      state: 'empty',
+      debtorId: null,
+      debtorName: null,
+      rows: [],
+    }
+  }
+
+  const directMatch = resolveReceivableImportRef(ctx, value)
+  if (directMatch) {
+    const directDebtor = resolveDebtor(ctx, directMatch.debtor_name)
+    return {
+      state: 'resolved',
+      debtorId: directDebtor?.id ?? null,
+      debtorName: directMatch.debtor_name,
+      rows: [directMatch],
+    }
+  }
+
+  const currency = toUpperText(rawCurrency)
+  const debtor = resolveDebtor(ctx, value)
+  const debtorName = debtor?.name ?? value
+  const debtorKey = normalizeName(debtorName)
+
+  const matches = orderReceivablesOldestFirst(
+    [...ctx.receivablesByImportRef.values()].filter(receivable => {
+      if (!isReceivableOpen(receivable.status)) return false
+      if (normalizeName(receivable.debtor_name) !== debtorKey) return false
+      if (currency && receivable.currency.toUpperCase() !== currency) return false
+      return true
+    }),
+  )
+
+  if (matches.length === 0) {
+    return {
+      state: 'missing',
+      debtorId: null,
+      debtorName: null,
+      rows: [],
+    }
+  }
+
+  return {
+    state: 'resolved',
+    debtorId: debtor?.id ?? null,
+    debtorName,
+    rows: matches,
+  }
 }
 
 function resolveLinkedPayable(ctx: ImportContext, rawValue: unknown): LinkedLoanResolution<PayableImportRef> {
@@ -1258,79 +1343,102 @@ async function applyReceivableCollection(
   ctx: ImportContext,
   row: ImportJobRow,
   transactionDate: string,
-): Promise<RowImportCommitMeta['updatedTargets']> {
+) {
   const loanReference = trimText(row.payload.prestamo_relacionado)
-  if (!loanReference) return undefined
+  if (!loanReference) {
+    return {
+      updatedTargets: undefined as RowImportCommitMeta['updatedTargets'],
+      debtorId: null,
+      debtorName: null as string | null,
+    }
+  }
 
-  const resolution = resolveLinkedReceivable(ctx, loanReference)
+  const resolution = resolveReceivableCollection(ctx, loanReference, row.payload.moneda)
   if (resolution.state === 'missing') {
-    throw new Error(`Ingreso fila ${row.row_number}: el deudor "${loanReference}" no tiene una cuenta por cobrar abierta en FinTrack.`)
+    throw new Error(`Ingreso fila ${row.row_number}: el deudor o préstamo "${loanReference}" no tiene cuentas por cobrar abiertas en la moneda indicada.`)
   }
-  if (resolution.state === 'ambiguous') {
-    throw new Error(`Ingreso fila ${row.row_number}: el deudor "${loanReference}" tiene varias cuentas por cobrar abiertas y no se puede decidir cuál cobrar automáticamente.`)
-  }
-  if (resolution.state !== 'resolved') {
+  if (resolution.state !== 'resolved' || resolution.rows.length === 0) {
     throw new Error(`Ingreso fila ${row.row_number}: no se pudo resolver el préstamo por cobrar relacionado.`)
   }
 
-  const receivable = resolution.record
-  if (!isReceivableOpen(receivable.status)) {
-    throw new Error(`Ingreso fila ${row.row_number}: el préstamo por cobrar seleccionado ya no admite más cobros.`)
-  }
-
   const amount = roundCurrency(asNumber(row.payload.monto))
-  const pendingBefore = roundCurrency(receivable.amount - receivable.collected_amount)
-  if (amount > pendingBefore) {
-    throw new Error(`Ingreso fila ${row.row_number}: el cobro supera el saldo pendiente del préstamo relacionado.`)
-  }
-
-  const rowCurrency = toUpperText(row.payload.moneda) ?? receivable.currency
-  if (rowCurrency !== receivable.currency.toUpperCase()) {
+  const rowCurrency = toUpperText(row.payload.moneda) ?? resolution.rows[0]?.currency ?? 'PEN'
+  const settlementCurrency = resolution.rows[0]?.currency?.toUpperCase() ?? 'PEN'
+  if (rowCurrency !== settlementCurrency) {
     throw new Error(`Ingreso fila ${row.row_number}: la moneda del ingreso debe coincidir con la del préstamo relacionado.`)
   }
 
-  const before = {
-    collected_amount: receivable.collected_amount,
-    collected_date: receivable.collected_date,
-    status: receivable.status,
+  const totalPendingBefore = resolution.rows.reduce(
+    (sum, receivable) => sum + roundCurrency(receivable.amount - receivable.collected_amount),
+    0,
+  )
+  if (amount > totalPendingBefore) {
+    throw new Error(`Ingreso fila ${row.row_number}: el cobro supera el saldo pendiente del deudor relacionado.`)
   }
 
-  const nextCollectedAmount = roundCurrency(receivable.collected_amount + amount)
-  const nextStatus: Database['public']['Enums']['receivable_status'] =
-    nextCollectedAmount >= roundCurrency(receivable.amount)
-      ? 'COLLECTED'
-      : 'PARTIAL'
+  let remaining = amount
+  const updatedTargets: NonNullable<RowImportCommitMeta['updatedTargets']> = []
 
-  const after = {
-    collected_amount: nextCollectedAmount,
-    collected_date: transactionDate,
-    status: nextStatus,
+  for (const receivable of resolution.rows) {
+    if (remaining <= 0) break
+
+    if (!isReceivableOpen(receivable.status)) continue
+
+    const pendingBefore = roundCurrency(receivable.amount - receivable.collected_amount)
+    if (pendingBefore <= 0) continue
+
+    const appliedAmount = Math.min(remaining, pendingBefore)
+    const before = {
+      collected_amount: receivable.collected_amount,
+      collected_date: receivable.collected_date,
+      status: receivable.status,
+    }
+
+    const nextCollectedAmount = roundCurrency(receivable.collected_amount + appliedAmount)
+    const nextStatus: Database['public']['Enums']['receivable_status'] =
+      nextCollectedAmount >= roundCurrency(receivable.amount)
+        ? 'COLLECTED'
+        : 'PARTIAL'
+
+    const after = {
+      collected_amount: nextCollectedAmount,
+      collected_date: transactionDate,
+      status: nextStatus,
+    }
+
+    const { error } = await db
+      .from('accounts_receivable')
+      .update(after)
+      .eq('user_id', userId)
+      .eq('id', receivable.id)
+
+    if (error) throw new Error(error.message)
+
+    const updatedReceivable = {
+      ...receivable,
+      collected_amount: nextCollectedAmount,
+      collected_date: transactionDate,
+      status: nextStatus,
+    } satisfies ReceivableImportRef
+
+    ctx.receivablesByImportRef.set(buildReceivableImportReference(updatedReceivable), updatedReceivable)
+    syncOpenReceivableMap(ctx.openReceivablesByDebtorName, updatedReceivable)
+
+    updatedTargets.push({
+      table: 'accounts_receivable',
+      id: receivable.id,
+      before,
+      after,
+    })
+
+    remaining = roundCurrency(remaining - appliedAmount)
   }
 
-  const { error } = await db
-    .from('accounts_receivable')
-    .update(after)
-    .eq('user_id', userId)
-    .eq('id', receivable.id)
-
-  if (error) throw new Error(error.message)
-
-  const updatedReceivable = {
-    ...receivable,
-    collected_amount: nextCollectedAmount,
-    collected_date: transactionDate,
-    status: nextStatus,
-  } satisfies ReceivableImportRef
-
-  ctx.receivablesByImportRef.set(buildReceivableImportReference(updatedReceivable), updatedReceivable)
-  syncOpenReceivableMap(ctx.openReceivablesByDebtorName, updatedReceivable)
-
-  return [{
-    table: 'accounts_receivable',
-    id: receivable.id,
-    before,
-    after,
-  }]
+  return {
+    updatedTargets,
+    debtorId: resolution.debtorId,
+    debtorName: resolution.debtorName,
+  }
 }
 
 async function applyPayablePayment(
@@ -1501,7 +1609,7 @@ function preflightCommit(job: ImportJobWithRows, ctx: ImportContext): string[] {
 
     if (row.sheet_name === '03_Ingresos') {
       const destination = resolveAccount(ctx, row.payload.portafolio_destino, row.payload.moneda)
-      const linkedReceivable = resolveLinkedReceivable(ctx, row.payload.prestamo_relacionado)
+      const linkedReceivable = resolveReceivableCollection(ctx, row.payload.prestamo_relacionado, row.payload.moneda)
       if (!destination) {
         errors.push(`Ingreso fila ${row.row_number}: el portafolio destino no existe en FinTrack.`)
       }
@@ -1510,13 +1618,21 @@ function preflightCommit(job: ImportJobWithRows, ctx: ImportContext): string[] {
       }
       const linkedReceivableValue = trimText(row.payload.prestamo_relacionado)
       if (linkedReceivableValue && linkedReceivable.state === 'missing') {
-        errors.push(`Ingreso fila ${row.row_number}: el deudor "${linkedReceivableValue}" no tiene una cuenta por cobrar abierta en FinTrack.`)
+        errors.push(`Ingreso fila ${row.row_number}: el deudor o préstamo "${linkedReceivableValue}" no tiene cuentas por cobrar abiertas en la moneda indicada.`)
       }
-      if (linkedReceivableValue && linkedReceivable.state === 'ambiguous') {
-        errors.push(`Ingreso fila ${row.row_number}: el deudor "${linkedReceivableValue}" tiene varias cuentas por cobrar abiertas y no se puede enlazar automáticamente.`)
-      }
-      if (linkedReceivable.state === 'resolved' && !isReceivableOpen(linkedReceivable.record.status)) {
-        errors.push(`Ingreso fila ${row.row_number}: el préstamo por cobrar relacionado ya no admite más cobros.`)
+      if (linkedReceivable.state === 'resolved') {
+        const totalPending = linkedReceivable.rows.reduce(
+          (sum, receivable) => sum + Math.max(0, Number(receivable.amount) - Number(receivable.collected_amount)),
+          0,
+        )
+
+        if (linkedReceivable.rows.some(receivable => !isReceivableOpen(receivable.status))) {
+          errors.push(`Ingreso fila ${row.row_number}: el préstamo por cobrar relacionado ya no admite más cobros.`)
+        }
+
+        if (asNumber(row.payload.monto) > totalPending) {
+          errors.push(`Ingreso fila ${row.row_number}: el cobro supera el saldo pendiente del deudor o préstamo relacionado.`)
+        }
       }
     }
 
@@ -1753,13 +1869,33 @@ async function commitImportJobData(db: DbClient, userId: string, job: ImportJobW
 
     if (!result.ok) throw new Error(result.error.detail ? `${result.error.message} ${result.error.detail}` : result.error.message)
 
-    const updatedTargets = await applyReceivableCollection(
-      db,
-      userId,
-      ctx,
-      row,
-      transactionDate,
-    )
+    let updatedTargets: RowImportCommitMeta['updatedTargets']
+    try {
+      const collectionResult = await applyReceivableCollection(
+        db,
+        userId,
+        ctx,
+        row,
+        transactionDate,
+      )
+
+      updatedTargets = collectionResult.updatedTargets
+
+      if (collectionResult.debtorId) {
+        const { error: transactionPatchError } = await db
+          .from('transactions')
+          .update({ debtor_id: collectionResult.debtorId })
+          .eq('id', result.data.transaction.id)
+          .eq('user_id', userId)
+
+        if (transactionPatchError) {
+          throw new Error(transactionPatchError.message)
+        }
+      }
+    } catch (error) {
+      await txService.deleteTransaction(userId, result.data.transaction.id, { force: true })
+      throw error
+    }
 
     counts.transactions += 1
     if (row.row_key) ctx.transactionsByRowKey.set(row.row_key, { id: result.data.transaction.id })

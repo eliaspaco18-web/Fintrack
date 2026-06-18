@@ -146,6 +146,7 @@ export function TransactionForm({
   const [currentLiveRate, setCurrentLiveRate] = useState<number>(() => {
     return Number.isFinite(liveExchangeRate) && liveExchangeRate > 0 ? liveExchangeRate : 3.7
   })
+  const [currentRateEffectiveDate, setCurrentRateEffectiveDate] = useState<string | null>(null)
   const [refreshingLiveRate, setRefreshingLiveRate] = useState(false)
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
   const [attachmentUploading, setAttachmentUploading] = useState(false)
@@ -153,6 +154,8 @@ export function TransactionForm({
   const [lastAttachmentTxId, setLastAttachmentTxId] = useState<string | null>(null)
   const [lastUploadedAttachment, setLastUploadedAttachment] = useState<AttachmentUploadResult | null>(null)
   const formRef = useRef<HTMLFormElement | null>(null)
+  const userEditedExchangeRateRef = useRef(false)
+  const lastAutoExchangeRateRef = useRef<number | null>(null)
   const isCompactLayout = className.includes('tx-modal-form')
   const [attachmentSectionOpen, setAttachmentSectionOpen] = useState(!isCompactLayout)
   const [inlineAccountModalOpen, setInlineAccountModalOpen] = useState(false)
@@ -217,11 +220,15 @@ export function TransactionForm({
   const equivalentUsd = hasAmount
     ? (currency === 'PEN' ? numericAmount / appliedRate : numericAmount)
     : 0
+  const rateDateLabel = currentRateEffectiveDate
+    ? `fecha ${currentRateEffectiveDate}`
+    : 'fecha seleccionada'
 
   useEffect(() => {
+    if (transactionDate) return
     if (!Number.isFinite(liveExchangeRate) || liveExchangeRate <= 0) return
     setCurrentLiveRate(liveExchangeRate)
-  }, [liveExchangeRate])
+  }, [liveExchangeRate, transactionDate])
 
   // ── Fetch presupuestos activos para el selector de Egreso ────────────────
   type BudgetOption = { value: string; label: string; categoryId: string | null }
@@ -372,7 +379,10 @@ export function TransactionForm({
     const refreshRate = async () => {
       setRefreshingLiveRate(true)
       try {
-        const res = await fetch('/api/exchange-rate?mode=accounting&ensure=1', { cache: 'no-store' })
+        const params = new URLSearchParams({ mode: 'accounting', ensure: '1' })
+        if (transactionDate) params.set('date', transactionDate)
+
+        const res = await fetch(`/api/exchange-rate?${params.toString()}`, { cache: 'no-store' })
         const json = await res.json().catch(() => null)
         if (!active || !res.ok || !json?.ok) return
 
@@ -380,6 +390,11 @@ export function TransactionForm({
         if (!Number.isFinite(incomingRate) || incomingRate <= 0) return
 
         setCurrentLiveRate(incomingRate)
+        setCurrentRateEffectiveDate(
+          typeof json.data?.effective_date === 'string'
+            ? json.data.effective_date
+            : transactionDate || null
+        )
       } finally {
         if (active) setRefreshingLiveRate(false)
       }
@@ -387,13 +402,23 @@ export function TransactionForm({
 
     void refreshRate()
     return () => { active = false }
-  }, [])
+  }, [transactionDate])
 
   useEffect(() => {
     if (currency !== 'USD') return
-    if (hasManualRate) return
-    setValue('exchange_rate', Math.round(safeLiveRate * 1000) / 1000, { shouldValidate: true })
-  }, [currency, hasManualRate, safeLiveRate, setValue])
+    const roundedRate = Math.round(safeLiveRate * 1000) / 1000
+    const lastAutoRate = lastAutoExchangeRateRef.current
+    const shouldReplaceRate =
+      !hasManualRate ||
+      !userEditedExchangeRateRef.current ||
+      (lastAutoRate !== null && Math.abs(manualRate - lastAutoRate) < 0.0005)
+
+    if (!shouldReplaceRate) return
+
+    lastAutoExchangeRateRef.current = roundedRate
+    userEditedExchangeRateRef.current = false
+    setValue('exchange_rate', roundedRate, { shouldValidate: true })
+  }, [currency, hasManualRate, manualRate, safeLiveRate, setValue])
 
   // ── Acciones del summary de éxito ────────────────────────────────────────
 
@@ -403,6 +428,8 @@ export function TransactionForm({
     setLastAttachmentTxId(null)
     setLastUploadedAttachment(null)
     lastAutoUploadTxId.current = null
+    lastAutoExchangeRateRef.current = null
+    userEditedExchangeRateRef.current = false
     resetForm()
   }, [resetForm])
 
@@ -994,7 +1021,7 @@ export function TransactionForm({
     >
       <FieldWrapper
         label="Tipo de cambio"
-        hint={`1 USD = ${formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN (${refreshingLiveRate ? 'actualizando…' : 'actual'})`}
+        hint={`1 USD = ${formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN (${refreshingLiveRate ? 'actualizando…' : rateDateLabel})`}
         required
         error={errors.exchange_rate?.message}
       >
@@ -1005,6 +1032,9 @@ export function TransactionForm({
           error={errors.exchange_rate?.message}
           data-testid="transaction-exchange-rate-input"
           {...register('exchange_rate', {
+            onChange: () => {
+              userEditedExchangeRateRef.current = true
+            },
             setValueAs: value => {
               const parsed = parseNumericInput(value, Number.NaN)
               if (!Number.isFinite(parsed)) return undefined

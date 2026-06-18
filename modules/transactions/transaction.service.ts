@@ -57,6 +57,7 @@ import {
   validateSufficientBalance,
 }                                       from './transaction.validations'
 import { type Result, Errors, ok }      from '@/modules/shared/result.types'
+import { resolveAccountingUsdPenExchangeRate } from '@/lib/server/exchange-rate'
 
 type DbClient = SupabaseClient<Database>
 
@@ -179,24 +180,25 @@ export class TransactionService {
     userId: string,
     input:  CreateTransactionInput
   ): Promise<Result<CreateTransactionResult>> {
+    const accountingInput = await this.resolveCreateInputExchangeRate(input)
 
     // ── PASO 1: Validaciones de negocio (sin IO) ────────────────────────────
-    const validationResult = validateCreateTransactionInput(input)
+    const validationResult = validateCreateTransactionInput(accountingInput)
     if (!validationResult.ok) return validationResult
 
     // ── PASO 2: Verificar cuenta origen ─────────────────────────────────────
     const sourceAccountResult = await this.fetchAndValidateAccount(
-      input.source_account_id,
+      accountingInput.source_account_id,
       userId
     )
     if (!sourceAccountResult.ok) return sourceAccountResult
     const sourceAccount = sourceAccountResult.data
 
-    const sourceAccountBusinessValidation = validateSourceAccountAgainstTransaction(input, sourceAccount)
+    const sourceAccountBusinessValidation = validateSourceAccountAgainstTransaction(accountingInput, sourceAccount)
     if (!sourceAccountBusinessValidation.ok) return sourceAccountBusinessValidation
 
-    const expenseInput = input.type === 'EXPENSE'
-      ? (input as CreateExpenseInput)
+    const expenseInput = accountingInput.type === 'EXPENSE'
+      ? (accountingInput as CreateExpenseInput)
       : null
 
     const usesCreditCardAsSource =
@@ -232,7 +234,7 @@ export class TransactionService {
           )
         }
 
-        if (selectedCreditCard.account_id !== input.source_account_id) {
+        if (selectedCreditCard.account_id !== accountingInput.source_account_id) {
           return Errors.validation(
             'La cuenta de salida no coincide con la tarjeta seleccionada',
             'Vuelve a seleccionar la tarjeta de crédito en el formulario'
@@ -243,15 +245,15 @@ export class TransactionService {
 
     // ── PASO 3: Verificar cuenta destino (solo TRANSFER) ────────────────────
     let destinationAccount: Account | null = null
-    if (input.type === 'TRANSFER') {
+    if (accountingInput.type === 'TRANSFER') {
       const destResult = await this.fetchAndValidateAccount(
-        input.destination_account_id,
+        accountingInput.destination_account_id,
         userId
       )
       if (!destResult.ok) return destResult
 
       const destValidation = validateDestinationAccount(
-        input.source_account_id,
+        accountingInput.source_account_id,
         destResult.data
       )
       if (!destValidation.ok) return destValidation
@@ -260,7 +262,7 @@ export class TransactionService {
     }
 
     const preparedInput = this.prepareCreateInput(
-      input,
+      accountingInput,
       sourceAccount,
       destinationAccount
     )
@@ -955,6 +957,30 @@ export class TransactionService {
       sender: input.sender?.trim() || undefined,
       recipient: input.recipient?.trim() || undefined,
       notes: input.notes?.trim() || undefined,
+    }
+  }
+
+  private async resolveCreateInputExchangeRate(
+    input: CreateTransactionInput,
+  ): Promise<CreateTransactionInput> {
+    if (input.currency !== 'USD') {
+      return { ...input, exchange_rate: undefined }
+    }
+
+    const snapshot = await resolveAccountingUsdPenExchangeRate({
+      date: input.transaction_date,
+      allowPrior: true,
+      ensureForToday: true,
+    })
+    const rate = Number(snapshot.rate)
+
+    if (!Number.isFinite(rate) || rate <= 0) {
+      return input
+    }
+
+    return {
+      ...input,
+      exchange_rate: Math.round(rate * 1_000_000) / 1_000_000,
     }
   }
 

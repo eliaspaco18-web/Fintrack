@@ -46,6 +46,7 @@ import { FocusTrap }                 from '@/components/ui/accessibility'
 import { ModalOverlayPortal }        from '@/components/ui/ModalOverlayPortal'
 import { AppSelect }                 from '@/components/ui/AppSelect'
 import { Button }                    from '@/components/ui/Button'
+import { TransactionEditModal }      from '@/components/forms/TransactionEditModal'
 import type { TransactionType }      from '@/types/database.types'
 
 // ─── CONFIGURACIÓN ────────────────────────────────────────────────────────────
@@ -443,6 +444,7 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
   const [deleteSavedViewModalOpen, setDeleteSavedViewModalOpen] = useState(false)
   const [deleteTransactionModalOpen, setDeleteTransactionModalOpen] = useState(false)
   const [deleteTransactionId, setDeleteTransactionId] = useState<string | null>(null)
+  const [editTransactionId, setEditTransactionId] = useState<string | null>(null)
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([])
   const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false)
   const initializedFiltersRef = useRef(false)
@@ -492,6 +494,10 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
   const selectedTransactionForDelete = useMemo(
     () => transactions.find(tx => tx.id === deleteTransactionId) ?? null,
     [deleteTransactionId, transactions]
+  )
+  const selectedTransactionForEdit = useMemo(
+    () => transactions.find(tx => tx.id === editTransactionId) ?? null,
+    [editTransactionId, transactions]
   )
   const selectedTransactions = useMemo(
     () => transactions.filter(tx => selectedTransactionIds.includes(tx.id)),
@@ -1216,7 +1222,7 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
                         <DataRowActions actions={[
                           {
                             label:   'Editar',
-                            onClick: () => router.push(`/transactions/${tx.id}`),
+                            onClick: () => setEditTransactionId(tx.id),
                             testId:  `transactions-row-edit-${tx.id}`,
                           },
                           {
@@ -1246,6 +1252,26 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
             onPage={setPage}
           />
         )}
+
+        <TransactionEditModal
+          open={Boolean(editTransactionId)}
+          transactionId={editTransactionId}
+          initialTransaction={selectedTransactionForEdit ? {
+            id: selectedTransactionForEdit.id,
+            type: selectedTransactionForEdit.type,
+            amount: selectedTransactionForEdit.amount,
+            amount_pen: selectedTransactionForEdit.amountPen,
+            currency: selectedTransactionForEdit.currency,
+            description: selectedTransactionForEdit.description,
+            transaction_date: selectedTransactionForEdit.transactionDate,
+          } : null}
+          onClose={() => setEditTransactionId(null)}
+          onUpdated={() => {
+            setEditTransactionId(null)
+            void refresh()
+            router.refresh()
+          }}
+        />
 
         {/* Refresh indicator */}
         <DataRefreshIndicator show={isValidating && !isLoading} />

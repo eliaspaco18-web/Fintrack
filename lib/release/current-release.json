@@ -1,28 +1,28 @@
 {
-  "version": "V1.0.0.11",
+  "version": "V1.0.0.17",
   "series": "1.0.0",
-  "build": 11,
-  "title": "Actualización en Presupuestos, Por pagar, Por cobrar",
-  "summary": "Esta versión trae cambios en Presupuestos, Por pagar, Por cobrar para que tus tareas diarias dentro de FinTrack sean más claras, estables y fáciles de seguir.",
+  "build": 17,
+  "title": "Actualización en Importaciones, Plataforma, Movimientos",
+  "summary": "Esta versión trae cambios en Importaciones, Plataforma, Movimientos para que tus tareas diarias dentro de FinTrack sean más claras, estables y fáciles de seguir.",
   "highlights": [
     {
-      "module": "Presupuestos",
+      "module": "Importaciones",
+      "type": "new",
+      "title": "Base reforzada para futuras importaciones",
+      "detail": "Preparamos el módulo de Importaciones para que la migración de información sea más robusta y guiada."
+    },
+    {
+      "module": "Plataforma",
       "type": "improve",
-      "title": "Control de presupuestos más fácil de seguir",
-      "detail": "Refinamos el módulo de Presupuestos para que entiendas mejor tus límites, avance y acciones disponibles."
+      "title": "Publicaciones y operación más confiables",
+      "detail": "Fortalecimos la plataforma para que las actualizaciones de FinTrack sean más estables y transparentes para todos."
     },
     {
-      "module": "Por pagar",
-      "type": "fix",
-      "title": "Cuentas por pagar con mejor estabilidad",
-      "detail": "Ajustamos el módulo Por pagar para que las acciones y el seguimiento de pendientes sean más confiables."
-    },
-    {
-      "module": "Por cobrar",
-      "type": "fix",
-      "title": "Cuentas por cobrar con seguimiento más claro",
-      "detail": "Mejoramos el módulo Por cobrar para que revisar saldos pendientes y su origen sea más simple y estable."
+      "module": "Movimientos",
+      "type": "improve",
+      "title": "Registro de movimientos más consistente",
+      "detail": "Ajustamos el flujo de Movimientos para que registrar operaciones y revisar información sea más claro en el día a día."
     }
   ],
-  "releasedAt": "2026-06-17T21:55:54.289Z"
+  "releasedAt": "2026-06-18T17:18:00.981Z"
 }
