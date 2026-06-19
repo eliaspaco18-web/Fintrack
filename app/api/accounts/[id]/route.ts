@@ -152,7 +152,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
   const { data: existingAccount, error: existingAccountError } = await supabase
     .from('accounts')
-    .select('id, name, balance, initial_balance, initial_balance_date, created_at')
+    .select('id, name, type, balance, initial_balance, initial_balance_date, created_at')
     .eq('id', params.id)
     .eq('user_id', userId)
     .single()
@@ -160,6 +160,8 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   if (existingAccountError || !existingAccount) {
     return apiError({ code: 'NOT_FOUND', message: 'Cuenta no encontrada' })
   }
+
+  const nextAccountType = payload.type ?? existingAccount.type
 
   if (payload.bank_entity_id !== undefined && payload.bank_entity_id !== null) {
     const { data: bank, error: bankError } = await supabase
@@ -210,8 +212,16 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     updated_at: new Date().toISOString(),
   }
 
+  if (nextAccountType === 'CREDIT_CARD') {
+    baseUpdateData.include_in_net_worth = false
+    baseUpdateData.initial_balance = 0
+    baseUpdateData.balance = 0
+  }
+
   if (updatesOpeningBalance) {
-    const nextInitialBalance = payload.initial_balance ?? Number(existingAccount.initial_balance ?? 0)
+    const nextInitialBalance = nextAccountType === 'CREDIT_CARD'
+      ? 0
+      : payload.initial_balance ?? Number(existingAccount.initial_balance ?? 0)
     const fallbackDate = String(existingAccount.created_at ?? '').slice(0, 10) || new Date().toISOString().slice(0, 10)
     const nextInitialBalanceDate =
       payload.initial_balance_date
@@ -237,7 +247,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
     baseUpdateData.initial_balance = nextInitialBalance
     baseUpdateData.initial_balance_date = nextInitialBalanceDate
-    if (delta !== 0) {
+    if (nextAccountType === 'CREDIT_CARD') {
+      baseUpdateData.balance = 0
+    } else if (delta !== 0) {
       baseUpdateData.balance = currentBalance + delta
     }
   }

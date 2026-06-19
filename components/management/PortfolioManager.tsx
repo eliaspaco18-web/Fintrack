@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AccountType, CurrencyCode } from '@/types/database.types'
@@ -143,6 +144,10 @@ const ACCOUNT_TYPE_TONE: Record<
 type StatusFilter = 'all' | 'active' | 'inactive'
 type CurrencyFilter = 'all' | CurrencyCode
 type TypeFilter = 'all' | AccountType
+
+function isTechnicalAccount(account: Pick<AccountItem, 'type'>): boolean {
+  return account.type === 'CREDIT_CARD'
+}
 
 const EMPTY_FORM: AccountForm = {
   name: '',
@@ -534,6 +539,7 @@ export function PortfolioManager({
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [bankFilter, setBankFilter] = useState<string>('all')
+  const [showTechnicalAccounts, setShowTechnicalAccounts] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [rowActionId, setRowActionId] = useState<string | null>(null)
   const [pendingDeactivateAccount, setPendingDeactivateAccount] = useState<AccountItem | null>(null)
@@ -621,40 +627,63 @@ export function PortfolioManager({
     [accounts],
   )
 
-  const activeCount = activeAccounts.length
-  const inactiveCount = accounts.length - activeCount
+  const operationalAccounts = useMemo(
+    () => accounts.filter(account => !isTechnicalAccount(account)),
+    [accounts],
+  )
+
+  const activeOperationalAccounts = useMemo(
+    () => activeAccounts.filter(account => !isTechnicalAccount(account)),
+    [activeAccounts],
+  )
+
+  const technicalAccounts = useMemo(
+    () => accounts.filter(account => isTechnicalAccount(account)),
+    [accounts],
+  )
+
+  const visibleBaseAccounts = useMemo(
+    () => showTechnicalAccounts || typeFilter === 'CREDIT_CARD'
+      ? accounts
+      : operationalAccounts,
+    [accounts, operationalAccounts, showTechnicalAccounts, typeFilter],
+  )
+
+  const activeCount = activeOperationalAccounts.length
+  const inactiveCount = operationalAccounts.length - activeCount
+  const technicalCount = technicalAccounts.length
 
   const totalBalanceByCurrency = useMemo(() => {
     const totals = new Map<string, number>()
 
-    for (const account of activeAccounts) {
+    for (const account of activeOperationalAccounts) {
       const current = totals.get(account.currency) ?? 0
       totals.set(account.currency, current + account.balance)
     }
 
     return totals
-  }, [activeAccounts])
+  }, [activeOperationalAccounts])
 
   const totalPen = totalBalanceByCurrency.get('PEN') ?? 0
   const totalUsd = totalBalanceByCurrency.get('USD') ?? 0
 
   const accountsInNetWorth = useMemo(
-    () => activeAccounts.filter(account => account.include_in_net_worth).length,
-    [activeAccounts],
+    () => activeOperationalAccounts.filter(account => account.include_in_net_worth).length,
+    [activeOperationalAccounts],
   )
 
   const accountsWithoutBank = useMemo(
-    () => activeAccounts.filter(account => !account.bank_entity_id && !account.institution).length,
-    [activeAccounts],
+    () => activeOperationalAccounts.filter(account => !account.bank_entity_id && !account.institution).length,
+    [activeOperationalAccounts],
   )
 
   const activeInstitutions = useMemo(() => {
     const names = new Set<string>()
-    for (const account of activeAccounts) {
+    for (const account of activeOperationalAccounts) {
       names.add(displayBankName(account))
     }
     return names.size
-  }, [activeAccounts])
+  }, [activeOperationalAccounts])
 
   const currencyOptions = useMemo(() => {
     const activeCurrencies = currencies
@@ -681,7 +710,7 @@ export function PortfolioManager({
   const filteredAccounts = useMemo(() => {
     const q = query.trim().toLowerCase()
 
-    return accounts.filter(account => {
+    return visibleBaseAccounts.filter(account => {
       if (currencyFilter !== 'all' && account.currency !== currencyFilter) return false
       if (typeFilter !== 'all' && account.type !== typeFilter) return false
       if (statusFilter === 'active' && !account.is_active) return false
@@ -702,7 +731,7 @@ export function PortfolioManager({
         account.currency.toLowerCase().includes(q)
       )
     })
-  }, [accounts, bankFilter, currencyFilter, query, statusFilter, typeFilter])
+  }, [bankFilter, currencyFilter, query, statusFilter, typeFilter, visibleBaseAccounts])
 
   const openCreateModal = useCallback(() => {
     setEditingId(null)
@@ -713,6 +742,23 @@ export function PortfolioManager({
     })
     setModalOpen(true)
   }, [currencyOptions])
+
+  const handleSelectAccountType = useCallback((value: string) => {
+    const nextType = value as AccountType
+    setForm(prev => {
+      if (nextType !== 'CREDIT_CARD') {
+        return { ...prev, type: nextType }
+      }
+
+      return {
+        ...prev,
+        type: nextType,
+        initial_balance: '0.00',
+        include_in_net_worth: false,
+        icon: prev.icon === 'wallet' ? 'credit-card' : prev.icon,
+      }
+    })
+  }, [])
 
   useEffect(() => {
     if (openFromHeroQuery) {
@@ -737,7 +783,7 @@ export function PortfolioManager({
       initial_balance_date: account.initial_balance_date || String(account.created_at ?? '').slice(0, 10) || isoToday(),
       color: account.color,
       icon: account.icon,
-      include_in_net_worth: account.include_in_net_worth,
+      include_in_net_worth: isTechnicalAccount(account) ? false : account.include_in_net_worth,
       notes: account.notes ?? '',
     })
     setModalOpen(true)
@@ -766,10 +812,13 @@ export function PortfolioManager({
       return
     }
 
-    const parsedInitialBalance = roundToDecimals(
-      parseNumericInput(form.initial_balance, Number.NaN),
-      2,
-    )
+    const formIsTechnicalAccount = form.type === 'CREDIT_CARD'
+    const parsedInitialBalance = formIsTechnicalAccount
+      ? 0
+      : roundToDecimals(
+          parseNumericInput(form.initial_balance, Number.NaN),
+          2,
+        )
 
     if (!Number.isFinite(parsedInitialBalance)) {
       const message = 'El saldo inicial debe ser un numero valido.'
@@ -812,7 +861,7 @@ export function PortfolioManager({
           initial_balance_date: trimmedInitialBalanceDate,
           color: form.color.trim() || '#0d6b5e',
           icon: form.icon.trim() || 'wallet',
-          include_in_net_worth: form.include_in_net_worth,
+          include_in_net_worth: formIsTechnicalAccount ? false : form.include_in_net_worth,
           notes: form.notes.trim() || null,
         }
       : {
@@ -825,7 +874,7 @@ export function PortfolioManager({
           initial_balance_date: trimmedInitialBalanceDate,
           color: form.color.trim() || '#0d6b5e',
           icon: form.icon.trim() || 'wallet',
-          include_in_net_worth: form.include_in_net_worth,
+          include_in_net_worth: formIsTechnicalAccount ? false : form.include_in_net_worth,
           notes: form.notes.trim() || null,
         }
 
@@ -973,6 +1022,8 @@ export function PortfolioManager({
     return formatCurrency(parsed, form.currency)
   }, [form.currency, form.initial_balance])
 
+  const formIsTechnicalAccount = form.type === 'CREDIT_CARD'
+
   const editingAccount = useMemo(
     () => (editingId ? accounts.find(account => account.id === editingId) ?? null : null),
     [accounts, editingId],
@@ -988,8 +1039,8 @@ export function PortfolioManager({
             title="Portafolio"
             description={
               exposureSummary
-                ? `Cuentas, efectivo e instrumentos activos con lectura inmediata por entidad, moneda y saldo. Otras exposiciones: ${exposureSummary}.`
-                : 'Cuentas, efectivo e instrumentos activos con lectura inmediata por entidad, moneda y saldo.'
+                ? `Cuentas, efectivo e instrumentos patrimoniales con lectura inmediata por entidad, moneda y saldo. Otras exposiciones: ${exposureSummary}.`
+                : 'Cuentas, efectivo e instrumentos patrimoniales con lectura inmediata por entidad, moneda y saldo.'
             }
             mode="content"
             actions={(
@@ -1007,7 +1058,7 @@ export function PortfolioManager({
               label="Saldo PEN"
               value={formatCurrency(totalPen, 'PEN')}
               detail={`${activeCount} activa${activeCount === 1 ? '' : 's'}`}
-              caption="Liquidez consolidada en soles peruanos."
+              caption="Liquidez propia consolidada en soles peruanos."
             />
             <StatCard
               label="Saldo USD"
@@ -1016,17 +1067,19 @@ export function PortfolioManager({
               caption="Fondos disponibles en cuentas dolarizadas."
             />
             <StatCard
-              label="Cuentas activas"
+              label="Cuentas operativas"
               value={String(activeCount)}
               detail={inactiveCount > 0 ? `${inactiveCount} inactiva${inactiveCount === 1 ? '' : 's'}` : 'Sin rezagos'}
-              caption="El portafolio operativo visible para nuevos registros."
+              caption="Cuentas patrimoniales disponibles para nuevos registros."
             />
             <StatCard
-              label="Patrimonio y bancos"
+              label="Técnicas y patrimonio"
               value={String(accountsInNetWorth)}
-              detail={`${activeInstitutions} entidad${activeInstitutions === 1 ? '' : 'es'}`}
+              detail={technicalCount > 0 ? `${technicalCount} técnica${technicalCount === 1 ? '' : 's'}` : `${activeInstitutions} entidad${activeInstitutions === 1 ? '' : 'es'}`}
               caption={
-                accountsWithoutBank > 0
+                technicalCount > 0
+                  ? 'Las tarjetas se gestionan en Créditos y no suman patrimonio.'
+                  : accountsWithoutBank > 0
                   ? `${accountsWithoutBank} cuenta${accountsWithoutBank === 1 ? '' : 's'} sin banco asociado.`
                   : 'Todas las cuentas activas tienen contraparte identificada.'
               }
@@ -1041,7 +1094,7 @@ export function PortfolioManager({
                 <DataFilterPreset
                   label="Todas"
                   active={statusFilter === 'all'}
-                  count={accounts.length}
+                  count={operationalAccounts.length}
                   onClick={() => setStatusFilter('all')}
                 />
                 <DataFilterPreset
@@ -1055,6 +1108,12 @@ export function PortfolioManager({
                   active={statusFilter === 'inactive'}
                   count={inactiveCount}
                   onClick={() => setStatusFilter('inactive')}
+                />
+                <DataFilterPreset
+                  label="Técnicas"
+                  active={showTechnicalAccounts}
+                  count={technicalCount}
+                  onClick={() => setShowTechnicalAccounts(prev => !prev)}
                 />
               </>
             )}
@@ -1117,6 +1176,9 @@ export function PortfolioManager({
             actions={(
               <StatusBadge tone="muted" dot={false}>
                 {filteredAccounts.length} cuenta{filteredAccounts.length === 1 ? '' : 's'}
+                {technicalCount > 0 && !showTechnicalAccounts && typeFilter !== 'CREDIT_CARD'
+                  ? ` · ${technicalCount} técnica${technicalCount === 1 ? '' : 's'} oculta${technicalCount === 1 ? '' : 's'}`
+                  : ''}
               </StatusBadge>
             )}
           />
@@ -1145,17 +1207,17 @@ export function PortfolioManager({
           <EmptyState
             icon={stackIcon()}
             title={
-              query.trim() || currencyFilter !== 'all' || typeFilter !== 'all' || bankFilter !== 'all' || statusFilter !== 'all'
+              query.trim() || currencyFilter !== 'all' || typeFilter !== 'all' || bankFilter !== 'all' || statusFilter !== 'all' || showTechnicalAccounts
                 ? 'No encontramos cuentas para esa combinacion.'
                 : 'Todavia no tienes portafolios registrados.'
             }
             description={
-              query.trim() || currencyFilter !== 'all' || typeFilter !== 'all' || bankFilter !== 'all' || statusFilter !== 'all'
+              query.trim() || currencyFilter !== 'all' || typeFilter !== 'all' || bankFilter !== 'all' || statusFilter !== 'all' || showTechnicalAccounts
                 ? 'Ajusta los filtros o amplia la busqueda para recuperar cuentas, custodios o monedas.'
                 : 'Crea tu primera cuenta operativa para empezar a ordenar liquidez, bancos y patrimonio.'
             }
             action={
-              query.trim() || currencyFilter !== 'all' || typeFilter !== 'all' || bankFilter !== 'all' || statusFilter !== 'all'
+              query.trim() || currencyFilter !== 'all' || typeFilter !== 'all' || bankFilter !== 'all' || statusFilter !== 'all' || showTechnicalAccounts
                 ? {
                     label: 'Limpiar filtros',
                     onClick: () => {
@@ -1164,6 +1226,7 @@ export function PortfolioManager({
                       setTypeFilter('all')
                       setBankFilter('all')
                       setStatusFilter('all')
+                      setShowTechnicalAccounts(false)
                     },
                   }
                 : {
@@ -1190,7 +1253,10 @@ export function PortfolioManager({
             </div>
 
             <div className="divide-y divide-[var(--c-border)]">
-              {filteredAccounts.map(account => (
+              {filteredAccounts.map(account => {
+                const technical = isTechnicalAccount(account)
+
+                return (
                 <article
                   key={account.id}
                   data-testid={`portfolio-row-${account.id}`}
@@ -1216,8 +1282,10 @@ export function PortfolioManager({
                               {account.name}
                             </p>
                             <p className="mt-1 truncate text-[12px] text-[var(--c-text-muted)]">
-                              {getIconLabel(account.icon)}
-                              {account.notes ? ` · ${account.notes}` : ''}
+                              {technical
+                                ? 'Cuenta técnica para consumos de tarjeta'
+                                : getIconLabel(account.icon)}
+                              {account.notes && !technical ? ` · ${account.notes}` : ''}
                             </p>
                           </div>
 
@@ -1241,15 +1309,25 @@ export function PortfolioManager({
                         {displayBankName(account)}
                       </p>
                       <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">
-                        {account.include_in_net_worth ? 'Incluida en patrimonio neto' : 'Excluida del patrimonio neto'}
+                        {technical
+                          ? 'Excluida del patrimonio. Línea y disponible en Créditos.'
+                          : account.include_in_net_worth
+                            ? 'Incluida en patrimonio neto'
+                            : 'Excluida del patrimonio neto'}
                       </p>
                     </div>
 
                     <AmountCell
-                      label="Saldo actual"
-                      value={formatCurrency(account.balance, account.currency)}
+                      label={technical ? 'Cuenta técnica' : 'Saldo actual'}
+                      value={technical ? 'No patrimonial' : formatCurrency(account.balance, account.currency)}
                       meta={
-                        editingId === account.id
+                        technical
+                          ? (
+                              <Link href="/credits" className="font-medium text-[var(--c-primary)] hover:text-[var(--c-primary-hover)]">
+                                Gestionar en Créditos
+                              </Link>
+                            )
+                          : editingId === account.id
                           ? 'En edicion'
                           : account.is_active
                             ? 'Disponible para operar'
@@ -1297,12 +1375,16 @@ export function PortfolioManager({
                     </div>
                   </div>
                 </article>
-              ))}
+                )
+              })}
             </div>
           </DataTable>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {filteredAccounts.map(account => (
+            {filteredAccounts.map(account => {
+              const technical = isTechnicalAccount(account)
+
+              return (
               <article
                 key={account.id}
                 data-testid={`portfolio-card-${account.id}`}
@@ -1344,13 +1426,18 @@ export function PortfolioManager({
                   <div className="mt-5 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
                     <div className="min-w-0">
                       <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--c-text-faint)]">
-                        Saldo actual
+                        {technical ? 'Cuenta técnica' : 'Saldo actual'}
                       </p>
                       <p className={`mt-2 truncate font-mono text-[1.45rem] font-semibold tracking-[-0.03em] tabular-nums ${
-                        account.balance < 0 ? 'text-[var(--c-danger)]' : 'text-[var(--c-text)]'
+                        account.balance < 0 && !technical ? 'text-[var(--c-danger)]' : 'text-[var(--c-text)]'
                       }`}>
-                        {formatCurrency(account.balance, account.currency)}
+                        {technical ? 'No patrimonial' : formatCurrency(account.balance, account.currency)}
                       </p>
+                      {technical ? (
+                        <Link href="/credits" className="mt-2 inline-flex text-[11px] font-semibold text-[var(--c-primary)] hover:text-[var(--c-primary-hover)]">
+                          Gestionar en Créditos
+                        </Link>
+                      ) : null}
                     </div>
                     <div className="rounded-[12px] border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2 text-right">
                       <p className="text-[10px] font-medium text-[var(--c-text-faint)]">Moneda</p>
@@ -1358,13 +1445,25 @@ export function PortfolioManager({
                     </div>
                   </div>
 
-                  <PortfolioTrendSparkline account={account} />
+                  {technical ? (
+                    <div className="mt-4 rounded-[14px] border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-3">
+                      <p className="text-[11px] leading-5 text-[var(--c-text-muted)]">
+                        La línea, el cupo usado y el crédito disponible se controlan desde el módulo Créditos.
+                      </p>
+                    </div>
+                  ) : (
+                    <PortfolioTrendSparkline account={account} />
+                  )}
                 </div>
 
                 <div className="border-t border-[var(--c-border)] bg-[var(--c-surface-2)] px-4 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <p className="min-w-0 truncate text-[11px] text-[var(--c-text-muted)]">
-                      {account.include_in_net_worth ? 'Incluida en patrimonio neto' : 'Fuera del patrimonio neto'}
+                      {technical
+                        ? 'Cuenta técnica, fuera del patrimonio'
+                        : account.include_in_net_worth
+                          ? 'Incluida en patrimonio neto'
+                          : 'Fuera del patrimonio neto'}
                     </p>
                     <div className="flex shrink-0 items-center gap-1.5">
                       <ActionIconButton
@@ -1405,7 +1504,8 @@ export function PortfolioManager({
                   </div>
                 </div>
               </article>
-            ))}
+              )
+            })}
           </div>
         )}
       </PageLayout>
@@ -1451,7 +1551,7 @@ export function PortfolioManager({
             <FormField label="Tipo">
               <AppSelect
                 value={form.type}
-                onChange={value => setForm(prev => ({ ...prev, type: value as AccountType }))}
+                onChange={handleSelectAccountType}
                 testId="portfolio-type-select"
                 options={ACCOUNT_TYPE_OPTIONS.map(option => ({
                   value: option.value,
@@ -1526,9 +1626,11 @@ export function PortfolioManager({
             </FormField>
 
             <FormField
-              label="Saldo inicial"
+              label={formIsTechnicalAccount ? 'Saldo técnico' : 'Saldo inicial'}
               description={
-                editingId
+                formIsTechnicalAccount
+                  ? 'Las tarjetas no tienen saldo patrimonial en Portafolio. El cupo, uso y disponible se gestionan en Créditos.'
+                  : editingId
                   ? 'Corrige el saldo de apertura y la fecha desde la que ese valor representa el punto de partida de la cuenta.'
                   : 'Usalo para reflejar el punto de partida exacto antes de comenzar a registrar movimientos.'
               }
@@ -1536,8 +1638,9 @@ export function PortfolioManager({
               <NumericInput
                 step="0.01"
                 decimals={2}
-                value={form.initial_balance}
+                value={formIsTechnicalAccount ? '0.00' : form.initial_balance}
                 onValueChange={value => setForm(prev => ({ ...prev, initial_balance: value }))}
+                disabled={formIsTechnicalAccount}
                 data-testid="portfolio-initial-balance-input"
                 className="field-base ft-form-amount-input w-full"
               />
@@ -1562,12 +1665,20 @@ export function PortfolioManager({
 
             {editingId ? (
               <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
-                <p className="text-[11px] font-medium text-[var(--ft-form-muted)]">Saldo actual</p>
+                <p className="text-[11px] font-medium text-[var(--ft-form-muted)]">
+                  {formIsTechnicalAccount ? 'Lectura técnica' : 'Saldo actual'}
+                </p>
                 <p className="mt-1 text-[1.05rem] font-semibold tracking-[-0.02em] text-[var(--c-text)] tabular-nums">
-                  {editingAccount ? formatCurrency(editingAccount.balance, editingAccount.currency) : '--'}
+                  {formIsTechnicalAccount
+                    ? 'No patrimonial'
+                    : editingAccount
+                      ? formatCurrency(editingAccount.balance, editingAccount.currency)
+                      : '--'}
                 </p>
                 <p className="mt-2 text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-                  El saldo operativo vigente se recalculará usando la nueva base de apertura, sin perder la referencia del valor actual.
+                  {formIsTechnicalAccount
+                    ? 'Esta cuenta solo permite registrar consumos de tarjeta. La línea disponible vive en Créditos.'
+                    : 'El saldo operativo vigente se recalculará usando la nueva base de apertura, sin perder la referencia del valor actual.'}
                 </p>
               </div>
             ) : null}
@@ -1581,7 +1692,9 @@ export function PortfolioManager({
                 <p className="mt-2 text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
                   {form.include_in_net_worth
                     ? 'Esta cuenta entrará al patrimonio neto desde su saldo de apertura.'
-                    : 'Esta cuenta se registrará fuera del patrimonio neto inicial.'}
+                    : formIsTechnicalAccount
+                      ? 'Esta tarjeta se registrará como cuenta técnica fuera del patrimonio.'
+                      : 'Esta cuenta se registrará fuera del patrimonio neto inicial.'}
                 </p>
               </div>
             ) : null}
@@ -1590,7 +1703,9 @@ export function PortfolioManager({
           <OptionalSection
             title="Más opciones"
             summary={[
-              form.include_in_net_worth ? 'Incluida en patrimonio' : 'Fuera de patrimonio',
+              formIsTechnicalAccount
+                ? 'Cuenta técnica'
+                : form.include_in_net_worth ? 'Incluida en patrimonio' : 'Fuera de patrimonio',
               form.notes.trim() ? 'Notas' : '',
             ]}
           >
@@ -1598,16 +1713,19 @@ export function PortfolioManager({
               <label className="flex items-start gap-3 rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
                 <input
                   type="checkbox"
-                  checked={form.include_in_net_worth}
+                  checked={formIsTechnicalAccount ? false : form.include_in_net_worth}
+                  disabled={formIsTechnicalAccount}
                   onChange={event => setForm(prev => ({ ...prev, include_in_net_worth: event.target.checked }))}
-                  className="mt-0.5 h-4 w-4 rounded border-[var(--c-border)] text-[var(--c-primary)] focus:ring-[var(--c-primary-soft)]"
+                  className="mt-0.5 h-4 w-4 rounded border-[var(--c-border)] text-[var(--c-primary)] focus:ring-[var(--c-primary-soft)] disabled:cursor-not-allowed disabled:opacity-60"
                 />
                 <span className="space-y-1">
                   <span className="block text-[13px] font-semibold tracking-[-0.01em] text-[var(--c-text)]">
                     Incluir en patrimonio neto
                   </span>
                   <span className="block text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-                    Actívalo si esta cuenta debe formar parte de la lectura patrimonial consolidada.
+                    {formIsTechnicalAccount
+                      ? 'Las tarjetas se excluyen del patrimonio. Su cupo disponible se muestra en Créditos.'
+                      : 'Actívalo si esta cuenta debe formar parte de la lectura patrimonial consolidada.'}
                   </span>
                 </span>
               </label>

@@ -146,6 +146,9 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return apiZodError(parsed.error)
 
   const payload = parsed.data
+  const isTechnicalAccount = payload.type === 'CREDIT_CARD'
+  const normalizedInitialBalance = isTechnicalAccount ? 0 : payload.initial_balance
+  const includeInNetWorth = isTechnicalAccount ? false : payload.include_in_net_worth
   const initialBalanceDate = payload.initial_balance_date ?? new Date().toISOString().slice(0, 10)
   let resolvedInstitution = payload.institution ?? null
   let resolvedBankEntityId = payload.bank_entity_id ?? null
@@ -194,10 +197,10 @@ export async function POST(req: NextRequest) {
           bank_entity_id: resolvedBankEntityId,
           type: payload.type,
           currency: payload.currency,
-          initial_balance: payload.initial_balance,
+          initial_balance: normalizedInitialBalance,
           initial_balance_date: initialBalanceDate,
-          balance: payload.initial_balance,
-          include_in_net_worth: payload.include_in_net_worth,
+          balance: normalizedInitialBalance,
+          include_in_net_worth: includeInNetWorth,
           color: payload.color,
           icon: payload.icon,
           notes: payload.notes ?? null,
@@ -215,10 +218,10 @@ export async function POST(req: NextRequest) {
         institution: resolvedInstitution,
         type: payload.type,
         currency: payload.currency,
-        initial_balance: payload.initial_balance,
+        initial_balance: normalizedInitialBalance,
         initial_balance_date: initialBalanceDate,
-        balance: payload.initial_balance,
-        include_in_net_worth: payload.include_in_net_worth,
+        balance: normalizedInitialBalance,
+        include_in_net_worth: includeInNetWorth,
         color: payload.color,
         icon: payload.icon,
         notes: payload.notes ?? null,

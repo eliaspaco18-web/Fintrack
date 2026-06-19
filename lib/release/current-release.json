@@ -1,28 +1,16 @@
 {
-  "version": "V1.0.0.19",
+  "version": "V1.0.0.20",
   "series": "1.0.0",
-  "build": 19,
-  "title": "Actualización en Créditos, Movimientos, Portafolio",
-  "summary": "Esta versión trae cambios en Créditos, Movimientos, Portafolio para que tus tareas diarias dentro de FinTrack sean más claras, estables y fáciles de seguir.",
+  "build": 20,
+  "title": "Actualización en Plataforma",
+  "summary": "Esta versión trae cambios en Plataforma para que tus tareas diarias dentro de FinTrack sean más claras, estables y fáciles de seguir.",
   "highlights": [
     {
-      "module": "Créditos",
-      "type": "fix",
-      "title": "Seguimiento de créditos más confiable",
-      "detail": "Corregimos comportamientos del módulo Créditos para que sus acciones y detalles respondan con mayor consistencia."
-    },
-    {
-      "module": "Movimientos",
+      "module": "Plataforma",
       "type": "improve",
-      "title": "Registro de movimientos más consistente",
-      "detail": "Ajustamos el flujo de Movimientos para que registrar operaciones y revisar información sea más claro en el día a día."
-    },
-    {
-      "module": "Portafolio",
-      "type": "improve",
-      "title": "Gestión de cuentas más clara y estable",
-      "detail": "Mejoramos las acciones de tus cuentas para que editar, revisar y operar en Portafolio sea más confiable."
+      "title": "Publicaciones y operación más confiables",
+      "detail": "Fortalecimos la plataforma para que las actualizaciones de FinTrack sean más estables y transparentes para todos."
     }
   ],
-  "releasedAt": "2026-06-19T19:30:18.067Z"
+  "releasedAt": "2026-06-19T21:22:11.440Z"
 }
