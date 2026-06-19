@@ -32,7 +32,10 @@ export class TransactionRepository extends BaseRepository {
           *,
           source_account:accounts!source_account_id(id, name, color, icon),
           destination_account:accounts!destination_account_id(id, name, color, icon),
-          category:categories(id, name, icon, color)
+          category:categories(id, name, icon, color, system_key),
+          linked_asset:assets(id, name, asset_type, asset_type_id, serial_number, location, purchase_value, current_value, purchase_date, recipient),
+          linked_receivable:accounts_receivable(id, debtor_id, debtor_name, due_date, concept, notes, amount, collected_amount, collected_date, currency, status),
+          linked_payable:accounts_payable(id, creditor_id, creditor_name, due_date, concept, notes, amount, paid_amount, paid_date, currency, status)
         `)
         .eq('id', id)
         .single()
@@ -47,7 +50,10 @@ export class TransactionRepository extends BaseRepository {
           *,
           source_account:accounts!source_account_id(id, name, color, icon),
           destination_account:accounts!destination_account_id(id, name, color, icon),
-          category:categories(id, name, icon, color)
+          category:categories(id, name, icon, color, system_key),
+          linked_asset:assets(id, name, asset_type, asset_type_id, serial_number, location, purchase_value, current_value, purchase_date, recipient),
+          linked_receivable:accounts_receivable(id, debtor_id, debtor_name, due_date, concept, notes, amount, collected_amount, collected_date, currency, status),
+          linked_payable:accounts_payable(id, creditor_id, creditor_name, due_date, concept, notes, amount, paid_amount, paid_date, currency, status)
         `)
         .eq('id', id)
         .eq('user_id', userId)

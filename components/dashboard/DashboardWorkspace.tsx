@@ -21,9 +21,11 @@ import { VencimientosWidget } from './VencimientosWidget'
 import { FinancialHealthScore } from './FinancialHealthScore'
 import { SavingsRateTrendChart } from './SavingsRateTrendChart'
 import { PresupuestosMesWidget } from './PresupuestosMesWidget'
+import { BudgetVarianceBars } from './BudgetVarianceBars'
 import { CreditosUsoRapidoWidget } from './CreditosUsoRapidoWidget'
 import { FlujoPendienteWidget } from './FlujoPendienteWidget'
 import { OverviewRiskStrip } from './OverviewRiskStrip'
+import { PatrimonioComposicionWidget } from './PatrimonioComposicionWidget'
 import {
   DashboardTabs,
   getDashboardPanelId,
@@ -204,8 +206,14 @@ function DashboardWorkspaceContent({
         </TabPanel>
 
         <TabPanel activeTab={activeTab} tabId="budgets">
-          <section className="max-w-[720px] dashboard-enter dashboard-enter-delay-1">
-            <PresupuestosMesWidget />
+          <section className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)]">
+            <div className="min-w-0 dashboard-enter dashboard-enter-delay-1">
+              <PresupuestosMesWidget />
+            </div>
+
+            <div className="min-w-0 dashboard-enter dashboard-enter-delay-2">
+              <BudgetVarianceBars />
+            </div>
           </section>
         </TabPanel>
 
@@ -230,8 +238,9 @@ function DashboardWorkspaceContent({
 
         <TabPanel activeTab={activeTab} tabId="wealth">
           <section className="grid grid-cols-1 items-start gap-3 xl:grid-cols-[4fr_5fr]">
-            <div className="min-w-0 dashboard-enter dashboard-enter-delay-2">
+            <div className="grid min-w-0 gap-3 dashboard-enter dashboard-enter-delay-2">
               <SavingsRateTrendChart />
+              <PatrimonioComposicionWidget />
             </div>
 
             <div className="min-w-0 dashboard-enter dashboard-enter-delay-3">

@@ -109,7 +109,7 @@ function findOptionLabel(options: Array<{ value: string; label: string }>, value
   return match?.label ?? null
 }
 
-function buildPayload(
+export function buildPayload(
   values:   TransactionFormValues,
   sections: SectionVisibility,
   options:  TransactionFormOptions,
@@ -212,6 +212,10 @@ export function useFormOrchestrator(
     defaultValues: { ...FORM_DEFAULTS, ...initialValues },
     mode:          'onBlur',
   })
+
+  useEffect(() => {
+    form.reset({ ...FORM_DEFAULTS, ...initialValues })
+  }, [form, initialValues])
 
   const type              = useWatch({ control: form.control, name: 'type' })
   const currency          = useWatch({ control: form.control, name: 'currency' })

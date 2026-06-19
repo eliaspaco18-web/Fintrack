@@ -6,11 +6,9 @@ import { AppSelect } from '@/components/ui/AppSelect'
 import { NumericInput } from '@/components/ui/NumericInput'
 import { FormActions, FormField, FormSection } from '@/components/forms/primitives'
 import { RecordModalFooter } from '@/components/ui/RecordModal'
-import { CreditCardScheduleModal } from '@/components/credits/CreditCardScheduleModal'
+import { CreditCardScheduleEditor } from '@/components/credits/CreditCardScheduleModal'
 import {
   formatBillingCycleLabel,
-  formatDuplicateCycleMessage,
-  formatScheduleDateLabel,
 } from '@/components/credits/credits-schedule.constants'
 import { getBillingCycleYearOptions } from '@/lib/credits/billing-cycle-years'
 import { getApiErrorMessage } from '@/lib/api/error-message'
@@ -33,7 +31,38 @@ type BillingCycleRow = {
   consumption_to: string
   payment_date: string
   total_to_pay: string
+  total_to_pay_pen?: number
+  total_to_pay_usd?: number
+  movement_summary?: BillingCycleMovementSummary | null
+  can_delete?: boolean
   statement_file: File | null
+}
+
+type BillingCycleMovement = {
+  id: string
+  type: string
+  description: string
+  amount: number
+  currency: string
+  transaction_date: string
+  payment_method: string | null
+  source_account_id: string | null
+  destination_account_id: string | null
+}
+
+type BillingCycleMovementSummary = {
+  initial_pen: number
+  initial_usd: number
+  consumption_pen: number
+  consumption_usd: number
+  payment_pen: number
+  payment_usd: number
+  total_pen: number
+  total_usd: number
+  movement_count: number
+  consumptions: BillingCycleMovement[]
+  payments: BillingCycleMovement[]
+  movements: BillingCycleMovement[]
 }
 
 type CardFormState = {
@@ -75,38 +104,16 @@ function newCycleRow(): BillingCycleRow {
     consumption_to: todayIso(),
     payment_date: todayIso(),
     total_to_pay: '0.00',
+    total_to_pay_pen: 0,
+    total_to_pay_usd: 0,
+    movement_summary: null,
+    can_delete: true,
     statement_file: null,
   }
 }
 
 function moneyString(value: number | null | undefined): string {
   return Number(value ?? 0).toFixed(2)
-}
-
-function SummaryStat({
-  label,
-  value,
-  numeric = false,
-}: {
-  label: string
-  value: string | number
-  numeric?: boolean
-}) {
-  return (
-    <div className="min-h-[76px] rounded-[var(--ft-form-radius-sm)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
-      <p className="text-[11px] font-medium leading-[1.35] text-[var(--ft-form-muted)]">
-        {label}
-      </p>
-      <p
-        className={`
-          mt-2 text-[15px] font-semibold leading-[1.35] text-[var(--ft-text)]
-          ${numeric ? 'tabular-nums' : 'text-pretty'}
-        `}
-      >
-        {value}
-      </p>
-    </div>
-  )
 }
 
 export function CreditCardForm({
@@ -133,7 +140,6 @@ export function CreditCardForm({
 
   const [cycles, setCycles] = useState<BillingCycleRow[]>([newCycleRow()])
   const [cyclesDirty, setCyclesDirty] = useState(false)
-  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
 
   const selectedBankEntity = useMemo(
     () => bankEntities.find(entity => entity.id === form.bank_entity_id) ?? null,
@@ -173,16 +179,8 @@ export function CreditCardForm({
         .map(cycle => formatBillingCycleLabel(cycle.billing_month, cycle.billing_year)),
     [cycles, duplicateCycleKeys],
   )
-  const registeredTotal = useMemo(
-    () => roundToDecimals(cycles.reduce((sum, cycle) => sum + (parseNumericInput(cycle.total_to_pay, 0) || 0), 0), 2),
-    [cycles],
-  )
-  const firstPaymentDate = formatScheduleDateLabel(cycles[0]?.payment_date)
-  const lastPaymentDate = formatScheduleDateLabel(cycles[cycles.length - 1]?.payment_date)
-  const duplicateCyclesMessage = formatDuplicateCycleMessage(duplicateCycleLabels)
-
   useEffect(() => {
-    onLayoutPreferenceChange?.('xl')
+    onLayoutPreferenceChange?.('full-form')
   }, [onLayoutPreferenceChange])
 
   useEffect(() => {
@@ -194,18 +192,10 @@ export function CreditCardForm({
       bank_entity_id: credit.bank_entity_id ?? '',
       currency,
       credit_limit: moneyString(credit.credit_limit),
-      used_amount_pen: moneyString(credit.used_amount_pen ?? (currency === 'PEN' ? credit.used_amount : 0)),
-      used_amount_usd: moneyString(credit.used_amount_usd ?? (currency === 'USD' ? credit.used_amount : 0)),
+      used_amount_pen: moneyString(credit.initial_used_amount_pen ?? credit.used_amount_pen ?? (currency === 'PEN' ? credit.used_amount : 0)),
+      used_amount_usd: moneyString(credit.initial_used_amount_usd ?? credit.used_amount_usd ?? (currency === 'USD' ? credit.used_amount : 0)),
     })
   }, [credit, mode])
-
-  useEffect(() => {
-    onNestedModalOpenChange?.(isScheduleModalOpen)
-
-    return () => {
-      onNestedModalOpenChange?.(false)
-    }
-  }, [isScheduleModalOpen, onNestedModalOpenChange])
 
   useEffect(() => {
     const loadOptions = async () => {
@@ -256,6 +246,10 @@ export function CreditCardForm({
           consumption_to: string
           payment_date: string
           total_to_pay: number
+          total_to_pay_pen?: number
+          total_to_pay_usd?: number
+          movement_summary?: BillingCycleMovementSummary | null
+          can_delete?: boolean
         }>).map(cycle => ({
           id: cycle.id,
           billing_month: String(cycle.billing_month).padStart(2, '0'),
@@ -264,6 +258,10 @@ export function CreditCardForm({
           consumption_to: cycle.consumption_to,
           payment_date: cycle.payment_date,
           total_to_pay: moneyString(cycle.total_to_pay),
+          total_to_pay_pen: Number(cycle.total_to_pay_pen ?? cycle.total_to_pay ?? 0),
+          total_to_pay_usd: Number(cycle.total_to_pay_usd ?? 0),
+          movement_summary: cycle.movement_summary ?? null,
+          can_delete: cycle.can_delete ?? true,
           statement_file: null,
         }))
 
@@ -386,6 +384,15 @@ export function CreditCardForm({
       }
 
       const creditId = (mode === 'edit' ? credit?.id : json.data?.credit?.id) as string
+      const uploadStatementFile = async (file: File) => {
+        const formData = new FormData()
+        formData.append('file', file)
+        const attachmentRes = await fetch(`/api/credits/${creditId}/attachment`, { method: 'POST', body: formData })
+        const attachmentJson = await attachmentRes.json().catch(() => null)
+        if (!attachmentRes.ok || !attachmentJson?.ok) {
+          throw new Error(getApiErrorMessage(attachmentJson, 'No se pudo subir el estado de cuenta'))
+        }
+      }
 
       if (mode === 'edit' && cyclesDirty) {
         const cycleRes = await fetch(`/api/credits/${creditId}/billing-cycles`, {
@@ -406,6 +413,12 @@ export function CreditCardForm({
         if (!cycleRes.ok || !cycleJson?.ok) {
           throw new Error(getApiErrorMessage(cycleJson, 'No se pudieron actualizar los ciclos de facturación'))
         }
+
+        for (const cycle of cycles) {
+          if (cycle.statement_file) {
+            await uploadStatementFile(cycle.statement_file)
+          }
+        }
       } else if (mode === 'create') {
         for (const cycle of cycles) {
           const totalToPay = roundToDecimals(parseNumericInput(cycle.total_to_pay || '0', 0), 2)
@@ -423,9 +436,7 @@ export function CreditCardForm({
           })
 
           if (cycle.statement_file) {
-            const formData = new FormData()
-            formData.append('file', cycle.statement_file)
-            await fetch(`/api/credits/${creditId}/attachment`, { method: 'POST', body: formData })
+            await uploadStatementFile(cycle.statement_file)
           }
         }
       }
@@ -439,12 +450,6 @@ export function CreditCardForm({
   }, [credit?.id, cycles, cyclesDirty, form, mode, onSuccess, saving])
 
   const isDisabled = saving
-  const closeScheduleModal = useCallback(() => {
-    setIsScheduleModalOpen(false)
-    requestAnimationFrame(() => {
-      document.getElementById('card-schedule-trigger')?.focus()
-    })
-  }, [])
 
   return (
     <form
@@ -459,7 +464,7 @@ export function CreditCardForm({
         </div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto pr-1 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] xl:overflow-visible xl:pr-0">
+      <div className="grid min-h-0 flex-1 grid-cols-1 items-start gap-4 overflow-y-auto pr-1 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] xl:overflow-visible xl:pr-0">
         <FormSection
           title="Datos esenciales"
           description="Define la tarjeta por su banco emisor. FinTrack creará internamente la cuenta técnica necesaria para registrar consumos."
@@ -542,139 +547,112 @@ export function CreditCardForm({
           </div>
         </FormSection>
 
-        <FormSection
-          title="Saldo inicial"
-          description="Define la línea en la moneda aprobada y registra el consumo pendiente separado en soles y dólares."
-          columns="2"
-          className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
-        >
-          <FormField label={`Línea de crédito (${form.currency})`}>
-            <NumericInput
-              step="0.01"
-              decimals={2}
-              min={0}
-              value={form.credit_limit}
-              onValueChange={value => setForm(prev => ({ ...prev, credit_limit: value }))}
-              disabled={isDisabled}
-              data-testid="credit-card-limit-input"
-              className="field-base ft-form-input w-full"
-              placeholder="Ej: 12000"
-              required
-            />
-          </FormField>
-
-          <FormField
-            label="Consumo inicial PEN"
-            optional
-            description="Saldo pendiente en soles según el estado de cuenta."
-          >
-            <NumericInput
-              step="0.01"
-              decimals={2}
-              min={0}
-              value={form.used_amount_pen}
-              onValueChange={value => setForm(prev => ({ ...prev, used_amount_pen: value }))}
-              disabled={isDisabled}
-              data-testid="credit-card-used-amount-pen-input"
-              className="field-base ft-form-input w-full"
-              placeholder="Ej: 850.50"
-            />
-          </FormField>
-
-          <FormField
-            label="Consumo inicial USD"
-            optional
-            description="Saldo pendiente en dólares según el estado de cuenta."
-            className="md:col-span-2"
-          >
-            <NumericInput
-              step="0.01"
-              decimals={2}
-              min={0}
-              value={form.used_amount_usd}
-              onValueChange={value => setForm(prev => ({ ...prev, used_amount_usd: value }))}
-              disabled={isDisabled}
-              data-testid="credit-card-used-amount-usd-input"
-              className="field-base ft-form-input w-full"
-              placeholder="Ej: 13.67"
-            />
-          </FormField>
-
-          <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-4 py-4 md:col-span-2">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-medium text-[var(--ft-form-muted)]">Disponible inicial</p>
-                <p className="mt-1 text-[1.05rem] font-semibold tracking-[-0.02em] text-[var(--ft-text)] tabular-nums">
-                  {formatNumber(availableAmountValue)} {form.currency}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-[11px] font-medium text-[var(--ft-form-muted)]">Uso actual</p>
-                <p className="mt-1 text-sm font-semibold text-[var(--ft-text)] tabular-nums">
-                  {formatNumber(utilizationPct)}%
-                </p>
-              </div>
+        <section className="space-y-3 rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h3 className="text-[15px] font-semibold tracking-[-0.02em] text-[var(--c-text)]">
+                Saldo inicial
+              </h3>
+              <p className="text-[12px] leading-5 text-[var(--ft-form-muted)]">
+                Línea aprobada y deuda pendiente al registrar la tarjeta.
+              </p>
             </div>
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--ft-border)]/70">
+            <span className="mt-0.5 inline-flex h-7 items-center rounded-[var(--ft-radius-control)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-2.5 text-[11px] font-semibold text-[var(--ft-form-muted)]">
+              {form.currency}
+            </span>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <FormField label="Línea de crédito">
+              <NumericInput
+                step="0.01"
+                decimals={2}
+                min={0}
+                value={form.credit_limit}
+                onValueChange={value => setForm(prev => ({ ...prev, credit_limit: value }))}
+                disabled={isDisabled}
+                data-testid="credit-card-limit-input"
+                className="field-base ft-form-input w-full"
+                placeholder="Ej: 12000"
+                required
+              />
+            </FormField>
+
+            <FormField label="Inicial PEN" optional>
+              <NumericInput
+                step="0.01"
+                decimals={2}
+                min={0}
+                value={form.used_amount_pen}
+                onValueChange={value => setForm(prev => ({ ...prev, used_amount_pen: value }))}
+                disabled={isDisabled}
+                data-testid="credit-card-used-amount-pen-input"
+                className="field-base ft-form-input w-full"
+                placeholder="Ej: 850.50"
+              />
+            </FormField>
+
+            <FormField label="Inicial USD" optional>
+              <NumericInput
+                step="0.01"
+                decimals={2}
+                min={0}
+                value={form.used_amount_usd}
+                onValueChange={value => setForm(prev => ({ ...prev, used_amount_usd: value }))}
+                disabled={isDisabled}
+                data-testid="credit-card-used-amount-usd-input"
+                className="field-base ft-form-input w-full"
+                placeholder="Ej: 13.67"
+              />
+            </FormField>
+          </div>
+
+          <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
+            <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
+              <div className="grid grid-cols-2 gap-3 sm:max-w-[360px]">
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--ft-form-muted)]">Disponible</p>
+                  <p className="mt-1 text-[15px] font-semibold text-[var(--ft-text)] tabular-nums">
+                    {formatNumber(availableAmountValue)} {form.currency}
+                  </p>
+                </div>
+                <div className="text-right sm:text-left">
+                  <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--ft-form-muted)]">Uso</p>
+                  <p className="mt-1 text-[15px] font-semibold text-[var(--ft-text)] tabular-nums">
+                    {formatNumber(utilizationPct)}%
+                  </p>
+                </div>
+              </div>
+              <p className="text-[12px] leading-[1.45] text-[var(--ft-form-muted)] sm:text-right">
+                Actual: {formatNumber(usedAmountPenValue)} PEN · {formatNumber(usedAmountUsdValue)} USD
+                <span className="hidden lg:inline"> de {formatNumber(creditLimitValue || 0)} {currencyLabel}</span>
+              </p>
+            </div>
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[var(--ft-border)]/70">
               <div
                 className="h-full rounded-full bg-[var(--ft-primary)]"
                 style={{ width: `${Math.max(0, Math.min(utilizationPct, 100))}%` }}
               />
             </div>
-            <p className="mt-3 text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-              Consumo actual: {formatNumber(usedAmountPenValue)} PEN y {formatNumber(usedAmountUsdValue)} USD.
-              Utilización principal: {formatNumber(primaryUsedAmountValue)} de {formatNumber(creditLimitValue || 0)} en {currencyLabel}.
-            </p>
           </div>
-        </FormSection>
+        </section>
 
-        <FormSection
-          title="Cronograma"
-          description="Revisa el alcance registrado del cronograma y abre el editor completo solo cuando necesites ajustar ciclos, fechas o adjuntos."
-          className="flex min-h-0 flex-col rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-section-gap:12px] xl:col-span-2"
-        >
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-[1.25fr_0.7fr_1fr_1fr_auto]">
-            <SummaryStat label="Total registrado" value={`${formatNumber(registeredTotal)} ${form.currency}`} numeric />
-            <SummaryStat label="Ciclos" value={cycles.length} numeric />
-            <SummaryStat label="Primer pago" value={firstPaymentDate} />
-            <SummaryStat label="Último pago" value={lastPaymentDate} />
-            <Button
-              id="card-schedule-trigger"
-              type="button"
-              variant="secondary"
-              size="md"
-              onClick={() => setIsScheduleModalOpen(true)}
-              disabled={isDisabled}
-              className="h-full min-h-[76px] w-full lg:w-auto"
-            >
-              Ver/editar →
-            </Button>
-          </div>
-
-          {duplicateCyclesMessage ? (
-            <div className="rounded-[var(--ft-form-radius)] border border-[color:var(--ft-form-error)]/20 bg-[var(--ft-danger-soft)] px-3.5 py-3">
-              <p className="text-[12px] font-medium text-[var(--ft-form-error)]">
-                {duplicateCyclesMessage}
-              </p>
-            </div>
-          ) : null}
-        </FormSection>
+        <div className="min-h-0 rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 xl:col-span-2">
+          <CreditCardScheduleEditor
+            cycles={cycles}
+            duplicateCycleKeys={duplicateCycleKeys}
+            duplicateCycleLabels={duplicateCycleLabels}
+            yearOptions={YEARS}
+            disabled={isDisabled}
+            compact
+            onAddCycle={addCycle}
+            onRemoveCycle={removeCycle}
+            onUpdateCycle={updateCycle}
+            onFileChange={handleFileChange}
+            onMovementModalOpenChange={onNestedModalOpenChange}
+          />
+        </div>
       </div>
-
-      <CreditCardScheduleModal
-        open={isScheduleModalOpen}
-        onClose={closeScheduleModal}
-        cycles={cycles}
-        duplicateCycleKeys={duplicateCycleKeys}
-        duplicateCycleLabels={duplicateCycleLabels}
-        registeredTotal={registeredTotal}
-        yearOptions={YEARS}
-        disabled={isDisabled}
-        onAddCycle={addCycle}
-        onRemoveCycle={removeCycle}
-        onUpdateCycle={updateCycle}
-        onFileChange={handleFileChange}
-      />
 
       <RecordModalFooter>
         <FormActions

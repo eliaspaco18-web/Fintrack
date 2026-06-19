@@ -45,6 +45,70 @@ const zBillingCyclesReplaceSchema = z.object({
   cycles: z.array(zBillingCycleSchema).max(120),
 })
 
+type CardMovement = {
+  id: string
+  type: string
+  description: string
+  amount: number
+  currency: string
+  transaction_date: string
+  payment_method: string | null
+  source_account_id: string | null
+  destination_account_id: string | null
+}
+
+function toMoney(value: unknown): number {
+  const numeric = Number(value ?? 0)
+  return Number.isFinite(numeric) ? Math.round(numeric * 100) / 100 : 0
+}
+
+function summarizeCycle(params: {
+  cycle: { consumption_from: string; consumption_to: string }
+  movements: CardMovement[]
+  accountId: string | null
+  initialPen: number
+  initialUsd: number
+  includeInitial: boolean
+}) {
+  const periodMovements = params.movements.filter(movement => (
+    movement.transaction_date >= params.cycle.consumption_from &&
+    movement.transaction_date <= params.cycle.consumption_to
+  ))
+  const consumptions = periodMovements.filter(movement => (
+    movement.type === 'EXPENSE' &&
+    movement.source_account_id === params.accountId
+  ))
+  const payments = periodMovements.filter(movement => (
+    movement.type === 'EXPENSE' &&
+    movement.destination_account_id === params.accountId
+  ))
+
+  const sumByCurrency = (items: CardMovement[], currency: 'PEN' | 'USD') =>
+    toMoney(items.reduce((sum, item) => sum + (item.currency === currency ? Number(item.amount ?? 0) : 0), 0))
+
+  const consumptionPen = sumByCurrency(consumptions, 'PEN')
+  const consumptionUsd = sumByCurrency(consumptions, 'USD')
+  const paymentPen = sumByCurrency(payments, 'PEN')
+  const paymentUsd = sumByCurrency(payments, 'USD')
+  const initialPen = params.includeInitial ? params.initialPen : 0
+  const initialUsd = params.includeInitial ? params.initialUsd : 0
+
+  return {
+    initial_pen: initialPen,
+    initial_usd: initialUsd,
+    consumption_pen: consumptionPen,
+    consumption_usd: consumptionUsd,
+    payment_pen: paymentPen,
+    payment_usd: paymentUsd,
+    total_pen: toMoney(initialPen + consumptionPen - paymentPen),
+    total_usd: toMoney(initialUsd + consumptionUsd - paymentUsd),
+    movement_count: periodMovements.length,
+    consumptions,
+    payments,
+    movements: periodMovements,
+  }
+}
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } }
@@ -53,10 +117,9 @@ export async function GET(
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
-  // Verificar que el crédito pertenece al usuario
   const { data: credit, error: creditError } = await supabase
     .from('credits')
-    .select('id')
+    .select('*')
     .eq('id', params.id)
     .eq('user_id', userId)
     .single()
@@ -69,11 +132,55 @@ export async function GET(
     .from('billing_cycles')
     .select('*')
     .eq('credit_id', params.id)
-    .order('billing_year', { ascending: false })
-    .order('billing_month', { ascending: false })
+    .order('consumption_from', { ascending: true })
 
   if (error) return apiError({ code: 'DATABASE_ERROR', message: error.message })
-  return apiOk(data ?? [])
+
+  const cycles = data ?? []
+  const accountId = credit.account_id as string | null
+  const movementsResult = accountId
+    ? await supabase
+      .from('transactions')
+      .select('id, type, description, amount, currency, transaction_date, payment_method, source_account_id, destination_account_id')
+      .eq('user_id', userId)
+      .eq('type', 'EXPENSE')
+      .or(`source_account_id.eq.${accountId},destination_account_id.eq.${accountId}`)
+      .order('transaction_date', { ascending: false })
+    : { data: [] as CardMovement[], error: null }
+
+  if (movementsResult.error) {
+    return apiError({ code: 'DATABASE_ERROR', message: movementsResult.error.message })
+  }
+
+  const movements = (movementsResult.data ?? []) as CardMovement[]
+  const initialPen = toMoney((credit as Record<string, unknown>).initial_used_amount_pen ?? (credit as Record<string, unknown>).used_amount_pen)
+  const initialUsd = toMoney((credit as Record<string, unknown>).initial_used_amount_usd ?? (credit as Record<string, unknown>).used_amount_usd)
+
+  const enriched = cycles.map((cycle, index) => {
+    const summary = summarizeCycle({
+      cycle,
+      movements,
+      accountId,
+      initialPen,
+      initialUsd,
+      includeInitial: index === 0,
+    })
+
+    return {
+      ...cycle,
+      total_to_pay: summary.total_pen,
+      total_to_pay_pen: summary.total_pen,
+      total_to_pay_usd: summary.total_usd,
+      movement_summary: summary,
+      can_delete: summary.movement_count === 0,
+    }
+  }).sort((a, b) => {
+    const yearDiff = Number(b.billing_year) - Number(a.billing_year)
+    if (yearDiff !== 0) return yearDiff
+    return Number(b.billing_month) - Number(a.billing_month)
+  })
+
+  return apiOk(enriched)
 }
 
 export async function POST(

@@ -58,6 +58,7 @@ import {
 }                                       from './transaction.validations'
 import { type Result, Errors, ok }      from '@/modules/shared/result.types'
 import { resolveAccountingUsdPenExchangeRate } from '@/lib/server/exchange-rate'
+import { CategoryKeys } from '@/lib/constants/category-keys'
 
 type DbClient = SupabaseClient<Database>
 
@@ -70,6 +71,17 @@ type BudgetEligibilityRow = {
   start_date: string
   end_date: string | null
   is_active: boolean
+}
+
+type CreditAdjustment = {
+  id: string
+  op: 'CONSUMPTION' | 'PAYMENT'
+  amount: number
+  currency: 'PEN' | 'USD'
+}
+
+type EditableTransactionRecord = Transaction & {
+  category?: { system_key?: string | null } | null
 }
 
 function parseBudgetISODate(date: string): Date {
@@ -342,50 +354,419 @@ export class TransactionService {
   }
 
   // ╔══════════════════════════════════════════════════════════════════════════╗
-  // ║  UPDATE — solo campos no críticos                                       ║
+  // ║  UPDATE — edición funcional con la misma paridad del alta               ║
   // ╚══════════════════════════════════════════════════════════════════════════╝
 
-  /**
-   * Actualiza únicamente campos descriptivos de una transacción.
-   *
-   * DISEÑO DELIBERADO: monto, cuentas y tipo son inmutables post-creación.
-   * Cambiar el monto requiere delete + create para mantener el historial de
-   * saldos íntegro (los triggers de balance no hacen diff parcial de montos).
-   * Esta restricción se comunica explícitamente en la UI.
-   */
   async updateTransaction(
     userId: string,
     input:  UpdateTransactionInput
   ): Promise<Result<Transaction>> {
-    // Verificar que la transacción pertenece al usuario
-    const existing = await this.txRepo.findByIdForUser(input.id, userId)
-    if (!existing.ok) return existing
+    const existingResult = await this.txRepo.findByIdForUser(input.id, userId)
+    if (!existingResult.ok) return existingResult
+    const existingTx = existingResult.data as EditableTransactionRecord
 
-    // Construir solo los campos permitidos
-    const updateData: Record<string, unknown> = {}
-    if (input.description !== undefined)     updateData.description     = input.description.trim()
-    if (input.category_id !== undefined)     updateData.category_id     = input.category_id
-    if (input.notes       !== undefined)     updateData.notes           = input.notes
-    if (input.is_recurring !== undefined)    updateData.is_recurring    = input.is_recurring
-    if (input.transaction_date !== undefined) {
-      // Permitir corrección de fecha dentro del mismo mes
-      const existingMonth = existing.data.transaction_date.slice(0, 7)
-      const newMonth      = input.transaction_date.slice(0, 7)
+    const existingCategorySystemKey = typeof existingTx.category?.system_key === 'string'
+      ? existingTx.category.system_key
+      : null
+    if (
+      existingCategorySystemKey === CategoryKeys.INCOME_RECEIVABLE_COLLECTION
+      || existingCategorySystemKey === CategoryKeys.EXPENSE_PAYABLE_PAYMENT
+    ) {
+      return Errors.businessRule(
+        'Este movimiento aún no admite edición completa',
+        'Los cobros y pagos aplicados a cuentas por cobrar o por pagar siguen teniendo edición protegida para no desalinear saldos distribuidos.'
+      )
+    }
 
-      if (existingMonth !== newMonth) {
+    const accountingInput = await this.resolveCreateInputExchangeRate(input)
+    const validationResult = validateCreateTransactionInput(accountingInput)
+    if (!validationResult.ok) return validationResult
+
+    const sourceAccountResult = await this.fetchAndValidateAccount(
+      accountingInput.source_account_id,
+      userId,
+    )
+    if (!sourceAccountResult.ok) return sourceAccountResult
+    const sourceAccount = sourceAccountResult.data
+
+    const sourceAccountBusinessValidation = validateSourceAccountAgainstTransaction(accountingInput, sourceAccount)
+    if (!sourceAccountBusinessValidation.ok) return sourceAccountBusinessValidation
+
+    const expenseInput = accountingInput.type === 'EXPENSE'
+      ? accountingInput as CreateExpenseInput
+      : null
+    const usesCreditCardAsSource =
+      !!expenseInput &&
+      expenseInput.payment_method === 'CREDIT' &&
+      !!expenseInput.credit_card_id
+
+    let selectedCreditCard: Credit | null = null
+    if (expenseInput?.credit_card_id) {
+      const creditResult = await this.creditRepo.findByIdForUser(expenseInput.credit_card_id, userId)
+      if (!creditResult.ok) return creditResult
+      selectedCreditCard = creditResult.data
+
+      if (selectedCreditCard.credit_type !== 'CREDIT_CARD') {
         return Errors.businessRule(
-          'No se puede cambiar la fecha a un mes diferente',
-          'Para mover una transacción a otro mes, elimínala y regístrala de nuevo'
+          'La operación seleccionada requiere una tarjeta de crédito',
+          'Selecciona una tarjeta activa en el módulo Créditos'
         )
       }
-      updateData.transaction_date = input.transaction_date
+
+      if (selectedCreditCard.status !== 'ACTIVE') {
+        return Errors.businessRule(
+          'La tarjeta seleccionada no está activa',
+          'Activa la tarjeta o elige otra tarjeta'
+        )
+      }
+
+      if (usesCreditCardAsSource) {
+        if (!selectedCreditCard.account_id) {
+          return Errors.businessRule(
+            'La tarjeta no tiene cuenta asociada en Portafolio',
+            'Edita la tarjeta y vincúlala a una cuenta tipo tarjeta'
+          )
+        }
+
+        if (selectedCreditCard.account_id !== accountingInput.source_account_id) {
+          return Errors.validation(
+            'La cuenta de salida no coincide con la tarjeta seleccionada',
+            'Vuelve a seleccionar la tarjeta de crédito en el formulario'
+          )
+        }
+      }
     }
 
-    if (Object.keys(updateData).length === 0) {
-      return Errors.validation('No hay campos válidos para actualizar')
+    let destinationAccount: Account | null = null
+    let resolvedDestinationAccountId: string | null = existingTx.destination_account_id ?? null
+    if (accountingInput.type === 'TRANSFER') {
+      const destResult = await this.fetchAndValidateAccount(
+        accountingInput.destination_account_id,
+        userId,
+      )
+      if (!destResult.ok) return destResult
+
+      const destValidation = validateDestinationAccount(
+        accountingInput.source_account_id,
+        destResult.data,
+      )
+      if (!destValidation.ok) return destValidation
+
+      destinationAccount = destResult.data
+      resolvedDestinationAccountId = accountingInput.destination_account_id
+    } else if (
+      expenseInput?.credit_operation === 'PAYMENT'
+      && selectedCreditCard?.account_id
+    ) {
+      resolvedDestinationAccountId = selectedCreditCard.account_id
+    } else {
+      resolvedDestinationAccountId = null
     }
 
-    return this.txRepo.update(input.id, updateData)
+    const preparedInput = this.prepareCreateInput(
+      accountingInput,
+      sourceAccount,
+      destinationAccount,
+    )
+
+    const budgetPeriodId = preparedInput.type === 'EXPENSE'
+      ? await this.resolveExpenseBudgetPeriodId(userId, preparedInput)
+      : null
+
+    const linkedAssetResult = await this.assetRepo.findByTransactionId(existingTx.id)
+    if (!linkedAssetResult.ok) return linkedAssetResult
+    const linkedReceivableResult = await this.db
+      .from('accounts_receivable')
+      .select('*')
+      .eq('transaction_id', existingTx.id)
+      .maybeSingle()
+    if (linkedReceivableResult.error) {
+      return Errors.database(linkedReceivableResult.error.message)
+    }
+    const linkedPayableResult = await this.db
+      .from('accounts_payable')
+      .select('*')
+      .eq('transaction_id', existingTx.id)
+      .maybeSingle()
+    if (linkedPayableResult.error) {
+      return Errors.database(linkedPayableResult.error.message)
+    }
+
+    const linkedAsset = linkedAssetResult.data
+    const linkedReceivable = linkedReceivableResult.data
+    const linkedPayable = linkedPayableResult.data
+
+    if (linkedReceivable) {
+      const nextDebtorId = preparedInput.type === 'EXPENSE' && preparedInput.receivable
+        ? preparedInput.receivable.debtor_id ?? null
+        : linkedReceivable.debtor_id
+      if (Number(linkedReceivable.collected_amount) > 0) {
+        if (preparedInput.currency !== linkedReceivable.currency) {
+          return Errors.businessRule(
+            'No puedes cambiar la moneda de una cuenta por cobrar con cobros registrados',
+            'Mantén la misma moneda o corrige el movimiento desde el módulo Por Cobrar.'
+          )
+        }
+        if ((nextDebtorId ?? null) !== (linkedReceivable.debtor_id ?? null)) {
+          return Errors.businessRule(
+            'No puedes cambiar el deudor de una cuenta con cobros registrados',
+            'La cuenta ya tiene avance de recuperación y debe conservar su contraparte.'
+          )
+        }
+        if (preparedInput.amount < Number(linkedReceivable.collected_amount)) {
+          return Errors.businessRule(
+            'El nuevo monto no puede ser menor al ya cobrado',
+            `Cobrado actualmente: ${linkedReceivable.collected_amount} ${linkedReceivable.currency}`
+          )
+        }
+      }
+    }
+
+    if (linkedPayable) {
+      const nextCreditorId = preparedInput.type === 'INCOME' && preparedInput.payable
+        ? preparedInput.payable.creditor_id ?? null
+        : linkedPayable.creditor_id
+      if (Number(linkedPayable.paid_amount) > 0) {
+        if (preparedInput.currency !== linkedPayable.currency) {
+          return Errors.businessRule(
+            'No puedes cambiar la moneda de una cuenta por pagar con pagos registrados',
+            'Mantén la misma moneda o corrige el movimiento desde el módulo Por Pagar.'
+          )
+        }
+        if ((nextCreditorId ?? null) !== (linkedPayable.creditor_id ?? null)) {
+          return Errors.businessRule(
+            'No puedes cambiar el acreedor de una cuenta con pagos registrados',
+            'La cuenta ya tiene avances de pago y debe conservar su contraparte.'
+          )
+        }
+        if (preparedInput.amount < Number(linkedPayable.paid_amount)) {
+          return Errors.businessRule(
+            'El nuevo monto no puede ser menor al ya pagado',
+            `Pagado actualmente: ${linkedPayable.paid_amount} ${linkedPayable.currency}`
+          )
+        }
+      }
+    }
+
+    const rollbackTransactionData: Database['public']['Tables']['transactions']['Update'] = {
+      source_account_id: existingTx.source_account_id,
+      destination_account_id: existingTx.destination_account_id,
+      category_id: existingTx.category_id,
+      budget_id: existingTx.budget_id,
+      budget_period_id: existingTx.budget_period_id,
+      type: existingTx.type,
+      amount: existingTx.amount,
+      currency: existingTx.currency,
+      exchange_rate: existingTx.exchange_rate,
+      description: existingTx.description,
+      transaction_date: existingTx.transaction_date,
+      notes: existingTx.notes,
+      is_recurring: existingTx.is_recurring,
+      sender: existingTx.sender,
+      recipient: existingTx.recipient,
+      payment_method: existingTx.payment_method,
+      debtor_id: existingTx.debtor_id,
+      creditor_id: existingTx.creditor_id,
+    }
+
+    const nextDebtorId = preparedInput.type === 'EXPENSE' && preparedInput.receivable
+      ? preparedInput.receivable.debtor_id ?? null
+      : existingTx.debtor_id
+    const nextCreditorId = preparedInput.type === 'INCOME' && preparedInput.payable
+      ? preparedInput.payable.creditor_id ?? null
+      : existingTx.creditor_id
+
+    const transactionUpdate: Database['public']['Tables']['transactions']['Update'] = {
+      source_account_id: preparedInput.source_account_id,
+      destination_account_id: resolvedDestinationAccountId,
+      category_id: preparedInput.category_id ?? null,
+      budget_id: preparedInput.type === 'EXPENSE'
+        ? (preparedInput as CreateExpenseInput).budget_id ?? null
+        : null,
+      budget_period_id: budgetPeriodId,
+      type: preparedInput.type,
+      amount: preparedInput.amount,
+      currency: preparedInput.currency,
+      exchange_rate: preparedInput.currency === 'USD'
+        ? preparedInput.exchange_rate ?? existingTx.exchange_rate
+        : 1,
+      description: preparedInput.description?.trim() ?? '',
+      transaction_date: preparedInput.transaction_date,
+      notes: preparedInput.notes ?? null,
+      is_recurring: preparedInput.is_recurring ?? false,
+      sender: preparedInput.sender?.trim() || null,
+      recipient: preparedInput.recipient?.trim() || null,
+      payment_method: preparedInput.type === 'EXPENSE'
+        ? preparedInput.payment_method ?? 'DEBIT'
+        : null,
+      debtor_id: nextDebtorId,
+      creditor_id: nextCreditorId,
+    }
+
+    const previousCreditAdjustment = await this.resolveCreditAdjustmentForStoredTransaction(userId, existingTx)
+    if (!previousCreditAdjustment.ok) return previousCreditAdjustment
+    const reverseOldCredit = await this.reverseCreditAdjustment(previousCreditAdjustment.data)
+    if (!reverseOldCredit.ok) return reverseOldCredit
+
+    const restoreLinkedRows = async () => {
+      if (linkedAsset) {
+        await this.assetRepo.update(linkedAsset.id, {
+          name: linkedAsset.name,
+          asset_type: linkedAsset.asset_type,
+          asset_type_id: linkedAsset.asset_type_id,
+          serial_number: linkedAsset.serial_number,
+          location: linkedAsset.location,
+          purchase_value: linkedAsset.purchase_value,
+          current_value: linkedAsset.current_value,
+          purchase_date: linkedAsset.purchase_date,
+          currency: linkedAsset.currency,
+          recipient: linkedAsset.recipient,
+        })
+      }
+
+      if (linkedReceivable) {
+        await this.receivableRepo.update(linkedReceivable.id, {
+          debtor_id: linkedReceivable.debtor_id,
+          debtor_name: linkedReceivable.debtor_name,
+          amount: linkedReceivable.amount,
+          currency: linkedReceivable.currency,
+          issue_date: linkedReceivable.issue_date,
+          due_date: linkedReceivable.due_date,
+          concept: linkedReceivable.concept,
+          notes: linkedReceivable.notes,
+          collected_amount: linkedReceivable.collected_amount,
+          collected_date: linkedReceivable.collected_date,
+          status: linkedReceivable.status,
+        })
+      }
+
+      if (linkedPayable) {
+        await this.payableRepo.update(linkedPayable.id, {
+          creditor_id: linkedPayable.creditor_id,
+          creditor_name: linkedPayable.creditor_name,
+          amount: linkedPayable.amount,
+          currency: linkedPayable.currency,
+          issue_date: linkedPayable.issue_date,
+          due_date: linkedPayable.due_date,
+          concept: linkedPayable.concept,
+          notes: linkedPayable.notes,
+          paid_amount: linkedPayable.paid_amount,
+          paid_date: linkedPayable.paid_date,
+          status: linkedPayable.status,
+        })
+      }
+    }
+
+    const restoreCreditAndTransaction = async () => {
+      await this.txRepo.update(existingTx.id, rollbackTransactionData)
+      await restoreLinkedRows()
+      await this.applyCreditAdjustment(previousCreditAdjustment.data)
+    }
+
+    const updateResult = await this.txRepo.update(existingTx.id, transactionUpdate)
+    if (!updateResult.ok) {
+      await this.applyCreditAdjustment(previousCreditAdjustment.data)
+      return updateResult
+    }
+
+    try {
+      if (linkedAsset && preparedInput.type === 'EXPENSE' && preparedInput.asset) {
+        const nextCurrentValue = Number(linkedAsset.current_value) === Number(linkedAsset.purchase_value)
+          ? preparedInput.amount
+          : linkedAsset.current_value
+        const assetUpdateResult = await this.assetRepo.update(linkedAsset.id, {
+          name: preparedInput.asset.name,
+          asset_type: preparedInput.asset.asset_type,
+          asset_type_id: preparedInput.asset.asset_type_id ?? null,
+          serial_number: preparedInput.asset.serial_number ?? null,
+          location: preparedInput.asset.location ?? null,
+          purchase_value: preparedInput.amount,
+          current_value: nextCurrentValue,
+          purchase_date: preparedInput.transaction_date,
+          currency: preparedInput.currency,
+          recipient: preparedInput.recipient?.trim() || null,
+        })
+        if (!assetUpdateResult.ok) {
+          throw new Error(assetUpdateResult.error.detail ?? assetUpdateResult.error.message)
+        }
+      }
+
+      if (linkedReceivable && preparedInput.type === 'EXPENSE' && preparedInput.receivable) {
+        const collectedAmount = Number(linkedReceivable.collected_amount)
+        const receivableStatus: Database['public']['Enums']['receivable_status'] =
+          collectedAmount <= 0
+            ? 'PENDING'
+            : collectedAmount >= preparedInput.amount
+              ? 'COLLECTED'
+              : 'PARTIAL'
+        const receivableUpdateResult = await this.receivableRepo.update(linkedReceivable.id, {
+          debtor_id: preparedInput.receivable.debtor_id ?? null,
+          debtor_name: preparedInput.receivable.debtor_name,
+          amount: preparedInput.amount,
+          currency: preparedInput.currency,
+          issue_date: preparedInput.transaction_date,
+          due_date: preparedInput.receivable.due_date ?? null,
+          concept: preparedInput.receivable.concept ?? preparedInput.description,
+          notes: preparedInput.receivable.notes ?? preparedInput.notes ?? null,
+          status: receivableStatus,
+          collected_date: receivableStatus === 'COLLECTED'
+            ? linkedReceivable.collected_date ?? preparedInput.transaction_date
+            : null,
+        })
+        if (!receivableUpdateResult.ok) {
+          throw new Error(receivableUpdateResult.error.detail ?? receivableUpdateResult.error.message)
+        }
+      }
+
+      if (linkedPayable && preparedInput.type === 'INCOME' && preparedInput.payable) {
+        const paidAmount = Number(linkedPayable.paid_amount)
+        const payableStatus: Database['public']['Enums']['payable_status'] =
+          paidAmount <= 0
+            ? 'PENDING'
+            : paidAmount >= preparedInput.amount
+              ? 'PAID'
+              : 'PARTIAL'
+        const payableUpdateResult = await this.payableRepo.update(linkedPayable.id, {
+          creditor_id: preparedInput.payable.creditor_id ?? null,
+          creditor_name: preparedInput.payable.creditor_name,
+          amount: preparedInput.amount,
+          currency: preparedInput.currency,
+          issue_date: preparedInput.transaction_date,
+          due_date: preparedInput.payable.due_date ?? null,
+          concept: preparedInput.payable.concept ?? preparedInput.description,
+          notes: preparedInput.payable.notes ?? preparedInput.notes ?? null,
+          status: payableStatus,
+          paid_date: payableStatus === 'PAID'
+            ? linkedPayable.paid_date ?? preparedInput.transaction_date
+            : null,
+        })
+        if (!payableUpdateResult.ok) {
+          throw new Error(payableUpdateResult.error.detail ?? payableUpdateResult.error.message)
+        }
+      }
+
+      const nextTransactionForCredit = {
+        ...existingTx,
+        ...updateResult.data,
+        destination_account_id: resolvedDestinationAccountId,
+      }
+      const nextCreditAdjustment = await this.resolveCreditAdjustmentForStoredTransaction(userId, nextTransactionForCredit)
+      if (!nextCreditAdjustment.ok) {
+        throw new Error(nextCreditAdjustment.error.detail ?? nextCreditAdjustment.error.message)
+      }
+
+      const applyNewCredit = await this.applyCreditAdjustment(nextCreditAdjustment.data)
+      if (!applyNewCredit.ok) {
+        throw new Error(applyNewCredit.error.detail ?? applyNewCredit.error.message)
+      }
+
+      const freshResult = await this.txRepo.findByIdForUser(existingTx.id, userId)
+      if (!freshResult.ok) return freshResult
+      return ok(freshResult.data)
+    } catch (error) {
+      await restoreCreditAndTransaction()
+      return Errors.database(error instanceof Error ? error.message : 'No se pudo actualizar la transacción')
+    }
   }
 
   // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -463,6 +844,41 @@ export class TransactionService {
       unlinked.push('accounts_payable')
     }
 
+    if (tx.type === 'EXPENSE') {
+      const accountFilters = [tx.source_account_id, tx.destination_account_id]
+        .filter((id): id is string => typeof id === 'string' && id.length > 0)
+        .map(id => `account_id.eq.${id}`)
+
+      const linkedCreditCardsQuery = this.db
+        .from('credits')
+        .select('id, account_id, credit_type')
+        .eq('user_id', userId)
+        .eq('credit_type', 'CREDIT_CARD')
+
+      const { data: linkedCreditCards, error: linkedCreditCardsError } = accountFilters.length > 0
+        ? await linkedCreditCardsQuery.or(accountFilters.join(','))
+        : { data: [], error: null }
+
+      if (linkedCreditCardsError) {
+        return Errors.database(linkedCreditCardsError.message)
+      }
+
+      const txCurrency = tx.currency === 'USD' ? 'USD' : 'PEN'
+      const txAmount = Math.round(Number(tx.amount ?? 0) * 100) / 100
+      const consumptionCredit = (linkedCreditCards ?? []).find(credit => credit.account_id === tx.source_account_id)
+      const paymentCredit = (linkedCreditCards ?? []).find(credit => credit.account_id === tx.destination_account_id)
+
+      if (consumptionCredit?.id) {
+        const reverseConsumption = await this.creditRepo.decrementUsedAmount(consumptionCredit.id, txAmount, txCurrency)
+        if (!reverseConsumption.ok) return reverseConsumption
+        unlinked.push('credit_card_consumption')
+      } else if (paymentCredit?.id) {
+        const reversePayment = await this.creditRepo.incrementUsedAmount(paymentCredit.id, txAmount, txCurrency)
+        if (!reversePayment.ok) return reversePayment
+        unlinked.push('credit_card_payment')
+      }
+    }
+
     // Desvincular activo si existe
     const assetResult = await this.assetRepo.findByTransactionId(transactionId)
     if (assetResult.ok && assetResult.data) {
@@ -520,6 +936,79 @@ export class TransactionService {
   // ╔══════════════════════════════════════════════════════════════════════════╗
   // ║  PRIVADOS — helpers internos                                            ║
   // ╚══════════════════════════════════════════════════════════════════════════╝
+
+  private async resolveCreditAdjustmentForStoredTransaction(
+    userId: string,
+    transaction: Pick<Transaction, 'type' | 'payment_method' | 'source_account_id' | 'destination_account_id' | 'amount' | 'currency'>,
+  ): Promise<Result<CreditAdjustment | null>> {
+    if (transaction.type !== 'EXPENSE') return ok(null)
+
+    const accountFilters = [transaction.source_account_id, transaction.destination_account_id]
+      .filter((id): id is string => typeof id === 'string' && id.length > 0)
+      .map(id => `account_id.eq.${id}`)
+
+    if (accountFilters.length === 0) return ok(null)
+
+    const linkedCreditCardsQuery = this.db
+      .from('credits')
+      .select('id, account_id, credit_type')
+      .eq('user_id', userId)
+      .eq('credit_type', 'CREDIT_CARD')
+
+    const { data: linkedCreditCards, error } = await linkedCreditCardsQuery.or(accountFilters.join(','))
+    if (error) return Errors.database(error.message)
+
+    const txCurrency = transaction.currency === 'USD' ? 'USD' : 'PEN'
+    const txAmount = Math.round(Number(transaction.amount ?? 0) * 100) / 100
+    const consumptionCredit = (linkedCreditCards ?? []).find(credit => credit.account_id === transaction.source_account_id)
+    const paymentCredit = (linkedCreditCards ?? []).find(credit => credit.account_id === transaction.destination_account_id)
+
+    if (consumptionCredit?.id) {
+      return ok({
+        id: consumptionCredit.id,
+        op: 'CONSUMPTION',
+        amount: txAmount,
+        currency: txCurrency,
+      })
+    }
+
+    if (paymentCredit?.id) {
+      return ok({
+        id: paymentCredit.id,
+        op: 'PAYMENT',
+        amount: txAmount,
+        currency: txCurrency,
+      })
+    }
+
+    return ok(null)
+  }
+
+  private async reverseCreditAdjustment(
+    adjustment: CreditAdjustment | null,
+  ): Promise<Result<true>> {
+    if (!adjustment) return ok(true)
+
+    const result = adjustment.op === 'CONSUMPTION'
+      ? await this.creditRepo.decrementUsedAmount(adjustment.id, adjustment.amount, adjustment.currency)
+      : await this.creditRepo.incrementUsedAmount(adjustment.id, adjustment.amount, adjustment.currency)
+
+    if (!result.ok) return result
+    return ok(true)
+  }
+
+  private async applyCreditAdjustment(
+    adjustment: CreditAdjustment | null,
+  ): Promise<Result<true>> {
+    if (!adjustment) return ok(true)
+
+    const result = adjustment.op === 'CONSUMPTION'
+      ? await this.creditRepo.incrementUsedAmount(adjustment.id, adjustment.amount, adjustment.currency)
+      : await this.creditRepo.decrementUsedAmount(adjustment.id, adjustment.amount, adjustment.currency)
+
+    if (!result.ok) return result
+    return ok(true)
+  }
 
   /**
    * Carga la cuenta y valida que pertenezca al usuario.
@@ -967,6 +1456,14 @@ export class TransactionService {
   ): Promise<CreateTransactionInput> {
     if (input.currency !== 'USD') {
       return { ...input, exchange_rate: undefined }
+    }
+
+    const providedRate = Number(input.exchange_rate)
+    if (Number.isFinite(providedRate) && providedRate > 0) {
+      return {
+        ...input,
+        exchange_rate: Math.round(providedRate * 1_000_000) / 1_000_000,
+      }
     }
 
     const snapshot = await resolveAccountingUsdPenExchangeRate({

@@ -933,6 +933,8 @@ export type Database = {
           credit_type: Database["public"]["Enums"]["credit_type"]
           currency: string
           id: string
+          initial_used_amount_pen: number
+          initial_used_amount_usd: number
           interest_rate: number
           name: string
           notes: string | null
@@ -957,6 +959,8 @@ export type Database = {
           credit_type?: Database["public"]["Enums"]["credit_type"]
           currency?: string
           id?: string
+          initial_used_amount_pen?: number
+          initial_used_amount_usd?: number
           interest_rate?: number
           name: string
           notes?: string | null
@@ -981,6 +985,8 @@ export type Database = {
           credit_type?: Database["public"]["Enums"]["credit_type"]
           currency?: string
           id?: string
+          initial_used_amount_pen?: number
+          initial_used_amount_usd?: number
           interest_rate?: number
           name?: string
           notes?: string | null

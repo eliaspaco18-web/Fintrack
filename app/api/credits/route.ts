@@ -303,6 +303,8 @@ async function createCreditCard(userId: string, payload: Extract<CreditCreateReq
     used_amount: primaryUsedAmount,
     used_amount_pen: usedAmountPen,
     used_amount_usd: usedAmountUsd,
+    initial_used_amount_pen: usedAmountPen,
+    initial_used_amount_usd: usedAmountUsd,
     interest_rate: payload.interest_rate,
     closing_day: payload.closing_day ?? null,
     payment_day: payload.payment_day ?? null,
@@ -319,7 +321,7 @@ async function createCreditCard(userId: string, payload: Extract<CreditCreateReq
 
   if (error || !credit) {
     const missingDualColumn = error?.message
-      ? /credit_limit_pen|credit_limit_usd|used_amount_pen|used_amount_usd/i.test(error.message)
+      ? /credit_limit_pen|credit_limit_usd|used_amount_pen|used_amount_usd|initial_used_amount_pen|initial_used_amount_usd/i.test(error.message)
       : false
 
     if (!missingDualColumn) {
@@ -332,6 +334,8 @@ async function createCreditCard(userId: string, payload: Extract<CreditCreateReq
       credit_limit_usd: undefined,
       used_amount_pen: undefined,
       used_amount_usd: undefined,
+      initial_used_amount_pen: undefined,
+      initial_used_amount_usd: undefined,
     }
 
     const { data: legacyCredit, error: legacyError } = await supabase

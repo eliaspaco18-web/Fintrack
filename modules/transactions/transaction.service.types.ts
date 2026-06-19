@@ -134,18 +134,8 @@ export interface CreatePayableModuleInput {
 
 // ── UPDATE ────────────────────────────────────────────────────────────────────
 
-/** Solo se permiten actualizar campos no críticos. */
-export interface UpdateTransactionInput {
-  id:               string
-  description?:     string
-  category_id?:     string | null
-  notes?:           string | null
-  is_recurring?:    boolean
-  transaction_date?: string
-  /**
-   * Cambios de monto y cuentas no se permiten vía update para preservar
-   * la integridad del historial. Se debe eliminar y recrear.
-   */
+export type UpdateTransactionInput = CreateTransactionInput & {
+  id: string
 }
 
 // ─── OUTPUTS ──────────────────────────────────────────────────────────────────

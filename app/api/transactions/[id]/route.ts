@@ -1,7 +1,7 @@
 // =============================================================================
 // app/api/transactions/[id]/route.ts
 // GET    /api/transactions/:id  — obtener una transacción
-// PATCH  /api/transactions/:id  — actualizar campos descriptivos
+// PATCH  /api/transactions/:id  — actualizar movimiento completo
 // DELETE /api/transactions/:id  — eliminar con desvinculación de módulos
 // =============================================================================
 

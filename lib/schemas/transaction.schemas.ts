@@ -194,16 +194,9 @@ export const zCreateTransactionSchema = z
 
 // ─── UPDATE ───────────────────────────────────────────────────────────────────
 
-export const zUpdateTransactionSchema = z.object({
-  description:      z.string().trim().min(1).max(255).optional(),
-  category_id:      zUUID.nullable().optional(),
-  notes:            z.string().max(1000).nullable().optional(),
-  is_recurring:     z.boolean().optional(),
-  transaction_date: zDate.optional(),
-}).refine(
-  d => Object.values(d).some(v => v !== undefined),
-  { message: 'Debe incluir al menos un campo para actualizar' }
-)
+// La edición usa el mismo contrato funcional que el alta para mantener paridad
+// entre "nuevo movimiento" y "editar movimiento".
+export const zUpdateTransactionSchema = zCreateTransactionSchema
 
 // ─── FILTERS (GET /transactions) ─────────────────────────────────────────────
 

@@ -88,21 +88,13 @@ export const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(
       setFocusedRaw(null)
     }, [controlledRaw, isControlled, isFocused])
 
-    const displayValue = useMemo(() => {
-      if (isFocused) {
-        return formatNumericForDisplay(activeRaw, {
-          decimals: resolvedDecimals,
-          allowNegative,
-          padDecimals: false,
-        })
-      }
-
-      return formatNumericForDisplay(storedRaw, {
+    const displayValue = isFocused
+      ? activeRaw
+      : formatNumericForDisplay(storedRaw, {
         decimals: resolvedDecimals,
         allowNegative,
         padDecimals: true,
       })
-    }, [activeRaw, allowNegative, isFocused, resolvedDecimals, storedRaw])
 
     const commitValue = (nextRaw: string) => {
       const payload = stripTrailingDot(nextRaw)
@@ -126,7 +118,11 @@ export const NumericInput = forwardRef<HTMLInputElement, NumericInputProps>(
 
     const handleFocus = (event: FocusEvent<HTMLInputElement>) => {
       setIsFocused(true)
-      setFocusedRaw(storedRaw)
+      const normalized = normalizeNumericInput(event.currentTarget.value || storedRaw, {
+        decimals: resolvedDecimals,
+        allowNegative,
+      })
+      setFocusedRaw(normalized)
       onFocus?.(event)
     }
 

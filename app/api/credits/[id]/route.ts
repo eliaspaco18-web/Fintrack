@@ -197,6 +197,11 @@ function hasDualCurrencyColumns(credit: Record<string, unknown>): boolean {
     && 'used_amount_usd' in credit
 }
 
+function hasInitialCurrencyColumns(credit: Record<string, unknown>): boolean {
+  return 'initial_used_amount_pen' in credit
+    && 'initial_used_amount_usd' in credit
+}
+
 export async function GET(
   _req: NextRequest,
   context: { params: { id: string } }
@@ -399,15 +404,43 @@ export async function PATCH(
 
   const creditRow = credit as Record<string, unknown>
   const supportsDualCurrency = hasDualCurrencyColumns(creditRow)
+  const supportsInitialCurrency = hasInitialCurrencyColumns(creditRow)
   const nextCurrency = parsed.data.currency ?? (credit.currency as 'PEN' | 'USD')
   const nextLimitPen = parsed.data.credit_limit_pen
     ?? (nextCurrency === 'PEN' && parsed.data.credit_limit !== undefined ? parsed.data.credit_limit : Number(creditRow.credit_limit_pen ?? 0))
   const nextLimitUsd = parsed.data.credit_limit_usd
     ?? (nextCurrency === 'USD' && parsed.data.credit_limit !== undefined ? parsed.data.credit_limit : Number(creditRow.credit_limit_usd ?? 0))
-  const nextUsedPen = parsed.data.used_amount_pen
+  let nextUsedPen = parsed.data.used_amount_pen
     ?? (nextCurrency === 'PEN' && parsed.data.used_amount !== undefined ? parsed.data.used_amount : Number(creditRow.used_amount_pen ?? 0))
-  const nextUsedUsd = parsed.data.used_amount_usd
+  let nextUsedUsd = parsed.data.used_amount_usd
     ?? (nextCurrency === 'USD' && parsed.data.used_amount !== undefined ? parsed.data.used_amount : Number(creditRow.used_amount_usd ?? 0))
+  const nextInitialPen = nextUsedPen
+  const nextInitialUsd = nextUsedUsd
+
+  if (credit.credit_type === 'CREDIT_CARD' && supportsInitialCurrency && credit.account_id) {
+    const { data: cardMovements, error: cardMovementsError } = await supabase
+      .from('transactions')
+      .select('amount, currency, payment_method, source_account_id, destination_account_id, type')
+      .eq('user_id', userId)
+      .eq('type', 'EXPENSE')
+      .or(`source_account_id.eq.${credit.account_id},destination_account_id.eq.${credit.account_id}`)
+
+    if (cardMovementsError) {
+      return apiError({ code: 'DATABASE_ERROR', message: cardMovementsError.message })
+    }
+
+    const movementDelta = (currency: 'PEN' | 'USD') => (cardMovements ?? []).reduce((sum, movement) => {
+      if (movement.currency !== currency) return sum
+      const amount = Number(movement.amount ?? 0)
+      if (movement.source_account_id === credit.account_id) return sum + amount
+      if (movement.destination_account_id === credit.account_id) return sum - amount
+      return sum
+    }, 0)
+
+    nextUsedPen = Math.max(Math.round((nextUsedPen + movementDelta('PEN')) * 100) / 100, 0)
+    nextUsedUsd = Math.max(Math.round((nextUsedUsd + movementDelta('USD')) * 100) / 100, 0)
+  }
+
   const nextCreditLimit = nextCurrency === 'PEN' ? nextLimitPen : nextLimitUsd
   const nextUsedAmount = nextCurrency === 'PEN' ? nextUsedPen : nextUsedUsd
 
@@ -434,6 +467,10 @@ export async function PATCH(
       used_amount: nextUsedAmount,
       used_amount_pen: nextUsedPen,
       used_amount_usd: nextUsedUsd,
+      ...(supportsInitialCurrency ? {
+        initial_used_amount_pen: nextInitialPen,
+        initial_used_amount_usd: nextInitialUsd,
+      } : {}),
     }
     : {
       currency: nextCurrency,

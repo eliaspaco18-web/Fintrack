@@ -33,7 +33,7 @@ const MODAL_SIZE_PRESETS: Record<RecordModalSize, { widthClassName: string; padd
     padding: '28px',
   },
   'full-form': {
-    widthClassName: 'w-[calc(100vw-32px)] max-w-[1280px]',
+    widthClassName: 'w-[calc(100vw-16px)] max-w-[1680px]',
     padding: '20px',
   },
 }

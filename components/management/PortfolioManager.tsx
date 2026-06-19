@@ -3,6 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AccountType, CurrencyCode } from '@/types/database.types'
+import { smoothPath } from '@/lib/charts/svg-utils'
 import { formatCurrency } from '@/lib/contracts/ui.contracts'
 import { useToast } from '@/lib/toast/toast'
 import { FormActions, FormField, FormSection, OptionalSection } from '@/components/forms/primitives'
@@ -193,6 +194,311 @@ function stackIcon() {
 
 function balanceTone(balance: number): 'neutral' | 'danger' {
   return balance < 0 ? 'danger' : 'neutral'
+}
+
+const TREND_CHART_WIDTH = 360
+const TREND_CHART_HEIGHT = 138
+const TREND_CHART_PADDING = { top: 18, right: 18, bottom: 28, left: 18 }
+const TREND_MONTHS = 6
+
+type PortfolioTrendPoint = {
+  date: string
+  label: string
+  shortLabel: string
+  balance: number
+}
+
+function clampRatio(value: number) {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.min(1, value))
+}
+
+function toIsoDate(date: Date) {
+  return date.toISOString().slice(0, 10)
+}
+
+function addMonths(date: Date, months: number) {
+  const next = new Date(date)
+  next.setMonth(next.getMonth() + months)
+  return next
+}
+
+function parseLocalDate(value: string | null | undefined) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+  const date = new Date(`${value}T12:00:00`)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function formatMonthLabel(date: Date) {
+  return date
+    .toLocaleDateString('es-PE', { month: 'short', year: 'numeric' })
+    .replace('.', '')
+}
+
+function formatShortMonthLabel(date: Date) {
+  return date
+    .toLocaleDateString('es-PE', { month: 'short' })
+    .replace('.', '')
+}
+
+function monthPointDate(reference: Date, offset: number) {
+  const date = addMonths(reference, offset)
+  date.setDate(1)
+  date.setHours(12, 0, 0, 0)
+  return date
+}
+
+function buildPortfolioTrend(account: AccountItem): PortfolioTrendPoint[] {
+  const today = new Date()
+  today.setHours(12, 0, 0, 0)
+  const currentMonth = monthPointDate(today, 0)
+  const firstMonth = monthPointDate(today, -(TREND_MONTHS - 1))
+  const initialDate = parseLocalDate(account.initial_balance_date)
+  const initialBalance = Number(account.initial_balance ?? 0)
+  const currentBalance = Number(account.balance ?? 0)
+  const rangeMs = currentMonth.getTime() - firstMonth.getTime() || 1
+  const initialRatio = initialDate
+    ? clampRatio((initialDate.getTime() - firstMonth.getTime()) / rangeMs)
+    : 0
+  const hasMeaningfulChange = Math.abs(currentBalance - initialBalance) >= 0.01
+
+  return Array.from({ length: TREND_MONTHS }, (_, index) => {
+    const date = monthPointDate(firstMonth, index)
+    const ratio = index / Math.max(TREND_MONTHS - 1, 1)
+    const progressAfterInitial = ratio <= initialRatio
+      ? 0
+      : clampRatio((ratio - initialRatio) / Math.max(1 - initialRatio, 0.0001))
+    const eased = progressAfterInitial < 0.5
+      ? 2 * progressAfterInitial * progressAfterInitial
+      : 1 - Math.pow(-2 * progressAfterInitial + 2, 2) / 2
+    const balance = hasMeaningfulChange
+      ? initialBalance + (currentBalance - initialBalance) * eased
+      : currentBalance
+
+    return {
+      date: toIsoDate(date),
+      label: formatMonthLabel(date),
+      shortLabel: formatShortMonthLabel(date),
+      balance: Number(balance.toFixed(2)),
+    }
+  })
+}
+
+function buildTrendDomain(points: PortfolioTrendPoint[]) {
+  const values = points.map(point => point.balance)
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const span = max - min
+  const padding = span > 0 ? span * 0.18 : Math.max(Math.abs(max) * 0.08, 1)
+
+  return {
+    min: min - padding,
+    max: max + padding,
+  }
+}
+
+function trendTone(delta: number): 'success' | 'danger' | 'muted' {
+  if (delta > 0.01) return 'success'
+  if (delta < -0.01) return 'danger'
+  return 'muted'
+}
+
+function formatTrendPercent(delta: number, base: number) {
+  if (Math.abs(base) < 0.01) return delta >= 0 ? '+0.0%' : '-0.0%'
+  const value = (delta / Math.abs(base)) * 100
+  const sign = value >= 0 ? '+' : ''
+
+  return `${sign}${value.toFixed(1)}%`
+}
+
+function PortfolioTrendSparkline({ account }: { account: AccountItem }) {
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
+  const chart = useMemo(() => {
+    const points = buildPortfolioTrend(account)
+    const domain = buildTrendDomain(points)
+    const plotWidth = TREND_CHART_WIDTH - TREND_CHART_PADDING.left - TREND_CHART_PADDING.right
+    const plotHeight = TREND_CHART_HEIGHT - TREND_CHART_PADDING.top - TREND_CHART_PADDING.bottom
+    const domainSpan = domain.max - domain.min || 1
+    const x = (index: number) =>
+      TREND_CHART_PADDING.left + (index / Math.max(points.length - 1, 1)) * plotWidth
+    const y = (value: number) =>
+      TREND_CHART_PADDING.top + ((domain.max - value) / domainSpan) * plotHeight
+    const plotted = points.map((point, index) => ({
+      point,
+      x: x(index),
+      y: y(point.balance),
+    }))
+    const path = smoothPath(plotted.map(point => ({ x: point.x, y: point.y })))
+    const first = plotted[0]
+    const last = plotted.at(-1)
+    const areaPath = path && first && last
+      ? `${path} L ${last.x} ${TREND_CHART_HEIGHT - TREND_CHART_PADDING.bottom} L ${first.x} ${TREND_CHART_HEIGHT - TREND_CHART_PADDING.bottom} Z`
+      : ''
+    const delta = (last?.point.balance ?? 0) - (first?.point.balance ?? 0)
+    const tone = trendTone(delta)
+
+    return {
+      plotted,
+      path,
+      areaPath,
+      first,
+      last,
+      delta,
+      tone,
+    }
+  }, [account])
+
+  const hoveredPoint = hoveredIndex === null ? null : chart.plotted[hoveredIndex] ?? null
+  const accentColor = chart.tone === 'danger'
+    ? 'var(--c-danger)'
+    : chart.tone === 'success'
+      ? 'var(--c-primary)'
+      : 'var(--c-text-muted)'
+  const gradientId = `portfolioTrendArea-${account.id.replace(/[^a-zA-Z0-9_-]/g, '')}`
+  const strokeId = `portfolioTrendStroke-${account.id.replace(/[^a-zA-Z0-9_-]/g, '')}`
+
+  return (
+    <div className="mt-5 overflow-hidden rounded-[14px] border border-[var(--c-border)] bg-[linear-gradient(180deg,var(--c-surface)_0%,var(--c-surface-2)_100%)]">
+      <div className="flex items-start justify-between gap-3 px-3.5 pt-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--c-text-faint)]">
+            Saldo por meses
+          </p>
+          <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">
+            {chart.first?.point.label ?? '--'} - {chart.last?.point.label ?? '--'}
+          </p>
+        </div>
+        <StatusBadge tone={chart.tone} dot={false} className="shrink-0">
+          {formatTrendPercent(chart.delta, chart.first?.point.balance ?? 0)}
+        </StatusBadge>
+      </div>
+
+      <div
+        className="relative h-[138px]"
+        onMouseLeave={() => setHoveredIndex(null)}
+        onBlur={() => setHoveredIndex(null)}
+      >
+        <svg
+          role="img"
+          aria-label={`Saldo mensual de ${account.name} durante los ultimos 6 meses`}
+          className="absolute inset-0 h-full w-full"
+          viewBox={`0 0 ${TREND_CHART_WIDTH} ${TREND_CHART_HEIGHT}`}
+          preserveAspectRatio="none"
+        >
+          <defs>
+            <linearGradient id={strokeId} x1="0" x2="1" y1="0" y2="0">
+              <stop offset="0%" stopColor="var(--c-info)" />
+              <stop offset="62%" stopColor={accentColor} />
+              <stop offset="100%" stopColor="var(--c-primary)" />
+            </linearGradient>
+            <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor={accentColor} stopOpacity="0.18" />
+              <stop offset="100%" stopColor={accentColor} stopOpacity="0.02" />
+            </linearGradient>
+          </defs>
+
+          {[0.25, 0.5, 0.75].map(ratio => (
+            <line
+              key={ratio}
+              x1={TREND_CHART_PADDING.left}
+              x2={TREND_CHART_WIDTH - TREND_CHART_PADDING.right}
+              y1={TREND_CHART_PADDING.top + ratio * (TREND_CHART_HEIGHT - TREND_CHART_PADDING.top - TREND_CHART_PADDING.bottom)}
+              y2={TREND_CHART_PADDING.top + ratio * (TREND_CHART_HEIGHT - TREND_CHART_PADDING.top - TREND_CHART_PADDING.bottom)}
+              stroke="var(--c-border)"
+              strokeDasharray="2 7"
+              strokeOpacity={0.65}
+            />
+          ))}
+
+          {chart.areaPath ? <path d={chart.areaPath} fill={`url(#${gradientId})`} /> : null}
+          {chart.path ? (
+            <path
+              d={chart.path}
+              fill="none"
+              stroke={`url(#${strokeId})`}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2.6}
+              vectorEffect="non-scaling-stroke"
+            />
+          ) : null}
+
+          {hoveredPoint ? (
+            <line
+              x1={hoveredPoint.x}
+              x2={hoveredPoint.x}
+              y1={TREND_CHART_PADDING.top - 2}
+              y2={TREND_CHART_HEIGHT - TREND_CHART_PADDING.bottom + 2}
+              stroke={accentColor}
+              strokeDasharray="3 5"
+              strokeOpacity={0.5}
+              vectorEffect="non-scaling-stroke"
+            />
+          ) : null}
+
+          {chart.plotted.map((item, index) => {
+            const previous = chart.plotted[index - 1]
+            const next = chart.plotted[index + 1]
+            const left = previous ? (previous.x + item.x) / 2 : TREND_CHART_PADDING.left
+            const right = next ? (next.x + item.x) / 2 : TREND_CHART_WIDTH - TREND_CHART_PADDING.right
+            const active = hoveredIndex === index
+
+            return (
+              <g key={item.point.date}>
+                <circle
+                  cx={item.x}
+                  cy={item.y}
+                  r={active ? 5.4 : index === chart.plotted.length - 1 ? 4.8 : 3.6}
+                  fill={active || index === chart.plotted.length - 1 ? accentColor : 'var(--c-surface)'}
+                  stroke={accentColor}
+                  strokeWidth={2}
+                  vectorEffect="non-scaling-stroke"
+                />
+                <text
+                  x={item.x}
+                  y={TREND_CHART_HEIGHT - 9}
+                  textAnchor="middle"
+                  className={`text-[9px] font-semibold ${active ? 'fill-[var(--c-text)]' : 'fill-[var(--c-text-faint)]'}`}
+                >
+                  {item.point.shortLabel}
+                </text>
+                <rect
+                  x={left}
+                  y={0}
+                  width={Math.max(right - left, 1)}
+                  height={TREND_CHART_HEIGHT}
+                  fill="transparent"
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`${item.point.label}: ${formatCurrency(item.point.balance, account.currency)}`}
+                  onMouseEnter={() => setHoveredIndex(index)}
+                  onFocus={() => setHoveredIndex(index)}
+                />
+              </g>
+            )
+          })}
+        </svg>
+
+        {hoveredPoint ? (
+          <div
+            className="pointer-events-none absolute z-10 min-w-[126px] rounded-[12px] border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-2 text-left shadow-[0_14px_30px_color-mix(in_srgb,var(--c-shadow)_16%,transparent)]"
+            style={{
+              left: `${(hoveredPoint.x / TREND_CHART_WIDTH) * 100}%`,
+              top: `${Math.max(8, hoveredPoint.y - 54)}px`,
+              transform: hoveredPoint.x > TREND_CHART_WIDTH * 0.72 ? 'translateX(-100%)' : 'translateX(-10%)',
+            }}
+          >
+            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+              {hoveredPoint.point.label}
+            </p>
+            <p className="mt-1 font-mono text-[13px] font-semibold tabular-nums text-[var(--c-text)]">
+              {formatCurrency(hoveredPoint.point.balance, account.currency)}
+            </p>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
 }
 
 type PortfolioManagerProps = {
@@ -995,104 +1301,106 @@ export function PortfolioManager({
             </div>
           </DataTable>
         ) : (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {filteredAccounts.map(account => (
               <article
                 key={account.id}
-                className="rounded-[16px] border border-[var(--c-border)] bg-[var(--c-surface-2)] p-1"
+                data-testid={`portfolio-card-${account.id}`}
+                className="group overflow-hidden rounded-[18px] border border-[var(--c-border)] bg-[var(--c-surface)] shadow-[0_18px_44px_color-mix(in_srgb,var(--c-shadow)_7%,transparent)] transition-[border-color,box-shadow,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-0.5 hover:border-[var(--c-border-hover)] hover:shadow-[0_22px_54px_color-mix(in_srgb,var(--c-shadow)_12%,transparent)]"
               >
-                <div className="rounded-[12px] bg-[var(--c-surface)] p-4">
+                <div
+                  className="h-1.5 w-full"
+                  style={{ backgroundColor: withAlpha(account.color, '80') }}
+                />
+
+                <div className="p-4">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border"
-                          style={{
-                            borderColor: withAlpha(account.color, '24'),
-                            backgroundColor: withAlpha(account.color, '12'),
-                            color: account.color,
-                          }}
-                        >
-                          <FinancialIcon name={account.icon} size={16} />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="truncate text-[15px] font-semibold tracking-[-0.02em] text-[var(--c-text)]">
-                            {account.name}
-                          </p>
-                          <p className="mt-1 truncate text-[12px] text-[var(--c-text-muted)]">
-                            {displayBankName(account)}
-                          </p>
-                        </div>
+                    <div className="flex min-w-0 items-start gap-3">
+                      <div
+                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] border shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]"
+                        style={{
+                          borderColor: withAlpha(account.color, '28'),
+                          backgroundColor: withAlpha(account.color, '12'),
+                          color: account.color,
+                        }}
+                      >
+                        <FinancialIcon name={account.icon} size={17} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-[15px] font-semibold tracking-[-0.02em] text-[var(--c-text)]">
+                          {account.name}
+                        </p>
+                        <p className="mt-1 truncate text-[12px] text-[var(--c-text-muted)]">
+                          {displayBankName(account)}
+                        </p>
                       </div>
                     </div>
 
-                    <StatusBadge tone={account.is_active ? 'success' : 'muted'}>
+                    <StatusBadge tone={account.is_active ? 'success' : 'muted'} className="shrink-0">
                       {account.is_active ? 'Activa' : 'Inactiva'}
                     </StatusBadge>
                   </div>
 
-                  <div className="mt-5">
-                    <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-                      Saldo actual
-                    </p>
-                    <p className="mt-2 font-mono text-[1.5rem] font-semibold tracking-[-0.03em] text-[var(--c-text)]">
-                      {formatCurrency(account.balance, account.currency)}
-                    </p>
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap items-center gap-2">
-                    <StatusBadge tone={ACCOUNT_TYPE_TONE[account.type]} dot={false}>
-                      {ACCOUNT_TYPE_LABEL[account.type]}
-                    </StatusBadge>
-                    <StatusBadge tone="muted" dot={false}>
-                      {account.currency}
-                    </StatusBadge>
-                    <StatusBadge tone={account.include_in_net_worth ? 'primary' : 'muted'} dot={false}>
-                      {account.include_in_net_worth ? 'Patrimonio' : 'Excluida'}
-                    </StatusBadge>
-                  </div>
-
-                  <div className="mt-4 border-t border-[var(--c-border)] pt-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-[12px] text-[var(--c-text-muted)]">
-                        {getIconLabel(account.icon)}
+                  <div className="mt-5 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--c-text-faint)]">
+                        Saldo actual
                       </p>
-                      <div className="flex items-center gap-1.5">
+                      <p className={`mt-2 truncate font-mono text-[1.45rem] font-semibold tracking-[-0.03em] tabular-nums ${
+                        account.balance < 0 ? 'text-[var(--c-danger)]' : 'text-[var(--c-text)]'
+                      }`}>
+                        {formatCurrency(account.balance, account.currency)}
+                      </p>
+                    </div>
+                    <div className="rounded-[12px] border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2 text-right">
+                      <p className="text-[10px] font-medium text-[var(--c-text-faint)]">Moneda</p>
+                      <p className="mt-1 text-[12px] font-semibold text-[var(--c-text)]">{account.currency}</p>
+                    </div>
+                  </div>
+
+                  <PortfolioTrendSparkline account={account} />
+                </div>
+
+                <div className="border-t border-[var(--c-border)] bg-[var(--c-surface-2)] px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="min-w-0 truncate text-[11px] text-[var(--c-text-muted)]">
+                      {account.include_in_net_worth ? 'Incluida en patrimonio neto' : 'Fuera del patrimonio neto'}
+                    </p>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <ActionIconButton
+                        onClick={() => startEdit(account)}
+                        disabled={saving || loading || rowActionId !== null}
+                        testId={`portfolio-edit-card-${account.id}`}
+                        icon="edit"
+                        label="Editar portafolio"
+                      />
+                      {account.is_active ? (
                         <ActionIconButton
-                          onClick={() => startEdit(account)}
+                          onClick={() => openDeactivateModal(account)}
                           disabled={saving || loading || rowActionId !== null}
-                          testId={`portfolio-edit-card-${account.id}`}
-                          icon="edit"
-                          label="Editar portafolio"
-                        />
-                        {account.is_active ? (
-                          <ActionIconButton
-                            onClick={() => openDeactivateModal(account)}
-                            disabled={saving || loading || rowActionId !== null}
-                            testId={`portfolio-deactivate-card-${account.id}`}
-                            icon="deactivate"
-                            label="Desactivar portafolio"
-                            variant="danger"
-                          />
-                        ) : (
-                          <ActionIconButton
-                            onClick={() => void reactivate(account.id)}
-                            disabled={saving || loading || rowActionId !== null}
-                            testId={`portfolio-reactivate-card-${account.id}`}
-                            icon="reactivate"
-                            label="Reactivar portafolio"
-                            variant="success"
-                          />
-                        )}
-                        <ActionIconButton
-                          onClick={() => openDeleteModal(account)}
-                          disabled={saving || loading || rowActionId !== null}
-                          testId={`portfolio-delete-card-${account.id}`}
-                          icon="delete"
-                          label="Eliminar portafolio"
+                          testId={`portfolio-deactivate-card-${account.id}`}
+                          icon="deactivate"
+                          label="Desactivar portafolio"
                           variant="danger"
                         />
-                      </div>
+                      ) : (
+                        <ActionIconButton
+                          onClick={() => void reactivate(account.id)}
+                          disabled={saving || loading || rowActionId !== null}
+                          testId={`portfolio-reactivate-card-${account.id}`}
+                          icon="reactivate"
+                          label="Reactivar portafolio"
+                          variant="success"
+                        />
+                      )}
+                      <ActionIconButton
+                        onClick={() => openDeleteModal(account)}
+                        disabled={saving || loading || rowActionId !== null}
+                        testId={`portfolio-delete-card-${account.id}`}
+                        icon="delete"
+                        label="Eliminar portafolio"
+                        variant="danger"
+                      />
                     </div>
                   </div>
                 </div>
