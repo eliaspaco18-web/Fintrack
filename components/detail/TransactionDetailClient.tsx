@@ -15,6 +15,7 @@ import { useState, useCallback }     from 'react'
 import { useRouter }                 from 'next/navigation'
 import { useCurrency }               from '@/lib/hooks/useDashboard'
 import { formatCurrency, formatNumber } from '@/lib/contracts/ui.contracts'
+import type { TransactionFormOptions } from '@/lib/contracts/ui.contracts'
 import { deleteTransactionAction }   from '@/app/actions/transaction.actions'
 import { TransactionEditModal }      from '@/components/forms/TransactionEditModal'
 import {
@@ -59,11 +60,13 @@ function formatDate(d: string) {
 interface TransactionDetailClientProps {
   transaction:   TransactionWithRelations
   linkedModules: LinkedModules
+  options: TransactionFormOptions
 }
 
 export function TransactionDetailClient({
   transaction: tx,
   linkedModules: mods,
+  options,
 }: TransactionDetailClientProps) {
   const router   = useRouter()
   const { preferred, format } = useCurrency()
@@ -321,6 +324,7 @@ export function TransactionDetailClient({
       <TransactionEditModal
         open={editing}
         transactionId={tx.id}
+        options={options}
         initialTransaction={tx}
         onClose={() => setEditing(false)}
         onUpdated={handleEditSave}

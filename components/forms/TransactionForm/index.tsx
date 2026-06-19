@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter }                  from 'next/navigation'
 import type {
+  ActionState,
   CategoryOption,
   FormSelectOption,
   TransactionFormOptions,
@@ -26,7 +27,9 @@ import type {
 import { formatCurrency, formatNumber } from '@/lib/contracts/ui.contracts'
 import type { CreateTransactionResult }
   from '@/modules/transactions/transaction.service.types'
+import type { TransactionWithRelations } from '@/types/database.types'
 import { useFormOrchestrator }        from './form.orchestrator'
+import { updateTransactionAction }     from '@/app/actions/transaction.actions'
 import { useCurrency } from '@/lib/hooks/useDashboard'
 import { TypeSelector, TYPE_CONFIG }  from './TypeSelector'
 import {
@@ -126,6 +129,12 @@ interface TransactionFormProps {
   operationType?: OperationType
   /** Permite cerrar el modal desde la barra de acciones del formulario */
   onCancel?: () => void
+  /** Reutiliza el layout de creación para editar campos permitidos */
+  mode?: 'create' | 'edit'
+  /** ID requerido cuando mode = edit */
+  transactionId?: string
+  /** Callback tras actualizar en modo edición */
+  onEditSuccess?: (transaction: TransactionWithRelations) => void
 }
 
 // ─── COMPONENTE ───────────────────────────────────────────────────────────────
@@ -139,6 +148,9 @@ export function TransactionForm({
   hideTypeSelector = false,
   operationType,
   onCancel,
+  mode = 'create',
+  transactionId,
+  onEditSuccess,
 }: TransactionFormProps) {
   const router = useRouter()
   const { exchangeRate: liveExchangeRate } = useCurrency()
@@ -164,6 +176,9 @@ export function TransactionForm({
   const [advancedSectionOpen, setAdvancedSectionOpen] = useState(false)
   const [formOptions, setFormOptions] = useState<TransactionFormOptions>(options)
   const lastAutoUploadTxId = useRef<string | null>(null)
+  const isEditMode = mode === 'edit'
+  const [editSubmitState, setEditSubmitState] =
+    useState<ActionState<unknown>>({ status: 'idle' })
 
   useEffect(() => {
     setFormOptions(options)
@@ -184,6 +199,7 @@ export function TransactionForm({
   } = useFormOrchestrator(formOptions, onSuccess, initialValues, operationType)
 
   const { register, watch, setValue, formState: { errors } } = form
+  const activeSubmitState = isEditMode ? editSubmitState : submitState
 
   const type        = watch('type')
   const currency    = watch('currency')
@@ -310,15 +326,17 @@ export function TransactionForm({
   const shouldLockCurrencyToSourceAccount = true
 
   useEffect(() => {
+    if (isEditMode) return
     if (type !== 'TRANSFER' || !autoTransferDescription) return
 
     setValue('description', autoTransferDescription, {
       shouldDirty: false,
       shouldValidate: true,
     })
-  }, [autoTransferDescription, form, setValue, type])
+  }, [autoTransferDescription, form, isEditMode, setValue, type])
 
   useEffect(() => {
+    if (isEditMode) return
     if (!shouldLockCurrencyToSourceAccount) return
     if (!sourceAccountOption?.meta?.currency) return
 
@@ -329,7 +347,7 @@ export function TransactionForm({
       shouldDirty: false,
       shouldValidate: true,
     })
-  }, [currency, setValue, shouldLockCurrencyToSourceAccount, sourceAccountOption])
+  }, [currency, isEditMode, setValue, shouldLockCurrencyToSourceAccount, sourceAccountOption])
 
   // ── PRD: forzar tipo de transacción según operationType prop ────────────────
   // Esto garantiza que el form siempre refleja el tipo correcto,
@@ -355,6 +373,7 @@ export function TransactionForm({
   }, [])
 
   useEffect(() => {
+    if (isEditMode) return
     if (!operationType) return
 
     setValue('creates_asset', operationType === 'asset_purchase', {
@@ -436,6 +455,51 @@ export function TransactionForm({
   const handleViewAfterSuccess = useCallback(() => {
     router.push('/transactions')
   }, [router])
+
+  const editSubmit = form.handleSubmit(async values => {
+    if (!transactionId) {
+      setEditSubmitState({
+        status: 'error',
+        error: { code: 'VALIDATION_ERROR', message: 'No se encontró el movimiento a editar.' },
+      })
+      return
+    }
+
+    setEditSubmitState({ status: 'loading' })
+    try {
+      const result = await updateTransactionAction(transactionId, {
+        description: String(values.description ?? '').trim(),
+        category_id: values.category_id || null,
+        notes: values.notes?.trim() ? values.notes.trim() : null,
+        transaction_date: values.transaction_date,
+      })
+
+      if (result.ok) {
+        setEditSubmitState({ status: 'success', data: result.data })
+        onEditSuccess?.(result.data as TransactionWithRelations)
+        return
+      }
+
+      const formError = result.error
+      setEditSubmitState({ status: 'error', error: formError })
+      const fieldErrors = 'fields' in formError ? formError.fields : undefined
+      if (fieldErrors) {
+        Object.entries(fieldErrors).forEach(([field, msgs]) => {
+          form.setError(field as keyof TransactionFormValues, {
+            type: 'server',
+            message: Array.isArray(msgs) ? msgs[0] : String(msgs),
+          })
+        })
+      }
+    } catch {
+      setEditSubmitState({
+        status: 'error',
+        error: { code: 'UNEXPECTED', message: 'Error inesperado. Intenta de nuevo.' },
+      })
+    }
+  })
+
+  const handleFormSubmit = isEditMode ? editSubmit : submit
 
   // ── Filtrar cuentas destino (excluir cuenta origen) ──────────────────────
 
@@ -528,6 +592,7 @@ export function TransactionForm({
   )
 
   useEffect(() => {
+    if (isEditMode) return
     if (!operationType) return
 
     const fixedCategorySystemKey = FIXED_CATEGORY_BY_OPERATION[operationType]
@@ -554,7 +619,7 @@ export function TransactionForm({
       shouldDirty: false,
       shouldValidate: false,
     })
-  }, [categoryId, form, operationType, setValue, visibleCategoryOptions])
+  }, [categoryId, form, isEditMode, operationType, setValue, visibleCategoryOptions])
 
   const autoModule = getModuleTrigger(selectedCategory?.system_key)
   const activeExpenseModule = useMemo<'asset' | 'receivable' | null>(() => {
@@ -581,9 +646,11 @@ export function TransactionForm({
   const hasPendingPayables = pendingPayableOptions.length > 0
   const hasVisibleCategories = visibleCategoryOptions.length > 0
   const showDerivedSections =
-    (sections.assetModule && operationType !== 'asset_purchase') ||
-    (sections.receivableModule && operationType !== 'receivable_issue') ||
-    (sections.payableModule && operationType !== 'payable_issue')
+    !isEditMode && (
+      (sections.assetModule && operationType !== 'asset_purchase') ||
+      (sections.receivableModule && operationType !== 'receivable_issue') ||
+      (sections.payableModule && operationType !== 'payable_issue')
+    )
   const layoutMode = useMemo<
     OperationType
   >(() => {
@@ -887,16 +954,17 @@ export function TransactionForm({
   }, [attachmentFile, submitState, uploadAttachment])
 
   useEffect(() => {
+    if (isEditMode) return
     if (!attachmentFile && !attachmentUploading && !attachmentError && !lastUploadedAttachment) return
     setAttachmentSectionOpen(true)
-  }, [attachmentError, attachmentFile, attachmentUploading, lastUploadedAttachment])
+  }, [attachmentError, attachmentFile, attachmentUploading, isEditMode, lastUploadedAttachment])
 
   useEffect(() => {
     if (!usesProgressiveOptionalSection) return
     if (
       hasOptionalSectionError ||
-      Boolean(attachmentFile) ||
-      Boolean(attachmentError) ||
+      (!isEditMode && Boolean(attachmentFile)) ||
+      (!isEditMode && Boolean(attachmentError)) ||
       Boolean(lastUploadedAttachment) ||
       Boolean(watch('is_recurring'))
     ) {
@@ -906,6 +974,7 @@ export function TransactionForm({
     attachmentError,
     attachmentFile,
     hasOptionalSectionError,
+    isEditMode,
     lastUploadedAttachment,
     usesProgressiveOptionalSection,
     watch,
@@ -972,6 +1041,7 @@ export function TransactionForm({
           currency={currency as 'PEN' | 'USD'}
           error={errors.amount?.message}
           data-testid="transaction-amount-input"
+          disabled={isEditMode}
           {...register('amount', {
             required: 'El monto es requerido',
             setValueAs: value => {
@@ -1031,6 +1101,7 @@ export function TransactionForm({
           placeholder="3.750"
           error={errors.exchange_rate?.message}
           data-testid="transaction-exchange-rate-input"
+          disabled={isEditMode}
           {...register('exchange_rate', {
             onChange: () => {
               userEditedExchangeRateRef.current = true
@@ -1114,12 +1185,13 @@ export function TransactionForm({
       <div className="mt-1.5 flex flex-wrap gap-1.5">
         <button
           type="button"
+          disabled={isEditMode}
           onClick={() => {
             setValue('payment_method', 'DEBIT', { shouldDirty: true, shouldValidate: false })
             setValue('credit_card_id', undefined, { shouldDirty: true, shouldValidate: false })
             setValue('credit_operation', undefined, { shouldDirty: true, shouldValidate: false })
           }}
-          className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+          className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
             !isExpenseCreditPayment
               ? 'border-[var(--c-primary-border)] bg-[var(--c-primary-soft)] text-[var(--c-primary)]'
               : 'border-[var(--c-border)] bg-[var(--c-surface)] text-[var(--c-text-muted)] hover:text-[var(--c-text)]'
@@ -1129,11 +1201,12 @@ export function TransactionForm({
         </button>
         <button
           type="button"
+          disabled={isEditMode}
           onClick={() => {
             setValue('payment_method', 'CREDIT', { shouldDirty: true, shouldValidate: false })
             setValue('credit_operation', 'CONSUMPTION', { shouldDirty: true, shouldValidate: false })
           }}
-          className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+          className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
             isExpenseCreditPayment
               ? 'border-sky-400/35 bg-sky-500/15 text-sky-300'
               : 'border-[var(--c-border)] bg-[var(--c-surface)] text-[var(--c-text-muted)] hover:text-[var(--c-text)]'
@@ -1167,6 +1240,7 @@ export function TransactionForm({
           placeholder="Cuenta origen…"
           error={errors.source_account_id?.message}
           data-testid="transaction-source-account-select"
+          disabled={isEditMode}
           {...register('source_account_id', { required: 'La cuenta origen es requerida' })}
         >
           {formOptions.accounts.map(a => (
@@ -1190,6 +1264,7 @@ export function TransactionForm({
           placeholder="Cuenta destino…"
           error={(errors as Record<string, { message?: string }>).destination_account_id?.message}
           data-testid="transaction-destination-account-select"
+          disabled={isEditMode}
           {...register('destination_account_id', {
             required: 'La cuenta destino es requerida',
             validate: v => v !== sourceAccountId || 'No puede ser la misma cuenta',
@@ -1216,6 +1291,7 @@ export function TransactionForm({
             error={errors.credit_card_id?.message || errors.source_account_id?.message}
             data-testid="transaction-credit-card-select"
             value={selectedCreditCardId ?? ''}
+            disabled={isEditMode}
             onChange={event => {
               const nextId = event.target.value
               setValue('credit_card_id', nextId || undefined, { shouldDirty: true, shouldValidate: true })
@@ -1236,8 +1312,8 @@ export function TransactionForm({
             <div className="mt-2">
               <InlineFeedback
                 type="warning"
-                message="No tienes tarjetas activas con cuenta vinculada."
-                detail="Registra tu tarjeta en Créditos y asígnale una cuenta de tarjeta."
+                message="No tienes tarjetas activas."
+                detail="Registra tu tarjeta en Créditos; FinTrack creará la cuenta técnica automáticamente."
               />
             </div>
           )}
@@ -1249,7 +1325,7 @@ export function TransactionForm({
               + Nueva tarjeta
             </Link>
             <span className="text-[10px] text-[var(--c-text-muted)]">
-              Origen: cuenta vinculada de la tarjeta
+              Origen: tarjeta seleccionada
             </span>
           </div>
         </FieldWrapper>
@@ -1263,6 +1339,7 @@ export function TransactionForm({
             placeholder="Seleccionar cuenta…"
             error={errors.source_account_id?.message}
             data-testid="transaction-source-account-select"
+            disabled={isEditMode}
             {...register('source_account_id', { required: 'La cuenta es requerida' })}
           >
             {filteredSourceAccounts.map(a => (
@@ -1284,8 +1361,9 @@ export function TransactionForm({
           <div className="mt-1.5 flex items-center gap-2">
             <button
               type="button"
+              disabled={isEditMode}
               onClick={() => setInlineAccountModalOpen(true)}
-              className="text-[11px] font-semibold text-[var(--c-primary)]/85 transition-colors hover:text-[var(--c-primary)]"
+              className="text-[11px] font-semibold text-[var(--c-primary)]/85 transition-colors hover:text-[var(--c-primary)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               + Crear cuenta
             </button>
@@ -1294,6 +1372,7 @@ export function TransactionForm({
             <div className="mt-3 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface)] p-2.5">
               <button
                 type="button"
+                disabled={isEditMode}
                 onClick={() => {
                   const nextIsPayment = creditOperation !== 'PAYMENT'
                   setValue('credit_operation', nextIsPayment ? 'PAYMENT' : undefined, { shouldDirty: true, shouldValidate: false })
@@ -1301,7 +1380,7 @@ export function TransactionForm({
                     setValue('credit_card_id', undefined, { shouldDirty: true, shouldValidate: false })
                   }
                 }}
-                className="text-[11px] font-semibold text-[var(--c-text)] transition-colors hover:text-[var(--c-primary)]"
+                className="text-[11px] font-semibold text-[var(--c-text)] transition-colors hover:text-[var(--c-primary)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {creditOperation === 'PAYMENT' ? 'Quitar' : 'Marcar'} como pago de tarjeta
               </button>
@@ -1313,6 +1392,7 @@ export function TransactionForm({
                   <Select
                     placeholder="Seleccionar tarjeta a pagar…"
                     value={selectedCreditCardId ?? ''}
+                    disabled={isEditMode}
                     onChange={event => {
                       const nextId = event.target.value
                       setValue('credit_card_id', nextId || undefined, { shouldDirty: true, shouldValidate: true })
@@ -1344,6 +1424,7 @@ export function TransactionForm({
             placeholder="Seleccionar…"
             error={(errors as Record<string, { message?: string }>).destination_account_id?.message}
             data-testid="transaction-destination-account-select"
+            disabled={isEditMode}
             {...register('destination_account_id', {
               required: type === 'TRANSFER' ? 'La cuenta destino es requerida' : false,
               validate: v =>
@@ -1505,7 +1586,7 @@ export function TransactionForm({
         </div>
       )}
 
-      {sections.assetModule && (
+      {!isEditMode && sections.assetModule && (
         <div className="mt-2">
           <ModuleTriggerHint
             moduleName="Módulo de activo activado"
@@ -1514,7 +1595,7 @@ export function TransactionForm({
           />
         </div>
       )}
-      {sections.receivableModule && (
+      {!isEditMode && sections.receivableModule && (
         <div className="mt-2">
           <ModuleTriggerHint
             moduleName="Cuenta por cobrar"
@@ -1523,7 +1604,7 @@ export function TransactionForm({
           />
         </div>
       )}
-      {sections.payableModule && (
+      {!isEditMode && sections.payableModule && (
         <div className="mt-2">
           <ModuleTriggerHint
             moduleName="Cuenta por pagar"
@@ -1651,7 +1732,7 @@ export function TransactionForm({
         label="Descripción"
         optional={layoutMode === 'transfer'}
         required={layoutMode !== 'transfer'}
-        hint={layoutMode === 'transfer' ? 'Se completa automáticamente según las cuentas elegidas.' : undefined}
+        hint={layoutMode === 'transfer' && !isEditMode ? 'Se completa automáticamente según las cuentas elegidas.' : undefined}
         error={errors.description?.message}
       >
         <Input
@@ -1659,7 +1740,7 @@ export function TransactionForm({
           placeholder={descriptionPlaceholder}
           error={errors.description?.message}
           data-testid="transaction-description-input"
-          readOnly={layoutMode === 'transfer'}
+          readOnly={layoutMode === 'transfer' && !isEditMode}
           {...register('description', {
             maxLength: { value: 255, message: 'Máximo 255 caracteres' },
             validate: v =>
@@ -1680,12 +1761,13 @@ export function TransactionForm({
     >
       {layoutMode === 'income' && (
         <FieldWrapper label="Remitente" optional>
-          <Input
-            type="text"
-            placeholder="Ej: ACME SAC"
-            data-testid="transaction-sender-input"
-            {...register('sender')}
-          />
+        <Input
+          type="text"
+          placeholder="Ej: ACME SAC"
+          data-testid="transaction-sender-input"
+          disabled={isEditMode}
+          {...register('sender')}
+        />
         </FieldWrapper>
       )}
 
@@ -1696,6 +1778,7 @@ export function TransactionForm({
               type="text"
               placeholder="Ej: Inmobiliaria Norte"
               data-testid="transaction-recipient-input"
+              disabled={isEditMode}
               {...register('recipient')}
             />
           </FieldWrapper>
@@ -1712,7 +1795,7 @@ export function TransactionForm({
             <Select
               placeholder="Sin presupuesto"
               data-testid="transaction-budget-select"
-              disabled={!categoryId || budgetsLoading || filteredBudgets.length === 0}
+              disabled={isEditMode || !categoryId || budgetsLoading || filteredBudgets.length === 0}
               {...register('budget_id')}
             >
               <option value="">Sin presupuesto</option>
@@ -1745,6 +1828,7 @@ export function TransactionForm({
             type="text"
             placeholder="Ej: iShop Peru"
             data-testid="transaction-recipient-input"
+            disabled={isEditMode}
             {...register('recipient')}
           />
         </FieldWrapper>
@@ -1771,6 +1855,7 @@ export function TransactionForm({
             label="Transacción recurrente"
             description="Guarda esta configuración como plantilla reutilizable."
             checked={!!watch('is_recurring')}
+            disabled={isEditMode}
             onChange={v => setValue('is_recurring', v)}
           />
           {watch('is_recurring') && (
@@ -1800,6 +1885,7 @@ export function TransactionForm({
         </div>
       )}
 
+      {!isEditMode && (
       <FieldWrapper label="Comprobante" optional>
         {!attachmentSectionOpen ? (
           <button
@@ -1894,6 +1980,7 @@ export function TransactionForm({
           </div>
         )}
       </FieldWrapper>
+      )}
     </OptionalSection>
   ) : null
 
@@ -2078,7 +2165,7 @@ export function TransactionForm({
               {...register('notes')}
             />
           </FieldWrapper>
-          {operationType !== 'asset_purchase' && (
+          {operationType !== 'asset_purchase' && !isEditMode && (
             <div className="pb-0.5">
               <CheckboxToggle
                 label="Recurrente"
@@ -2110,6 +2197,7 @@ export function TransactionForm({
           </FieldWrapper>
         )}
 
+        {!isEditMode && (
         <div className="flex items-center gap-2">
           <label className="inline-flex cursor-pointer items-center rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-1 text-[10px] font-semibold text-[var(--c-text-muted)] transition-colors hover:border-[var(--c-border-hover)] hover:text-[var(--c-text)]">
             📎 Comprobante
@@ -2160,6 +2248,7 @@ export function TransactionForm({
             <span className="text-[10px] text-red-400">{attachmentError}</span>
           )}
         </div>
+        )}
       </div>
     ) : (
       <div className="pt-1">
@@ -2173,6 +2262,7 @@ export function TransactionForm({
             />
           </FieldWrapper>
 
+          {!isEditMode && (
           <FieldWrapper label="Comprobante" hint="Opcional">
             {!attachmentSectionOpen ? (
               <button
@@ -2267,8 +2357,9 @@ export function TransactionForm({
               </div>
             )}
           </FieldWrapper>
+          )}
 
-          {operationType !== 'asset_purchase' && (
+          {operationType !== 'asset_purchase' && !isEditMode && (
             <div className="space-y-2 pt-0.5">
               <CheckboxToggle
                 label="Transacción recurrente"
@@ -2332,7 +2423,7 @@ export function TransactionForm({
     <>
       <form
         ref={formRef}
-        onSubmit={submit}
+        onSubmit={handleFormSubmit}
         noValidate
         data-testid="transaction-form"
         className={`${isCompactLayout ? 'space-y-2.5' : 'space-y-5'} ${className}`}
@@ -2342,10 +2433,18 @@ export function TransactionForm({
             <TypeSelector
               value={type}
               onChange={setType}
-              disabled={submitState.status === 'loading'}
+              disabled={activeSubmitState.status === 'loading'}
               compact={isCompactLayout}
             />
           </div>
+        )}
+
+        {isEditMode && (
+          <InlineFeedback
+            type="info"
+            message="Modo edición"
+            detail="Puedes actualizar descripción, categoría, fecha y notas. Monto, moneda y cuentas quedan bloqueados para preservar los saldos."
+          />
         )}
 
         <div className="grid grid-cols-1 gap-4 min-[860px]:grid-cols-[minmax(0,1.04fr)_minmax(320px,0.96fr)] min-[860px]:items-start min-[860px]:gap-5">
@@ -2391,11 +2490,11 @@ export function TransactionForm({
       )}
 
       {/* ── 8. ERROR GLOBAL ──────────────────────────────────────────────── */}
-      {submitState.status === 'error' && (
+      {activeSubmitState.status === 'error' && (
         <InlineFeedback
           type="error"
-          message={submitState.error.message ?? submitState.error.root ?? 'Error inesperado'}
-          detail={submitState.error.detail}
+          message={activeSubmitState.error.message ?? activeSubmitState.error.root ?? 'Error inesperado'}
+          detail={activeSubmitState.error.detail}
         />
       )}
 
@@ -2408,7 +2507,7 @@ export function TransactionForm({
               variant="secondary"
               size="lg"
               onClick={onCancel}
-              disabled={submitState.status === 'loading'}
+              disabled={activeSubmitState.status === 'loading'}
             >
               Cancelar
             </Button>
@@ -2416,11 +2515,16 @@ export function TransactionForm({
           primaryAction={(
             <SubmitButton
               type={type}
-              state={submitState}
+              state={activeSubmitState}
               operationType={operationType}
-              disabled={submitState.status === 'loading'}
+              disabled={activeSubmitState.status === 'loading'}
               fullWidth={false}
               className="min-w-[190px]"
+              labels={isEditMode ? {
+                idle: 'Guardar cambios',
+                loading: 'Guardando...',
+                success: 'Cambios guardados',
+              } : undefined}
             />
           )}
         />

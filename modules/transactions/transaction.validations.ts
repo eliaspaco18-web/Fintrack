@@ -157,6 +157,16 @@ export function validateSourceAccountAgainstTransaction(
   input: CreateTransactionInput,
   account: Account,
 ): Result<true> {
+  if (input.type === 'EXPENSE' && input.payment_method === 'CREDIT') {
+    if (account.type !== 'CREDIT_CARD') {
+      return Errors.businessRule(
+        'Los egresos con crédito deben usar una tarjeta de crédito',
+        'Selecciona una tarjeta activa en el módulo Créditos.'
+      )
+    }
+    return ok(true)
+  }
+
   if (input.currency !== account.currency) {
     return Errors.businessRule(
       'La moneda de la transacción no coincide con el portafolio seleccionado',
@@ -171,13 +181,6 @@ export function validateSourceAccountAgainstTransaction(
         'Usa una cuenta corriente, ahorros, efectivo o un portafolio transaccional compatible.'
       )
     }
-  }
-
-  if (input.type === 'EXPENSE' && input.payment_method === 'CREDIT' && account.type !== 'CREDIT_CARD') {
-    return Errors.businessRule(
-      'Los egresos con crédito deben usar un portafolio tipo tarjeta',
-      'Selecciona una tarjeta de crédito activa.'
-    )
   }
 
   return ok(true)

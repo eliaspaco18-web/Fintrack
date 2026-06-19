@@ -8,6 +8,7 @@ import { notFound, redirect }     from 'next/navigation'
 import type { Metadata }          from 'next'
 import { createClient }           from '@/lib/supabase.server'
 import { withTimeout } from '@/lib/server/promise-timeout'
+import { getTransactionFormOptions } from '@/lib/server/transaction-form-options'
 import { TransactionService }     from '@/modules/transactions/transaction.service'
 import { TransactionDetailClient } from '@/components/detail/TransactionDetailClient'
 
@@ -26,6 +27,7 @@ export default async function TransactionDetailPage({ params }: Props) {
   const service = new TransactionService(supabase)
   const result  = await withTimeout(service.getTransactionById(user.id, params.id), SERVER_QUERY_TIMEOUT_MS)
   if (!result.ok) notFound()
+  const formOptions = await withTimeout(getTransactionFormOptions(user.id), SERVER_QUERY_TIMEOUT_MS)
 
   // Cargar módulos derivados vinculados a esta transacción
   const [assetResult, creditResult, loanResult, receivableResult, payableResult] = await Promise.allSettled([
@@ -81,6 +83,7 @@ export default async function TransactionDetailPage({ params }: Props) {
     <TransactionDetailClient
       transaction={result.data}
       linkedModules={{ asset, credit, loan, receivable, payable }}
+      options={formOptions}
     />
   )
 }

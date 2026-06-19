@@ -25,6 +25,10 @@ type RiskItem = {
   priority: number
 }
 
+type OverviewRiskStripProps = {
+  variant?: 'band' | 'stacked'
+}
+
 function daysUntil(dueDate: string): number {
   const today = new Date()
   const base = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()))
@@ -154,7 +158,8 @@ function buildRiskItems(
     .slice(0, 3)
 }
 
-export function OverviewRiskStrip() {
+export function OverviewRiskStrip({ variant = 'band' }: OverviewRiskStripProps = {}) {
+  const stacked = variant === 'stacked'
   const { data: alerts, isLoading: alertsLoading } = useSWR('/api/dashboard/alerts', alertsFetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 30_000,
@@ -171,16 +176,16 @@ export function OverviewRiskStrip() {
 
   if (loading) {
     return (
-      <PremiumCard innerClassName="p-4">
+      <PremiumCard innerClassName={stacked ? 'p-3.5' : 'p-4'}>
         <div className="animate-pulse space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div className="h-3 w-44 rounded-full bg-[var(--ft-surface-muted)]" />
             <div className="h-7 w-28 rounded-full bg-[var(--ft-surface-muted)]" />
           </div>
-          <div className="grid gap-2 md:grid-cols-3">
-            <div className="h-20 rounded-[16px] bg-[var(--ft-surface-muted)]" />
-            <div className="h-20 rounded-[16px] bg-[var(--ft-surface-muted)]" />
-            <div className="h-20 rounded-[16px] bg-[var(--ft-surface-muted)]" />
+          <div className={stacked ? 'grid gap-2' : 'grid gap-2 md:grid-cols-3'}>
+            <div className={stacked ? 'h-14 rounded-[14px] bg-[var(--ft-surface-muted)]' : 'h-20 rounded-[16px] bg-[var(--ft-surface-muted)]'} />
+            <div className={stacked ? 'h-14 rounded-[14px] bg-[var(--ft-surface-muted)]' : 'h-20 rounded-[16px] bg-[var(--ft-surface-muted)]'} />
+            <div className={stacked ? 'h-14 rounded-[14px] bg-[var(--ft-surface-muted)]' : 'h-20 rounded-[16px] bg-[var(--ft-surface-muted)]'} />
           </div>
         </div>
       </PremiumCard>
@@ -188,7 +193,7 @@ export function OverviewRiskStrip() {
   }
 
   return (
-    <PremiumCard innerClassName="p-4">
+    <PremiumCard innerClassName={stacked ? 'p-3.5' : 'p-4'}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ft-text-subtle)]">
@@ -198,7 +203,7 @@ export function OverviewRiskStrip() {
             Alertas críticas y vencimientos a 30 días.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-[0.12em]">
+        <div className={`${stacked ? 'gap-1.5' : 'gap-2'} flex flex-wrap text-[10px] font-semibold uppercase tracking-[0.12em]`}>
           <span className="rounded-full border border-[color-mix(in_oklch,var(--ft-danger)_22%,transparent)] bg-[color-mix(in_oklch,var(--ft-danger)_8%,transparent)] px-2.5 py-1 text-[var(--ft-danger)]">
             {criticalCount} críticos
           </span>
@@ -209,7 +214,7 @@ export function OverviewRiskStrip() {
       </div>
 
       {items.length === 0 ? (
-        <div className="mt-3 flex items-center justify-between gap-3 rounded-[16px] border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
+        <div className={`${stacked ? 'px-3 py-2.5' : 'px-3.5 py-3'} mt-3 flex items-center justify-between gap-3 rounded-[16px] border border-[var(--ft-border)] bg-[var(--ft-surface-muted)]`}>
           <div>
             <p className="text-[12px] font-semibold text-[var(--ft-text)]">Sin riesgos críticos</p>
             <p className="mt-0.5 text-[11px] text-[var(--ft-text-muted)]">No hay vencimientos urgentes en los próximos 30 días.</p>
@@ -222,14 +227,14 @@ export function OverviewRiskStrip() {
           </Link>
         </div>
       ) : (
-        <div className="mt-3 grid gap-2 md:grid-cols-3">
+        <div className={stacked ? 'mt-3 grid gap-2' : 'mt-3 grid gap-2 md:grid-cols-3'}>
           {items.map((item) => {
             const tone = toneClasses(item.tone)
             return (
               <Link
                 key={item.id}
                 href={item.href}
-                className={`${tone.item} group min-w-0 rounded-[16px] border px-3.5 py-3 transition-[border-color,background-color,transform] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:-translate-y-0.5 active:scale-[0.99]`}
+                className={`${tone.item} group min-w-0 rounded-[16px] border ${stacked ? 'px-3 py-2.5' : 'px-3.5 py-3'} transition-[border-color,background-color,transform] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:-translate-y-0.5 active:scale-[0.99]`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <span className="flex min-w-0 items-center gap-2">
@@ -247,7 +252,7 @@ export function OverviewRiskStrip() {
                     {item.dueLabel}
                   </span>
                 </div>
-                <p className={`${tone.amount} mt-2 text-[13px] font-semibold tabular-nums`}>
+                <p className={`${tone.amount} ${stacked ? 'mt-1.5' : 'mt-2'} text-[13px] font-semibold tabular-nums`}>
                   {item.amountLabel}
                 </p>
               </Link>

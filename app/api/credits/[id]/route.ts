@@ -10,6 +10,8 @@ import {
   getSessionUserId,
 } from '@/lib/api/response'
 
+export const dynamic = 'force-dynamic'
+
 type MovementRow = {
   id: string
   description: string
@@ -35,8 +37,14 @@ type BillingCycle = {
 const zUpdateCreditSchema = z.object({
   status: z.enum(['ACTIVE', 'CLOSED', 'BLOCKED']).optional(),
   name: z.string().trim().min(2).max(100).optional(),
+  bank_entity_id: z.string().uuid().nullable().optional(),
+  currency: z.enum(['PEN', 'USD']).optional(),
   credit_limit: z.number().positive().optional(),
+  credit_limit_pen: z.number().min(0).optional(),
+  credit_limit_usd: z.number().min(0).optional(),
   used_amount: z.number().min(0).optional(),
+  used_amount_pen: z.number().min(0).optional(),
+  used_amount_usd: z.number().min(0).optional(),
   notes: z.string().trim().max(500).nullable().optional(),
 }).refine(
   data => Object.keys(data).length > 0,
@@ -182,6 +190,13 @@ function buildBillingCycles(
   return normalized
 }
 
+function hasDualCurrencyColumns(credit: Record<string, unknown>): boolean {
+  return 'credit_limit_pen' in credit
+    && 'credit_limit_usd' in credit
+    && 'used_amount_pen' in credit
+    && 'used_amount_usd' in credit
+}
+
 export async function GET(
   _req: NextRequest,
   context: { params: { id: string } }
@@ -312,7 +327,7 @@ export async function PATCH(
   const creditId = context.params.id
   const { data: credit, error: creditError } = await supabase
     .from('credits')
-    .select('id, name, status, account_id, credit_type, credit_limit, used_amount')
+    .select('*')
     .eq('id', creditId)
     .eq('user_id', userId)
     .single()
@@ -349,30 +364,90 @@ export async function PATCH(
     }
   }
 
-  if ((parsed.data.credit_limit !== undefined || parsed.data.used_amount !== undefined) && credit.credit_type !== 'CREDIT_CARD') {
+  const updatesCardBalance = parsed.data.credit_limit !== undefined
+    || parsed.data.credit_limit_pen !== undefined
+    || parsed.data.credit_limit_usd !== undefined
+    || parsed.data.used_amount !== undefined
+    || parsed.data.used_amount_pen !== undefined
+    || parsed.data.used_amount_usd !== undefined
+    || parsed.data.currency !== undefined
+    || parsed.data.bank_entity_id !== undefined
+
+  if (updatesCardBalance && credit.credit_type !== 'CREDIT_CARD') {
     return apiError({
       code: 'BUSINESS_RULE_ERROR',
-      message: 'Solo las tarjetas de crédito permiten ajustar límite y consumo desde este panel.',
+      message: 'Solo las tarjetas de crédito permiten ajustar emisor, moneda, límite y consumo desde este panel.',
     })
   }
 
-  const nextCreditLimit = parsed.data.credit_limit ?? Number(credit.credit_limit ?? 0)
-  const nextUsedAmount = parsed.data.used_amount ?? Number(credit.used_amount ?? 0)
+  if (parsed.data.bank_entity_id) {
+    const { data: bankEntity, error: bankEntityError } = await supabase
+      .from('bank_entities')
+      .select('id, is_active')
+      .eq('id', parsed.data.bank_entity_id)
+      .eq('user_id', userId)
+      .single()
 
-  if (nextUsedAmount > nextCreditLimit) {
+    if (bankEntityError || !bankEntity) {
+      return apiError({ code: 'NOT_FOUND', message: 'Entidad bancaria no encontrada' })
+    }
+
+    if (!bankEntity.is_active) {
+      return apiError({ code: 'BUSINESS_RULE_ERROR', message: 'La entidad bancaria seleccionada está inactiva' })
+    }
+  }
+
+  const creditRow = credit as Record<string, unknown>
+  const supportsDualCurrency = hasDualCurrencyColumns(creditRow)
+  const nextCurrency = parsed.data.currency ?? (credit.currency as 'PEN' | 'USD')
+  const nextLimitPen = parsed.data.credit_limit_pen
+    ?? (nextCurrency === 'PEN' && parsed.data.credit_limit !== undefined ? parsed.data.credit_limit : Number(creditRow.credit_limit_pen ?? 0))
+  const nextLimitUsd = parsed.data.credit_limit_usd
+    ?? (nextCurrency === 'USD' && parsed.data.credit_limit !== undefined ? parsed.data.credit_limit : Number(creditRow.credit_limit_usd ?? 0))
+  const nextUsedPen = parsed.data.used_amount_pen
+    ?? (nextCurrency === 'PEN' && parsed.data.used_amount !== undefined ? parsed.data.used_amount : Number(creditRow.used_amount_pen ?? 0))
+  const nextUsedUsd = parsed.data.used_amount_usd
+    ?? (nextCurrency === 'USD' && parsed.data.used_amount !== undefined ? parsed.data.used_amount : Number(creditRow.used_amount_usd ?? 0))
+  const nextCreditLimit = nextCurrency === 'PEN' ? nextLimitPen : nextLimitUsd
+  const nextUsedAmount = nextCurrency === 'PEN' ? nextUsedPen : nextUsedUsd
+
+  if (credit.credit_type === 'CREDIT_CARD' && nextCreditLimit <= 0) {
     return apiError({
       code: 'VALIDATION_ERROR',
-      message: 'El monto usado no puede superar el límite de crédito.',
+      message: 'La línea de crédito debe ser mayor a 0.',
     })
   }
+
+  if (credit.credit_type === 'CREDIT_CARD' && nextUsedAmount > nextCreditLimit) {
+    return apiError({
+      code: 'VALIDATION_ERROR',
+      message: 'El consumo en la moneda de la línea no puede superar el límite de crédito.',
+    })
+  }
+
+  const dualCurrencyUpdate = supportsDualCurrency
+    ? {
+      currency: nextCurrency,
+      credit_limit: nextCreditLimit,
+      credit_limit_pen: nextLimitPen,
+      credit_limit_usd: nextLimitUsd,
+      used_amount: nextUsedAmount,
+      used_amount_pen: nextUsedPen,
+      used_amount_usd: nextUsedUsd,
+    }
+    : {
+      currency: nextCurrency,
+      credit_limit: nextCreditLimit,
+      used_amount: nextUsedAmount,
+    }
 
   const { data: updated, error: updateError } = await supabase
     .from('credits')
     .update({
       ...(parsed.data.status ? { status: parsed.data.status } : {}),
       ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
-      ...(parsed.data.credit_limit !== undefined ? { credit_limit: parsed.data.credit_limit } : {}),
-      ...(parsed.data.used_amount !== undefined ? { used_amount: parsed.data.used_amount } : {}),
+      ...(parsed.data.bank_entity_id !== undefined ? { bank_entity_id: parsed.data.bank_entity_id } : {}),
+      ...(credit.credit_type === 'CREDIT_CARD' ? dualCurrencyUpdate : {}),
       ...(parsed.data.notes !== undefined ? { notes: parsed.data.notes } : {}),
       updated_at: new Date().toISOString(),
     })

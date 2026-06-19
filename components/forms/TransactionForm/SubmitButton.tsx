@@ -23,11 +23,12 @@ type OperationType =
 
 interface SubmitButtonProps {
   type:        TxType
-  state:       ActionState<CreateTransactionResult>
+  state:       ActionState<unknown>
   operationType?: OperationType
   disabled?:   boolean
   fullWidth?:  boolean
   className?:  string
+  labels?:      { idle: string; loading: string; success: string }
 }
 
 const TYPE_LABELS: Record<TxType, { idle: string; loading: string; success: string }> = {
@@ -50,8 +51,8 @@ const OPERATION_LABELS: Partial<Record<OperationType, { idle: string; loading: s
   receivable_collect: { idle: 'Registrar cobro', loading: 'Registrando…', success: '¡Cobro registrado!' },
 }
 
-export function SubmitButton({ type, state, operationType, disabled, fullWidth = true, className = '' }: SubmitButtonProps) {
-  const labels = operationType ? (OPERATION_LABELS[operationType] ?? TYPE_LABELS[type]) : TYPE_LABELS[type]
+export function SubmitButton({ type, state, operationType, disabled, fullWidth = true, className = '', labels: labelsOverride }: SubmitButtonProps) {
+  const labels = labelsOverride ?? (operationType ? (OPERATION_LABELS[operationType] ?? TYPE_LABELS[type]) : TYPE_LABELS[type])
   const isLoading = state.status === 'loading'
   const isSuccess = state.status === 'success'
 

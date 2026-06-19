@@ -29,10 +29,15 @@ const zCurrency = z.enum(['PEN', 'USD'])
 const zCreateCreditCardSchema = z.object({
   kind: z.literal('CARD'),
   name: z.string().trim().min(2).max(100),
-  account_id: z.string().uuid(),
+  bank_entity_id: z.string().uuid().optional(),
+  account_id: z.string().uuid().optional().nullable(),
   currency: zCurrency.default('PEN'),
-  credit_limit: z.number().positive(),
-  used_amount: z.number().min(0).default(0),
+  credit_limit: z.number().positive().optional(),
+  credit_limit_pen: z.number().min(0).optional(),
+  credit_limit_usd: z.number().min(0).optional(),
+  used_amount: z.number().min(0).optional(),
+  used_amount_pen: z.number().min(0).optional(),
+  used_amount_usd: z.number().min(0).optional(),
   interest_rate: z.number().min(0).max(9.9999).default(0),
   closing_day: z.number().int().min(1).max(31).optional(),
   payment_day: z.number().int().min(1).max(31).optional(),
@@ -43,6 +48,7 @@ const zCreateBankCreditSchema = z.object({
   kind: z.literal('BANK'),
   name: z.string().trim().min(2).max(100),
   creditor_name: z.string().trim().min(2).max(150),
+  bank_entity_id: z.string().uuid(),
   account_id: z.string().uuid(),
   category_id: z.string().uuid().optional(),
   currency: zCurrency.default('PEN'),
@@ -70,11 +76,26 @@ const zCreateCreditSchema = z.discriminatedUnion('kind', [
   zCreateBankCreditSchema,
 ]).superRefine((data, ctx) => {
   if (data.kind === 'CARD') {
-    if (data.used_amount > data.credit_limit) {
+    const limitPen = data.credit_limit_pen ?? (data.currency === 'PEN' ? data.credit_limit ?? 0 : 0)
+    const limitUsd = data.credit_limit_usd ?? (data.currency === 'USD' ? data.credit_limit ?? 0 : 0)
+    const primaryLimit = data.currency === 'PEN' ? limitPen : limitUsd
+    const usedPen = data.used_amount_pen ?? (data.currency === 'PEN' ? data.used_amount ?? 0 : 0)
+    const usedUsd = data.used_amount_usd ?? (data.currency === 'USD' ? data.used_amount ?? 0 : 0)
+    const primaryUsed = data.currency === 'PEN' ? usedPen : usedUsd
+
+    if (primaryLimit <= 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['used_amount'],
-        message: 'El consumo inicial no puede superar el límite de crédito',
+        path: ['credit_limit'],
+        message: 'La línea de crédito debe ser mayor a 0',
+      })
+    }
+
+    if (primaryUsed > primaryLimit) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: data.currency === 'PEN' ? ['used_amount_pen'] : ['used_amount_usd'],
+        message: 'El consumo inicial en la moneda de la línea no puede superar el límite de crédito',
       })
     }
     return
@@ -116,6 +137,26 @@ const zCreateCreditSchema = z.discriminatedUnion('kind', [
 })
 
 type CreditCreateRequest = z.infer<typeof zCreateCreditSchema>
+
+async function ensureUserActiveBankEntity(params: { userId: string; bankEntityId: string }) {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('bank_entities')
+    .select('id, name, short_name, is_active')
+    .eq('id', params.bankEntityId)
+    .eq('user_id', params.userId)
+    .single()
+
+  if (error || !data) {
+    return { ok: false as const, code: 'NOT_FOUND', message: 'Entidad bancaria no encontrada' }
+  }
+
+  if (!data.is_active) {
+    return { ok: false as const, code: 'BUSINESS_RULE_ERROR', message: 'La entidad bancaria seleccionada está inactiva' }
+  }
+
+  return { ok: true as const, bankEntity: data }
+}
 
 async function ensureUserActiveAccount(
   params: { userId: string; accountId: string; expectedType?: 'CREDIT_CARD' }
@@ -179,25 +220,89 @@ async function rollbackCreatedRecords(params: {
 }
 
 async function createCreditCard(userId: string, payload: Extract<CreditCreateRequest, { kind: 'CARD' }>) {
-  const accountValidation = await ensureUserActiveAccount({
+  let accountId = payload.account_id ?? null
+  let bankEntityId = payload.bank_entity_id ?? null
+
+  if (accountId) {
+    const accountValidation = await ensureUserActiveAccount({
+      userId,
+      accountId,
+      expectedType: 'CREDIT_CARD',
+    })
+
+    if (!accountValidation.ok) {
+      return apiError({ code: accountValidation.code, message: accountValidation.message })
+    }
+
+    bankEntityId = bankEntityId ?? accountValidation.account.bank_entity_id
+  }
+
+  if (!bankEntityId) {
+    return apiError({
+      code: 'VALIDATION_ERROR',
+      message: 'Selecciona la entidad bancaria emisora de la tarjeta.',
+    })
+  }
+
+  const bankValidation = await ensureUserActiveBankEntity({
     userId,
-    accountId: payload.account_id,
-    expectedType: 'CREDIT_CARD',
+    bankEntityId,
   })
 
-  if (!accountValidation.ok) {
-    return apiError({ code: accountValidation.code, message: accountValidation.message })
+  if (!bankValidation.ok) {
+    return apiError({ code: bankValidation.code, message: bankValidation.message })
   }
 
   const supabase = createClient()
+  const creditLimitPen = Number(payload.credit_limit_pen ?? (payload.currency === 'PEN' ? payload.credit_limit ?? 0 : 0))
+  const creditLimitUsd = Number(payload.credit_limit_usd ?? (payload.currency === 'USD' ? payload.credit_limit ?? 0 : 0))
+  const usedAmountPen = Number(payload.used_amount_pen ?? (payload.currency === 'PEN' ? payload.used_amount ?? 0 : 0))
+  const usedAmountUsd = Number(payload.used_amount_usd ?? (payload.currency === 'USD' ? payload.used_amount ?? 0 : 0))
+  const primaryCreditLimit = payload.currency === 'PEN' ? creditLimitPen : creditLimitUsd
+  const primaryUsedAmount = payload.currency === 'PEN' ? usedAmountPen : usedAmountUsd
+
+  if (!accountId) {
+    const bankLabel = bankValidation.bankEntity.name
+    const { data: account, error: accountError } = await supabase
+      .from('accounts')
+      .insert({
+        user_id: userId,
+        name: `${payload.name} (${payload.currency})`,
+        institution: bankLabel,
+        bank_entity_id: bankEntityId,
+        type: 'CREDIT_CARD',
+        currency: payload.currency,
+        balance: 0,
+        initial_balance: 0,
+        initial_balance_date: new Date().toISOString().slice(0, 10),
+        include_in_net_worth: false,
+        color: '#0ea5e9',
+        icon: 'credit-card',
+        notes: 'Cuenta técnica creada automáticamente para registrar consumos de tarjeta.',
+      })
+      .select('id')
+      .single()
+
+    if (accountError || !account) {
+      return apiError({ code: 'DATABASE_ERROR', message: accountError?.message ?? 'No se pudo crear la cuenta técnica de la tarjeta' })
+    }
+
+    accountId = account.id
+  }
+
   const creditInsert: TablesInsert<'credits'> = {
     user_id: userId,
-    account_id: payload.account_id,
+    account_id: accountId,
+    bank_entity_id: bankEntityId,
     transaction_id: null,
     credit_type: 'CREDIT_CARD',
     name: payload.name,
-    credit_limit: payload.credit_limit,
-    used_amount: payload.used_amount,
+    credit_limit: primaryCreditLimit,
+    credit_limit_pen: creditLimitPen,
+    credit_limit_usd: creditLimitUsd,
+    used_amount: primaryUsedAmount,
+    used_amount_pen: usedAmountPen,
+    used_amount_usd: usedAmountUsd,
     interest_rate: payload.interest_rate,
     closing_day: payload.closing_day ?? null,
     payment_day: payload.payment_day ?? null,
@@ -213,7 +318,39 @@ async function createCreditCard(userId: string, payload: Extract<CreditCreateReq
     .single()
 
   if (error || !credit) {
-    return apiError({ code: 'DATABASE_ERROR', message: error?.message ?? 'No se pudo crear la tarjeta de crédito' })
+    const missingDualColumn = error?.message
+      ? /credit_limit_pen|credit_limit_usd|used_amount_pen|used_amount_usd/i.test(error.message)
+      : false
+
+    if (!missingDualColumn) {
+      return apiError({ code: 'DATABASE_ERROR', message: error?.message ?? 'No se pudo crear la tarjeta de crédito' })
+    }
+
+    const legacyCreditInsert = {
+      ...creditInsert,
+      credit_limit_pen: undefined,
+      credit_limit_usd: undefined,
+      used_amount_pen: undefined,
+      used_amount_usd: undefined,
+    }
+
+    const { data: legacyCredit, error: legacyError } = await supabase
+      .from('credits')
+      .insert(legacyCreditInsert)
+      .select('*')
+      .single()
+
+    if (legacyError || !legacyCredit) {
+      return apiError({ code: 'DATABASE_ERROR', message: legacyError?.message ?? 'No se pudo crear la tarjeta de crédito' })
+    }
+
+    return apiCreated({
+      credit: legacyCredit,
+      loan: null,
+      transaction: null,
+      installments_generated: 0,
+      auto_income_created: false,
+    })
   }
 
   return apiCreated({
@@ -263,6 +400,7 @@ async function createBankCredit(userId: string, payload: Extract<CreditCreateReq
   const creditInsert: TablesInsert<'credits'> = {
     user_id: userId,
     account_id: payload.account_id,
+    bank_entity_id: payload.bank_entity_id,
     transaction_id: transaction.id,
     credit_type: 'LINE_OF_CREDIT',
     name: payload.name,
@@ -290,6 +428,7 @@ async function createBankCredit(userId: string, payload: Extract<CreditCreateReq
   const loanInsert: TablesInsert<'loans'> = {
     user_id: userId,
     credit_id: credit.id,
+    bank_entity_id: payload.bank_entity_id,
     transaction_id: transaction.id,
     creditor_name: payload.creditor_name,
     principal_amount: payload.principal_amount,

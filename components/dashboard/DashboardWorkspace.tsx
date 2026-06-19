@@ -182,12 +182,9 @@ function DashboardWorkspaceContent({
 
             <div className="grid min-w-0 gap-3">
               <CashFlowProjectionWidget variant="compact" horizon="30D" />
+              <OverviewRiskStrip variant="stacked" />
             </div>
           </section>
-
-          <div className="dashboard-enter dashboard-enter-delay-3">
-            <OverviewRiskStrip />
-          </div>
         </TabPanel>
 
         <TabPanel activeTab={activeTab} tabId="transactions">

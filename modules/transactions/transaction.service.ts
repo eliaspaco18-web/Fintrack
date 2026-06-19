@@ -286,20 +286,22 @@ export class TransactionService {
       if (!balanceResult.ok) return balanceResult
     }
 
-    let creditAdjusted: { id: string; op: 'CONSUMPTION' | 'PAYMENT'; amount: number } | null = null
+    let creditAdjusted: { id: string; op: 'CONSUMPTION' | 'PAYMENT'; amount: number; currency: 'PEN' | 'USD' } | null = null
     if (expenseInput?.credit_card_id && selectedCreditCard) {
       const op: 'CONSUMPTION' | 'PAYMENT' = usesCreditCardAsSource
         ? 'CONSUMPTION'
         : expenseInput.credit_operation === 'PAYMENT'
           ? 'PAYMENT'
           : 'CONSUMPTION'
+      const adjustmentAmount = Math.round(preparedInput.amount * 100) / 100
+      const adjustmentCurrency = preparedInput.currency as 'PEN' | 'USD'
 
       const adjustResult = op === 'CONSUMPTION'
-        ? await this.creditRepo.incrementUsedAmount(selectedCreditCard.id, preparedInput.amount)
-        : await this.creditRepo.decrementUsedAmount(selectedCreditCard.id, preparedInput.amount)
+        ? await this.creditRepo.incrementUsedAmount(selectedCreditCard.id, adjustmentAmount, adjustmentCurrency)
+        : await this.creditRepo.decrementUsedAmount(selectedCreditCard.id, adjustmentAmount, adjustmentCurrency)
 
       if (!adjustResult.ok) return adjustResult
-      creditAdjusted = { id: selectedCreditCard.id, op, amount: preparedInput.amount }
+      creditAdjusted = { id: selectedCreditCard.id, op, amount: adjustmentAmount, currency: adjustmentCurrency }
     }
 
     // ── PASO 5: Construir payload atómico ────────────────────────────────────
@@ -319,9 +321,9 @@ export class TransactionService {
     if (!rpcResult.ok) {
       if (creditAdjusted) {
         if (creditAdjusted.op === 'CONSUMPTION') {
-          await this.creditRepo.decrementUsedAmount(creditAdjusted.id, creditAdjusted.amount)
+          await this.creditRepo.decrementUsedAmount(creditAdjusted.id, creditAdjusted.amount, creditAdjusted.currency)
         } else {
-          await this.creditRepo.incrementUsedAmount(creditAdjusted.id, creditAdjusted.amount)
+          await this.creditRepo.incrementUsedAmount(creditAdjusted.id, creditAdjusted.amount, creditAdjusted.currency)
         }
       }
       return rpcResult

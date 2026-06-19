@@ -928,6 +928,8 @@ export type Database = {
           closing_day: number | null
           created_at: string
           credit_limit: number
+          credit_limit_pen: number
+          credit_limit_usd: number
           credit_type: Database["public"]["Enums"]["credit_type"]
           currency: string
           id: string
@@ -939,6 +941,8 @@ export type Database = {
           transaction_id: string | null
           updated_at: string
           used_amount: number
+          used_amount_pen: number
+          used_amount_usd: number
           user_id: string
         }
         Insert: {
@@ -948,6 +952,8 @@ export type Database = {
           closing_day?: number | null
           created_at?: string
           credit_limit: number
+          credit_limit_pen?: number
+          credit_limit_usd?: number
           credit_type?: Database["public"]["Enums"]["credit_type"]
           currency?: string
           id?: string
@@ -959,6 +965,8 @@ export type Database = {
           transaction_id?: string | null
           updated_at?: string
           used_amount?: number
+          used_amount_pen?: number
+          used_amount_usd?: number
           user_id: string
         }
         Update: {
@@ -968,6 +976,8 @@ export type Database = {
           closing_day?: number | null
           created_at?: string
           credit_limit?: number
+          credit_limit_pen?: number
+          credit_limit_usd?: number
           credit_type?: Database["public"]["Enums"]["credit_type"]
           currency?: string
           id?: string
@@ -979,6 +989,8 @@ export type Database = {
           transaction_id?: string | null
           updated_at?: string
           used_amount?: number
+          used_amount_pen?: number
+          used_amount_usd?: number
           user_id?: string
         }
         Relationships: [

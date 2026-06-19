@@ -16,15 +16,13 @@ import { getBillingCycleYearOptions } from '@/lib/credits/billing-cycle-years'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 import { formatNumber } from '@/lib/contracts/ui.contracts'
+import type { CreditListItem } from '@/lib/credits/display-type'
 
-type AccountOption = {
+type BankEntityOption = {
   id: string
   name: string
-  type: string
-  currency: string
+  short_name: string | null
   is_active: boolean
-  bank_entity_id: string | null
-  bank_entity?: { id: string; name: string; short_name: string | null } | null
 }
 
 type BillingCycleRow = {
@@ -40,12 +38,16 @@ type BillingCycleRow = {
 
 type CardFormState = {
   name: string
-  account_id: string
+  bank_entity_id: string
+  currency: 'PEN' | 'USD'
   credit_limit: string
-  used_amount: string
+  used_amount_pen: string
+  used_amount_usd: string
 }
 
 interface CreditCardFormProps {
+  mode?: 'create' | 'edit'
+  credit?: CreditListItem | null
   onSuccess: (creditName: string) => void
   onCancel: () => void
   onLayoutPreferenceChange?: (nextSize: 'lg' | 'xl' | 'full-form') => void
@@ -77,6 +79,10 @@ function newCycleRow(): BillingCycleRow {
   }
 }
 
+function moneyString(value: number | null | undefined): string {
+  return Number(value ?? 0).toFixed(2)
+}
+
 function SummaryStat({
   label,
   value,
@@ -104,44 +110,43 @@ function SummaryStat({
 }
 
 export function CreditCardForm({
+  mode = 'create',
+  credit = null,
   onSuccess,
   onCancel,
   onLayoutPreferenceChange,
   onNestedModalOpenChange,
 }: CreditCardFormProps) {
-  const [accounts, setAccounts] = useState<AccountOption[]>([])
-  const [loadingAccounts, setLoadingAccounts] = useState(true)
+  const [bankEntities, setBankEntities] = useState<BankEntityOption[]>([])
+  const [loadingOptions, setLoadingOptions] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const [form, setForm] = useState<CardFormState>({
     name: '',
-    account_id: '',
+    bank_entity_id: '',
+    currency: 'PEN',
     credit_limit: '',
-    used_amount: '0.00',
+    used_amount_pen: '0.00',
+    used_amount_usd: '0.00',
   })
 
   const [cycles, setCycles] = useState<BillingCycleRow[]>([newCycleRow()])
+  const [cyclesDirty, setCyclesDirty] = useState(false)
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
 
-  const cardAccounts = useMemo(
-    () => accounts.filter(account => account.is_active && account.type === 'CREDIT_CARD'),
-    [accounts],
+  const selectedBankEntity = useMemo(
+    () => bankEntities.find(entity => entity.id === form.bank_entity_id) ?? null,
+    [bankEntities, form.bank_entity_id],
   )
-
-  const selectedAccount = useMemo(
-    () => cardAccounts.find(account => account.id === form.account_id) ?? null,
-    [cardAccounts, form.account_id],
-  )
-
-  const bankEntityLabel = selectedAccount?.bank_entity?.short_name
-    ?? selectedAccount?.bank_entity?.name
-    ?? (selectedAccount?.bank_entity_id ? '—' : 'Sin entidad bancaria vinculada')
+  const currencyLabel = form.currency === 'USD' ? 'Dólares (USD)' : 'Soles (PEN)'
 
   const creditLimitValue = roundToDecimals(parseNumericInput(form.credit_limit, 0) || 0, 2)
-  const usedAmountValue = roundToDecimals(parseNumericInput(form.used_amount || '0', 0) || 0, 2)
-  const availableAmountValue = Math.max(creditLimitValue - usedAmountValue, 0)
-  const utilizationPct = creditLimitValue > 0 ? Math.min((usedAmountValue / creditLimitValue) * 100, 100) : 0
+  const usedAmountPenValue = roundToDecimals(parseNumericInput(form.used_amount_pen || '0', 0) || 0, 2)
+  const usedAmountUsdValue = roundToDecimals(parseNumericInput(form.used_amount_usd || '0', 0) || 0, 2)
+  const primaryUsedAmountValue = form.currency === 'PEN' ? usedAmountPenValue : usedAmountUsdValue
+  const availableAmountValue = Math.max(creditLimitValue - primaryUsedAmountValue, 0)
+  const utilizationPct = creditLimitValue > 0 ? Math.min((primaryUsedAmountValue / creditLimitValue) * 100, 100) : 0
 
   const cycleKeys = useMemo(
     () => cycles.map(cycle => `${cycle.billing_year}-${cycle.billing_month}`),
@@ -181,6 +186,20 @@ export function CreditCardForm({
   }, [onLayoutPreferenceChange])
 
   useEffect(() => {
+    if (mode !== 'edit' || !credit) return
+
+    const currency = credit.currency === 'USD' ? 'USD' : 'PEN'
+    setForm({
+      name: credit.name,
+      bank_entity_id: credit.bank_entity_id ?? '',
+      currency,
+      credit_limit: moneyString(credit.credit_limit),
+      used_amount_pen: moneyString(credit.used_amount_pen ?? (currency === 'PEN' ? credit.used_amount : 0)),
+      used_amount_usd: moneyString(credit.used_amount_usd ?? (currency === 'USD' ? credit.used_amount : 0)),
+    })
+  }, [credit, mode])
+
+  useEffect(() => {
     onNestedModalOpenChange?.(isScheduleModalOpen)
 
     return () => {
@@ -189,41 +208,87 @@ export function CreditCardForm({
   }, [isScheduleModalOpen, onNestedModalOpenChange])
 
   useEffect(() => {
-    const loadAccounts = async () => {
-      setLoadingAccounts(true)
+    const loadOptions = async () => {
+      setLoadingOptions(true)
       try {
-        const res = await fetch('/api/accounts', { cache: 'no-store' })
+        const res = await fetch('/api/bank-entities', { cache: 'no-store' })
         const json = await res.json().catch(() => null)
         if (!res.ok || !json?.ok) {
-          throw new Error(getApiErrorMessage(json, 'No se pudieron cargar las cuentas'))
+          throw new Error(getApiErrorMessage(json, 'No se pudieron cargar las entidades bancarias'))
         }
 
-        const loaded = (json.data as AccountOption[]) ?? []
-        setAccounts(loaded)
+        const loaded = ((json.data as BankEntityOption[]) ?? []).filter(entity => entity.is_active)
+        setBankEntities(loaded)
 
-        const firstCard = loaded.find(account => account.is_active && account.type === 'CREDIT_CARD')
-        if (firstCard) {
-          setForm(prev => ({ ...prev, account_id: firstCard.id }))
+        const firstEntity = loaded[0]
+        if (firstEntity) {
+          setForm(prev => ({
+            ...prev,
+            bank_entity_id: prev.bank_entity_id || firstEntity.id,
+          }))
         }
       } catch (caught) {
-        setError(caught instanceof Error ? caught.message : 'Error cargando cuentas')
+        setError(caught instanceof Error ? caught.message : 'Error cargando entidades bancarias')
       } finally {
-        setLoadingAccounts(false)
+        setLoadingOptions(false)
       }
     }
 
-    void loadAccounts()
+    void loadOptions()
   }, [])
 
+  useEffect(() => {
+    if (mode !== 'edit' || !credit?.id) return
+
+    const loadCycles = async () => {
+      try {
+        const res = await fetch(`/api/credits/${credit.id}/billing-cycles`, { cache: 'no-store' })
+        const json = await res.json().catch(() => null)
+        if (!res.ok || !json?.ok) {
+          throw new Error(getApiErrorMessage(json, 'No se pudieron cargar los ciclos de facturación'))
+        }
+
+        const loaded = ((json.data ?? []) as Array<{
+          id: string
+          billing_month: number
+          billing_year: number
+          consumption_from: string
+          consumption_to: string
+          payment_date: string
+          total_to_pay: number
+        }>).map(cycle => ({
+          id: cycle.id,
+          billing_month: String(cycle.billing_month).padStart(2, '0'),
+          billing_year: String(cycle.billing_year),
+          consumption_from: cycle.consumption_from,
+          consumption_to: cycle.consumption_to,
+          payment_date: cycle.payment_date,
+          total_to_pay: moneyString(cycle.total_to_pay),
+          statement_file: null,
+        }))
+
+        setCycles(loaded.length > 0 ? loaded : [newCycleRow()])
+        setCyclesDirty(false)
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : 'Error cargando ciclos de facturación')
+      }
+    }
+
+    void loadCycles()
+  }, [credit?.id, mode])
+
   const addCycle = useCallback(() => {
+    setCyclesDirty(true)
     setCycles(prev => [...prev, newCycleRow()])
   }, [])
 
   const removeCycle = useCallback((id: string) => {
+    setCyclesDirty(true)
     setCycles(prev => prev.filter(cycle => cycle.id !== id))
   }, [])
 
   const updateCycle = useCallback((id: string, patch: Partial<BillingCycleRow>) => {
+    setCyclesDirty(true)
     setCycles(prev => prev.map(cycle => (cycle.id === id ? { ...cycle, ...patch } : cycle)))
   }, [])
 
@@ -258,8 +323,8 @@ export function CreditCardForm({
       return
     }
 
-    if (!form.account_id) {
-      setError('Selecciona el portafolio de tarjeta.')
+    if (!form.bank_entity_id) {
+      setError('Selecciona la entidad bancaria emisora.')
       return
     }
 
@@ -269,9 +334,11 @@ export function CreditCardForm({
       return
     }
 
-    const used = roundToDecimals(parseNumericInput(form.used_amount || '0', 0), 2)
-    if (!Number.isFinite(used) || used < 0 || used > limit) {
-      setError('El monto usado actual debe ser válido y no superar la línea de crédito.')
+    const usedPen = roundToDecimals(parseNumericInput(form.used_amount_pen || '0', 0), 2)
+    const usedUsd = roundToDecimals(parseNumericInput(form.used_amount_usd || '0', 0), 2)
+    const primaryUsed = form.currency === 'PEN' ? usedPen : usedUsd
+    if (!Number.isFinite(usedPen) || !Number.isFinite(usedUsd) || usedPen < 0 || usedUsd < 0 || primaryUsed > limit) {
+      setError('Los consumos iniciales deben ser válidos. El consumo en la moneda de la línea no puede superar el límite.')
       return
     }
 
@@ -295,56 +362,81 @@ export function CreditCardForm({
     setSaving(true)
 
     try {
-      const res = await fetch('/api/credits', {
-        method: 'POST',
+      const payload = {
+        name: trimmedName,
+        bank_entity_id: form.bank_entity_id,
+        currency: form.currency,
+        credit_limit: limit,
+        credit_limit_pen: form.currency === 'PEN' ? limit : 0,
+        credit_limit_usd: form.currency === 'USD' ? limit : 0,
+        used_amount: primaryUsed,
+        used_amount_pen: usedPen,
+        used_amount_usd: usedUsd,
+      }
+      const endpoint = mode === 'edit' && credit?.id ? `/api/credits/${credit.id}` : '/api/credits'
+      const res = await fetch(endpoint, {
+        method: mode === 'edit' ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          kind: 'CARD',
-          name: trimmedName,
-          account_id: form.account_id,
-          currency: selectedAccount?.currency ?? 'PEN',
-          credit_limit: limit,
-          used_amount: used,
-          interest_rate: 0,
-        }),
+        body: JSON.stringify(mode === 'edit' ? payload : { kind: 'CARD', ...payload, interest_rate: 0 }),
       })
 
       const json = await res.json().catch(() => null)
       if (!res.ok || !json?.ok) {
-        throw new Error(getApiErrorMessage(json, 'No se pudo crear la tarjeta'))
+        throw new Error(getApiErrorMessage(json, mode === 'edit' ? 'No se pudo actualizar la tarjeta' : 'No se pudo crear la tarjeta'))
       }
 
-      const creditId = json.data?.credit?.id as string
+      const creditId = (mode === 'edit' ? credit?.id : json.data?.credit?.id) as string
 
-      for (const cycle of cycles) {
-        const totalToPay = roundToDecimals(parseNumericInput(cycle.total_to_pay || '0', 0), 2)
-        await fetch(`/api/credits/${creditId}/billing-cycles`, {
-          method: 'POST',
+      if (mode === 'edit' && cyclesDirty) {
+        const cycleRes = await fetch(`/api/credits/${creditId}/billing-cycles`, {
+          method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            billing_month: Number(cycle.billing_month),
-            billing_year: Number(cycle.billing_year),
-            consumption_from: cycle.consumption_from,
-            consumption_to: cycle.consumption_to,
-            payment_date: cycle.payment_date,
-            total_to_pay: totalToPay,
+            cycles: cycles.map(cycle => ({
+              billing_month: Number(cycle.billing_month),
+              billing_year: Number(cycle.billing_year),
+              consumption_from: cycle.consumption_from,
+              consumption_to: cycle.consumption_to,
+              payment_date: cycle.payment_date,
+              total_to_pay: roundToDecimals(parseNumericInput(cycle.total_to_pay || '0', 0), 2),
+            })),
           }),
         })
+        const cycleJson = await cycleRes.json().catch(() => null)
+        if (!cycleRes.ok || !cycleJson?.ok) {
+          throw new Error(getApiErrorMessage(cycleJson, 'No se pudieron actualizar los ciclos de facturación'))
+        }
+      } else if (mode === 'create') {
+        for (const cycle of cycles) {
+          const totalToPay = roundToDecimals(parseNumericInput(cycle.total_to_pay || '0', 0), 2)
+          await fetch(`/api/credits/${creditId}/billing-cycles`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              billing_month: Number(cycle.billing_month),
+              billing_year: Number(cycle.billing_year),
+              consumption_from: cycle.consumption_from,
+              consumption_to: cycle.consumption_to,
+              payment_date: cycle.payment_date,
+              total_to_pay: totalToPay,
+            }),
+          })
 
-        if (cycle.statement_file) {
-          const formData = new FormData()
-          formData.append('file', cycle.statement_file)
-          await fetch(`/api/credits/${creditId}/attachment`, { method: 'POST', body: formData })
+          if (cycle.statement_file) {
+            const formData = new FormData()
+            formData.append('file', cycle.statement_file)
+            await fetch(`/api/credits/${creditId}/attachment`, { method: 'POST', body: formData })
+          }
         }
       }
 
       onSuccess(trimmedName)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'No se pudo crear la tarjeta de crédito')
+      setError(caught instanceof Error ? caught.message : 'No se pudo guardar la tarjeta de crédito')
     } finally {
       setSaving(false)
     }
-  }, [cycles, form, onSuccess, saving, selectedAccount])
+  }, [credit?.id, cycles, cyclesDirty, form, mode, onSuccess, saving])
 
   const isDisabled = saving
   const closeScheduleModal = useCallback(() => {
@@ -370,39 +462,39 @@ export function CreditCardForm({
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto pr-1 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] xl:overflow-visible xl:pr-0">
         <FormSection
           title="Datos esenciales"
-          description="Define primero la tarjeta y el portafolio que la representa dentro de FinTrack."
+          description="Define la tarjeta por su banco emisor. FinTrack creará internamente la cuenta técnica necesaria para registrar consumos."
           columns="2"
           className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
         >
           <FormField
-            label="Portafolio de tarjeta"
-            description="Usa un portafolio tipo Tarjeta de crédito para heredar la entidad y la moneda."
+            label="Entidad bancaria emisora"
+            description="Banco o entidad que emitió la tarjeta."
             className="md:col-span-2"
           >
-            {loadingAccounts ? (
+            {loadingOptions ? (
               <div className="field-base ft-form-input flex w-full items-center text-[var(--ft-form-muted)]">
-                Cargando portafolios...
+                Cargando entidades...
               </div>
             ) : (
               <AppSelect
-                value={form.account_id}
-                onChange={value => setForm(prev => ({ ...prev, account_id: value }))}
-                testId="credit-card-account-select"
-                options={cardAccounts.length === 0
-                  ? [{ value: '', label: 'Sin cuentas tipo Tarjeta activas', disabled: true }]
-                  : cardAccounts.map(account => ({
-                      value: account.id,
-                      label: `${account.name} · ${account.currency}`,
+                value={form.bank_entity_id}
+                onChange={value => setForm(prev => ({ ...prev, bank_entity_id: value }))}
+                testId="credit-card-bank-entity-select"
+                options={bankEntities.length === 0
+                  ? [{ value: '', label: 'Sin entidades bancarias activas', disabled: true }]
+                  : bankEntities.map(entity => ({
+                      value: entity.id,
+                      label: entity.name,
                     }))}
-                searchPlaceholder="Buscar portafolio..."
+                searchPlaceholder="Buscar entidad..."
               />
             )}
           </FormField>
 
-          {!loadingAccounts && cardAccounts.length === 0 ? (
+          {!loadingOptions && bankEntities.length === 0 ? (
             <div className="rounded-[var(--ft-form-radius)] border border-[color:var(--ft-warning)]/20 bg-[var(--ft-warning-soft)] px-3.5 py-3 md:col-span-2">
               <p className="text-[12px] font-medium text-[var(--ft-warning)]">
-                Crea primero una cuenta tipo Tarjeta de crédito en Portafolio para poder registrar esta línea.
+                Registra primero una entidad bancaria en Administración para poder crear la tarjeta.
               </p>
             </div>
           ) : null}
@@ -424,25 +516,39 @@ export function CreditCardForm({
             <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
               <p className="text-[11px] font-medium text-[var(--ft-form-muted)]">Entidad bancaria</p>
               <p className="mt-1 text-sm font-semibold text-[var(--ft-text)]">
-                {selectedAccount ? bankEntityLabel : 'Selecciona un portafolio'}
+                {selectedBankEntity ? selectedBankEntity.name : 'Selecciona una entidad'}
               </p>
             </div>
             <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
-              <p className="text-[11px] font-medium text-[var(--ft-form-muted)]">Moneda del portafolio</p>
-              <p className="mt-1 text-sm font-semibold text-[var(--ft-text)]">
-                {selectedAccount?.currency ?? '—'}
-              </p>
+              <p className="text-[11px] font-medium text-[var(--ft-form-muted)]">Moneda de la línea</p>
+              <div className="mt-2 grid grid-cols-2 gap-1.5">
+                {(['PEN', 'USD'] as const).map(currency => (
+                  <button
+                    key={currency}
+                    type="button"
+                    disabled={isDisabled}
+                    onClick={() => setForm(prev => ({ ...prev, currency }))}
+                    className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                      form.currency === currency
+                        ? 'border-[var(--ft-primary)] bg-[var(--ft-primary-soft)] text-[var(--ft-primary)]'
+                        : 'border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] text-[var(--ft-form-muted)] hover:text-[var(--ft-text)]'
+                    }`}
+                  >
+                    {currency}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </FormSection>
 
         <FormSection
           title="Saldo inicial"
-          description="Separa el límite de la tarjeta del consumo que ya existe para que la capacidad disponible quede clara desde el inicio."
+          description="Define la línea en la moneda aprobada y registra el consumo pendiente separado en soles y dólares."
           columns="2"
           className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
         >
-          <FormField label="Límite de crédito">
+          <FormField label={`Línea de crédito (${form.currency})`}>
             <NumericInput
               step="0.01"
               decimals={2}
@@ -458,20 +564,39 @@ export function CreditCardForm({
           </FormField>
 
           <FormField
-            label="Monto usado actual"
+            label="Consumo inicial PEN"
             optional
-            description="Úsalo solo si la tarjeta ya tiene consumo pendiente fuera de FinTrack."
+            description="Saldo pendiente en soles según el estado de cuenta."
           >
             <NumericInput
               step="0.01"
               decimals={2}
               min={0}
-              value={form.used_amount}
-              onValueChange={value => setForm(prev => ({ ...prev, used_amount: value }))}
+              value={form.used_amount_pen}
+              onValueChange={value => setForm(prev => ({ ...prev, used_amount_pen: value }))}
               disabled={isDisabled}
-              data-testid="credit-card-used-amount-input"
+              data-testid="credit-card-used-amount-pen-input"
               className="field-base ft-form-input w-full"
               placeholder="Ej: 850.50"
+            />
+          </FormField>
+
+          <FormField
+            label="Consumo inicial USD"
+            optional
+            description="Saldo pendiente en dólares según el estado de cuenta."
+            className="md:col-span-2"
+          >
+            <NumericInput
+              step="0.01"
+              decimals={2}
+              min={0}
+              value={form.used_amount_usd}
+              onValueChange={value => setForm(prev => ({ ...prev, used_amount_usd: value }))}
+              disabled={isDisabled}
+              data-testid="credit-card-used-amount-usd-input"
+              className="field-base ft-form-input w-full"
+              placeholder="Ej: 13.67"
             />
           </FormField>
 
@@ -480,7 +605,7 @@ export function CreditCardForm({
               <div>
                 <p className="text-[11px] font-medium text-[var(--ft-form-muted)]">Disponible inicial</p>
                 <p className="mt-1 text-[1.05rem] font-semibold tracking-[-0.02em] text-[var(--ft-text)] tabular-nums">
-                  {formatNumber(availableAmountValue)}
+                  {formatNumber(availableAmountValue)} {form.currency}
                 </p>
               </div>
               <div className="text-right">
@@ -497,7 +622,8 @@ export function CreditCardForm({
               />
             </div>
             <p className="mt-3 text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-              Consumo actual: {formatNumber(usedAmountValue)} de {formatNumber(creditLimitValue || 0)}.
+              Consumo actual: {formatNumber(usedAmountPenValue)} PEN y {formatNumber(usedAmountUsdValue)} USD.
+              Utilización principal: {formatNumber(primaryUsedAmountValue)} de {formatNumber(creditLimitValue || 0)} en {currencyLabel}.
             </p>
           </div>
         </FormSection>
@@ -508,7 +634,7 @@ export function CreditCardForm({
           className="flex min-h-0 flex-col rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-section-gap:12px] xl:col-span-2"
         >
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-[1.25fr_0.7fr_1fr_1fr_auto]">
-            <SummaryStat label="Total registrado" value={formatNumber(registeredTotal)} numeric />
+            <SummaryStat label="Total registrado" value={`${formatNumber(registeredTotal)} ${form.currency}`} numeric />
             <SummaryStat label="Ciclos" value={cycles.length} numeric />
             <SummaryStat label="Primer pago" value={firstPaymentDate} />
             <SummaryStat label="Último pago" value={lastPaymentDate} />
@@ -562,11 +688,11 @@ export function CreditCardForm({
               type="submit"
               variant="primary"
               size="lg"
-              disabled={isDisabled || !form.account_id}
+              disabled={isDisabled || !form.bank_entity_id}
               loading={saving}
               testId="credit-card-submit-button"
             >
-              Crear tarjeta
+              {mode === 'edit' ? 'Guardar cambios' : 'Crear tarjeta'}
             </Button>
           )}
         />

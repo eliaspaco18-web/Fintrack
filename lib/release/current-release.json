@@ -1,28 +1,22 @@
 {
-  "version": "V1.0.0.17",
+  "version": "V1.0.0.18",
   "series": "1.0.0",
-  "build": 17,
-  "title": "Actualización en Importaciones, Plataforma, Movimientos",
-  "summary": "Esta versión trae cambios en Importaciones, Plataforma, Movimientos para que tus tareas diarias dentro de FinTrack sean más claras, estables y fáciles de seguir.",
+  "build": 18,
+  "title": "Actualización en Movimientos, Créditos",
+  "summary": "Esta versión trae cambios en Movimientos, Créditos para que tus tareas diarias dentro de FinTrack sean más claras, estables y fáciles de seguir.",
   "highlights": [
-    {
-      "module": "Importaciones",
-      "type": "new",
-      "title": "Base reforzada para futuras importaciones",
-      "detail": "Preparamos el módulo de Importaciones para que la migración de información sea más robusta y guiada."
-    },
-    {
-      "module": "Plataforma",
-      "type": "improve",
-      "title": "Publicaciones y operación más confiables",
-      "detail": "Fortalecimos la plataforma para que las actualizaciones de FinTrack sean más estables y transparentes para todos."
-    },
     {
       "module": "Movimientos",
       "type": "improve",
       "title": "Registro de movimientos más consistente",
       "detail": "Ajustamos el flujo de Movimientos para que registrar operaciones y revisar información sea más claro en el día a día."
+    },
+    {
+      "module": "Créditos",
+      "type": "fix",
+      "title": "Seguimiento de créditos más confiable",
+      "detail": "Corregimos comportamientos del módulo Créditos para que sus acciones y detalles respondan con mayor consistencia."
     }
   ],
-  "releasedAt": "2026-06-18T17:18:00.981Z"
+  "releasedAt": "2026-06-19T11:48:43.499Z"
 }

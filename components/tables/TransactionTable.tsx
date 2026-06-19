@@ -48,6 +48,7 @@ import { AppSelect }                 from '@/components/ui/AppSelect'
 import { Button }                    from '@/components/ui/Button'
 import { TransactionEditModal }      from '@/components/forms/TransactionEditModal'
 import type { TransactionType }      from '@/types/database.types'
+import type { TransactionFormOptions } from '@/lib/contracts/ui.contracts'
 
 // ─── CONFIGURACIÓN ────────────────────────────────────────────────────────────
 
@@ -119,6 +120,7 @@ function ModuleBadges({ tx }: {
 
 interface TransactionTableProps {
   initialParams?: Partial<TransactionListParams>
+  options: TransactionFormOptions
 }
 
 type FilterOption = { value: string; label: string }
@@ -410,7 +412,7 @@ function resolveInitialControlState(
   }
 }
 
-export function TransactionTable({ initialParams = {} }: TransactionTableProps) {
+export function TransactionTable({ initialParams = {}, options }: TransactionTableProps) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -737,7 +739,13 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
   }, [currentViewState, selectedSavedView])
 
   useEffect(() => {
-    setSelectedTransactionIds(prev => prev.filter(id => visibleTransactionIds.includes(id)))
+    setSelectedTransactionIds(prev => {
+      const next = prev.filter(id => visibleTransactionIds.includes(id))
+      if (next.length === prev.length && next.every((id, index) => id === prev[index])) {
+        return prev
+      }
+      return next
+    })
   }, [visibleTransactionIds])
 
   useEffect(() => {
@@ -1256,6 +1264,7 @@ export function TransactionTable({ initialParams = {} }: TransactionTableProps) 
         <TransactionEditModal
           open={Boolean(editTransactionId)}
           transactionId={editTransactionId}
+          options={options}
           initialTransaction={selectedTransactionForEdit ? {
             id: selectedTransactionForEdit.id,
             type: selectedTransactionForEdit.type,

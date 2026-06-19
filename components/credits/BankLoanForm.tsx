@@ -332,8 +332,7 @@ export function BankLoanForm({
         body: JSON.stringify({
           kind: 'BANK',
           name: valid.trimmedName,
-          creditor_name: bankEntities.find(entity => entity.id === form.bank_entity_id)?.short_name
-            ?? bankEntities.find(entity => entity.id === form.bank_entity_id)?.name
+          creditor_name: bankEntities.find(entity => entity.id === form.bank_entity_id)?.name
             ?? 'Banco',
           bank_entity_id: form.bank_entity_id,
           account_id: form.account_id,
@@ -406,7 +405,7 @@ export function BankLoanForm({
                   ? [{ value: '', label: 'Sin entidades registradas', disabled: true }]
                   : bankEntities.map(entity => ({
                       value: entity.id,
-                      label: entity.short_name ?? entity.name,
+                      label: entity.name,
                     }))}
                 searchPlaceholder="Buscar entidad..."
               />

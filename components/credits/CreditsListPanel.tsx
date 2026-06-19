@@ -17,10 +17,10 @@ import { ActionIconButton } from '@/components/ui/ActionIconButton'
 import { AppSelect } from '@/components/ui/AppSelect'
 import { Button } from '@/components/ui/Button'
 import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
-import { NumericInput } from '@/components/ui/NumericInput'
 import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
 import { ViewToggle } from '@/components/ui/ViewToggle'
 import { FormActions, FormField, FormSection } from '@/components/forms/primitives'
+import { CreditCardForm } from '@/components/credits/CreditCardForm'
 import {
   AmountCell,
   ConfirmDialog,
@@ -37,7 +37,6 @@ import {
   StatusBadge,
 } from '@/components/finance'
 import { getApiErrorMessage } from '@/lib/api/error-message'
-import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 import type { Credit } from '@/types/database.types'
 
 type ViewMode = 'list' | 'cards'
@@ -292,28 +291,6 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
       notes: editForm.notes.trim() || null,
     }
 
-    if (editingCredit.credit_type === 'CREDIT_CARD') {
-      const limit = roundToDecimals(parseNumericInput(editForm.credit_limit, Number.NaN), 2)
-      const used = roundToDecimals(parseNumericInput(editForm.used_amount, Number.NaN), 2)
-
-      if (!Number.isFinite(limit) || limit <= 0) {
-        const message = 'El límite de crédito debe ser mayor a 0.'
-        setActionError(message)
-        toast.error('No se pudo actualizar el credito', message)
-        return
-      }
-
-      if (!Number.isFinite(used) || used < 0 || used > limit) {
-        const message = 'El consumo actual debe ser válido y no superar el límite.'
-        setActionError(message)
-        toast.error('No se pudo actualizar el credito', message)
-        return
-      }
-
-      payload.credit_limit = limit
-      payload.used_amount = used
-    }
-
     setActionLoadingId(editingCredit.id)
     setActionError(null)
 
@@ -342,6 +319,14 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
       setActionLoadingId(null)
     }
   }, [actionLoadingId, closeEditModal, editForm, editingCredit, refetch, router, toast])
+
+  const handleCardEditSuccess = useCallback(async (creditName: string) => {
+    await refetch()
+    await mutate((key: unknown) => typeof key === 'string' && key.startsWith('/api/credits'))
+    router.refresh()
+    toast.success('Tarjeta actualizada', creditName, { persist: false })
+    closeEditModal()
+  }, [closeEditModal, refetch, router, toast])
 
   const handleDelete = useCallback(async () => {
     if (!pendingDelete || actionLoadingId) return
@@ -697,7 +682,7 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
                     { value: '', label: 'Entidad' },
                     ...bankEntities.map(bank => ({
                       value: bank.id,
-                      label: bank.short_name ?? bank.name,
+                      label: bank.name,
                     })),
                   ]}
                   searchPlaceholder="Buscar entidad..."
@@ -770,104 +755,87 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
         eyebrow="Creditos"
         title={editingCredit?.credit_type === 'CREDIT_CARD' ? 'Editar tarjeta de credito' : 'Editar credito'}
         subtitle={editingCredit?.credit_type === 'CREDIT_CARD'
-          ? 'Ajusta los datos base de la línea y corrige el consumo inicial si cambió.'
+          ? 'Ajusta emisor, línea, consumo por moneda y ciclos de facturación.'
           : 'Actualiza la referencia visible del crédito sin tocar su cronograma existente.'}
-        widthClassName="w-[calc(100vw-32px)] max-w-[720px]"
+        widthClassName={editIsCard ? 'w-[calc(100vw-32px)] max-w-[1120px]' : 'w-[calc(100vw-32px)] max-w-[720px]'}
         testId="credits-edit-modal"
       >
-        <div className="space-y-[var(--ft-form-section-gap)]">
-          <FormSection
-            title="Datos base"
-            description="Mantén la referencia operativa del crédito alineada con el registro real."
-            columns="2"
-            className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
-          >
-            <FormField label="Nombre" className="md:col-span-2">
-              <input
-                value={editForm.name}
-                onChange={event => setEditForm(prev => ({ ...prev, name: event.target.value }))}
-                className="field-base ft-form-input w-full"
-                placeholder="Ej: Visa Signature BCP"
-                disabled={Boolean(actionLoadingId)}
-                maxLength={100}
-              />
-            </FormField>
-
-            {editIsCard ? (
-              <>
-                <FormField label="Limite de credito">
-                  <NumericInput
-                    value={editForm.credit_limit}
-                    onValueChange={value => setEditForm(prev => ({ ...prev, credit_limit: value }))}
-                    step="0.01"
-                    decimals={2}
-                    min={0}
-                    className="field-base ft-form-input w-full"
-                    disabled={Boolean(actionLoadingId)}
-                  />
-                </FormField>
-
-                <FormField label="Monto usado actual">
-                  <NumericInput
-                    value={editForm.used_amount}
-                    onValueChange={value => setEditForm(prev => ({ ...prev, used_amount: value }))}
-                    step="0.01"
-                    decimals={2}
-                    min={0}
-                    className="field-base ft-form-input w-full"
-                    disabled={Boolean(actionLoadingId)}
-                  />
-                </FormField>
-              </>
-            ) : null}
-
-            <FormField label="Notas" optional className="md:col-span-2">
-              <textarea
-                value={editForm.notes}
-                onChange={event => setEditForm(prev => ({ ...prev, notes: event.target.value }))}
-                className="field-base ft-form-input min-h-[112px] w-full resize-y"
-                placeholder="Observaciones operativas del credito"
-                disabled={Boolean(actionLoadingId)}
-                maxLength={500}
-              />
-            </FormField>
-          </FormSection>
-
-          {actionError ? (
-            <div className="rounded-[var(--ft-form-radius)] border border-[color:var(--ft-form-error)]/20 bg-[var(--ft-danger-soft)] px-3.5 py-3">
-              <p className="text-[12px] font-medium text-[var(--ft-form-error)]">{actionError}</p>
-            </div>
-          ) : null}
-        </div>
-
-        <RecordModalFooter>
-          <FormActions
-            secondaryAction={(
-              <Button
-                type="button"
-                onClick={closeEditModal}
-                disabled={Boolean(actionLoadingId)}
-                variant="secondary"
-                size="lg"
-              >
-                Cancelar
-              </Button>
-            )}
-            primaryAction={(
-              <Button
-                type="button"
-                onClick={() => void handleSaveEdit()}
-                disabled={Boolean(actionLoadingId)}
-                loading={Boolean(editingCredit && actionLoadingId === editingCredit.id)}
-                variant="primary"
-                size="lg"
-                testId="credits-edit-save-button"
-              >
-                Guardar cambios
-              </Button>
-            )}
+        {editIsCard && editingCredit ? (
+          <CreditCardForm
+            mode="edit"
+            credit={editingCredit}
+            onCancel={closeEditModal}
+            onSuccess={creditName => void handleCardEditSuccess(creditName)}
           />
-        </RecordModalFooter>
+        ) : (
+          <>
+            <div className="space-y-[var(--ft-form-section-gap)]">
+              <FormSection
+                title="Datos base"
+                description="Mantén la referencia operativa del crédito alineada con el registro real."
+                columns="2"
+                className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
+              >
+                <FormField label="Nombre" className="md:col-span-2">
+                  <input
+                    value={editForm.name}
+                    onChange={event => setEditForm(prev => ({ ...prev, name: event.target.value }))}
+                    className="field-base ft-form-input w-full"
+                    placeholder="Ej: Visa Signature BCP"
+                    disabled={Boolean(actionLoadingId)}
+                    maxLength={100}
+                  />
+                </FormField>
+
+                <FormField label="Notas" optional className="md:col-span-2">
+                  <textarea
+                    value={editForm.notes}
+                    onChange={event => setEditForm(prev => ({ ...prev, notes: event.target.value }))}
+                    className="field-base ft-form-input min-h-[112px] w-full resize-y"
+                    placeholder="Observaciones operativas del credito"
+                    disabled={Boolean(actionLoadingId)}
+                    maxLength={500}
+                  />
+                </FormField>
+              </FormSection>
+
+              {actionError ? (
+                <div className="rounded-[var(--ft-form-radius)] border border-[color:var(--ft-form-error)]/20 bg-[var(--ft-danger-soft)] px-3.5 py-3">
+                  <p className="text-[12px] font-medium text-[var(--ft-form-error)]">{actionError}</p>
+                </div>
+              ) : null}
+            </div>
+
+            <RecordModalFooter>
+              <FormActions
+                secondaryAction={(
+                  <Button
+                    type="button"
+                    onClick={closeEditModal}
+                    disabled={Boolean(actionLoadingId)}
+                    variant="secondary"
+                    size="lg"
+                  >
+                    Cancelar
+                  </Button>
+                )}
+                primaryAction={(
+                  <Button
+                    type="button"
+                    onClick={() => void handleSaveEdit()}
+                    disabled={Boolean(actionLoadingId)}
+                    loading={Boolean(editingCredit && actionLoadingId === editingCredit.id)}
+                    variant="primary"
+                    size="lg"
+                    testId="credits-edit-save-button"
+                  >
+                    Guardar cambios
+                  </Button>
+                )}
+              />
+            </RecordModalFooter>
+          </>
+        )}
       </RecordModal>
 
       <ConfirmDialog

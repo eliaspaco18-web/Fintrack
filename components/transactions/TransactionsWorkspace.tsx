@@ -492,7 +492,7 @@ export function TransactionsWorkspace({
       </section>
 
       {/* ── TABLA CON FILTROS (PRD §3 "Después de parte superior" + "Parte intermedia") ── */}
-      <TransactionTable />
+      <TransactionTable options={options} />
 
       {/* ── MODAL CREAR TRANSACCIÓN (PRD: flujo 2 pasos) ─────────── */}
       <RecordModal
