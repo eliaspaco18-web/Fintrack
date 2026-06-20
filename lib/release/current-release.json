@@ -1,16 +1,28 @@
 {
-  "version": "V1.0.0.20",
+  "version": "V1.0.0.21",
   "series": "1.0.0",
-  "build": 20,
-  "title": "Actualización en Plataforma",
-  "summary": "Esta versión trae cambios en Plataforma para que tus tareas diarias dentro de FinTrack sean más claras, estables y fáciles de seguir.",
+  "build": 21,
+  "title": "Actualización en Créditos, Alertas, Por cobrar",
+  "summary": "Esta versión trae cambios en Créditos, Alertas, Por cobrar para que tus tareas diarias dentro de FinTrack sean más claras, estables y fáciles de seguir.",
   "highlights": [
     {
-      "module": "Plataforma",
+      "module": "Créditos",
+      "type": "fix",
+      "title": "Seguimiento de créditos más confiable",
+      "detail": "Corregimos comportamientos del módulo Créditos para que sus acciones y detalles respondan con mayor consistencia."
+    },
+    {
+      "module": "Alertas",
       "type": "improve",
-      "title": "Publicaciones y operación más confiables",
-      "detail": "Fortalecimos la plataforma para que las actualizaciones de FinTrack sean más estables y transparentes para todos."
+      "title": "Alertas más visibles y oportunas",
+      "detail": "Refinamos los avisos para que identifiques mejor recordatorios, eventos y pendientes importantes."
+    },
+    {
+      "module": "Por cobrar",
+      "type": "fix",
+      "title": "Cuentas por cobrar con seguimiento más claro",
+      "detail": "Mejoramos el módulo Por cobrar para que revisar saldos pendientes y su origen sea más simple y estable."
     }
   ],
-  "releasedAt": "2026-06-19T21:22:11.440Z"
+  "releasedAt": "2026-06-20T03:47:58.158Z"
 }

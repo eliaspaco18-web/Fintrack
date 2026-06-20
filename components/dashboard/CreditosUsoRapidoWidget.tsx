@@ -122,7 +122,7 @@ export function CreditosUsoRapidoWidget() {
   const totalLimit = data?.creditos_limite_total ?? 0
   const totalUsed = data?.creditos_uso_total ?? 0
   const usagePct = Math.max(0, Math.min(100, data?.creditos_uso_pct ?? 0))
-  const available = Math.max(0, totalLimit - totalUsed)
+  const available = data?.creditos_disponible_total ?? Math.max(0, totalLimit - totalUsed)
   const activeCredits = data?.creditos ?? 0
   const hasCredits = activeCredits > 0 && totalLimit > 0
   const toneColor = usageToneColor(usagePct)

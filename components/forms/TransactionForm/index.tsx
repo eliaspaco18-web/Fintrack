@@ -112,6 +112,35 @@ const FIXED_CATEGORY_BY_OPERATION: Partial<Record<OperationType, string>> = {
   payable_pay: CategoryKeys.EXPENSE_PAYABLE_PAYMENT,
 }
 
+type CreditCurrency = 'PEN' | 'USD'
+
+function asCreditCurrency(value: unknown): CreditCurrency {
+  return value === 'USD' ? 'USD' : 'PEN'
+}
+
+function numberFromMeta(option: FormSelectOption | null, key: string): number {
+  const raw = option?.meta?.[key]
+  const value = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : 0
+  return Number.isFinite(value) ? value : 0
+}
+
+function cardOptionName(option: FormSelectOption | null): string {
+  if (!option) return 'Tarjeta seleccionada'
+  return option.label.split(' · disp.')[0]?.trim() || option.label
+}
+
+function cardLimitFor(option: FormSelectOption | null, currency: CreditCurrency): number {
+  return numberFromMeta(option, currency === 'USD' ? 'credit_limit_usd' : 'credit_limit_pen')
+}
+
+function cardUsedFor(option: FormSelectOption | null, currency: CreditCurrency): number {
+  return numberFromMeta(option, currency === 'USD' ? 'used_amount_usd' : 'used_amount_pen')
+}
+
+function cardAvailableFor(option: FormSelectOption | null, currency: CreditCurrency): number {
+  return Math.max(cardLimitFor(option, currency) - cardUsedFor(option, currency), 0)
+}
+
 // ─── PROPS ────────────────────────────────────────────────────────────────────
 
 interface TransactionFormProps {
@@ -690,6 +719,37 @@ export function TransactionForm({
     () => creditCardOptions.find(option => option.value === selectedCreditCardId) ?? null,
     [creditCardOptions, selectedCreditCardId]
   )
+  const selectedCreditCardCurrency = asCreditCurrency(currency)
+  const selectedCreditCardName = cardOptionName(selectedCreditCardOption)
+  const selectedCreditCardLimit = cardLimitFor(selectedCreditCardOption, selectedCreditCardCurrency)
+  const selectedCreditCardUsed = cardUsedFor(selectedCreditCardOption, selectedCreditCardCurrency)
+  const selectedCreditCardAvailable = cardAvailableFor(selectedCreditCardOption, selectedCreditCardCurrency)
+  const selectedCreditCardUtilization = selectedCreditCardLimit > 0
+    ? Math.min((selectedCreditCardUsed / selectedCreditCardLimit) * 100, 100)
+    : 0
+  const creditMovementKind: 'CONSUMPTION' | 'PAYMENT' | null =
+    isExpenseCreditPayment ? 'CONSUMPTION' : creditOperation === 'PAYMENT' ? 'PAYMENT' : null
+  const projectedCreditUsed = selectedCreditCardOption && creditMovementKind
+    ? creditMovementKind === 'CONSUMPTION'
+      ? selectedCreditCardUsed + (hasAmount ? numericAmount : 0)
+      : Math.max(selectedCreditCardUsed - (hasAmount ? numericAmount : 0), 0)
+    : selectedCreditCardUsed
+  const projectedCreditAvailable = selectedCreditCardOption && creditMovementKind
+    ? creditMovementKind === 'CONSUMPTION'
+      ? Math.max(selectedCreditCardAvailable - (hasAmount ? numericAmount : 0), 0)
+      : Math.min(selectedCreditCardLimit, selectedCreditCardAvailable + (hasAmount ? numericAmount : 0))
+    : selectedCreditCardAvailable
+  const projectedCreditUtilization = selectedCreditCardLimit > 0
+    ? Math.min((projectedCreditUsed / selectedCreditCardLimit) * 100, 100)
+    : 0
+  const creditAmountExceedsAvailable =
+    creditMovementKind === 'CONSUMPTION' &&
+    hasAmount &&
+    numericAmount > selectedCreditCardAvailable
+  const creditPaymentExceedsUsed =
+    creditMovementKind === 'PAYMENT' &&
+    hasAmount &&
+    numericAmount > selectedCreditCardUsed
   const hasAccounts = formOptions.accounts.length > 0
   const hasFilteredSourceAccounts = filteredSourceAccounts.length > 0
   const hasCreditCards = creditCardOptions.length > 0
@@ -1297,7 +1357,7 @@ export function TransactionForm({
               : 'border-[var(--c-border)] bg-[var(--c-surface)] text-[var(--c-text-muted)] hover:text-[var(--c-text)]'
           }`}
         >
-          Débito
+          Cuenta propia
         </button>
         <button
           type="button"
@@ -1312,17 +1372,17 @@ export function TransactionForm({
               : 'border-[var(--c-border)] bg-[var(--c-surface)] text-[var(--c-text-muted)] hover:text-[var(--c-text)]'
           }`}
         >
-          Crédito
+          Tarjeta
         </button>
       </div>
       {!isCompactLayout && (
         isExpenseCreditPayment ? (
           <p className="mt-2 text-[11px] text-sky-200/80">
-            El egreso se cargará a la tarjeta seleccionada en el módulo Créditos.
+            Registra un consumo: aumenta la deuda usada de la tarjeta y no descuenta liquidez propia hoy.
           </p>
         ) : (
           <p className="mt-2 text-[11px] text-[var(--c-text-muted)]">
-            Usa esta opción para pagos al contado o pagos de tarjeta desde una cuenta bancaria.
+            Usa dinero propio. Para abonar una tarjeta, marca pago de tarjeta debajo de la cuenta.
           </p>
         )
       )}
@@ -1425,7 +1485,7 @@ export function TransactionForm({
               + Nueva tarjeta
             </Link>
             <span className="text-[10px] text-[var(--c-text-muted)]">
-              Origen: tarjeta seleccionada
+              Origen: cuenta técnica vinculada
             </span>
           </div>
         </FieldWrapper>
@@ -1485,7 +1545,7 @@ export function TransactionForm({
                 {creditOperation === 'PAYMENT' ? 'Quitar' : 'Marcar'} como pago de tarjeta
               </button>
               <p className="mt-1 text-[10px] text-[var(--c-text-muted)]">
-                Si marcas esta opción, el pago reducirá la deuda usada de la tarjeta elegida.
+                Si marcas esta opción, el egreso sale de una cuenta propia y reduce la deuda usada de la tarjeta elegida.
               </p>
               {creditOperation === 'PAYMENT' && (
                 <div className="mt-2">
@@ -1539,6 +1599,81 @@ export function TransactionForm({
           </Select>
         </FieldWrapper>
       </div>
+    </div>
+  ) : null
+
+  const creditCardImpactField = creditMovementKind && selectedCreditCardOption ? (
+    <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3.5 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+            Impacto en tarjeta
+          </p>
+          <p className="mt-1 truncate text-[13px] font-semibold tracking-[-0.01em] text-[var(--c-text)]">
+            {selectedCreditCardName}
+          </p>
+        </div>
+        <StatusBadge
+          tone={creditAmountExceedsAvailable || creditPaymentExceedsUsed ? 'danger' : creditMovementKind === 'PAYMENT' ? 'success' : 'info'}
+          dot={false}
+        >
+          {creditMovementKind === 'PAYMENT' ? 'Reduce deuda' : 'Consume línea'}
+        </StatusBadge>
+      </div>
+
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2">
+          <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Línea</p>
+          <p className="mt-1 truncate font-mono text-[12px] font-semibold tabular-nums text-[var(--c-text)]">
+            {formatCurrency(selectedCreditCardLimit, selectedCreditCardCurrency)}
+          </p>
+        </div>
+        <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2">
+          <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Usado</p>
+          <p className="mt-1 truncate font-mono text-[12px] font-semibold tabular-nums text-[var(--c-danger)]">
+            {formatCurrency(projectedCreditUsed, selectedCreditCardCurrency)}
+          </p>
+        </div>
+        <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2">
+          <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Disponible</p>
+          <p className="mt-1 truncate font-mono text-[12px] font-semibold tabular-nums text-[var(--c-primary)]">
+            {formatCurrency(projectedCreditAvailable, selectedCreditCardCurrency)}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3">
+        <div className="flex items-center justify-between gap-2 text-[10px] text-[var(--c-text-muted)]">
+          <span>Uso actual {selectedCreditCardUtilization.toFixed(0)}%</span>
+          <span>Después {projectedCreditUtilization.toFixed(0)}%</span>
+        </div>
+        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[var(--c-border)]">
+          <div
+            className={`h-full rounded-full transition-[width] duration-200 ${
+              projectedCreditUtilization >= 90
+                ? 'bg-[var(--c-danger)]'
+                : projectedCreditUtilization >= 70
+                  ? 'bg-[var(--c-warning)]'
+                  : 'bg-[var(--c-primary)]'
+            }`}
+            style={{ width: `${Math.min(projectedCreditUtilization, 100)}%` }}
+          />
+        </div>
+      </div>
+
+      {creditAmountExceedsAvailable ? (
+        <p className="mt-2 text-[11px] leading-4 text-[var(--c-danger)]">
+          El consumo supera el crédito disponible en {selectedCreditCardCurrency}.
+        </p>
+      ) : creditPaymentExceedsUsed ? (
+        <p className="mt-2 text-[11px] leading-4 text-[var(--c-danger)]">
+          El pago supera la deuda usada de esta tarjeta en {selectedCreditCardCurrency}.
+        </p>
+      ) : (
+        <p className="mt-2 text-[11px] leading-4 text-[var(--c-text-muted)]">
+          Este cálculo es operativo. El cupo disponible no se suma al patrimonio.
+        </p>
+      )}
     </div>
   ) : null
 
@@ -2503,6 +2638,7 @@ export function TransactionForm({
       {layoutMode === 'receivable_collect' ? receivableCollectField : null}
       {layoutMode === 'asset_purchase' ? assetPurchaseField : null}
       {layoutMode === 'transfer' ? transferAccountsField : accountField}
+      {layoutMode === 'expense' ? creditCardImpactField : null}
       {layoutMode === 'transfer' ? transferSummaryField : null}
       {layoutMode === 'income' || layoutMode === 'expense' ? categoryField : null}
     </>

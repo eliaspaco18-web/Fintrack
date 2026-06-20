@@ -530,7 +530,7 @@ export async function GET(req: NextRequest) {
 
   let query = supabase
     .from('credits')
-    .select('*')
+    .select('*, bank_entity:bank_entities(id,name,short_name,color,icon,is_active), account:accounts(id,name,type,currency,is_active)')
     .eq('user_id', userId)
     .order('name')
 
@@ -565,9 +565,17 @@ export async function GET(req: NextRequest) {
 
   const enrichedCredits: CreditListItem[] = credits.map(credit => {
     const hasLoan = creditIdsWithLoan.has(credit.id)
+    const bankEntity = Array.isArray(credit.bank_entity)
+      ? (credit.bank_entity[0] ?? null)
+      : (credit.bank_entity ?? null)
+    const account = Array.isArray(credit.account)
+      ? (credit.account[0] ?? null)
+      : (credit.account ?? null)
 
     return {
       ...credit,
+      bank_entity: bankEntity,
+      account,
       has_loan: hasLoan,
       display_type: deriveCreditDisplayType({
         creditType: credit.credit_type,

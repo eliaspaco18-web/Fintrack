@@ -115,6 +115,111 @@ function creditIconSurfaceClassName(displayType: CreditDisplayType) {
   }[displayType]
 }
 
+function asCreditCurrency(currency: string): 'PEN' | 'USD' {
+  return currency === 'USD' ? 'USD' : 'PEN'
+}
+
+function cardLimitFor(credit: CreditListItem, currency: 'PEN' | 'USD') {
+  if (currency === 'PEN') {
+    const limit = Number(credit.credit_limit_pen ?? 0)
+    return limit > 0 ? limit : Number(credit.currency === 'PEN' ? credit.credit_limit : 0)
+  }
+
+  const limit = Number(credit.credit_limit_usd ?? 0)
+  return limit > 0 ? limit : Number(credit.currency === 'USD' ? credit.credit_limit : 0)
+}
+
+function cardUsedFor(credit: CreditListItem, currency: 'PEN' | 'USD') {
+  if (currency === 'PEN') {
+    const used = Number(credit.used_amount_pen ?? 0)
+    return used > 0 ? used : Number(credit.currency === 'PEN' ? credit.used_amount : 0)
+  }
+
+  const used = Number(credit.used_amount_usd ?? 0)
+  return used > 0 ? used : Number(credit.currency === 'USD' ? credit.used_amount : 0)
+}
+
+function cardAvailableFor(credit: CreditListItem, currency: 'PEN' | 'USD') {
+  return Math.max(cardLimitFor(credit, currency) - cardUsedFor(credit, currency), 0)
+}
+
+function cardUtilizationFor(credit: CreditListItem, currency: 'PEN' | 'USD') {
+  const limit = cardLimitFor(credit, currency)
+  if (limit <= 0) return 0
+  return Math.min((cardUsedFor(credit, currency) / limit) * 100, 100)
+}
+
+function formatCardCycle(credit: CreditListItem) {
+  const closing = credit.closing_day ? `Corte ${credit.closing_day}` : 'Sin corte'
+  const payment = credit.payment_day ? `Pago ${credit.payment_day}` : 'sin pago'
+  return `${closing} · ${payment}`
+}
+
+function issuerName(credit: CreditListItem) {
+  return credit.bank_entity?.short_name || credit.bank_entity?.name || 'Sin emisor'
+}
+
+function CardMoneyStack({ credit }: { credit: CreditListItem }) {
+  const currencies = (['PEN', 'USD'] as const).filter(currency => {
+    return cardLimitFor(credit, currency) > 0 || cardUsedFor(credit, currency) > 0
+  })
+  const visibleCurrencies = currencies.length > 0 ? currencies : [asCreditCurrency(credit.currency)]
+
+  return (
+    <div className="grid gap-2">
+      {visibleCurrencies.map(currency => {
+        const limit = cardLimitFor(credit, currency)
+        const used = cardUsedFor(credit, currency)
+        const available = Math.max(limit - used, 0)
+
+        return (
+          <div
+            key={currency}
+            className="grid grid-cols-3 gap-2 rounded-[12px] border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2"
+          >
+            <div className="min-w-0">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--c-text-faint)]">Línea {currency}</p>
+              <p className="mt-1 truncate font-mono text-[12px] font-semibold tabular-nums text-[var(--c-text)]">
+                {formatCurrency(limit, currency)}
+              </p>
+            </div>
+            <div className="min-w-0">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--c-text-faint)]">Usado</p>
+              <p className="mt-1 truncate font-mono text-[12px] font-semibold tabular-nums text-[var(--c-danger)]">
+                {formatCurrency(used, currency)}
+              </p>
+            </div>
+            <div className="min-w-0 text-right">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--c-text-faint)]">Disponible</p>
+              <p className="mt-1 truncate font-mono text-[12px] font-semibold tabular-nums text-[var(--c-primary)]">
+                {formatCurrency(available, currency)}
+              </p>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function TechnicalAccountNote({ credit }: { credit: CreditListItem }) {
+  const account = credit.account
+
+  return (
+    <div className="rounded-[12px] border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--c-text-faint)]">
+        Cuenta técnica
+      </p>
+      <p className="mt-1 truncate text-[12px] font-medium text-[var(--c-text)]">
+        {account?.name ?? 'Sin cuenta vinculada'}
+      </p>
+      <p className="mt-1 text-[11px] leading-4 text-[var(--c-text-muted)]">
+        Se usa solo para consumos y pagos. No suma patrimonio.
+      </p>
+    </div>
+  )
+}
+
 export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
   const router = useRouter()
   const { toast } = useToast()
@@ -161,7 +266,14 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
       if (bankFilter && credit.bank_entity_id !== bankFilter) return false
       if (!q) return true
 
-      return credit.name.toLowerCase().includes(q)
+      return [
+        credit.name,
+        credit.bank_entity?.name,
+        credit.bank_entity?.short_name,
+        credit.account?.name,
+      ]
+        .filter(Boolean)
+        .some(value => String(value).toLowerCase().includes(q))
     })
   }, [bankFilter, credits, search, statusFilter, typeFilter])
 
@@ -188,16 +300,58 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
 
   const activeExposurePen = useMemo(
     () => credits
-      .filter(credit => credit.status === 'ACTIVE' && credit.currency === 'PEN')
-      .reduce((sum, credit) => sum + Number(credit.credit_limit ?? 0), 0),
+      .filter(credit => credit.status === 'ACTIVE')
+      .reduce((sum, credit) => sum + cardLimitFor(credit, 'PEN'), 0),
     [credits],
   )
 
   const activeExposureUsd = useMemo(
     () => credits
-      .filter(credit => credit.status === 'ACTIVE' && credit.currency === 'USD')
-      .reduce((sum, credit) => sum + Number(credit.credit_limit ?? 0), 0),
+      .filter(credit => credit.status === 'ACTIVE')
+      .reduce((sum, credit) => sum + cardLimitFor(credit, 'USD'), 0),
     [credits],
+  )
+
+  const activeCards = useMemo(
+    () => credits.filter(credit => credit.status === 'ACTIVE' && credit.display_type === 'CARD'),
+    [credits],
+  )
+
+  const cardAvailablePen = useMemo(
+    () => activeCards.reduce((sum, credit) => sum + cardAvailableFor(credit, 'PEN'), 0),
+    [activeCards],
+  )
+
+  const cardAvailableUsd = useMemo(
+    () => activeCards.reduce((sum, credit) => sum + cardAvailableFor(credit, 'USD'), 0),
+    [activeCards],
+  )
+
+  const cardUsedPen = useMemo(
+    () => activeCards.reduce((sum, credit) => sum + cardUsedFor(credit, 'PEN'), 0),
+    [activeCards],
+  )
+
+  const cardUsedUsd = useMemo(
+    () => activeCards.reduce((sum, credit) => sum + cardUsedFor(credit, 'USD'), 0),
+    [activeCards],
+  )
+
+  const cardLimitPen = useMemo(
+    () => activeCards.reduce((sum, credit) => sum + cardLimitFor(credit, 'PEN'), 0),
+    [activeCards],
+  )
+
+  const cardLimitUsd = useMemo(
+    () => activeCards.reduce((sum, credit) => sum + cardLimitFor(credit, 'USD'), 0),
+    [activeCards],
+  )
+
+  const cardsUnderPressure = useMemo(
+    () => activeCards.filter(credit => {
+      return Math.max(cardUtilizationFor(credit, 'PEN'), cardUtilizationFor(credit, 'USD')) >= 70
+    }).length,
+    [activeCards],
   )
 
   const activeUsed = useMemo(
@@ -386,12 +540,18 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
 
       <div className="divide-y divide-[var(--c-border)]">
         {group.items.map(credit => {
-          const utilization = credit.credit_limit > 0
-            ? Math.min((credit.used_amount / credit.credit_limit) * 100, 100)
+          const isCard = credit.display_type === 'CARD'
+          const primaryCurrency = asCreditCurrency(credit.currency)
+          const limit = isCard ? cardLimitFor(credit, primaryCurrency) : Number(credit.credit_limit ?? 0)
+          const used = isCard ? cardUsedFor(credit, primaryCurrency) : Number(credit.used_amount ?? 0)
+          const available = isCard
+            ? cardAvailableFor(credit, primaryCurrency)
+            : Number(credit.available_amount ?? (credit.credit_limit - credit.used_amount))
+          const utilization = limit > 0
+            ? Math.min((used / limit) * 100, 100)
             : 0
           const tone = utilizationTone(utilization)
           const isActive = credit.status === 'ACTIVE'
-          const available = credit.available_amount ?? (credit.credit_limit - credit.used_amount)
 
           return (
             <article
@@ -409,7 +569,9 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
                         {credit.name}
                       </p>
                       <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">
-                        Disponible {formatCurrency(available, credit.currency as 'PEN' | 'USD')}
+                        {isCard
+                          ? `${issuerName(credit)} · ${formatCardCycle(credit)}`
+                          : `Disponible ${formatCurrency(available, primaryCurrency)}`}
                       </p>
                     </div>
                   </div>
@@ -425,18 +587,27 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
                     </StatusBadge>
                   </div>
                   <p className="mt-2 text-[12px] text-[var(--c-text-muted)]">
-                    Limite {formatCurrency(credit.credit_limit, credit.currency as 'PEN' | 'USD')}
+                    {isCard
+                      ? `Cuenta técnica: ${credit.account?.name ?? 'sin vincular'}`
+                      : `Limite ${formatCurrency(limit, primaryCurrency)}`}
                   </p>
                 </div>
 
                 <div className="min-w-0">
                   <ProgressMetric
                     value={utilization}
-                    label="Uso de cupo"
+                    label={isCard ? 'Uso de línea principal' : 'Uso de cupo'}
                     valueLabel={`${utilization.toFixed(0)}%`}
                     tone={tone}
-                    description={`${formatCurrency(credit.used_amount, credit.currency as 'PEN' | 'USD')} usados`}
+                    description={isCard
+                      ? `${formatCurrency(available, primaryCurrency)} disponibles`
+                      : `${formatCurrency(used, primaryCurrency)} usados`}
                   />
+                  {isCard ? (
+                    <div className="mt-3">
+                      <CardMoneyStack credit={credit} />
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="flex shrink-0 items-center gap-1.5 md:justify-self-end">
@@ -495,12 +666,18 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {group.items.map(credit => {
-          const utilization = credit.credit_limit > 0
-            ? Math.min((credit.used_amount / credit.credit_limit) * 100, 100)
+          const isCard = credit.display_type === 'CARD'
+          const primaryCurrency = asCreditCurrency(credit.currency)
+          const limit = isCard ? cardLimitFor(credit, primaryCurrency) : Number(credit.credit_limit ?? 0)
+          const used = isCard ? cardUsedFor(credit, primaryCurrency) : Number(credit.used_amount ?? 0)
+          const available = isCard
+            ? cardAvailableFor(credit, primaryCurrency)
+            : Number(credit.available_amount ?? (credit.credit_limit - credit.used_amount))
+          const utilization = limit > 0
+            ? Math.min((used / limit) * 100, 100)
             : 0
           const tone = utilizationTone(utilization)
           const isActive = credit.status === 'ACTIVE'
-          const available = credit.available_amount ?? (credit.credit_limit - credit.used_amount)
 
           return (
             <article
@@ -522,6 +699,11 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
                           {getCreditDisplayLabel(credit.display_type)}
                         </StatusBadge>
                       </div>
+                      {isCard ? (
+                        <p className="mt-2 text-[11px] text-[var(--c-text-muted)]">
+                          {issuerName(credit)} · {formatCardCycle(credit)}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                   <StatusBadge tone={isActive ? 'success' : 'muted'}>
@@ -531,9 +713,9 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
 
                 <div className="mt-5">
                   <AmountCell
-                    label="Disponible"
-                    value={formatCurrency(available, credit.currency as 'PEN' | 'USD')}
-                    meta={`Limite ${formatCurrency(credit.credit_limit, credit.currency as 'PEN' | 'USD')}`}
+                    label={isCard ? 'Crédito disponible' : 'Disponible'}
+                    value={formatCurrency(available, primaryCurrency)}
+                    meta={`${isCard ? 'Línea' : 'Limite'} ${formatCurrency(limit, primaryCurrency)}`}
                     align="left"
                   />
                 </div>
@@ -541,12 +723,19 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
                 <div className="mt-4">
                   <ProgressMetric
                     value={utilization}
-                    label="Utilizacion"
+                    label={isCard ? 'Utilización de línea' : 'Utilizacion'}
                     valueLabel={`${utilization.toFixed(1)}%`}
                     tone={tone}
-                    description={`${formatCurrency(credit.used_amount, credit.currency as 'PEN' | 'USD')} consumidos`}
+                    description={`${formatCurrency(used, primaryCurrency)} consumidos`}
                   />
                 </div>
+
+                {isCard ? (
+                  <div className="mt-4 space-y-3">
+                    <CardMoneyStack credit={credit} />
+                    <TechnicalAccountNote credit={credit} />
+                  </div>
+                ) : null}
 
                 <div className="mt-4 border-t border-[var(--c-border)] pt-4">
                   <div className="flex items-center justify-end gap-1.5">
@@ -591,7 +780,7 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
       <RegisterModule
         eyebrow="Registro de lineas"
         title="Creditos"
-        description="Tarjetas, prestamos y lineas disponibles con lectura inmediata de uso, saldo consumido y capacidad restante."
+        description="Tarjetas, prestamos y lineas disponibles con lectura inmediata de cupo, saldo usado, capacidad restante y cuenta tecnica vinculada."
         headerMode="content"
         actions={(
           <CreateModuleButton
@@ -611,13 +800,11 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
             <StatCard
               label="Cupo PEN"
               value={formatCurrency(activeExposurePen, 'PEN')}
-              detail={activeExposurePen === 0 ? 'Sin lineas' : 'Exposicion local'}
               caption="Capacidad activa disponible en soles peruanos."
             />
             <StatCard
               label="Cupo USD"
               value={formatCurrency(activeExposureUsd, 'USD')}
-              detail={activeExposureUsd === 0 ? 'Sin lineas' : 'Exposicion dolarizada'}
               caption="Capacidad activa disponible en dolares."
             />
             <StatCard
@@ -699,6 +886,75 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
         )}
       >
         {surfaceError ? <DataErrorBanner message={surfaceError} onRetry={refetch} /> : null}
+
+        {activeCards.length > 0 ? (
+          <section className="rounded-[18px] border border-[var(--c-border)] bg-[var(--c-surface)] p-1">
+            <div className="rounded-[14px] bg-[var(--c-surface-2)] px-4 py-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--c-text-faint)]">
+                    Tarjetas de credito
+                  </p>
+                  <h3 className="mt-1 text-[16px] font-semibold tracking-[-0.02em] text-[var(--c-text)]">
+                    Capacidad operativa por linea
+                  </h3>
+                  <p className="mt-1 max-w-2xl text-[12px] leading-5 text-[var(--c-text-muted)]">
+                    El cupo disponible ayuda a operar, pero no suma patrimonio. La cuenta tecnica solo registra consumos y pagos.
+                  </p>
+                </div>
+                <StatusBadge tone={cardsUnderPressure > 0 ? 'warning' : 'success'} dot={false}>
+                  {cardsUnderPressure > 0
+                    ? `${cardsUnderPressure} con uso alto`
+                    : 'Uso controlado'}
+                </StatusBadge>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <div className="rounded-[14px] border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--c-text-faint)]">
+                    Disponible
+                  </p>
+                  <div className="mt-2 space-y-1">
+                    <p className="font-mono text-[18px] font-semibold tabular-nums text-[var(--c-primary)]">
+                      {formatCurrency(cardAvailablePen, 'PEN')}
+                    </p>
+                    <p className="font-mono text-[13px] font-semibold tabular-nums text-[var(--c-text-muted)]">
+                      {formatCurrency(cardAvailableUsd, 'USD')}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-[14px] border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--c-text-faint)]">
+                    Usado
+                  </p>
+                  <div className="mt-2 space-y-1">
+                    <p className="font-mono text-[18px] font-semibold tabular-nums text-[var(--c-danger)]">
+                      {formatCurrency(cardUsedPen, 'PEN')}
+                    </p>
+                    <p className="font-mono text-[13px] font-semibold tabular-nums text-[var(--c-text-muted)]">
+                      {formatCurrency(cardUsedUsd, 'USD')}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-[14px] border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--c-text-faint)]">
+                    Linea total
+                  </p>
+                  <div className="mt-2 space-y-1">
+                    <p className="font-mono text-[18px] font-semibold tabular-nums text-[var(--c-text)]">
+                      {formatCurrency(cardLimitPen, 'PEN')}
+                    </p>
+                    <p className="font-mono text-[13px] font-semibold tabular-nums text-[var(--c-text-muted)]">
+                      {formatCurrency(cardLimitUsd, 'USD')}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         {isLoading ? (
           <div className="grid gap-3">

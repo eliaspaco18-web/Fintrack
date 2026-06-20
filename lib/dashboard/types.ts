@@ -67,9 +67,12 @@ export interface SaldoDiaPoint {
 export interface ModulesSummary {
   cuentas: number
   cuentas_total_consolidado?: number
+  liquidez_propia_total?: number
   creditos: number
   creditos_uso_total?: number
   creditos_limite_total?: number
+  creditos_disponible_total?: number
+  disponibilidad_ampliada_total?: number
   activos: {
     count: number
     total_soles: number

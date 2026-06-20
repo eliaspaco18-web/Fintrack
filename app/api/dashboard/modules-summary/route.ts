@@ -22,6 +22,11 @@ export async function GET() {
 
     const summary = result.data
     const exchangeRate = summary.meta.exchangeRateUsdPen
+    const liquidityAccounts = summary.accounts.filter(account => account.type !== 'CREDIT_CARD')
+    const liquidityOwnPen = liquidityAccounts.reduce(
+      (sum, account) => sum + account.balancePen,
+      0
+    )
 
     const totalLimitePen = summary.credits.reduce((sum, credit) => {
       const limit = Number(credit.creditLimit ?? 0)
@@ -38,16 +43,17 @@ export async function GET() {
     const creditosUsoPct = totalLimitePen > 0
       ? Math.round((totalUsadoPen / totalLimitePen) * 10000) / 100
       : 0
+    const totalDisponiblePen = Math.max(totalLimitePen - totalUsadoPen, 0)
 
     const payload: ModulesSummary = {
-      cuentas: summary.accounts.length,
-      cuentas_total_consolidado: summary.accounts.reduce(
-        (sum, account) => sum + account.balancePen,
-        0
-      ),
+      cuentas: liquidityAccounts.length,
+      cuentas_total_consolidado: liquidityOwnPen,
+      liquidez_propia_total: liquidityOwnPen,
       creditos: summary.credits.length,
       creditos_uso_total: totalUsadoPen,
       creditos_limite_total: totalLimitePen,
+      creditos_disponible_total: totalDisponiblePen,
+      disponibilidad_ampliada_total: liquidityOwnPen + totalDisponiblePen,
       activos: {
         count: summary.assets.count,
         total_soles: summary.assets.totalValuePen,

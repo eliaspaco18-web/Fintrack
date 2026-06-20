@@ -6,6 +6,21 @@ export type CreditDisplayTone = 'info' | 'warning' | 'primary'
 export type CreditListItem = Credit & {
   display_type: CreditDisplayType
   has_loan: boolean
+  bank_entity?: {
+    id: string
+    name: string
+    short_name: string | null
+    color: string | null
+    icon: string | null
+    is_active: boolean
+  } | null
+  account?: {
+    id: string
+    name: string
+    type: string
+    currency: string
+    is_active: boolean
+  } | null
 }
 
 export function deriveCreditDisplayType(params: {

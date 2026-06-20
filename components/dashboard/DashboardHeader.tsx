@@ -6,6 +6,7 @@ import { formatAxisValue, smoothPath, type SvgPoint } from '@/lib/charts/svg-uti
 import { formatCurrency, formatNumber } from '@/lib/contracts/ui.contracts'
 import type {
   DashboardSummary as DashboardSummaryContract,
+  ModulesSummary,
   MoneyFlowMode,
   MoneyFlowPoint,
 } from '@/lib/dashboard/types'
@@ -27,10 +28,11 @@ type RecurringRow = {
 }
 
 type DeltaTone = 'positive' | 'negative' | 'neutral'
-type TileTone = 'primary' | 'success' | 'danger' | 'neutral'
+type TileTone = 'primary' | 'success' | 'danger' | 'warning' | 'info' | 'neutral'
 
 const summaryFetcher = (url: string) => fetchDashboardData<DashboardSummaryContract>(url)
 const moneyFlowFetcher = (url: string) => fetchDashboardData<MoneyFlowResponse>(url)
+const modulesFetcher = (url: string) => fetchDashboardData<ModulesSummary>(url)
 const recurringFetcher = (url: string) => fetchDashboardData<RecurringRow[]>(url)
 
 const TREND_W = 260
@@ -108,8 +110,140 @@ function tileAccent(tone: TileTone) {
     primary: 'var(--ft-primary)',
     success: 'var(--ft-success)',
     danger: 'var(--ft-danger)',
+    warning: 'var(--ft-warning)',
+    info: 'var(--ft-info)',
     neutral: 'var(--ft-text-muted)',
   }[tone]
+}
+
+function clampPercent(value: number) {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.min(100, value))
+}
+
+function CreditCapacityPanel({
+  used,
+  limit,
+  utilization,
+}: {
+  used: number
+  limit: number
+  utilization: number
+}) {
+  const safeUtilization = clampPercent(utilization)
+  const tone = safeUtilization >= 90
+    ? 'danger'
+    : safeUtilization >= 70
+      ? 'warning'
+      : 'primary'
+  const color = tileAccent(tone)
+
+  return (
+    <div className="rounded-[14px] bg-[color-mix(in_oklch,var(--ft-surface-muted)_68%,transparent)] px-3 py-2">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ft-text-subtle)]">
+          Utilización
+        </span>
+        <span className="text-[11px] font-semibold tabular-nums" style={{ color }}>
+          {formatNumber(safeUtilization, { maximumFractionDigits: 1 })}%
+        </span>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--ft-surface)]">
+        <div
+          className="h-full rounded-full transition-[width] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]"
+          style={{ width: `${safeUtilization}%`, background: color }}
+        />
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-3 text-[10px] text-[var(--ft-text-muted)]">
+        <span className="min-w-0 truncate">Usado {formatAxisValue(used, 'PEN')}</span>
+        <span className="shrink-0 tabular-nums">Límite {formatAxisValue(limit, 'PEN')}</span>
+      </div>
+    </div>
+  )
+}
+
+function AvailabilitySplitPanel({
+  liquidity,
+  creditAvailable,
+}: {
+  liquidity: number
+  creditAvailable: number
+}) {
+  const total = Math.max(liquidity + creditAvailable, 0)
+  const liquidityPct = total > 0 ? clampPercent((liquidity / total) * 100) : 0
+  const creditPct = total > 0 ? clampPercent((creditAvailable / total) * 100) : 0
+
+  return (
+    <div className="rounded-[14px] bg-[color-mix(in_oklch,var(--ft-surface-muted)_68%,transparent)] px-3 py-2">
+      <div className="flex h-2 overflow-hidden rounded-full bg-[var(--ft-surface)]">
+        <div
+          className="h-full bg-[var(--ft-primary)]"
+          style={{ width: `${liquidityPct}%` }}
+        />
+        <div
+          className="h-full bg-[var(--ft-warning)]"
+          style={{ width: `${creditPct}%` }}
+        />
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] text-[var(--ft-text-muted)]">
+        <span className="min-w-0 truncate">Propio {formatAxisValue(liquidity, 'PEN')}</span>
+        <span className="min-w-0 truncate text-right">Crédito {formatAxisValue(creditAvailable, 'PEN')}</span>
+      </div>
+      <p className="mt-2 text-[10px] leading-4 text-[var(--ft-text-subtle)]">
+        Incluye crédito disponible, no representa patrimonio.
+      </p>
+    </div>
+  )
+}
+
+function OperatingMetricCard({
+  label,
+  value,
+  helper,
+  tone,
+  children,
+}: {
+  label: string
+  value: string
+  helper: string
+  tone: TileTone
+  children: React.ReactNode
+}) {
+  return (
+    <PremiumCard
+      as="article"
+      className="min-w-0"
+      innerClassName="relative min-h-[154px] overflow-hidden p-4"
+    >
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 h-12 opacity-75"
+        style={{
+          background: `linear-gradient(180deg, color-mix(in oklch, ${tileAccent(tone)} 8%, transparent), transparent)`,
+        }}
+      />
+      <div className="relative z-10 flex min-h-[122px] flex-col">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--ft-text-subtle)]">
+              {label}
+            </p>
+            <p className="mt-2 truncate text-[1.22rem] font-semibold leading-none tabular-nums tracking-[-0.03em] text-[var(--ft-text)]">
+              {value}
+            </p>
+          </div>
+          <span
+            className="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full"
+            style={{ background: tileAccent(tone) }}
+          />
+        </div>
+        <p className="mt-2 text-[11px] leading-5 text-[var(--ft-text-muted)]">
+          {helper}
+        </p>
+        <div className="mt-auto pt-3">{children}</div>
+      </div>
+    </PremiumCard>
+  )
 }
 
 function KpiTile({
@@ -267,6 +401,11 @@ export function DashboardHeader() {
     dedupingInterval: 30_000,
   })
 
+  const { data: modules, isLoading: modulesLoading } = useSWR('/api/dashboard/modules-summary', modulesFetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 30_000,
+  })
+
   const { data: moneyFlow } = useSWR('/api/dashboard/money-flow?months=6&mode=acumulado', moneyFlowFetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 30_000,
@@ -281,7 +420,18 @@ export function DashboardHeader() {
   const lastPoint = series.at(-1)
   const previousPoint = series.at(-2)
 
-  const patrimonioPen = summary?.patrimonio_neto.pen ?? summary?.balance_consolidado.pen ?? 0
+  const liquidezPropiaPen = modules?.liquidez_propia_total
+    ?? modules?.cuentas_total_consolidado
+    ?? summary?.balance_consolidado.pen
+    ?? 0
+  const creditoLimitePen = modules?.creditos_limite_total ?? 0
+  const creditoUsadoPen = modules?.creditos_uso_total ?? 0
+  const creditoDisponiblePen = modules?.creditos_disponible_total
+    ?? Math.max(creditoLimitePen - creditoUsadoPen, 0)
+  const disponibilidadAmpliadaPen = modules?.disponibilidad_ampliada_total
+    ?? liquidezPropiaPen + creditoDisponiblePen
+  const creditUsagePct = modules?.creditos_uso_pct ?? 0
+  const patrimonioPen = summary?.patrimonio_neto.pen ?? liquidezPropiaPen
   const ingresosMes = summary?.ingresos_mes ?? lastPoint?.ingresos ?? 0
   const egresosMes = summary?.egresos_mes ?? lastPoint?.egresos ?? 0
   const balanceMes = summary?.balance_mes ?? summary?.resultado_mensual ?? lastPoint?.saldo_mensual ?? 0
@@ -303,8 +453,9 @@ export function DashboardHeader() {
   const incomeValues = series.map((point) => point.ingresos)
   const expenseValues = series.map((point) => point.egresos)
   const balanceValues = series.map((point) => point.saldo_mensual)
+  const liquidityValues = patrimonioValues.length > 0 ? patrimonioValues : [liquidezPropiaPen]
 
-  if (summaryLoading && !summary) {
+  if ((summaryLoading || modulesLoading) && !summary && !modules) {
     return (
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, index) => (
@@ -321,7 +472,7 @@ export function DashboardHeader() {
   }
 
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div className="space-y-3">
       <style jsx>{`
         @keyframes commandTileEnter {
           from {
@@ -335,69 +486,130 @@ export function DashboardHeader() {
         }
       `}</style>
 
-      <KpiTile
-        index={0}
-        label="Patrimonio neto"
-        value={toMoney(patrimonioPen)}
-        tone="primary"
-      >
-        <KpiTrendPanel
-          values={patrimonioValues}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <KpiTile
+          index={0}
+          label="Patrimonio neto"
+          value={toMoney(patrimonioPen)}
           tone="primary"
-          footerLeft="Últimos 6 meses"
-          footerRight={formatAxisValue(patrimonioPen, 'PEN')}
-          ariaLabel="Tendencia del patrimonio neto de los últimos seis meses"
-          gradientId="kpi-trend-patrimonio"
-        />
-      </KpiTile>
+        >
+          <KpiTrendPanel
+            values={patrimonioValues.length > 0 ? patrimonioValues : [patrimonioPen]}
+            tone="primary"
+            footerLeft="Últimos 6 meses"
+            footerRight={formatAxisValue(patrimonioPen, 'PEN')}
+            ariaLabel="Tendencia del patrimonio neto de los últimos seis meses"
+            gradientId="kpi-trend-patrimonio"
+          />
+        </KpiTile>
 
-      <KpiTile
-        index={1}
-        label="Ingresos del mes"
-        value={toMoney(ingresosMes)}
-        tone="success"
-      >
-        <KpiTrendPanel
-          values={incomeValues}
-          tone={incomeTone === 'negative' ? 'danger' : 'success'}
-          footerLeft="Vs mes anterior"
-          footerRight={deltaLabel(ingresosMes, previousIncome)}
-          ariaLabel="Tendencia de ingresos mensuales"
-          gradientId="kpi-trend-ingresos"
-        />
-      </KpiTile>
+        <KpiTile
+          index={1}
+          label="Ingresos del mes"
+          value={toMoney(ingresosMes)}
+          tone="success"
+        >
+          <KpiTrendPanel
+            values={incomeValues}
+            tone={incomeTone === 'negative' ? 'danger' : 'success'}
+            footerLeft="Vs mes anterior"
+            footerRight={deltaLabel(ingresosMes, previousIncome)}
+            ariaLabel="Tendencia de ingresos mensuales"
+            gradientId="kpi-trend-ingresos"
+          />
+        </KpiTile>
 
-      <KpiTile
-        index={2}
-        label="Egresos del mes"
-        value={toMoney(egresosMes)}
-        tone="danger"
-      >
-        <KpiTrendPanel
-          values={expenseValues}
-          tone={expenseTone === 'positive' ? 'success' : 'danger'}
-          footerLeft={`${formatAxisValue(recurringExpensePen, 'PEN')} recurrentes`}
-          footerRight={deltaLabel(egresosMes, previousExpense)}
-          ariaLabel="Tendencia de egresos mensuales"
-          gradientId="kpi-trend-egresos"
-        />
-      </KpiTile>
+        <KpiTile
+          index={2}
+          label="Egresos del mes"
+          value={toMoney(egresosMes)}
+          tone="danger"
+        >
+          <KpiTrendPanel
+            values={expenseValues}
+            tone={expenseTone === 'positive' ? 'success' : 'danger'}
+            footerLeft={`${formatAxisValue(recurringExpensePen, 'PEN')} recurrentes`}
+            footerRight={deltaLabel(egresosMes, previousExpense)}
+            ariaLabel="Tendencia de egresos mensuales"
+            gradientId="kpi-trend-egresos"
+          />
+        </KpiTile>
 
-      <KpiTile
-        index={3}
-        label="Balance neto"
-        value={toMoney(balanceMes)}
-        tone={balancePositive ? 'primary' : 'danger'}
-      >
-        <KpiTrendPanel
-          values={balanceValues}
+        <KpiTile
+          index={3}
+          label="Balance neto"
+          value={toMoney(balanceMes)}
           tone={balancePositive ? 'primary' : 'danger'}
-          footerLeft="Resultado mensual"
-          footerRight={deltaLabel(balanceMes, previousPoint?.saldo_mensual ?? 0)}
-          ariaLabel="Tendencia del balance neto mensual"
-          gradientId="kpi-trend-balance"
-        />
-      </KpiTile>
+        >
+          <KpiTrendPanel
+            values={balanceValues}
+            tone={balancePositive ? 'primary' : 'danger'}
+            footerLeft="Resultado mensual"
+            footerRight={deltaLabel(balanceMes, previousPoint?.saldo_mensual ?? 0)}
+            ariaLabel="Tendencia del balance neto mensual"
+            gradientId="kpi-trend-balance"
+          />
+        </KpiTile>
+      </div>
+
+      <section className="rounded-[24px] border border-[var(--ft-border)] bg-[var(--ft-surface)] p-3 shadow-[0_18px_42px_color-mix(in_srgb,var(--ft-shadow)_7%,transparent)]">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ft-text-subtle)]">
+              Capacidad operativa
+            </p>
+            <p className="mt-1 text-[12px] text-[var(--ft-text-muted)]">
+              Dinero propio y crédito disponible, separados para no confundir patrimonio con margen prestado.
+            </p>
+          </div>
+          <span className="rounded-full border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ft-text-subtle)]">
+            No reemplaza patrimonio
+          </span>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-3">
+          <OperatingMetricCard
+            label="Liquidez propia"
+            value={toMoney(liquidezPropiaPen)}
+            helper={`${modules?.cuentas ?? 0} cuenta${modules?.cuentas === 1 ? '' : 's'} operativa${modules?.cuentas === 1 ? '' : 's'} con dinero real disponible.`}
+            tone="primary"
+          >
+            <KpiTrendPanel
+              values={liquidityValues}
+              tone="primary"
+              footerLeft="Solo cuentas no técnicas"
+              footerRight={formatAxisValue(liquidezPropiaPen, 'PEN')}
+              ariaLabel="Tendencia de liquidez propia de los últimos seis meses"
+              gradientId="kpi-trend-liquidez-operativa"
+            />
+          </OperatingMetricCard>
+
+          <OperatingMetricCard
+            label="Crédito disponible"
+            value={toMoney(creditoDisponiblePen)}
+            helper="Cupo no usado en tarjetas y líneas activas. Es capacidad prestada, no dinero propio."
+            tone="warning"
+          >
+            <CreditCapacityPanel
+              used={creditoUsadoPen}
+              limit={creditoLimitePen}
+              utilization={creditUsagePct}
+            />
+          </OperatingMetricCard>
+
+          <OperatingMetricCard
+            label="Disponibilidad ampliada"
+            value={toMoney(disponibilidadAmpliadaPen)}
+            helper="Suma liquidez propia y crédito disponible para leer margen de maniobra inmediato."
+            tone="success"
+          >
+            <AvailabilitySplitPanel
+              liquidity={liquidezPropiaPen}
+              creditAvailable={creditoDisponiblePen}
+            />
+          </OperatingMetricCard>
+        </div>
+      </section>
     </div>
   )
 }

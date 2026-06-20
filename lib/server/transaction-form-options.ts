@@ -428,10 +428,14 @@ export async function getTransactionFormOptions(userId: string): Promise<Transac
   const creditCards: FormSelectOption[] = (credits ?? []).flatMap(credit => {
     const linkedAccount = credit.account_id ? accountById.get(credit.account_id) : null
     if (!linkedAccount) return []
-    const limitPen = Number(credit.credit_limit_pen ?? (credit.currency === 'PEN' ? credit.credit_limit : 0))
-    const limitUsd = Number(credit.credit_limit_usd ?? (credit.currency === 'USD' ? credit.credit_limit : 0))
-    const usedPen = Number(credit.used_amount_pen ?? (credit.currency === 'PEN' ? credit.used_amount : 0))
-    const usedUsd = Number(credit.used_amount_usd ?? (credit.currency === 'USD' ? credit.used_amount : 0))
+    const storedLimitPen = Number(credit.credit_limit_pen ?? 0)
+    const storedLimitUsd = Number(credit.credit_limit_usd ?? 0)
+    const storedUsedPen = Number(credit.used_amount_pen ?? 0)
+    const storedUsedUsd = Number(credit.used_amount_usd ?? 0)
+    const limitPen = storedLimitPen > 0 ? storedLimitPen : Number(credit.currency === 'PEN' ? credit.credit_limit : 0)
+    const limitUsd = storedLimitUsd > 0 ? storedLimitUsd : Number(credit.currency === 'USD' ? credit.credit_limit : 0)
+    const usedPen = storedUsedPen > 0 ? storedUsedPen : Number(credit.currency === 'PEN' ? credit.used_amount : 0)
+    const usedUsd = storedUsedUsd > 0 ? storedUsedUsd : Number(credit.currency === 'USD' ? credit.used_amount : 0)
     const availablePen = Math.max(limitPen - usedPen, 0)
     const availableUsd = Math.max(limitUsd - usedUsd, 0)
     const availabilityLabel = limitUsd > 0
