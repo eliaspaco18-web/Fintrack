@@ -112,6 +112,13 @@ const FIXED_CATEGORY_BY_OPERATION: Partial<Record<OperationType, string>> = {
   payable_pay: CategoryKeys.EXPENSE_PAYABLE_PAYMENT,
 }
 
+const TRANSFER_ONLY_CATEGORY_KEYS = new Set<string>([
+  CategoryKeys.INCOME_CREDIT_CARD_DISPOSITION,
+  CategoryKeys.INCOME_CREDIT_CARD_PAYMENT,
+  CategoryKeys.EXPENSE_CREDIT_CARD_DISPOSITION,
+  CategoryKeys.EXPENSE_CREDIT_CARD_PAYMENT,
+])
+
 type CreditCurrency = 'PEN' | 'USD'
 
 function asCreditCurrency(value: unknown): CreditCurrency {
@@ -365,6 +372,18 @@ export function TransactionForm({
   const autoTransferDescription = useMemo(() => {
     if (type !== 'TRANSFER') return ''
     if (!sourceAccountOption || !destinationAccountOption) return ''
+
+    const sourceType = typeof sourceAccountOption.meta?.type === 'string' ? sourceAccountOption.meta.type : ''
+    const destinationType = typeof destinationAccountOption.meta?.type === 'string' ? destinationAccountOption.meta.type : ''
+
+    if (sourceType === 'CREDIT_CARD' && destinationType !== 'CREDIT_CARD') {
+      return `Disposición de TC ${sourceAccountOption.label} transferido a ${destinationAccountOption.label}`.slice(0, 255)
+    }
+
+    if (sourceType !== 'CREDIT_CARD' && destinationType === 'CREDIT_CARD') {
+      return `Pago de TC ${destinationAccountOption.label} con ${sourceAccountOption.label}`.slice(0, 255)
+    }
+
     return `Transferencia de ${sourceAccountOption.label} / ${sourceAccountOption.meta?.currency ?? currency} a ${destinationAccountOption.label} / ${destinationAccountOption.meta?.currency ?? currency}`
       .slice(0, 255)
   }, [currency, destinationAccountOption, sourceAccountOption, type])
@@ -643,7 +662,6 @@ export function TransactionForm({
 
     if (operationType === 'receivable_collect') return currencyFilteredAccounts
     if (operationType === 'payable_pay' && paymentMethod === 'CREDIT') return currencyFilteredAccounts
-    if (type !== 'EXPENSE' || paymentMethod === 'CREDIT') return currencyFilteredAccounts
 
     const debitEligibleTypes = new Set([
       'CHECKING',
@@ -655,6 +673,15 @@ export function TransactionForm({
       'CRYPTO',
     ])
 
+    if (operationType === 'receivable_issue') {
+      return currencyFilteredAccounts.filter(account => {
+        const accountType = typeof account.meta?.type === 'string' ? account.meta.type : ''
+        return debitEligibleTypes.has(accountType) || accountType === 'CREDIT_CARD'
+      })
+    }
+
+    if (type !== 'EXPENSE' || paymentMethod === 'CREDIT') return currencyFilteredAccounts
+
     return currencyFilteredAccounts.filter(account => {
       const accountType = typeof account.meta?.type === 'string' ? account.meta.type : ''
       return debitEligibleTypes.has(accountType)
@@ -662,10 +689,12 @@ export function TransactionForm({
   }, [formOptions.accounts, operationType, paymentMethod, selectedSettlementCurrency, type])
   const visibleCategoryOptions = useMemo(
     () =>
-      (type === 'INCOME' ? categoryOptions.income : categoryOptions.expense).map(category => ({
-        ...category,
-        label: normalizeCategoryLabel(category.label),
-      })),
+      (type === 'INCOME' ? categoryOptions.income : categoryOptions.expense)
+        .filter(category => !TRANSFER_ONLY_CATEGORY_KEYS.has(category.system_key ?? ''))
+        .map(category => ({
+          ...category,
+          label: normalizeCategoryLabel(category.label),
+        })),
     [type, categoryOptions.income, categoryOptions.expense]
   )
   const selectedCategory = useMemo(
@@ -719,22 +748,44 @@ export function TransactionForm({
     () => creditCardOptions.find(option => option.value === selectedCreditCardId) ?? null,
     [creditCardOptions, selectedCreditCardId]
   )
+  const transferSourceCreditCardOption = useMemo(
+    () => type === 'TRANSFER'
+      ? creditCardOptions.find(option => option.meta?.account_id === sourceAccountId) ?? null
+      : null,
+    [creditCardOptions, sourceAccountId, type]
+  )
+  const transferDestinationCreditCardOption = useMemo(
+    () => type === 'TRANSFER'
+      ? creditCardOptions.find(option => option.meta?.account_id === destinationAccountId) ?? null
+      : null,
+    [creditCardOptions, destinationAccountId, type]
+  )
+  const activeCreditCardOption =
+    selectedCreditCardOption ??
+    transferSourceCreditCardOption ??
+    transferDestinationCreditCardOption
   const selectedCreditCardCurrency = asCreditCurrency(currency)
-  const selectedCreditCardName = cardOptionName(selectedCreditCardOption)
-  const selectedCreditCardLimit = cardLimitFor(selectedCreditCardOption, selectedCreditCardCurrency)
-  const selectedCreditCardUsed = cardUsedFor(selectedCreditCardOption, selectedCreditCardCurrency)
-  const selectedCreditCardAvailable = cardAvailableFor(selectedCreditCardOption, selectedCreditCardCurrency)
+  const selectedCreditCardName = cardOptionName(activeCreditCardOption)
+  const selectedCreditCardLimit = cardLimitFor(activeCreditCardOption, selectedCreditCardCurrency)
+  const selectedCreditCardUsed = cardUsedFor(activeCreditCardOption, selectedCreditCardCurrency)
+  const selectedCreditCardAvailable = cardAvailableFor(activeCreditCardOption, selectedCreditCardCurrency)
   const selectedCreditCardUtilization = selectedCreditCardLimit > 0
     ? Math.min((selectedCreditCardUsed / selectedCreditCardLimit) * 100, 100)
     : 0
   const creditMovementKind: 'CONSUMPTION' | 'PAYMENT' | null =
-    isExpenseCreditPayment ? 'CONSUMPTION' : creditOperation === 'PAYMENT' ? 'PAYMENT' : null
-  const projectedCreditUsed = selectedCreditCardOption && creditMovementKind
+    isExpenseCreditPayment
+      ? 'CONSUMPTION'
+      : type === 'TRANSFER' && transferSourceCreditCardOption
+        ? 'CONSUMPTION'
+        : type === 'TRANSFER' && transferDestinationCreditCardOption
+          ? 'PAYMENT'
+          : creditOperation === 'PAYMENT' ? 'PAYMENT' : null
+  const projectedCreditUsed = activeCreditCardOption && creditMovementKind
     ? creditMovementKind === 'CONSUMPTION'
       ? selectedCreditCardUsed + (hasAmount ? numericAmount : 0)
       : Math.max(selectedCreditCardUsed - (hasAmount ? numericAmount : 0), 0)
     : selectedCreditCardUsed
-  const projectedCreditAvailable = selectedCreditCardOption && creditMovementKind
+  const projectedCreditAvailable = activeCreditCardOption && creditMovementKind
     ? creditMovementKind === 'CONSUMPTION'
       ? Math.max(selectedCreditCardAvailable - (hasAmount ? numericAmount : 0), 0)
       : Math.min(selectedCreditCardLimit, selectedCreditCardAvailable + (hasAmount ? numericAmount : 0))
@@ -983,6 +1034,34 @@ export function TransactionForm({
   }, [filteredSourceAccounts, paymentMethod, setValue, sourceAccountId])
 
   useEffect(() => {
+    if (isEditMode) return
+    if (operationType !== 'receivable_issue') return
+    if (!sourceAccountId) return
+
+    const linkedCard = creditCardOptions.find(option => option.meta?.account_id === sourceAccountId)
+
+    if (linkedCard) {
+      setValue('payment_method', 'CREDIT', { shouldDirty: false, shouldValidate: false })
+      setValue('credit_card_id', linkedCard.value, { shouldDirty: false, shouldValidate: true })
+      setValue('credit_operation', 'CONSUMPTION', { shouldDirty: false, shouldValidate: false })
+      return
+    }
+
+    if (paymentMethod === 'CREDIT') {
+      setValue('payment_method', 'DEBIT', { shouldDirty: false, shouldValidate: false })
+      setValue('credit_card_id', undefined, { shouldDirty: false, shouldValidate: false })
+      setValue('credit_operation', undefined, { shouldDirty: false, shouldValidate: false })
+    }
+  }, [
+    creditCardOptions,
+    isEditMode,
+    operationType,
+    paymentMethod,
+    setValue,
+    sourceAccountId,
+  ])
+
+  useEffect(() => {
     if (!isExpenseCreditPayment) return
     if (!selectedCreditCardOption) return
 
@@ -1216,6 +1295,12 @@ export function TransactionForm({
                 if (operationType === 'payable_pay' && !settlementPayableId) return true
                 const n = Number(v)
                 return n <= selectedSettlementPendingAmount || 'El monto no puede superar el saldo pendiente'
+              },
+              creditAvailable: v => {
+                if (creditMovementKind !== 'CONSUMPTION' || !activeCreditCardOption) return true
+                const n = Number(v)
+                if (!Number.isFinite(n) || n <= 0) return true
+                return n <= selectedCreditCardAvailable || 'El monto supera la línea disponible de la tarjeta'
               },
             },
           })}
@@ -1528,46 +1613,6 @@ export function TransactionForm({
               + Crear cuenta
             </button>
           </div>
-          {type === 'EXPENSE' && hasCreditCards && operationType !== 'asset_purchase' && operationType !== 'payable_issue' && operationType !== 'receivable_issue' && operationType !== 'receivable_collect' && (
-            <div className="mt-3 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface)] p-2.5">
-              <button
-                type="button"
-                disabled={lockSettlementEdit}
-                onClick={() => {
-                  const nextIsPayment = creditOperation !== 'PAYMENT'
-                  setValue('credit_operation', nextIsPayment ? 'PAYMENT' : undefined, { shouldDirty: true, shouldValidate: false })
-                  if (!nextIsPayment) {
-                    setValue('credit_card_id', undefined, { shouldDirty: true, shouldValidate: false })
-                  }
-                }}
-                className="text-[11px] font-semibold text-[var(--c-text)] transition-colors hover:text-[var(--c-primary)] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {creditOperation === 'PAYMENT' ? 'Quitar' : 'Marcar'} como pago de tarjeta
-              </button>
-              <p className="mt-1 text-[10px] text-[var(--c-text-muted)]">
-                Si marcas esta opción, el egreso sale de una cuenta propia y reduce la deuda usada de la tarjeta elegida.
-              </p>
-              {creditOperation === 'PAYMENT' && (
-                <div className="mt-2">
-                  <Select
-                    placeholder="Seleccionar tarjeta a pagar…"
-                    value={selectedCreditCardId ?? ''}
-                    disabled={lockSettlementEdit}
-                    onChange={event => {
-                      const nextId = event.target.value
-                      setValue('credit_card_id', nextId || undefined, { shouldDirty: true, shouldValidate: true })
-                    }}
-                  >
-                    {creditCardOptions.map(card => (
-                      <option key={card.value} value={card.value}>
-                        {card.label}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-              )}
-            </div>
-          )}
         </FieldWrapper>
       )}
 
@@ -1602,7 +1647,7 @@ export function TransactionForm({
     </div>
   ) : null
 
-  const creditCardImpactField = creditMovementKind && selectedCreditCardOption ? (
+  const creditCardImpactField = creditMovementKind && activeCreditCardOption ? (
     <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3.5 py-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
@@ -1677,6 +1722,16 @@ export function TransactionForm({
     </div>
   ) : null
 
+  const transferSourceIsCreditCard = Boolean(transferSourceCreditCardOption)
+  const transferDestinationIsCreditCard = Boolean(transferDestinationCreditCardOption)
+  const transferAvailabilityLabel = transferSourceIsCreditCard
+    ? `Línea disponible ${formatCurrency(selectedCreditCardAvailable, selectedCreditCardCurrency)}`
+    : transferDestinationIsCreditCard
+      ? `Deuda usada ${formatCurrency(selectedCreditCardUsed, selectedCreditCardCurrency)}`
+      : sourceAccountBalance !== null && Number.isFinite(sourceAccountBalance)
+        ? `Saldo disponible ${formatCurrency(sourceAccountBalance, sourceAccountCurrency as 'PEN' | 'USD')}`
+        : 'Selecciona ambas cuentas'
+
   const transferSummaryField = layoutMode === 'transfer' ? (
     <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3.5 py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1691,12 +1746,17 @@ export function TransactionForm({
         <div className="text-right text-[11px] text-[var(--c-text-muted)]">
           <p>{sourceAccountCurrency} {'->'} {destinationAccountCurrency}</p>
           <p className="tabular-nums">
-            {sourceAccountBalance !== null && Number.isFinite(sourceAccountBalance)
-              ? `Saldo disponible ${formatCurrency(sourceAccountBalance, sourceAccountCurrency as 'PEN' | 'USD')}`
-              : 'Selecciona ambas cuentas'}
+            {transferAvailabilityLabel}
           </p>
         </div>
       </div>
+      {transferSourceIsCreditCard || transferDestinationIsCreditCard ? (
+        <p className="mt-2 text-[11px] leading-4 text-[var(--c-text-muted)]">
+          {transferSourceIsCreditCard
+            ? 'Esta disposición usará la línea disponible de la tarjeta y abonará la cuenta destino.'
+            : 'Este pago saldrá de la cuenta origen y reducirá la deuda usada de la tarjeta destino.'}
+        </p>
+      ) : null}
     </div>
   ) : null
 
@@ -2638,7 +2698,7 @@ export function TransactionForm({
       {layoutMode === 'receivable_collect' ? receivableCollectField : null}
       {layoutMode === 'asset_purchase' ? assetPurchaseField : null}
       {layoutMode === 'transfer' ? transferAccountsField : accountField}
-      {layoutMode === 'expense' ? creditCardImpactField : null}
+      {layoutMode === 'expense' || layoutMode === 'transfer' ? creditCardImpactField : null}
       {layoutMode === 'transfer' ? transferSummaryField : null}
       {layoutMode === 'income' || layoutMode === 'expense' ? categoryField : null}
     </>
