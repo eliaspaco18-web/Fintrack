@@ -190,10 +190,55 @@ export async function POST(req: NextRequest) {
     })
   }
 
+  const { data: sourceAccount, error: sourceAccountError } = await supabase
+    .from('accounts')
+    .select('id, name, type, currency, is_active')
+    .eq('id', sourceAccountId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (sourceAccountError) {
+    return apiError({ code: 'DATABASE_ERROR', message: sourceAccountError.message })
+  }
+
+  if (!sourceAccount || !sourceAccount.is_active) {
+    return apiError({
+      code: 'VALIDATION_ERROR',
+      message: 'El portafolio seleccionado no existe o está inactivo.',
+    })
+  }
+
+  let sourceCreditCardId: string | undefined
+  if (sourceAccount.type === 'CREDIT_CARD') {
+    const { data: creditCard, error: creditCardError } = await supabase
+      .from('credits')
+      .select('id, status, credit_type, account_id')
+      .eq('user_id', userId)
+      .eq('account_id', sourceAccount.id)
+      .eq('credit_type', 'CREDIT_CARD')
+      .maybeSingle()
+
+    if (creditCardError) {
+      return apiError({ code: 'DATABASE_ERROR', message: creditCardError.message })
+    }
+
+    if (!creditCard?.id || creditCard.status !== 'ACTIVE') {
+      return apiError({
+        code: 'BUSINESS_RULE_ERROR',
+        message: 'La cuenta de tarjeta seleccionada no tiene una tarjeta de crédito activa vinculada.',
+      })
+    }
+
+    sourceCreditCardId = creditCard.id
+  }
+
   const service = new TransactionService(supabase)
   const transactionResult = await service.createTransaction(userId, {
     type: 'EXPENSE',
     source_account_id: sourceAccountId,
+    payment_method: sourceCreditCardId ? 'CREDIT' : 'DEBIT',
+    credit_card_id: sourceCreditCardId,
+    credit_operation: sourceCreditCardId ? 'CONSUMPTION' : undefined,
     amount,
     currency,
     description: concept ?? `Prestamo a ${debtor.name}`,
@@ -247,6 +292,7 @@ export async function POST(req: NextRequest) {
     amount,
     currency,
     description: concept ?? `Prestamo a ${debtor.name}`,
+    paymentMethod: sourceCreditCardId ? 'CREDIT' : 'DEBIT',
     notes,
   })
 
@@ -288,6 +334,7 @@ async function createRecurringTemplate({
   amount,
   currency,
   description,
+  paymentMethod,
   notes,
 }: {
   supabase: ReturnType<typeof createClient>
@@ -301,6 +348,7 @@ async function createRecurringTemplate({
   amount: number
   currency: 'PEN' | 'USD'
   description: string
+  paymentMethod: 'DEBIT' | 'CREDIT'
   notes: string | null
 }): Promise<CreateTransactionResult['recurring_template']> {
   if (!saveRecurring) return undefined
@@ -317,6 +365,7 @@ async function createRecurringTemplate({
       debtor_id: debtorId,
       amount,
       currency,
+      payment_method: paymentMethod,
       description,
       recipient: debtorName,
       notes,
