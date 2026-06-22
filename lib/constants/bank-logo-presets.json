@@ -33,5 +33,15 @@
     "value": "bank-agora-sip",
     "label": "SIP",
     "imageSrc": "/banks/agora-sip.png"
+  },
+  {
+    "value": "bank-banco-ripley",
+    "label": "Banco Ripley",
+    "imageSrc": "/banks/banco-ripley.png"
+  },
+  {
+    "value": "bank-banco-falabella",
+    "label": "Banco Falabella",
+    "imageSrc": "/banks/banco-falabella.png"
   }
 ]

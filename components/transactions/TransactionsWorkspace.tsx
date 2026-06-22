@@ -221,7 +221,11 @@ export function TransactionsWorkspace({
 
     setIsModalOpen(false)
     clearCreateQueryParams()
-    await mutate((key: unknown) => typeof key === 'string' && key.startsWith('/api/transactions'))
+    await Promise.all([
+      mutate((key: unknown) => typeof key === 'string' && key.startsWith('/api/transactions')),
+      mutate((key: unknown) => typeof key === 'string' && key.startsWith('/api/credits')),
+      mutate((key: unknown) => typeof key === 'string' && key.startsWith('/api/dashboard')),
+    ])
     router.refresh()
   }, [clearCreateQueryParams, router, toast])
 

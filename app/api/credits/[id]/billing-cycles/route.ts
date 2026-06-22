@@ -55,6 +55,7 @@ type CardMovement = {
   payment_method: string | null
   source_account_id: string | null
   destination_account_id: string | null
+  movement_kind?: 'CONSUMPTION' | 'PAYMENT'
 }
 
 function toMoney(value: unknown): number {
@@ -70,18 +71,17 @@ function summarizeCycle(params: {
   initialUsd: number
   includeInitial: boolean
 }) {
-  const periodMovements = params.movements.filter(movement => (
-    movement.transaction_date >= params.cycle.consumption_from &&
-    movement.transaction_date <= params.cycle.consumption_to
-  ))
-  const consumptions = periodMovements.filter(movement => (
-    movement.type === 'EXPENSE' &&
-    movement.source_account_id === params.accountId
-  ))
-  const payments = periodMovements.filter(movement => (
-    movement.type === 'EXPENSE' &&
-    movement.destination_account_id === params.accountId
-  ))
+  const periodMovements = params.movements
+    .filter(movement => (
+      movement.transaction_date >= params.cycle.consumption_from &&
+      movement.transaction_date <= params.cycle.consumption_to
+    ))
+    .map(movement => ({
+      ...movement,
+      movement_kind: movement.destination_account_id === params.accountId ? 'PAYMENT' : 'CONSUMPTION',
+    } satisfies CardMovement))
+  const consumptions = periodMovements.filter(movement => movement.movement_kind === 'CONSUMPTION')
+  const payments = periodMovements.filter(movement => movement.movement_kind === 'PAYMENT')
 
   const sumByCurrency = (items: CardMovement[], currency: 'PEN' | 'USD') =>
     toMoney(items.reduce((sum, item) => sum + (item.currency === currency ? Number(item.amount ?? 0) : 0), 0))
@@ -143,7 +143,7 @@ export async function GET(
       .from('transactions')
       .select('id, type, description, amount, currency, transaction_date, payment_method, source_account_id, destination_account_id')
       .eq('user_id', userId)
-      .eq('type', 'EXPENSE')
+      .in('type', ['EXPENSE', 'TRANSFER'])
       .or(`source_account_id.eq.${accountId},destination_account_id.eq.${accountId}`)
       .order('transaction_date', { ascending: false })
     : { data: [] as CardMovement[], error: null }

@@ -39,6 +39,7 @@ type BillingCycleMovement = {
   payment_method: string | null
   source_account_id: string | null
   destination_account_id: string | null
+  movement_kind?: 'CONSUMPTION' | 'PAYMENT'
 }
 
 type BillingCycleMovementSummary = {
@@ -175,7 +176,7 @@ export function CreditCardScheduleEditor({
   const movementRows = useMemo(() => {
     const normalizedSearch = movementSearch.trim().toLocaleLowerCase('es')
     return (movementSummary?.movements ?? []).filter(movement => {
-      const isPayment = movement.destination_account_id != null
+      const isPayment = movement.movement_kind === 'PAYMENT'
       if (movementKindFilter === 'CONSUMPTION' && isPayment) return false
       if (movementKindFilter === 'PAYMENT' && !isPayment) return false
       if (!normalizedSearch) return true
@@ -552,12 +553,15 @@ export function CreditCardScheduleEditor({
                 </thead>
                 <tbody>
                   {movementRows.length > 0 ? movementRows.map(movement => {
-                    const isPayment = movement.destination_account_id != null
+                    const isPayment = movement.movement_kind === 'PAYMENT'
+                    const movementTypeLabel = movement.type === 'TRANSFER'
+                      ? (isPayment ? 'Pago TC' : 'Disposición')
+                      : (isPayment ? 'Pago' : 'Consumo')
                     return (
                       <tr key={movement.id} className="border-t border-[var(--ft-form-border)]">
                         <td className="px-3 py-2 tabular-nums">{movement.transaction_date}</td>
                         <td className="px-3 py-2">{movement.description}</td>
-                        <td className="px-3 py-2">{isPayment ? 'Pago' : 'Consumo'}</td>
+                        <td className="px-3 py-2">{movementTypeLabel}</td>
                         <td className="px-3 py-2 text-right font-semibold tabular-nums">
                           {movement.currency === 'PEN' ? `S/ ${formatNumber(Number(movement.amount ?? 0))}` : '-'}
                         </td>

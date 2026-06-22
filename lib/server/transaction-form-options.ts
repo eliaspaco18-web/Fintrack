@@ -455,6 +455,8 @@ export async function getTransactionFormOptions(userId: string): Promise<Transac
         credit_limit_usd: limitUsd,
         used_amount_pen: usedPen,
         used_amount_usd: usedUsd,
+        available_amount_pen: availablePen,
+        available_amount_usd: availableUsd,
       },
     }]
   })

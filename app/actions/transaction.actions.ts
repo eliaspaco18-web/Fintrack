@@ -278,10 +278,9 @@ export async function createTransactionAction(
     revalidatePath('/dashboard')
     revalidatePath('/transactions')
     revalidatePath('/budgets')
+    revalidatePath('/credits')
     // Revalidar módulos que pudieran haberse creado
     if (result.data.asset)      revalidatePath('/assets')
-    if (result.data.credit)     revalidatePath('/credits')
-    if (result.data.loan)       revalidatePath('/credits')
     if (result.data.receivable) revalidatePath('/receivables')
     if (result.data.payable)    revalidatePath('/payables')
 

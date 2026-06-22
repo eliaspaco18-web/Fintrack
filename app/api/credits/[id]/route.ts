@@ -236,7 +236,7 @@ export async function GET(
       .from('transactions')
       .select('id, description, amount, currency, transaction_date, created_at')
       .eq('user_id', userId)
-      .eq('type', 'EXPENSE')
+      .in('type', ['EXPENSE', 'TRANSFER'])
       .eq('source_account_id', accountId)
       .order('transaction_date', { ascending: false })
       .limit(20)
@@ -247,7 +247,7 @@ export async function GET(
       .from('transactions')
       .select('id, description, amount, currency, transaction_date, created_at')
       .eq('user_id', userId)
-      .eq('type', 'EXPENSE')
+      .in('type', ['EXPENSE', 'TRANSFER'])
       .eq('destination_account_id', accountId)
       .order('transaction_date', { ascending: false })
       .limit(20)
@@ -422,7 +422,7 @@ export async function PATCH(
       .from('transactions')
       .select('amount, currency, payment_method, source_account_id, destination_account_id, type')
       .eq('user_id', userId)
-      .eq('type', 'EXPENSE')
+      .in('type', ['EXPENSE', 'TRANSFER'])
       .or(`source_account_id.eq.${credit.account_id},destination_account_id.eq.${credit.account_id}`)
 
     if (cardMovementsError) {
@@ -552,7 +552,7 @@ export async function DELETE(
         .from('transactions')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', userId)
-        .eq('type', 'EXPENSE')
+        .in('type', ['EXPENSE', 'TRANSFER'])
         .eq('source_account_id', credit.account_id)
       : Promise.resolve({ count: 0 as number | null, error: null }),
     credit.credit_type === 'CREDIT_CARD' && credit.account_id
@@ -560,7 +560,7 @@ export async function DELETE(
         .from('transactions')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', userId)
-        .eq('type', 'EXPENSE')
+        .in('type', ['EXPENSE', 'TRANSFER'])
         .eq('destination_account_id', credit.account_id)
       : Promise.resolve({ count: 0 as number | null, error: null }),
   ])

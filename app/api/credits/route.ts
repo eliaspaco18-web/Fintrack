@@ -138,6 +138,15 @@ const zCreateCreditSchema = z.discriminatedUnion('kind', [
 
 type CreditCreateRequest = z.infer<typeof zCreateCreditSchema>
 
+type CreditCardMovementTotals = {
+  usedPen: number
+  usedUsd: number
+}
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100
+}
+
 async function ensureUserActiveBankEntity(params: { userId: string; bankEntityId: string }) {
   const supabase = createClient()
   const { data, error } = await supabase
@@ -540,6 +549,86 @@ export async function GET(req: NextRequest) {
   if (error) return apiError({ code: 'DATABASE_ERROR', message: error.message })
 
   const credits = data ?? []
+  const creditCardsWithAccounts = credits.filter(credit => (
+    credit.credit_type === 'CREDIT_CARD' && typeof credit.account_id === 'string'
+  ))
+  const cardAccountIds = creditCardsWithAccounts
+    .map(credit => credit.account_id)
+    .filter((accountId): accountId is string => typeof accountId === 'string' && accountId.length > 0)
+
+  const movementTotalsByAccountId = new Map<string, CreditCardMovementTotals>()
+  for (const credit of creditCardsWithAccounts) {
+    if (!credit.account_id) continue
+    movementTotalsByAccountId.set(credit.account_id, {
+      usedPen: Number(credit.initial_used_amount_pen ?? 0),
+      usedUsd: Number(credit.initial_used_amount_usd ?? 0),
+    })
+  }
+
+  if (cardAccountIds.length > 0) {
+    const [sourceMovements, destinationMovements] = await Promise.all([
+      supabase
+        .from('transactions')
+        .select('id, type, source_account_id, destination_account_id, amount, currency')
+        .eq('user_id', userId)
+        .in('source_account_id', cardAccountIds)
+        .in('type', ['EXPENSE', 'TRANSFER']),
+      supabase
+        .from('transactions')
+        .select('id, type, source_account_id, destination_account_id, amount, currency')
+        .eq('user_id', userId)
+        .in('destination_account_id', cardAccountIds)
+        .in('type', ['EXPENSE', 'TRANSFER']),
+    ])
+
+    if (sourceMovements.error) {
+      return apiError({ code: 'DATABASE_ERROR', message: sourceMovements.error.message })
+    }
+
+    if (destinationMovements.error) {
+      return apiError({ code: 'DATABASE_ERROR', message: destinationMovements.error.message })
+    }
+
+    for (const movement of sourceMovements.data ?? []) {
+      const accountId = movement.source_account_id
+      if (!accountId) continue
+      const totals = movementTotalsByAccountId.get(accountId)
+      if (!totals) continue
+      const amount = Number(movement.amount ?? 0)
+      if (movement.currency === 'USD') {
+        totals.usedUsd = roundMoney(totals.usedUsd + amount)
+      } else {
+        totals.usedPen = roundMoney(totals.usedPen + amount)
+      }
+    }
+
+    for (const movement of destinationMovements.data ?? []) {
+      const accountId = movement.destination_account_id
+      if (!accountId) continue
+      const totals = movementTotalsByAccountId.get(accountId)
+      if (!totals) continue
+      const amount = Number(movement.amount ?? 0)
+      if (movement.currency === 'USD') {
+        totals.usedUsd = roundMoney(Math.max(totals.usedUsd - amount, 0))
+      } else {
+        totals.usedPen = roundMoney(Math.max(totals.usedPen - amount, 0))
+      }
+    }
+  }
+
+  const normalizedCredits = credits.map(credit => {
+    const totals = credit.account_id ? movementTotalsByAccountId.get(credit.account_id) : null
+    if (!totals || credit.credit_type !== 'CREDIT_CARD') return credit
+
+    const primaryUsed = credit.currency === 'USD' ? totals.usedUsd : totals.usedPen
+    return {
+      ...credit,
+      used_amount: primaryUsed,
+      used_amount_pen: totals.usedPen,
+      used_amount_usd: totals.usedUsd,
+    }
+  })
+
   const lineCreditIds = credits
     .filter(credit => credit.credit_type === 'LINE_OF_CREDIT')
     .map(credit => credit.id)
@@ -563,7 +652,7 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  const enrichedCredits: CreditListItem[] = credits.map(credit => {
+  const enrichedCredits: CreditListItem[] = normalizedCredits.map(credit => {
     const hasLoan = creditIdsWithLoan.has(credit.id)
     const bankEntity = Array.isArray(credit.bank_entity)
       ? (credit.bank_entity[0] ?? null)

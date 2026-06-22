@@ -25,6 +25,10 @@ export const CategoryKeys = {
   INCOME_RECEIVABLE_COLLECTION: 'income_receivable_collection',
   /** Préstamos otorgados (De terceros) */
   INCOME_PAYABLE_ISSUE: 'income_payable_issue',
+  /** Disposición de efectivo desde tarjeta de crédito hacia cuenta propia */
+  INCOME_CREDIT_CARD_DISPOSITION: 'income_credit_card_disposition',
+  /** Pago operativo de tarjeta de crédito vía transferencia */
+  INCOME_CREDIT_CARD_PAYMENT: 'income_credit_card_payment',
   INCOME_OTHER:      'income_other',
 
   // ── Egresos ─────────────────────────────────────────────────────────────────
@@ -44,6 +48,10 @@ export const CategoryKeys = {
   EXPENSE_RECEIVABLE_ISSUE: 'expense_receivable_issue',
   /** Pago de préstamos */
   EXPENSE_PAYABLE_PAYMENT: 'expense_payable_payment',
+  /** Pago operativo de tarjeta de crédito vía transferencia */
+  EXPENSE_CREDIT_CARD_PAYMENT: 'expense_credit_card_payment',
+  /** Disposición de efectivo desde tarjeta de crédito hacia cuenta propia */
+  EXPENSE_CREDIT_CARD_DISPOSITION: 'expense_credit_card_disposition',
   EXPENSE_OTHER:     'expense_other',
 } as const
 
@@ -60,6 +68,10 @@ export const LOCKED_CATEGORY_KEYS = [
   CategoryKeys.EXPENSE_RECEIVABLE_ISSUE,
   CategoryKeys.INCOME_PAYABLE_ISSUE,
   CategoryKeys.EXPENSE_PAYABLE_PAYMENT,
+  CategoryKeys.INCOME_CREDIT_CARD_DISPOSITION,
+  CategoryKeys.INCOME_CREDIT_CARD_PAYMENT,
+  CategoryKeys.EXPENSE_CREDIT_CARD_DISPOSITION,
+  CategoryKeys.EXPENSE_CREDIT_CARD_PAYMENT,
 ] as const
 
 const LOCKED_CATEGORY_KEY_SET = new Set<string>(LOCKED_CATEGORY_KEYS)
@@ -72,6 +84,8 @@ export const MODULE_TRIGGERS: Record<CategoryKey, DerivedModule | null> = {
   [CategoryKeys.INCOME_RECEIVABLE]: 'receivable',
   [CategoryKeys.INCOME_RECEIVABLE_COLLECTION]: 'receivable',
   [CategoryKeys.INCOME_PAYABLE_ISSUE]: 'payable',
+  [CategoryKeys.INCOME_CREDIT_CARD_DISPOSITION]: null,
+  [CategoryKeys.INCOME_CREDIT_CARD_PAYMENT]: null,
   [CategoryKeys.INCOME_OTHER]:      null,
   [CategoryKeys.EXPENSE_FOOD]:      null,
   [CategoryKeys.EXPENSE_TRANSPORT]: null,
@@ -84,6 +98,8 @@ export const MODULE_TRIGGERS: Record<CategoryKey, DerivedModule | null> = {
   [CategoryKeys.EXPENSE_PAYABLE]:   'payable',
   [CategoryKeys.EXPENSE_RECEIVABLE_ISSUE]: 'receivable',
   [CategoryKeys.EXPENSE_PAYABLE_PAYMENT]: 'payable',
+  [CategoryKeys.EXPENSE_CREDIT_CARD_PAYMENT]: null,
+  [CategoryKeys.EXPENSE_CREDIT_CARD_DISPOSITION]: null,
   [CategoryKeys.EXPENSE_OTHER]:     null,
 }
 

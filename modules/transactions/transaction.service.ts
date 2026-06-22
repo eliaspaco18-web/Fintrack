@@ -80,6 +80,11 @@ type CreditAdjustment = {
   currency: 'PEN' | 'USD'
 }
 
+type TransferCreditContext = {
+  adjustment: CreditAdjustment
+  categorySystemKey: string
+}
+
 type EditableTransactionRecord = Transaction & {
   category?: { system_key?: string | null } | null
 }
@@ -273,6 +278,13 @@ export class TransactionService {
       destinationAccount = destResult.data
     }
 
+    const transferCreditContextResult = accountingInput.type === 'TRANSFER'
+      ? await this.resolveTransferCreditContext(userId, accountingInput, sourceAccount, destinationAccount)
+      : ok<TransferCreditContext | null>(null)
+    if (!transferCreditContextResult.ok) return transferCreditContextResult
+    const transferCreditContext = transferCreditContextResult.data
+    const usesCreditCardTransferSource = transferCreditContext?.adjustment.op === 'CONSUMPTION'
+
     const preparedInput = this.prepareCreateInput(
       accountingInput,
       sourceAccount,
@@ -289,7 +301,10 @@ export class TransactionService {
       : null
 
     // ── PASO 4: Verificar saldo para EXPENSE y TRANSFER ─────────────────────
-    if ((preparedInput.type === 'EXPENSE' && !usesCreditCardAsSource) || preparedInput.type === 'TRANSFER') {
+    if (
+      (preparedInput.type === 'EXPENSE' && !usesCreditCardAsSource) ||
+      (preparedInput.type === 'TRANSFER' && !usesCreditCardTransferSource)
+    ) {
       const balanceResult = validateSufficientBalance(
         sourceAccount,
         preparedInput.amount,
@@ -314,11 +329,20 @@ export class TransactionService {
 
       if (!adjustResult.ok) return adjustResult
       creditAdjusted = { id: selectedCreditCard.id, op, amount: adjustmentAmount, currency: adjustmentCurrency }
+    } else if (transferCreditContext) {
+      const adjustResult = await this.applyCreditAdjustment(transferCreditContext.adjustment)
+      if (!adjustResult.ok) return adjustResult
+      creditAdjusted = transferCreditContext.adjustment
     }
 
     // ── PASO 5: Construir payload atómico ────────────────────────────────────
     const payload = this.buildAtomicPayload(userId, preparedInput)
     payload.p_budget_period_id = budgetPeriodId
+    if (transferCreditContext?.categorySystemKey) {
+      payload.p_category_id =
+        await this.resolveCategoryIdBySystemKey(userId, transferCreditContext.categorySystemKey)
+        ?? payload.p_category_id
+    }
     if (
       creditAdjusted?.op === 'PAYMENT' &&
       selectedCreditCard?.account_id &&
@@ -463,6 +487,15 @@ export class TransactionService {
       resolvedDestinationAccountId = null
     }
 
+    const transferCreditContextResult = accountingInput.type === 'TRANSFER'
+      ? await this.resolveTransferCreditContext(userId, accountingInput, sourceAccount, destinationAccount)
+      : ok<TransferCreditContext | null>(null)
+    if (!transferCreditContextResult.ok) return transferCreditContextResult
+    const transferCreditContext = transferCreditContextResult.data
+    const transferCategoryId = transferCreditContext?.categorySystemKey
+      ? await this.resolveCategoryIdBySystemKey(userId, transferCreditContext.categorySystemKey)
+      : null
+
     const preparedInput = this.prepareCreateInput(
       accountingInput,
       sourceAccount,
@@ -579,7 +612,7 @@ export class TransactionService {
     const transactionUpdate: Database['public']['Tables']['transactions']['Update'] = {
       source_account_id: preparedInput.source_account_id,
       destination_account_id: resolvedDestinationAccountId,
-      category_id: preparedInput.category_id ?? null,
+      category_id: transferCategoryId ?? preparedInput.category_id ?? null,
       budget_id: preparedInput.type === 'EXPENSE'
         ? (preparedInput as CreateExpenseInput).budget_id ?? null
         : null,
@@ -844,7 +877,7 @@ export class TransactionService {
       unlinked.push('accounts_payable')
     }
 
-    if (tx.type === 'EXPENSE') {
+    if (tx.type === 'EXPENSE' || tx.type === 'TRANSFER') {
       const accountFilters = [tx.source_account_id, tx.destination_account_id]
         .filter((id): id is string => typeof id === 'string' && id.length > 0)
         .map(id => `account_id.eq.${id}`)
@@ -941,7 +974,7 @@ export class TransactionService {
     userId: string,
     transaction: Pick<Transaction, 'type' | 'payment_method' | 'source_account_id' | 'destination_account_id' | 'amount' | 'currency'>,
   ): Promise<Result<CreditAdjustment | null>> {
-    if (transaction.type !== 'EXPENSE') return ok(null)
+    if (transaction.type !== 'EXPENSE' && transaction.type !== 'TRANSFER') return ok(null)
 
     const accountFilters = [transaction.source_account_id, transaction.destination_account_id]
       .filter((id): id is string => typeof id === 'string' && id.length > 0)
@@ -1008,6 +1041,87 @@ export class TransactionService {
 
     if (!result.ok) return result
     return ok(true)
+  }
+
+  private async resolveTransferCreditContext(
+    userId: string,
+    input: CreateTransferInput,
+    sourceAccount: Account,
+    destinationAccount: Account | null,
+  ): Promise<Result<TransferCreditContext | null>> {
+    const sourceIsCreditCard = sourceAccount.type === 'CREDIT_CARD'
+    const destinationIsCreditCard = destinationAccount?.type === 'CREDIT_CARD'
+
+    if (!sourceIsCreditCard && !destinationIsCreditCard) return ok(null)
+
+    if (sourceIsCreditCard && destinationIsCreditCard) {
+      return Errors.businessRule(
+        'No se puede transferir entre dos tarjetas de crédito',
+        'Usa una cuenta de débito como destino para disposición o como origen para pago.'
+      )
+    }
+
+    const creditAccountId = sourceIsCreditCard
+      ? sourceAccount.id
+      : destinationAccount?.id
+
+    if (!creditAccountId) return ok(null)
+
+    const { data: creditCard, error } = await this.db
+      .from('credits')
+      .select('id, status, account_id, credit_type')
+      .eq('user_id', userId)
+      .eq('account_id', creditAccountId)
+      .eq('credit_type', 'CREDIT_CARD')
+      .maybeSingle()
+
+    if (error) return Errors.database(error.message)
+
+    if (!creditCard?.id) {
+      return Errors.businessRule(
+        'La cuenta de tarjeta no tiene una línea de crédito activa vinculada',
+        'Edita la tarjeta en Créditos y verifica que tenga una cuenta técnica asociada.'
+      )
+    }
+
+    if (creditCard.status !== 'ACTIVE') {
+      return Errors.businessRule(
+        'La tarjeta seleccionada no está activa',
+        'Activa la tarjeta o elige otra tarjeta.'
+      )
+    }
+
+    const adjustmentAmount = Math.round(Number(input.amount ?? 0) * 100) / 100
+    const adjustmentCurrency = input.currency === 'USD' ? 'USD' : 'PEN'
+
+    return ok({
+      adjustment: {
+        id: creditCard.id,
+        op: sourceIsCreditCard ? 'CONSUMPTION' : 'PAYMENT',
+        amount: adjustmentAmount,
+        currency: adjustmentCurrency,
+      },
+      categorySystemKey: sourceIsCreditCard
+        ? CategoryKeys.EXPENSE_CREDIT_CARD_DISPOSITION
+        : CategoryKeys.INCOME_CREDIT_CARD_PAYMENT,
+    })
+  }
+
+  private async resolveCategoryIdBySystemKey(
+    userId: string,
+    systemKey: string,
+  ): Promise<string | null> {
+    const { data, error } = await this.db
+      .from('categories')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('system_key', systemKey)
+      .order('sort_order', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (error) return null
+    return data?.id ?? null
   }
 
   /**
@@ -1492,6 +1606,17 @@ export class TransactionService {
     if (manual) return manual
 
     const destinationName = destinationAccount?.name ?? 'Cuenta destino'
+    const sourceIsCreditCard = sourceAccount.type === 'CREDIT_CARD'
+    const destinationIsCreditCard = destinationAccount?.type === 'CREDIT_CARD'
+
+    if (sourceIsCreditCard && !destinationIsCreditCard) {
+      return `Disposición de TC ${sourceAccount.name} transferido a ${destinationName}`.slice(0, 255)
+    }
+
+    if (!sourceIsCreditCard && destinationIsCreditCard) {
+      return `Pago de TC ${destinationName} con ${sourceAccount.name}`.slice(0, 255)
+    }
+
     const destinationCurrency = destinationAccount?.currency ?? input.currency
     const raw = `Transferencia de ${sourceAccount.name} / ${sourceAccount.currency} a ${destinationName} / ${destinationCurrency}`
     return raw.slice(0, 255)
