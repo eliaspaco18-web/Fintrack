@@ -153,7 +153,8 @@ export function ReceivableForm({
     ))
   }, [defaultDebtorId, receivable])
 
-  // Cargar portafolios activos (excluye tarjetas de crédito para cuentas por cobrar = EXPENSE)
+  // Cargar portafolios activos. Las tarjetas se permiten como origen:
+  // el backend las registra como consumo de línea disponible.
   useEffect(() => {
     let cancelled = false
     async function load() {
@@ -161,10 +162,7 @@ export function ReceivableForm({
         const res  = await fetch('/api/accounts?is_active=true', { cache: 'no-store' })
         const json = await res.json().catch(() => null)
         if (!cancelled && res.ok && json?.ok) {
-          // CxC = Egreso → portafolios débito (excluye tarjeta crédito)
-          const list = (json.data as AccountOption[]).filter(
-            a => a.type !== 'CREDIT_CARD' && a.is_active
-          )
+          const list = (json.data as AccountOption[]).filter(account => account.is_active)
           setAccounts(list)
         }
       } catch { /* silencioso */ }
