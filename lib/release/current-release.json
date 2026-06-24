@@ -1,7 +1,7 @@
 {
-  "version": "V1.0.0.25",
+  "version": "V1.0.0.26",
   "series": "1.0.0",
-  "build": 25,
+  "build": 26,
   "title": "descripcion corta",
   "summary": "release: descripcion corta",
   "highlights": [
@@ -12,5 +12,5 @@
       "detail": "release: descripcion corta"
     }
   ],
-  "releasedAt": "2026-06-22T03:12:08.467Z"
+  "releasedAt": "2026-06-24T16:49:31.051Z"
 }

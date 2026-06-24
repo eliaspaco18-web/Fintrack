@@ -39,13 +39,16 @@ export async function GET(_req: NextRequest) {
 
   // Agregar datos por deudor
   const aggregated = (debtors ?? []).map(debtor => {
-    const related = (receivables ?? []).filter(r => r.debtor_id === debtor.id)
-    const total_lent      = related.reduce((s, r) => s + Number(r.amount), 0)
+    const related         = (receivables ?? []).filter(r => r.debtor_id === debtor.id)
+    const initial_debt    = Number(debtor.initial_debt ?? 0)
+    const ar_total        = related.reduce((s, r) => s + Number(r.amount), 0)
     const total_collected = related.reduce((s, r) => s + Number(r.collected_amount), 0)
+    // El saldo inicial cuenta como deuda prestada aunque no tenga documento asociado
+    const total_lent      = ar_total + initial_debt
     const pending_amount  = total_lent - total_collected
     const progress_pct    = total_lent > 0 ? Math.min(100, (total_collected / total_lent) * 100) : 0
-    const all_collected   = related.length > 0 && related.every(r => r.status === 'COLLECTED')
-    const count_pending   = related.filter(r => r.status !== 'COLLECTED').length
+    const all_collected   = total_lent > 0 && pending_amount <= 0
+    const count_pending   = pending_amount > 0 ? (related.filter(r => r.status !== 'COLLECTED').length || (initial_debt > 0 ? 1 : 0)) : 0
 
     return {
       ...debtor,

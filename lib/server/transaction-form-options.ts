@@ -363,7 +363,7 @@ export async function getTransactionFormOptions(userId: string): Promise<Transac
         .order('name'),
       supabase
         .from('debtors')
-        .select('id, name, relationship, is_active')
+        .select('id, name, relationship, initial_debt, is_active')
         .eq('user_id', userId)
         .eq('is_active', true)
         .order('name'),
@@ -565,6 +565,39 @@ export async function getTransactionFormOptions(userId: string): Promise<Transac
         },
       })
     }
+  }
+
+  // ── Deudores con SOLO saldo inicial (sin cuentas por cobrar vinculadas) ─────
+  // Si un deudor tiene initial_debt > 0 pero ninguna accounts_receivable abierta
+  // en el mapa, añadirlo como opción de cobro general para no perder el pendiente.
+  for (const debtor of debtors ?? []) {
+    const initialDebt = Number((debtor as { initial_debt?: number }).initial_debt ?? 0)
+    if (initialDebt <= 0) continue
+
+    // ¿Ya existe alguna entrada de este deudor en el mapa de pendientes?
+    const alreadyPresent = pendingReceivableOptions.some(
+      opt => opt.meta?.kind === 'debtor_total' && opt.meta?.debtor_id === debtor.id
+    )
+    if (alreadyPresent) continue
+
+    const currency = 'PEN'
+    pendingReceivableOptions.unshift({
+      value: `debtor:${debtor.id}:${currency}`,
+      label: `Cobro general · ${debtor.name} · saldo inicial ${formatNumber(initialDebt)} ${currency}`,
+      icon: 'wallet',
+      color: '#0f766e',
+      meta: {
+        kind: 'debtor_total',
+        debtor_id: debtor.id,
+        debtor_name: debtor.name,
+        concept: 'Cobro general (saldo inicial)',
+        pending_amount: initialDebt,
+        currency,
+        lines_count: 1,
+        settlement_strategy: 'oldest_first',
+        is_initial_debt: true,
+      },
+    })
   }
 
   const pendingPayableOptions: FormSelectOption[] = (pendingPayables ?? []).map(payable => {

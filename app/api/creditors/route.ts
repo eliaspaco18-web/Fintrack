@@ -32,13 +32,16 @@ export async function GET(_req: NextRequest) {
 
   // Agregar datos por acreedor
   const aggregated = (creditors ?? []).map(creditor => {
-    const related = (payables ?? []).filter(p => p.creditor_id === creditor.id)
-    const total_owed    = related.reduce((s, p) => s + Number(p.amount), 0)
-    const total_paid    = related.reduce((s, p) => s + Number(p.paid_amount), 0)
+    const related        = (payables ?? []).filter(p => p.creditor_id === creditor.id)
+    const initial_debt   = Number(creditor.initial_debt ?? 0)
+    const ap_total       = related.reduce((s, p) => s + Number(p.amount), 0)
+    const total_paid     = related.reduce((s, p) => s + Number(p.paid_amount), 0)
+    // El saldo inicial cuenta como deuda aunque no tenga documento asociado
+    const total_owed     = ap_total + initial_debt
     const pending_amount = total_owed - total_paid
-    const progress_pct  = total_owed > 0 ? Math.min(100, (total_paid / total_owed) * 100) : 0
-    const all_paid      = related.length > 0 && related.every(p => p.status === 'PAID')
-    const count_pending = related.filter(p => p.status !== 'PAID').length
+    const progress_pct   = total_owed > 0 ? Math.min(100, (total_paid / total_owed) * 100) : 0
+    const all_paid       = total_owed > 0 && pending_amount <= 0
+    const count_pending  = pending_amount > 0 ? (related.filter(p => p.status !== 'PAID').length || (initial_debt > 0 ? 1 : 0)) : 0
 
     return {
       ...creditor,

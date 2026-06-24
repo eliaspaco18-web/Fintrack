@@ -225,6 +225,8 @@ export function TransactionForm({
   const [inlineCategoryModalOpen, setInlineCategoryModalOpen] = useState(false)
   const [inlineCategoryScope, setInlineCategoryScope] = useState<'INCOME' | 'EXPENSE'>('EXPENSE')
   const [advancedSectionOpen, setAdvancedSectionOpen] = useState(false)
+  const [crossCurrencyDestAmount, setCrossCurrencyDestAmount] = useState<string>('')
+  const [targetDebtCurrency, setTargetDebtCurrency] = useState<CreditCurrency | null>(null)
   const [formOptions, setFormOptions] = useState<TransactionFormOptions>(options)
   const lastAutoUploadTxId = useRef<string | null>(null)
   const [editSubmitState, setEditSubmitState] =
@@ -542,6 +544,8 @@ export function TransactionForm({
     lastAutoUploadTxId.current = null
     lastAutoExchangeRateRef.current = null
     userEditedExchangeRateRef.current = false
+    setCrossCurrencyDestAmount('')
+    setTargetDebtCurrency(null)
     resetForm()
   }, [resetForm])
 
@@ -772,6 +776,12 @@ export function TransactionForm({
   const selectedCreditCardUtilization = selectedCreditCardLimit > 0
     ? Math.min((selectedCreditCardUsed / selectedCreditCardLimit) * 100, 100)
     : 0
+  // ── Deuda en la otra moneda (para mostrar ambas en pago de TC) ────────
+  const otherCreditCurrency: CreditCurrency = selectedCreditCardCurrency === 'PEN' ? 'USD' : 'PEN'
+  const otherCreditUsed = cardUsedFor(activeCreditCardOption, otherCreditCurrency)
+  const otherCreditLimit = cardLimitFor(activeCreditCardOption, otherCreditCurrency)
+  const otherCreditAvailable = cardAvailableFor(activeCreditCardOption, otherCreditCurrency)
+  const hasDualCurrencyDebt = otherCreditUsed > 0 || selectedCreditCardUsed > 0
   const creditMovementKind: 'CONSUMPTION' | 'PAYMENT' | null =
     isExpenseCreditPayment
       ? 'CONSUMPTION'
@@ -780,6 +790,10 @@ export function TransactionForm({
         : type === 'TRANSFER' && transferDestinationCreditCardOption
           ? 'PAYMENT'
           : creditOperation === 'PAYMENT' ? 'PAYMENT' : null
+  // ── Detect cross-currency TC payment (e.g. paying USD debt with PEN) ──
+  const isTransferCreditPayment = creditMovementKind === 'PAYMENT' && !!transferDestinationCreditCardOption
+  const effectiveDebtCurrency: CreditCurrency = targetDebtCurrency ?? selectedCreditCardCurrency
+  const isCrossCurrencyTCPayment = isTransferCreditPayment && effectiveDebtCurrency !== sourceAccountCurrency
   const projectedCreditUsed = activeCreditCardOption && creditMovementKind
     ? creditMovementKind === 'CONSUMPTION'
       ? selectedCreditCardUsed + (hasAmount ? numericAmount : 0)
@@ -825,6 +839,30 @@ export function TransactionForm({
     if (createsReceivable) return 'receivable_issue'
     return 'expense'
   }, [createsAsset, createsPayable, createsReceivable, operationType, type])
+
+  // ── Cross-currency transfer detection ────────────────────────────────────
+  const isCrossCurrencyTransfer = layoutMode === 'transfer'
+    && !!sourceAccountOption
+    && !!destinationAccountOption
+    && sourceAccountCurrency !== destinationAccountCurrency
+  const crossDestNum = crossCurrencyDestAmount !== '' ? parseFloat(crossCurrencyDestAmount) : 0
+  const hasCrossDestAmount = Number.isFinite(crossDestNum) && crossDestNum > 0
+  // Implicit rate always in PEN/USD to match safeLiveRate
+  const implicitCrossRate = hasAmount && hasCrossDestAmount
+    ? (sourceAccountCurrency === 'PEN'
+      ? numericAmount / crossDestNum   // PEN→USD: PEN_amount / USD_amount
+      : crossDestNum / numericAmount)  // USD→PEN: PEN_amount / USD_amount
+    : 0
+  const crossRateDiffPercent = safeLiveRate > 0 && implicitCrossRate > 0
+    ? ((implicitCrossRate - safeLiveRate) / safeLiveRate) * 100
+    : 0
+
+  // Reset destination amount and debt target when transfer accounts change
+  useEffect(() => {
+    setCrossCurrencyDestAmount('')
+    setTargetDebtCurrency(null)
+  }, [sourceAccountId, destinationAccountId])
+
   const lockSettlementEdit = isEditMode && (
     operationType === 'receivable_collect'
     || operationType === 'payable_pay'
@@ -1265,7 +1303,7 @@ export function TransactionForm({
   }
 
   const amountCurrencyField = (
-    <div className={isCompactLayout ? 'grid grid-cols-[1fr_auto] gap-2' : 'grid grid-cols-[1fr_auto] gap-3'}>
+    <div className={isCompactLayout ? 'grid grid-cols-[1fr_100px] gap-2' : 'grid grid-cols-[1fr_110px] gap-3'}>
       <FieldWrapper
         label={layoutMode === 'asset_purchase' ? 'Valor de compra' : 'Monto'}
         required
@@ -1317,7 +1355,6 @@ export function TransactionForm({
           {...register('currency')}
           compact
           data-testid="transaction-currency-select"
-          className="w-[120px]"
           disabled={lockSettlementEdit || !isExpenseCreditPayment}
         >
           <option value="PEN">PEN (S/)</option>
@@ -1666,26 +1703,202 @@ export function TransactionForm({
         </StatusBadge>
       </div>
 
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2">
-          <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Línea</p>
-          <p className="mt-1 truncate font-mono text-[12px] font-semibold tabular-nums text-[var(--c-text)]">
-            {formatCurrency(selectedCreditCardLimit, selectedCreditCardCurrency)}
+      {/* ── Deuda en moneda principal ──────────────────────────────────── */}
+      {isTransferCreditPayment && hasDualCurrencyDebt ? (
+        <>
+          {/* ── Selector de moneda objetivo ────────────────────────────── */}
+          <div className="mt-3">
+            <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+              ¿Qué deuda deseas reducir?
+            </p>
+            <div className="mt-1.5 flex gap-1.5">
+              {([selectedCreditCardCurrency, otherCreditCurrency] as CreditCurrency[]).map(cur => {
+                const isActive = effectiveDebtCurrency === cur
+                const usedInCur = cardUsedFor(activeCreditCardOption, cur)
+                return (
+                  <button
+                    key={cur}
+                    type="button"
+                    onClick={() => {
+                      setTargetDebtCurrency(cur === selectedCreditCardCurrency ? null : cur)
+                      setCrossCurrencyDestAmount('')
+                    }}
+                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
+                      isActive
+                        ? 'border-[var(--c-primary-border)] bg-[var(--c-primary-soft)] text-[var(--c-primary)]'
+                        : 'border-[var(--c-border)] bg-[var(--c-surface-2)] text-[var(--c-text-muted)] hover:text-[var(--c-text)]'
+                    }`}
+                  >
+                    <span>Deuda {cur}</span>
+                    <span className={`tabular-nums ${usedInCur > 0 ? '' : 'opacity-50'}`}>
+                      ({formatCurrency(usedInCur, cur)})
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* ── Grids de deuda por moneda ──────────────────────────────── */}
+          <p className="mt-3 text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+            Deuda en {selectedCreditCardCurrency}
           </p>
-        </div>
-        <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2">
-          <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Usado</p>
-          <p className="mt-1 truncate font-mono text-[12px] font-semibold tabular-nums text-[var(--c-danger)]">
-            {formatCurrency(projectedCreditUsed, selectedCreditCardCurrency)}
+          <div className="mt-1.5 grid grid-cols-3 gap-2">
+            <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Línea</p>
+              <p className="mt-1 truncate font-mono text-[12px] font-semibold tabular-nums text-[var(--c-text)]">
+                {formatCurrency(selectedCreditCardLimit, selectedCreditCardCurrency)}
+              </p>
+            </div>
+            <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Usado</p>
+              <p className="mt-1 truncate font-mono text-[12px] font-semibold tabular-nums text-[var(--c-danger)]">
+                {formatCurrency(selectedCreditCardUsed, selectedCreditCardCurrency)}
+              </p>
+            </div>
+            <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Disponible</p>
+              <p className="mt-1 truncate font-mono text-[12px] font-semibold tabular-nums text-[var(--c-primary)]">
+                {formatCurrency(selectedCreditCardAvailable, selectedCreditCardCurrency)}
+              </p>
+            </div>
+          </div>
+
+          <p className="mt-3 text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+            Deuda en {otherCreditCurrency}
           </p>
+          <div className="mt-1.5 grid grid-cols-3 gap-2">
+            <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Línea</p>
+              <p className="mt-1 truncate font-mono text-[12px] font-semibold tabular-nums text-[var(--c-text)]">
+                {formatCurrency(otherCreditLimit, otherCreditCurrency)}
+              </p>
+            </div>
+            <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Usado</p>
+              <p className={`mt-1 truncate font-mono text-[12px] font-semibold tabular-nums ${otherCreditUsed > 0 ? 'text-[var(--c-danger)]' : 'text-[var(--c-text-muted)]'}`}>
+                {formatCurrency(otherCreditUsed, otherCreditCurrency)}
+              </p>
+            </div>
+            <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Disponible</p>
+              <p className="mt-1 truncate font-mono text-[12px] font-semibold tabular-nums text-[var(--c-primary)]">
+                {formatCurrency(otherCreditAvailable, otherCreditCurrency)}
+              </p>
+            </div>
+          </div>
+
+          {/* ── Cross-currency TC payment section ─────────────────────── */}
+          {isCrossCurrencyTCPayment && (
+            <div className="mt-3 rounded-lg border border-dashed border-amber-500/30 bg-amber-500/[0.04] px-3 py-2.5">
+              <div className="flex items-center gap-2">
+                <div className="flex h-5 w-5 items-center justify-center rounded-md bg-amber-500/15 text-[11px]">
+                  ⇄
+                </div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-amber-400/90">
+                  Cambio de moneda
+                </p>
+              </div>
+              <p className="mt-1.5 text-[11px] leading-[1.5] text-[var(--c-text-muted)]">
+                Estás pagando deuda en {effectiveDebtCurrency} con {sourceAccountCurrency}. Ingresa cuánto se reduce de la deuda.
+              </p>
+
+              <div className="mt-2.5 grid grid-cols-2 gap-2.5">
+                <div>
+                  <p className="mb-1 text-[10px] font-medium text-[var(--c-text-faint)]">
+                    Pagas ({sourceAccountCurrency})
+                  </p>
+                  <div className="flex items-center gap-1.5 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-1.5">
+                    <span className="text-[11px] text-[var(--c-text-faint)]">
+                      {sourceAccountCurrency === 'PEN' ? 'S/' : '$'}
+                    </span>
+                    <span className="text-[13px] font-semibold tabular-nums text-[var(--c-text)]">
+                      {hasAmount ? formatNumber(numericAmount, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-1 text-[10px] font-medium text-[var(--c-text-faint)]">
+                    Reduce deuda ({effectiveDebtCurrency})
+                  </p>
+                  <div className="flex items-center gap-1.5 rounded-lg border border-[var(--c-primary-border)] bg-[var(--c-surface-2)] px-2.5 py-0">
+                    <span className="text-[11px] text-[var(--c-text-faint)]">
+                      {effectiveDebtCurrency === 'PEN' ? 'S/' : '$'}
+                    </span>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      value={crossCurrencyDestAmount}
+                      onChange={e => setCrossCurrencyDestAmount(e.target.value)}
+                      className="w-full bg-transparent py-1.5 text-[13px] font-semibold tabular-nums text-[var(--c-text)] outline-none placeholder:text-[var(--c-text-faint)]/40"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {hasAmount && hasCrossDestAmount && (
+                <div className="mt-2.5 space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-lg bg-[var(--c-surface)] px-2.5 py-2">
+                      <p className="text-[9px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">TC implícito</p>
+                      <p className="mt-0.5 text-[14px] font-bold tabular-nums text-[var(--c-text)]">
+                        {formatNumber(implicitCrossRate, { minimumFractionDigits: 3, maximumFractionDigits: 4 })}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-[var(--c-surface)] px-2.5 py-2">
+                      <p className="text-[9px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">TC del sistema</p>
+                      <p className="mt-0.5 text-[14px] font-bold tabular-nums text-[var(--c-text-muted)]">
+                        {formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                      </p>
+                    </div>
+                  </div>
+                  <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-[11px] leading-[1.5] ${
+                    Math.abs(crossRateDiffPercent) <= 1
+                      ? 'bg-emerald-500/10 text-emerald-300'
+                      : Math.abs(crossRateDiffPercent) <= 3
+                        ? 'bg-amber-500/10 text-amber-300'
+                        : 'bg-red-500/10 text-red-300'
+                  }`}>
+                    <span className="mt-px shrink-0">ℹ️</span>
+                    <span>
+                      {Math.abs(crossRateDiffPercent) <= 0.5
+                        ? 'El tipo de cambio implícito es muy similar al del sistema. Sin observaciones.'
+                        : crossRateDiffPercent > 0
+                          ? `Tu TC implícito (${formatNumber(implicitCrossRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}) está ${formatNumber(Math.abs(crossRateDiffPercent), { maximumFractionDigits: 1 })}% por encima del TC del sistema.${Math.abs(crossRateDiffPercent) > 3 ? ' Verifica los montos.' : ' Solo informativo.'}`
+                          : `Tu TC implícito (${formatNumber(implicitCrossRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}) está ${formatNumber(Math.abs(crossRateDiffPercent), { maximumFractionDigits: 1 })}% por debajo del TC del sistema.${Math.abs(crossRateDiffPercent) > 3 ? ' Verifica los montos.' : ' Solo informativo.'}`
+                      }
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2">
+            <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Línea</p>
+            <p className="mt-1 truncate font-mono text-[12px] font-semibold tabular-nums text-[var(--c-text)]">
+              {formatCurrency(selectedCreditCardLimit, selectedCreditCardCurrency)}
+            </p>
+          </div>
+          <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2">
+            <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Usado</p>
+            <p className="mt-1 truncate font-mono text-[12px] font-semibold tabular-nums text-[var(--c-danger)]">
+              {formatCurrency(projectedCreditUsed, selectedCreditCardCurrency)}
+            </p>
+          </div>
+          <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2">
+            <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Disponible</p>
+            <p className="mt-1 truncate font-mono text-[12px] font-semibold tabular-nums text-[var(--c-primary)]">
+              {formatCurrency(projectedCreditAvailable, selectedCreditCardCurrency)}
+            </p>
+          </div>
         </div>
-        <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2">
-          <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Disponible</p>
-          <p className="mt-1 truncate font-mono text-[12px] font-semibold tabular-nums text-[var(--c-primary)]">
-            {formatCurrency(projectedCreditAvailable, selectedCreditCardCurrency)}
-          </p>
-        </div>
-      </div>
+      )}
 
       <div className="mt-3">
         <div className="flex items-center justify-between gap-2 text-[10px] text-[var(--c-text-muted)]">
@@ -1727,12 +1940,15 @@ export function TransactionForm({
   const transferAvailabilityLabel = transferSourceIsCreditCard
     ? `Línea disponible ${formatCurrency(selectedCreditCardAvailable, selectedCreditCardCurrency)}`
     : transferDestinationIsCreditCard
-      ? `Deuda usada ${formatCurrency(selectedCreditCardUsed, selectedCreditCardCurrency)}`
+      ? (otherCreditUsed > 0
+        ? `Deuda: ${formatCurrency(selectedCreditCardUsed, selectedCreditCardCurrency)} + ${formatCurrency(otherCreditUsed, otherCreditCurrency)}`
+        : `Deuda usada ${formatCurrency(selectedCreditCardUsed, selectedCreditCardCurrency)}`)
       : sourceAccountBalance !== null && Number.isFinite(sourceAccountBalance)
         ? `Saldo disponible ${formatCurrency(sourceAccountBalance, sourceAccountCurrency as 'PEN' | 'USD')}`
         : 'Selecciona ambas cuentas'
 
   const transferSummaryField = layoutMode === 'transfer' ? (
+    <>
     <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3.5 py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
@@ -1758,6 +1974,97 @@ export function TransactionForm({
         </p>
       ) : null}
     </div>
+
+      {/* ── Sección cambio de moneda (cross-currency) ─────────────────────── */}
+      {isCrossCurrencyTransfer && (
+        <div className="rounded-xl border border-dashed border-amber-500/30 bg-amber-500/[0.04] px-3.5 py-3">
+          <div className="flex items-center gap-2">
+            <div className="flex h-5 w-5 items-center justify-center rounded-md bg-amber-500/15 text-[11px]">
+              ⇄
+            </div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-amber-400/90">
+              Cambio de moneda
+            </p>
+          </div>
+          <p className="mt-1.5 text-[11px] leading-[1.5] text-[var(--c-text-muted)]">
+            Ingresa cuánto sale de la cuenta origen y cuánto ingresa en la cuenta destino para calcular el tipo de cambio implícito.
+          </p>
+
+          <div className="mt-3 grid grid-cols-2 gap-2.5">
+            <div>
+              <p className="mb-1 text-[10px] font-medium text-[var(--c-text-faint)]">
+                Sale ({sourceAccountCurrency})
+              </p>
+              <div className="flex items-center gap-1.5 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-1.5">
+                <span className="text-[11px] text-[var(--c-text-faint)]">
+                  {sourceAccountCurrency === 'PEN' ? 'S/' : '$'}
+                </span>
+                <span className="text-[13px] font-semibold tabular-nums text-[var(--c-text)]">
+                  {hasAmount ? formatNumber(numericAmount, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
+                </span>
+              </div>
+            </div>
+            <div>
+              <p className="mb-1 text-[10px] font-medium text-[var(--c-text-faint)]">
+                Ingresa ({destinationAccountCurrency})
+              </p>
+              <div className="flex items-center gap-1.5 rounded-lg border border-[var(--c-primary-border)] bg-[var(--c-surface-2)] px-2.5 py-0">
+                <span className="text-[11px] text-[var(--c-text-faint)]">
+                  {destinationAccountCurrency === 'PEN' ? 'S/' : '$'}
+                </span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  value={crossCurrencyDestAmount}
+                  onChange={e => setCrossCurrencyDestAmount(e.target.value)}
+                  className="w-full bg-transparent py-1.5 text-[13px] font-semibold tabular-nums text-[var(--c-text)] outline-none placeholder:text-[var(--c-text-faint)]/40"
+                />
+              </div>
+            </div>
+          </div>
+
+          {hasAmount && hasCrossDestAmount && (
+            <div className="mt-3 space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-lg bg-[var(--c-surface)] px-2.5 py-2">
+                  <p className="text-[9px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">TC implícito</p>
+                  <p className="mt-0.5 text-[14px] font-bold tabular-nums text-[var(--c-text)]">
+                    {formatNumber(implicitCrossRate, { minimumFractionDigits: 3, maximumFractionDigits: 4 })}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-[var(--c-surface)] px-2.5 py-2">
+                  <p className="text-[9px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">TC del sistema</p>
+                  <p className="mt-0.5 text-[14px] font-bold tabular-nums text-[var(--c-text-muted)]">
+                    {formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                  </p>
+                </div>
+              </div>
+
+              <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-[11px] leading-[1.5] ${
+                Math.abs(crossRateDiffPercent) <= 1
+                  ? 'bg-emerald-500/10 text-emerald-300'
+                  : Math.abs(crossRateDiffPercent) <= 3
+                    ? 'bg-amber-500/10 text-amber-300'
+                    : 'bg-red-500/10 text-red-300'
+              }`}>
+                <span className="mt-px shrink-0">ℹ️</span>
+                <span>
+                  {Math.abs(crossRateDiffPercent) <= 0.5
+                    ? 'El tipo de cambio implícito es muy similar al del sistema. Sin observaciones.'
+                    : crossRateDiffPercent > 0
+                      ? `Tu TC implícito (${formatNumber(implicitCrossRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}) está ${formatNumber(Math.abs(crossRateDiffPercent), { maximumFractionDigits: 1 })}% por encima del TC del sistema.${Math.abs(crossRateDiffPercent) > 3 ? ' Verifica los montos ingresados.' : ' Solo informativo.'}`
+                      : `Tu TC implícito (${formatNumber(implicitCrossRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}) está ${formatNumber(Math.abs(crossRateDiffPercent), { maximumFractionDigits: 1 })}% por debajo del TC del sistema.${Math.abs(crossRateDiffPercent) > 3 ? ' Verifica los montos ingresados.' : ' Solo informativo.'}`
+                  }
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </>
   ) : null
 
   const categoryField = operationType !== 'transfer' && type !== 'TRANSFER' && operationType !== 'asset_purchase' && operationType !== 'payable_issue' && operationType !== 'payable_pay' && operationType !== 'receivable_issue' && operationType !== 'receivable_collect' ? (
