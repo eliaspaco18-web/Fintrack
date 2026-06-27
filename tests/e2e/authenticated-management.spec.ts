@@ -15,7 +15,7 @@ async function ensureTransactionFormReady(page: Page) {
   }
 
   const accountName = `E2E Seed ${Date.now()}`
-  await page.goto('/portfolio')
+  await page.goto('/portfolio?new=portfolio')
   await expect(page.getByTestId('portfolio-form')).toBeVisible()
 
   await page.getByTestId('portfolio-name-input').fill(accountName)
@@ -28,7 +28,7 @@ async function ensureTransactionFormReady(page: Page) {
 }
 
 async function createPortfolioAccount(page: Page, accountName: string) {
-  await page.goto('/portfolio')
+  await page.goto('/portfolio?new=portfolio')
   await expect(page.getByTestId('portfolio-form')).toBeVisible()
 
   await page.getByTestId('portfolio-name-input').fill(accountName)
@@ -67,7 +67,7 @@ async function createBankEntity(page: Page, bankName: string, shortName?: string
 }
 
 async function createCreditCardAccount(page: Page, accountName: string, bankName: string) {
-  await page.goto('/portfolio')
+  await page.goto('/portfolio?new=portfolio')
   await expect(page.getByTestId('portfolio-form')).toBeVisible()
 
   await page.getByTestId('portfolio-name-input').fill(accountName)
@@ -294,7 +294,7 @@ test.describe('authenticated management connectivity', () => {
     await createBankEntity(page, bankName, shortName)
     await expect(page.getByText(bankName).first()).toBeVisible({ timeout: 15_000 })
 
-    await page.goto('/portfolio')
+    await page.goto('/portfolio?new=portfolio')
     await expect(page.getByTestId('portfolio-form')).toBeVisible()
 
     await page.getByTestId('portfolio-bank-entity-select').click()

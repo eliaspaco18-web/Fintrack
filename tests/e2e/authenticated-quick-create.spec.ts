@@ -15,7 +15,7 @@ async function ensureTransactionFormReady(page: Page) {
   }
 
   const accountName = `E2E Seed ${Date.now()}`
-  await page.goto('/portfolio')
+  await page.goto('/portfolio?new=portfolio')
   await expect(page.getByTestId('portfolio-form')).toBeVisible()
 
   await page.getByTestId('portfolio-name-input').fill(accountName)

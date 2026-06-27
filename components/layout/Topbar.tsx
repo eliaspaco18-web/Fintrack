@@ -268,7 +268,7 @@ export function Topbar(props: TopbarProps) {
                 <Link className="topbar-menu-item" href="/transactions?new=transaction">
                   Nueva transacción
                 </Link>
-                <Link className="topbar-menu-item" href="/portfolio?new=account">
+                <Link className="topbar-menu-item" href="/portfolio?new=portfolio">
                   Nuevo portafolio
                 </Link>
                 <Link className="topbar-menu-item" href="/budgets?new=budget">

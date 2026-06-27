@@ -100,6 +100,14 @@ export default async function PortfolioPage() {
     ? dedupeCurrencies((currenciesResult.value.data ?? []) as PortfolioCurrencyRow[])
     : []
   const preloaded = accountsLoaded && banksLoaded && currenciesLoaded
+  const preloadFailures = [
+    !accountsLoaded ? 'cuentas' : null,
+    !banksLoaded ? 'bancos' : null,
+    !currenciesLoaded ? 'monedas' : null,
+  ].filter(Boolean)
+  const preloadError = preloadFailures.length > 0
+    ? `No pudimos cargar todos los datos del portafolio (${preloadFailures.join(', ')}). Reintenta en unos segundos.`
+    : null
 
   return (
     <div className="space-y-6">
@@ -108,6 +116,7 @@ export default async function PortfolioPage() {
         initialBanks={initialBanks}
         initialCurrencies={initialCurrencies}
         preloaded={preloaded}
+        preloadError={preloadError}
       />
     </div>
   )
