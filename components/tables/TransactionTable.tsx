@@ -14,6 +14,7 @@ import { useState, useCallback,
          useRef }                    from 'react'
 import { useTransactions }           from '@/lib/hooks/useTransactions'
 import { useCurrency }               from '@/lib/hooks/useDashboard'
+import { fetchWithTimeout }          from '@/lib/client/fetch-with-timeout'
 import { formatCurrency }            from '@/lib/contracts/ui.contracts'
 import {
   QuickFilterParams,
@@ -673,8 +674,8 @@ export function TransactionTable({ initialParams = {}, options }: TransactionTab
 
       try {
         const [accountsRes, categoriesRes] = await Promise.all([
-          fetch('/api/accounts', { cache: 'no-store' }),
-          fetch('/api/categories?include_system=false', { cache: 'no-store' }),
+          fetchWithTimeout('/api/accounts', { cache: 'no-store' }),
+          fetchWithTimeout('/api/categories?include_system=false', { cache: 'no-store' }),
         ])
 
         const [accountsJson, categoriesJson] = await Promise.all([

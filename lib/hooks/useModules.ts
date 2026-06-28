@@ -10,6 +10,7 @@
 import useSWR                 from 'swr'
 import { useState, useCallback } from 'react'
 import { CacheTTL }           from '@/lib/cache/cache.config'
+import { fetchWithTimeout }   from '@/lib/client/fetch-with-timeout'
 import type { CreditListItem } from '@/lib/credits/display-type'
 import type { FormError }     from '@/lib/contracts/ui.contracts'
 import type {
@@ -24,7 +25,7 @@ import type {
 // ─── FETCHER BASE ─────────────────────────────────────────────────────────────
 
 const fetcher = (url: string) =>
-  fetch(url).then(async res => {
+  fetchWithTimeout(url).then(async res => {
     const json = await res.json()
     if (!res.ok || !json.ok) throw json.error
     return json.data

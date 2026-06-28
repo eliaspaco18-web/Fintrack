@@ -292,8 +292,15 @@ export function DashboardWorkspace() {
 
   if (!seed) {
     return (
-      <div className="rounded-2xl border border-[color-mix(in_oklch,var(--ft-danger)_24%,transparent)] bg-[color-mix(in_oklch,var(--ft-danger)_10%,transparent)] px-4 py-3 text-[13px] text-[var(--ft-danger)]">
-        Error al cargar dashboard: {error ?? 'Error desconocido'}
+      <div className="flex flex-col gap-3 rounded-2xl border border-[color-mix(in_oklch,var(--ft-danger)_24%,transparent)] bg-[color-mix(in_oklch,var(--ft-danger)_10%,transparent)] px-4 py-3 text-[13px] text-[var(--ft-danger)] sm:flex-row sm:items-center sm:justify-between">
+        <span>Error al cargar dashboard: {error ?? 'Error desconocido'}</span>
+        <button
+          type="button"
+          onClick={() => void loadData('initial')}
+          className="w-fit rounded-lg border border-[color-mix(in_oklch,var(--ft-danger)_30%,transparent)] px-3 py-1.5 text-[12px] font-semibold transition-colors duration-150 hover:bg-[color-mix(in_oklch,var(--ft-danger)_12%,transparent)]"
+        >
+          Reintentar
+        </button>
       </div>
     )
   }

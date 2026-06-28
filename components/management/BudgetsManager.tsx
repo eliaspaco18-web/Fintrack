@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { BudgetPeriod, CurrencyCode } from '@/types/database.types'
 import { formatCurrency } from '@/lib/contracts/ui.contracts'
 import { useToast } from '@/lib/toast/toast'
+import { fetchWithTimeout } from '@/lib/client/fetch-with-timeout'
 import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
 import { ActionIconButton } from '@/components/ui/ActionIconButton'
 import { AppSelect } from '@/components/ui/AppSelect'
@@ -323,7 +324,7 @@ export function BudgetsManager() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/budgets?include_inactive=true', { cache: 'no-store' })
+      const res = await fetchWithTimeout('/api/budgets?include_inactive=true', { cache: 'no-store' })
       const json = await res.json().catch(() => null)
       if (!res.ok || !json?.ok) {
         throw new Error(getApiErrorMessage(json, 'No se pudieron cargar los presupuestos'))
@@ -338,7 +339,7 @@ export function BudgetsManager() {
 
   const loadCategories = useCallback(async () => {
     try {
-      const res = await fetch('/api/categories?include_system=true', { cache: 'no-store' })
+      const res = await fetchWithTimeout('/api/categories?include_system=true', { cache: 'no-store' })
       const json = await res.json().catch(() => null)
       if (!res.ok || !json?.ok) {
         throw new Error(getApiErrorMessage(json, 'No se pudieron cargar las categorías'))
@@ -360,7 +361,7 @@ export function BudgetsManager() {
     setPeriodRowsLoading(true)
     setPeriodRowsError(null)
     try {
-      const res = await fetch(`/api/budget-periods?period=${periodMonth}`, { cache: 'no-store' })
+      const res = await fetchWithTimeout(`/api/budget-periods?period=${periodMonth}`, { cache: 'no-store' })
       const json = await res.json().catch(() => null)
       if (!res.ok || !json?.ok) {
         throw new Error(getApiErrorMessage(json, 'No se pudieron cargar los periodos'))

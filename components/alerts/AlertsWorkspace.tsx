@@ -27,6 +27,7 @@ import {
 import { Button } from '@/components/ui/Button'
 import { RecordModal } from '@/components/ui/RecordModal'
 import { getApiErrorMessage } from '@/lib/api/error-message'
+import { fetchWithTimeout } from '@/lib/client/fetch-with-timeout'
 import { useToast } from '@/lib/toast/toast'
 import { AlertFilters, type TypeFilter, type ReadFilter, type ModuleFilter } from './AlertFilters'
 import { AlertCard } from './AlertCard'
@@ -86,7 +87,7 @@ export function AlertsWorkspace() {
     setLoading(true)
     setError(null)
     try {
-      const res  = await fetch('/api/alerts', { cache: 'no-store' })
+      const res  = await fetchWithTimeout('/api/alerts', { cache: 'no-store' })
       const json = await res.json().catch(() => null)
       if (!res.ok || !json?.ok) throw new Error(getApiErrorMessage(json, 'No se pudieron cargar las alertas'))
       setAlerts((json.data as AlertRow[]) ?? [])

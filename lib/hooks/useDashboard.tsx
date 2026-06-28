@@ -11,6 +11,7 @@ import {
   useContext, type ReactNode
 }                                          from 'react'
 import { CacheTTL }                        from '@/lib/cache/cache.config'
+import { fetchWithTimeout }                from '@/lib/client/fetch-with-timeout'
 import { toDisplayAmount }                 from '@/lib/contracts/ui.contracts'
 import { DEFAULT_USD_PEN_EXCHANGE_RATE }   from '@/lib/constants/currency'
 import type { DashboardSummary }           from '@/modules/dashboard/dashboard.types'
@@ -19,7 +20,7 @@ import type { FormError, DisplayCurrency } from '@/lib/contracts/ui.contracts'
 // ─── FETCHER ─────────────────────────────────────────────────────────────────
 
 const fetcher = (url: string) =>
-  fetch(url).then(async res => {
+  fetchWithTimeout(url).then(async res => {
     const json = await res.json()
     if (!res.ok || !json.ok) throw json.error
     return json.data
