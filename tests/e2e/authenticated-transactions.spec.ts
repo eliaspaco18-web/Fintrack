@@ -11,7 +11,7 @@ async function ensureAtLeastOneAccount(page: Page) {
 
   if (!needsBootstrap) return
 
-  await page.goto('/portfolio')
+  await page.goto('/portfolio?new=portfolio')
   await expect(page.getByTestId('portfolio-form')).toBeVisible()
 
   const accountName = `E2E Cuenta ${Date.now()}`

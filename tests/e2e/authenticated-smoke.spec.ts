@@ -21,7 +21,7 @@ test.describe('authenticated smoke', () => {
       await expect(page.getByTestId('new-transaction-no-accounts')).toBeVisible()
     }
 
-    await page.goto('/portfolio')
+    await page.goto('/portfolio?new=portfolio')
     await expect(page.getByTestId('portfolio-form')).toBeVisible()
 
     await page.goto('/admin')

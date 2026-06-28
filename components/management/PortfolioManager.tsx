@@ -145,6 +145,32 @@ type StatusFilter = 'all' | 'active' | 'inactive'
 type CurrencyFilter = 'all' | CurrencyCode
 type TypeFilter = 'all' | AccountType
 
+const CLIENT_FETCH_TIMEOUT_MS = 10_000
+
+async function fetchPortfolioData<T>(url: string, fallbackMessage: string): Promise<T> {
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), CLIENT_FETCH_TIMEOUT_MS)
+
+  try {
+    const res = await fetch(url, { cache: 'no-store', signal: controller.signal })
+    const json = await res.json().catch(() => null)
+
+    if (!res.ok || !json?.ok) {
+      throw new Error(getApiErrorMessage(json, fallbackMessage))
+    }
+
+    return json.data as T
+  } catch (caught) {
+    if (caught instanceof Error && caught.name === 'AbortError') {
+      throw new Error(`${fallbackMessage}. La solicitud tardo demasiado.`)
+    }
+
+    throw caught
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
+}
+
 function isTechnicalAccount(account: Pick<AccountItem, 'type'>): boolean {
   return account.type === 'CREDIT_CARD'
 }
@@ -511,6 +537,7 @@ type PortfolioManagerProps = {
   initialBanks?: BankEntityItem[]
   initialCurrencies?: UserCurrencyItem[]
   preloaded?: boolean
+  preloadError?: string | null
 }
 
 export function PortfolioManager({
@@ -518,6 +545,7 @@ export function PortfolioManager({
   initialBanks = [],
   initialCurrencies = [],
   preloaded = false,
+  preloadError = null,
 }: PortfolioManagerProps) {
   const router = useRouter()
   const pathname = usePathname()
@@ -530,7 +558,7 @@ export function PortfolioManager({
   const [loading, setLoading] = useState(!preloaded)
   const [banksLoading, setBanksLoading] = useState(!preloaded)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(preloadError)
   const [form, setForm] = useState<AccountForm>(EMPTY_FORM)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
@@ -553,14 +581,11 @@ export function PortfolioManager({
     setError(null)
 
     try {
-      const res = await fetch('/api/accounts?include_inactive=true', { cache: 'no-store' })
-      const json = await res.json()
-
-      if (!res.ok || !json.ok) {
-        throw new Error(getApiErrorMessage(json, 'No se pudieron cargar las cuentas'))
-      }
-
-      setAccounts(json.data as AccountItem[])
+      const data = await fetchPortfolioData<AccountItem[]>(
+        '/api/accounts?include_inactive=true',
+        'No se pudieron cargar las cuentas',
+      )
+      setAccounts(data)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No se pudieron cargar las cuentas')
     } finally {
@@ -572,14 +597,11 @@ export function PortfolioManager({
     setBanksLoading(true)
 
     try {
-      const res = await fetch('/api/bank-entities?include_inactive=false', { cache: 'no-store' })
-      const json = await res.json()
-
-      if (!res.ok || !json.ok) {
-        throw new Error(getApiErrorMessage(json, 'No se pudieron cargar los bancos'))
-      }
-
-      setBanks(json.data as BankEntityItem[])
+      const data = await fetchPortfolioData<BankEntityItem[]>(
+        '/api/bank-entities?include_inactive=false',
+        'No se pudieron cargar los bancos',
+      )
+      setBanks(data)
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'No se pudieron cargar los bancos'
       setError(prev => prev ?? message)
@@ -588,10 +610,14 @@ export function PortfolioManager({
     }
   }, [])
 
+  const reloadPortfolioData = useCallback(async () => {
+    await Promise.all([loadAccounts(), loadBanks()])
+  }, [loadAccounts, loadBanks])
+
   useEffect(() => {
     if (preloaded) return
-    void Promise.all([loadAccounts(), loadBanks()])
-  }, [loadAccounts, loadBanks, preloaded])
+    void reloadPortfolioData()
+  }, [preloaded, reloadPortfolioData])
 
   useEffect(() => {
     if (initialCurrencies.length === 0) return
@@ -1028,6 +1054,7 @@ export function PortfolioManager({
     () => (editingId ? accounts.find(account => account.id === editingId) ?? null : null),
     [accounts, editingId],
   )
+  const hasBlockingLoadError = Boolean(error) && accounts.length === 0 && !loading
 
   return (
     <>
@@ -1184,7 +1211,7 @@ export function PortfolioManager({
           />
         )}
       >
-        {error ? <DataErrorBanner message={error} onRetry={loadAccounts} /> : null}
+        {error ? <DataErrorBanner message={error} onRetry={reloadPortfolioData} /> : null}
 
         {loading ? (
           <div className="grid gap-3">
@@ -1203,7 +1230,7 @@ export function PortfolioManager({
               </div>
             ))}
           </div>
-        ) : filteredAccounts.length === 0 ? (
+        ) : hasBlockingLoadError ? null : filteredAccounts.length === 0 ? (
           <EmptyState
             icon={stackIcon()}
             title={
