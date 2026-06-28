@@ -600,32 +600,91 @@ export async function getTransactionFormOptions(userId: string): Promise<Transac
     })
   }
 
-  const pendingPayableOptions: FormSelectOption[] = (pendingPayables ?? []).map(payable => {
-    const pendingAmount = Math.max(0, Number(payable.amount ?? 0) - Number(payable.paid_amount ?? 0))
-    const concept = typeof payable.concept === 'string' && payable.concept.trim().length > 0
-      ? payable.concept.trim()
-      : 'Sin concepto'
-    const dueSuffix = payable.due_date ? ` · vence ${payable.due_date}` : ''
+  const pendingPayablesByCreditor = new Map<string, Array<{
+    id: string
+    creditor_id: string | null
+    creditor_name: string
+    concept: string | null
+    amount: number
+    paid_amount: number
+    currency: string
+    due_date: string | null
+    issue_date: string
+    status: string
+  }>>()
 
-    return {
-      value: payable.id,
-      label: `${payable.creditor_name} · ${concept} · pendiente ${formatNumber(pendingAmount)} ${payable.currency}${dueSuffix}`,
-      icon: 'briefcase',
-      color: '#f97316',
-      meta: {
-        creditor_id: payable.creditor_id,
-        creditor_name: payable.creditor_name,
-        concept,
-        amount: Number(payable.amount ?? 0),
-        paid_amount: Number(payable.paid_amount ?? 0),
-        pending_amount: pendingAmount,
-        currency: payable.currency,
-        due_date: payable.due_date,
-        issue_date: payable.issue_date,
-        status: payable.status,
-      },
+  for (const payable of pendingPayables ?? []) {
+    const creditorKey = payable.creditor_id ?? payable.creditor_name
+    const key = `${creditorKey}::${payable.currency}`
+    const current = pendingPayablesByCreditor.get(key) ?? []
+    current.push(payable)
+    pendingPayablesByCreditor.set(key, current)
+  }
+
+  const pendingPayableOptions: FormSelectOption[] = []
+
+  for (const payables of pendingPayablesByCreditor.values()) {
+    const ordered = [...payables].sort((a, b) => {
+      const byDue = (a.due_date ?? '9999-12-31').localeCompare(b.due_date ?? '9999-12-31')
+      if (byDue !== 0) return byDue
+      return a.issue_date.localeCompare(b.issue_date)
+    })
+
+    const creditorId = ordered[0]?.creditor_id ?? null
+    const creditorName = ordered[0]?.creditor_name ?? 'Acreedor'
+    const currency = ordered[0]?.currency ?? 'PEN'
+    const totalPendingAmount = ordered.reduce((sum, payable) => (
+      sum + Math.max(0, Number(payable.amount ?? 0) - Number(payable.paid_amount ?? 0))
+    ), 0)
+
+    if (creditorId) {
+      pendingPayableOptions.push({
+        value: `creditor:${creditorId}:${currency}`,
+        label: `Pago general · ${creditorName} · saldo total ${formatNumber(totalPendingAmount)} ${currency} · ${ordered.length} ${ordered.length === 1 ? 'cuenta' : 'cuentas'}`,
+        icon: 'briefcase',
+        color: '#c2410c',
+        meta: {
+          kind: 'creditor_total',
+          creditor_id: creditorId,
+          creditor_name: creditorName,
+          concept: `Pago general (${ordered.length} cuentas)`,
+          pending_amount: totalPendingAmount,
+          currency,
+          lines_count: ordered.length,
+          settlement_strategy: 'oldest_first',
+        },
+      })
     }
-  })
+
+    for (const payable of ordered) {
+      const pendingAmount = Math.max(0, Number(payable.amount ?? 0) - Number(payable.paid_amount ?? 0))
+      const concept = typeof payable.concept === 'string' && payable.concept.trim().length > 0
+        ? payable.concept.trim()
+        : 'Sin concepto'
+      const dueSuffix = payable.due_date ? ` · vence ${payable.due_date}` : ''
+
+      pendingPayableOptions.push({
+        value: payable.id,
+        label: `Cuenta puntual · ${payable.creditor_name} · ${concept} · pendiente ${formatNumber(pendingAmount)} ${payable.currency}${dueSuffix}`,
+        icon: 'briefcase',
+        color: '#f97316',
+        meta: {
+          kind: 'payable',
+          creditor_id: payable.creditor_id,
+          creditor_name: payable.creditor_name,
+          concept,
+          amount: Number(payable.amount ?? 0),
+          paid_amount: Number(payable.paid_amount ?? 0),
+          pending_amount: pendingAmount,
+          currency: payable.currency,
+          due_date: payable.due_date,
+          issue_date: payable.issue_date,
+          status: payable.status,
+          lines_count: 1,
+        },
+      })
+    }
+  }
 
     return {
       accounts: (accounts ?? []).map(toAccountOption),

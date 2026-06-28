@@ -40,6 +40,10 @@ type ReceivableSettlementTarget =
   | { kind: 'receivable'; receivableId: string }
   | { kind: 'debtor_total'; debtorId: string; currency: 'PEN' | 'USD' }
 
+type PayableSettlementTarget =
+  | { kind: 'payable'; payableId: string }
+  | { kind: 'creditor_total'; creditorId: string; currency: 'PEN' | 'USD' }
+
 type ReceivableSettlementRow = {
   id: string
   debtor_id: string | null
@@ -50,6 +54,20 @@ type ReceivableSettlementRow = {
   collected_date: string | null
   currency: 'PEN' | 'USD'
   status: 'PENDING' | 'PARTIAL' | 'COLLECTED' | 'WRITTEN_OFF'
+  issue_date: string
+  due_date: string | null
+}
+
+type PayableSettlementRow = {
+  id: string
+  creditor_id: string | null
+  creditor_name: string
+  concept: string | null
+  amount: number
+  paid_amount: number
+  paid_date: string | null
+  currency: 'PEN' | 'USD'
+  status: 'PENDING' | 'PARTIAL' | 'PAID' | 'DISPUTED'
   issue_date: string
   due_date: string | null
 }
@@ -144,6 +162,25 @@ function parseReceivableSettlementTarget(rawId: string): ReceivableSettlementTar
   }
 }
 
+function parsePayableSettlementTarget(rawId: string): PayableSettlementTarget | null {
+  const id = rawId.trim()
+  if (UUID_REGEX.test(id)) {
+    return { kind: 'payable', payableId: id }
+  }
+
+  const match = /^creditor:([0-9a-f-]{36}):(PEN|USD)$/i.exec(id)
+  if (!match) return null
+  const creditorId = match[1]
+  const currency = match[2]
+  if (!creditorId || !currency) return null
+
+  return {
+    kind: 'creditor_total',
+    creditorId,
+    currency: currency.toUpperCase() as 'PEN' | 'USD',
+  }
+}
+
 function buildReceivableCollectionPlan(
   receivables: ReceivableSettlementRow[],
   amountToCollect: number,
@@ -172,6 +209,45 @@ function buildReceivableCollectionPlan(
       nextCollectedAmount,
       nextCollectedDate: isFullyCollected ? transactionDate : row.collected_date,
       nextStatus: isFullyCollected ? 'COLLECTED' : 'PARTIAL',
+    })
+
+    remaining = Math.round((remaining - appliedAmount) * 100) / 100
+  }
+
+  return {
+    plan,
+    remaining,
+  }
+}
+
+function buildPayablePaymentPlan(
+  payables: PayableSettlementRow[],
+  amountToPay: number,
+  transactionDate: string,
+) {
+  let remaining = amountToPay
+  const plan: Array<{
+    row: PayableSettlementRow
+    nextPaidAmount: number
+    nextPaidDate: string | null
+    nextStatus: PayableSettlementRow['status']
+  }> = []
+
+  for (const row of payables) {
+    if (remaining <= 0) break
+
+    const pendingAmount = Math.max(0, Number(row.amount) - Number(row.paid_amount))
+    if (pendingAmount <= 0) continue
+
+    const appliedAmount = Math.min(remaining, pendingAmount)
+    const nextPaidAmount = Math.round((Number(row.paid_amount) + appliedAmount) * 100) / 100
+    const isFullyPaid = nextPaidAmount >= Number(row.amount)
+
+    plan.push({
+      row,
+      nextPaidAmount,
+      nextPaidDate: isFullyPaid ? transactionDate : row.paid_date,
+      nextStatus: isFullyPaid ? 'PAID' : 'PARTIAL',
     })
 
     remaining = Math.round((remaining - appliedAmount) * 100) / 100
@@ -489,28 +565,64 @@ export async function payPayableAction(
   }
 
   const payload = parsed.data
-  const { data: payable, error: payableError } = await supabase
-    .from('accounts_payable')
-    .select('id, creditor_id, creditor_name, concept, amount, paid_amount, currency, status')
-    .eq('id', payload.id)
-    .eq('user_id', userId)
-    .single()
-
-  if (payableError || !payable) return Errors.notFound('Cuenta por pagar')
-  if (payable.status !== 'PENDING' && payable.status !== 'PARTIAL') {
-    return Errors.businessRule('Esta cuenta por pagar ya no tiene saldo pendiente.')
+  const target = parsePayableSettlementTarget(payload.id)
+  if (!target) {
+    return Errors.validation('La cuenta por pagar seleccionada no es válida.')
   }
-  if (payable.currency !== payload.currency) {
+
+  const payablesQuery = supabase
+    .from('accounts_payable')
+    .select('id, creditor_id, creditor_name, concept, amount, paid_amount, paid_date, currency, status, issue_date, due_date')
+    .eq('user_id', userId)
+    .in('status', ['PENDING', 'PARTIAL'])
+
+  const payablesResponse = target.kind === 'payable'
+    ? await payablesQuery
+      .eq('id', target.payableId)
+      .limit(1)
+    : await payablesQuery
+      .eq('creditor_id', target.creditorId)
+      .eq('currency', target.currency)
+      .order('due_date', { ascending: true, nullsFirst: false })
+      .order('issue_date', { ascending: true })
+
+  const payableRows = (payablesResponse.data ?? []) as PayableSettlementRow[]
+  if (payablesResponse.error || payableRows.length === 0) {
+    return Errors.notFound('Cuenta por pagar')
+  }
+
+  const normalizedRows = target.kind === 'payable'
+    ? payableRows
+    : [...payableRows].sort((a, b) => {
+      const byDue = (a.due_date ?? '9999-12-31').localeCompare(b.due_date ?? '9999-12-31')
+      if (byDue !== 0) return byDue
+      return a.issue_date.localeCompare(b.issue_date)
+    })
+  const firstPayable = normalizedRows[0]
+  if (!firstPayable) {
+    return Errors.notFound('Cuenta por pagar')
+  }
+
+  const settlementCurrency = target.kind === 'payable'
+    ? firstPayable.currency
+    : target.currency
+
+  if (settlementCurrency !== payload.currency) {
     return Errors.validation('La moneda del pago no coincide con la cuenta por pagar.')
   }
 
-  const pendingAmount = Math.max(0, Number(payable.amount) - Number(payable.paid_amount))
-  if (payload.amount > pendingAmount) {
+  const totalPendingAmount = normalizedRows.reduce((sum, row) => (
+    sum + Math.max(0, Number(row.amount) - Number(row.paid_amount))
+  ), 0)
+
+  if (payload.amount > totalPendingAmount) {
     return Errors.validation(
       'El pago supera el saldo pendiente',
-      `Saldo pendiente: ${pendingAmount.toFixed(2)} ${payable.currency}`
+      `Saldo pendiente: ${totalPendingAmount.toFixed(2)} ${settlementCurrency}`
     )
   }
+
+  const creditorName = firstPayable.creditor_name ?? 'Acreedor'
 
   const categoryResult = await resolveUserCategoryIdBySystemKey(
     supabase,
@@ -529,14 +641,14 @@ export async function payPayableAction(
     transaction_date: payload.transaction_date,
     category_id: categoryResult.data,
     notes: payload.notes?.trim() || undefined,
-    recipient: payable.creditor_name,
+    recipient: creditorName,
   })
 
   if (!result.ok) return result
 
   const { error: transactionPatchError } = await supabase
     .from('transactions')
-    .update({ creditor_id: payable.creditor_id })
+    .update({ creditor_id: firstPayable.creditor_id })
     .eq('id', result.data.transaction.id)
     .eq('user_id', userId)
 
@@ -545,21 +657,59 @@ export async function payPayableAction(
     return Errors.database(transactionPatchError.message)
   }
 
-  const nextPaidAmount = Math.round((Number(payable.paid_amount) + payload.amount) * 100) / 100
-  const isFullyPaid = nextPaidAmount >= Number(payable.amount)
-  const { error: updateError } = await supabase
-    .from('accounts_payable')
-    .update({
-      paid_amount: nextPaidAmount,
-      paid_date: isFullyPaid ? payload.transaction_date : null,
-      status: isFullyPaid ? 'PAID' : 'PARTIAL',
-    })
-    .eq('id', payable.id)
-    .eq('user_id', userId)
+  const paymentPlan = buildPayablePaymentPlan(
+    normalizedRows,
+    payload.amount,
+    payload.transaction_date,
+  )
 
-  if (updateError) {
+  if (paymentPlan.remaining > 0) {
     await service.deleteTransaction(userId, result.data.transaction.id, { force: true })
-    return Errors.database(updateError.message)
+    return Errors.businessRule(
+      'No se pudo distribuir el pago sobre las cuentas pendientes.',
+      'Vuelve a abrir el formulario para refrescar los saldos.'
+    )
+  }
+
+  const appliedUpdates: Array<{
+    id: string
+    original: Pick<PayableSettlementRow, 'paid_amount' | 'paid_date' | 'status'>
+  }> = []
+
+  try {
+    for (const item of paymentPlan.plan) {
+      const { error: updateError } = await supabase
+        .from('accounts_payable')
+        .update({
+          paid_amount: item.nextPaidAmount,
+          paid_date: item.nextPaidDate,
+          status: item.nextStatus,
+        })
+        .eq('id', item.row.id)
+        .eq('user_id', userId)
+
+      if (updateError) throw updateError
+
+      appliedUpdates.push({
+        id: item.row.id,
+        original: {
+          paid_amount: item.row.paid_amount,
+          paid_date: item.row.paid_date,
+          status: item.row.status,
+        },
+      })
+    }
+  } catch (caught) {
+    await Promise.all(appliedUpdates.map(async applied => {
+      await supabase
+        .from('accounts_payable')
+        .update(applied.original)
+        .eq('id', applied.id)
+        .eq('user_id', userId)
+    }))
+    await service.deleteTransaction(userId, result.data.transaction.id, { force: true })
+    const message = caught instanceof Error ? caught.message : 'No se pudo actualizar la cuenta por pagar'
+    return Errors.database(message)
   }
 
   revalidatePath('/dashboard')
