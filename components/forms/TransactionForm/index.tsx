@@ -637,8 +637,10 @@ export function TransactionForm({
     () => pendingPayableOptions.find(option => option.value === settlementPayableId) ?? null,
     [pendingPayableOptions, settlementPayableId]
   )
-  const selectedSettlementKind = String(selectedSettlementReceivable?.meta?.kind ?? 'receivable')
-  const selectedSettlementLinesCount = Number(selectedSettlementReceivable?.meta?.lines_count ?? 1)
+  const selectedReceivableSettlementKind = String(selectedSettlementReceivable?.meta?.kind ?? 'receivable')
+  const selectedReceivableSettlementLinesCount = Number(selectedSettlementReceivable?.meta?.lines_count ?? 1)
+  const selectedPayableSettlementKind = String(selectedSettlementPayable?.meta?.kind ?? 'payable')
+  const selectedPayableSettlementLinesCount = Number(selectedSettlementPayable?.meta?.lines_count ?? 1)
   const selectedSettlementCurrency = (
     selectedSettlementReceivable?.meta?.currency ??
     selectedSettlementPayable?.meta?.currency ??
@@ -1004,7 +1006,7 @@ export function TransactionForm({
     setValue(
       'description',
       (
-        selectedSettlementKind === 'debtor_total'
+        selectedReceivableSettlementKind === 'debtor_total'
           ? `Cobro general a ${selectedSettlementCounterparty}`
           : `Cobro de ${selectedSettlementConcept || 'cuenta por cobrar'} - ${selectedSettlementCounterparty}`
       ).slice(0, 255),
@@ -1016,14 +1018,31 @@ export function TransactionForm({
     selectedSettlementConcept,
     selectedSettlementCounterparty,
     selectedSettlementCurrency,
-    selectedSettlementKind,
+    selectedReceivableSettlementKind,
     selectedSettlementPendingAmount,
     selectedSettlementReceivable,
     setValue,
   ])
 
   useEffect(() => {
-    if (operationType !== 'payable_pay' || !selectedSettlementPayable) return
+    if (operationType !== 'payable_pay') return
+
+    if (!selectedSettlementPayable) {
+      setValue('amount', '' as TransactionFormValues['amount'], {
+        shouldDirty: false,
+        shouldValidate: false,
+      })
+      setValue('description', '', {
+        shouldDirty: false,
+        shouldValidate: false,
+      })
+      setValue('recipient', undefined, {
+        shouldDirty: false,
+        shouldValidate: false,
+      })
+      return
+    }
+
     if (selectedSettlementCurrency) {
       setValue('currency', selectedSettlementCurrency, { shouldDirty: false, shouldValidate: true })
     }
@@ -1035,7 +1054,11 @@ export function TransactionForm({
     }
     setValue(
       'description',
-      `Pago de ${selectedSettlementConcept || 'cuenta por pagar'} - ${selectedSettlementCounterparty}`.slice(0, 255),
+      (
+        selectedPayableSettlementKind === 'creditor_total'
+          ? `Pago general a ${selectedSettlementCounterparty}`
+          : `Pago de ${selectedSettlementConcept || 'cuenta por pagar'} - ${selectedSettlementCounterparty}`
+      ).slice(0, 255),
       { shouldDirty: false, shouldValidate: true }
     )
     setValue('recipient', selectedSettlementCounterparty, { shouldDirty: false, shouldValidate: false })
@@ -1044,6 +1067,7 @@ export function TransactionForm({
     selectedSettlementConcept,
     selectedSettlementCounterparty,
     selectedSettlementCurrency,
+    selectedPayableSettlementKind,
     selectedSettlementPayable,
     selectedSettlementPendingAmount,
     setValue,
@@ -2696,9 +2720,9 @@ export function TransactionForm({
           <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">
             {selectedSettlementCounterparty}{selectedSettlementConcept ? ` · ${selectedSettlementConcept}` : ''}
           </p>
-          {selectedSettlementKind === 'debtor_total' && selectedSettlementLinesCount > 1 ? (
+          {selectedReceivableSettlementKind === 'debtor_total' && selectedReceivableSettlementLinesCount > 1 ? (
             <p className="mt-1 text-[10px] text-[var(--c-text-faint)]">
-              El cobro se aplicará automáticamente a {selectedSettlementLinesCount} cuentas abiertas, empezando por las más antiguas.
+              El cobro se aplicará automáticamente a {selectedReceivableSettlementLinesCount} cuentas abiertas, empezando por las más antiguas.
             </p>
           ) : null}
         </div>
@@ -2709,10 +2733,10 @@ export function TransactionForm({
   const payablePayField = operationType === 'payable_pay' ? (
     <div className="space-y-3">
       <FieldWrapper
-        label="Cuenta por pagar"
+        label="Cuenta por pagar o saldo del acreedor"
         required
         error={errors.settlement_payable_id?.message}
-        hint="Elige la obligación pendiente que estás pagando."
+        hint="Puedes pagar una cuenta puntual o aplicar un pago general al saldo pendiente del acreedor."
       >
         <Select
           data-testid="transaction-settlement-payable-select"
@@ -2750,6 +2774,11 @@ export function TransactionForm({
           <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">
             {selectedSettlementCounterparty}{selectedSettlementConcept ? ` · ${selectedSettlementConcept}` : ''}
           </p>
+          {selectedPayableSettlementKind === 'creditor_total' && selectedPayableSettlementLinesCount > 1 ? (
+            <p className="mt-1 text-[10px] text-[var(--c-text-faint)]">
+              El pago se aplicará automáticamente a {selectedPayableSettlementLinesCount} cuentas abiertas, empezando por las más antiguas.
+            </p>
+          ) : null}
         </div>
       )}
     </div>

@@ -1,5 +1,7 @@
 'use client'
 
+import type { KeyboardEvent } from 'react'
+
 export const DASHBOARD_TABS = [
   {
     id: 'overview',
@@ -33,17 +35,11 @@ export const DASHBOARD_TABS = [
   },
 ] as const
 
-export const LEGACY_DASHBOARD_TAB = {
-  id: 'legacy',
-  label: 'Legacy',
-  description: 'Migracion temporal',
-} as const
-
 export type DashboardTabId = (typeof DASHBOARD_TABS)[number]['id']
-export type DashboardWorkspaceTabId = DashboardTabId | typeof LEGACY_DASHBOARD_TAB.id
+export type DashboardWorkspaceTabId = DashboardTabId
 
 export type DashboardTabDefinition = {
-  id: DashboardWorkspaceTabId
+  id: DashboardTabId
   label: string
   description: string
 }
@@ -75,6 +71,43 @@ export function DashboardTabs({
   className,
   ariaLabel = 'Secciones del dashboard',
 }: DashboardTabsProps) {
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const isHorizontalNavigation =
+      event.key === 'ArrowRight' ||
+      event.key === 'ArrowDown' ||
+      event.key === 'ArrowLeft' ||
+      event.key === 'ArrowUp' ||
+      event.key === 'Home' ||
+      event.key === 'End'
+
+    if (!isHorizontalNavigation) return
+
+    event.preventDefault()
+    if (tabs.length === 0) return
+
+    const currentIndex = tabs.findIndex((tab) => tab.id === activeTab)
+    const safeIndex = currentIndex >= 0 ? currentIndex : 0
+    let nextIndex = safeIndex
+
+    if (event.key === 'Home') {
+      nextIndex = 0
+    } else if (event.key === 'End') {
+      nextIndex = tabs.length - 1
+    } else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      nextIndex = (safeIndex + 1) % tabs.length
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      nextIndex = (safeIndex - 1 + tabs.length) % tabs.length
+    }
+
+    const nextTab = tabs[nextIndex]
+    if (!nextTab) return
+
+    onTabChange(nextTab.id)
+    window.requestAnimationFrame(() => {
+      document.getElementById(getDashboardTabId(nextTab.id))?.focus()
+    })
+  }
+
   return (
     <div
       className={cx(
@@ -85,6 +118,8 @@ export function DashboardTabs({
       <div
         role="tablist"
         aria-label={ariaLabel}
+        aria-orientation="horizontal"
+        onKeyDown={handleKeyDown}
         className="grid min-w-max grid-flow-col auto-cols-max gap-1 lg:min-w-0 lg:grid-cols-6"
       >
         {tabs.map((tab) => {
