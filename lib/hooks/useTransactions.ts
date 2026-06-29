@@ -8,6 +8,7 @@
 import useSWR, { mutate as globalMutate } from 'swr'
 import { useState, useCallback }          from 'react'
 import { CacheTTL }                       from '@/lib/cache/cache.config'
+import { fetchWithTimeout }               from '@/lib/client/fetch-with-timeout'
 import type { FormError, ActionState,
   TransactionListParams,
   PaginatedResponse, TransactionListItem,
@@ -24,7 +25,7 @@ import {
 // ─── FETCHER ─────────────────────────────────────────────────────────────────
 
 const fetcher = (url: string) =>
-  fetch(url).then(async res => {
+  fetchWithTimeout(url).then(async res => {
     const json = await res.json()
     if (!res.ok || !json.ok) throw json.error
     return json.data

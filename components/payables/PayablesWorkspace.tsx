@@ -21,6 +21,7 @@ import {
 } from '@/components/finance'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { formatCurrency } from '@/lib/contracts/ui.contracts'
+import { fetchWithTimeout } from '@/lib/client/fetch-with-timeout'
 import { useToast } from '@/lib/toast/toast'
 import { CreditorForm, type CreditorRow } from './CreditorForm'
 import { PayableForm } from './PayableForm'
@@ -77,7 +78,7 @@ export function PayablesWorkspace({ exchangeRate = 3.7 }: { exchangeRate?: numbe
     setError(null)
 
     try {
-      const res = await fetch('/api/creditors', { cache: 'no-store' })
+      const res = await fetchWithTimeout('/api/creditors', { cache: 'no-store' })
       const json = await res.json().catch(() => null)
 
       if (!res.ok || !json?.ok) {

@@ -1,5 +1,7 @@
 'use client'
 
+import { fetchWithTimeout } from '@/lib/client/fetch-with-timeout'
+
 export interface ApiEnvelope<T> {
   ok: boolean
   data: T
@@ -10,7 +12,7 @@ export interface ApiEnvelope<T> {
 }
 
 export async function fetchDashboardData<T>(url: string): Promise<T> {
-  const response = await fetch(url)
+  const response = await fetchWithTimeout(url)
   const payload = (await response.json()) as ApiEnvelope<T>
 
   if (!response.ok || !payload.ok) {

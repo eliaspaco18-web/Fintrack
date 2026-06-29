@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { formatCurrency } from '@/lib/contracts/ui.contracts'
 import { getApiErrorMessage } from '@/lib/api/error-message'
+import { fetchWithTimeout } from '@/lib/client/fetch-with-timeout'
 import { useToast } from '@/lib/toast/toast'
 import { ActionIconButton } from '@/components/ui/ActionIconButton'
 import { AppSelect } from '@/components/ui/AppSelect'
@@ -141,7 +142,7 @@ export function RecurringWorkspace() {
     setError(null)
 
     try {
-      const res = await fetch('/api/recurring', { cache: 'no-store' })
+      const res = await fetchWithTimeout('/api/recurring', { cache: 'no-store' })
       const json = await res.json().catch(() => null)
 
       if (!res.ok || !json?.ok) {

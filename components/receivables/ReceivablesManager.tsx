@@ -21,6 +21,7 @@ import {
 } from '@/components/finance'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { formatCurrency } from '@/lib/contracts/ui.contracts'
+import { fetchWithTimeout } from '@/lib/client/fetch-with-timeout'
 import { useToast } from '@/lib/toast/toast'
 import { DebtorForm, type DebtorRow } from './DebtorForm'
 import { ReceivableForm } from './ReceivableForm'
@@ -87,7 +88,7 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
     setError(null)
 
     try {
-      const res = await fetch('/api/debtors', { cache: 'no-store' })
+      const res = await fetchWithTimeout('/api/debtors', { cache: 'no-store' })
       const json = await res.json().catch(() => null)
 
       if (!res.ok || !json?.ok) {
