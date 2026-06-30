@@ -18,6 +18,7 @@ import { NumericInput } from '@/components/ui/NumericInput'
 import { ViewToggle, type ViewMode } from '@/components/ui/ViewToggle'
 import { Button } from '@/components/ui/Button'
 import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
+import { listCurrenciesAction } from '@/app/actions/admin.actions'
 import {
   AmountCell,
   ConfirmDialog,
@@ -35,6 +36,7 @@ import {
   StatusBadge,
 } from '@/components/finance'
 import { getApiErrorMessage } from '@/lib/api/error-message'
+import { fetchWithTimeout } from '@/lib/client/fetch-with-timeout'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 
 type BankEntityRef = {
@@ -148,26 +150,37 @@ type TypeFilter = 'all' | AccountType
 const CLIENT_FETCH_TIMEOUT_MS = 10_000
 
 async function fetchPortfolioData<T>(url: string, fallbackMessage: string): Promise<T> {
-  const controller = new AbortController()
-  const timeoutId = window.setTimeout(() => controller.abort(), CLIENT_FETCH_TIMEOUT_MS)
+  const res = await fetchWithTimeout(url, {
+    cache: 'no-store',
+    timeoutMs: CLIENT_FETCH_TIMEOUT_MS,
+    timeoutMessage: `${fallbackMessage}. La solicitud tardo demasiado.`,
+  })
+  const json = await res.json().catch(() => null)
+
+  if (!res.ok || !json?.ok) {
+    throw new Error(getApiErrorMessage(json, fallbackMessage))
+  }
+
+  return json.data as T
+}
+
+async function withPortfolioTimeout<T>(
+  promise: Promise<T>,
+  fallbackMessage: string,
+): Promise<T> {
+  let timeoutId: number | undefined
 
   try {
-    const res = await fetch(url, { cache: 'no-store', signal: controller.signal })
-    const json = await res.json().catch(() => null)
-
-    if (!res.ok || !json?.ok) {
-      throw new Error(getApiErrorMessage(json, fallbackMessage))
-    }
-
-    return json.data as T
-  } catch (caught) {
-    if (caught instanceof Error && caught.name === 'AbortError') {
-      throw new Error(`${fallbackMessage}. La solicitud tardo demasiado.`)
-    }
-
-    throw caught
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutId = window.setTimeout(() => {
+          reject(new Error(`${fallbackMessage}. La solicitud tardo demasiado.`))
+        }, CLIENT_FETCH_TIMEOUT_MS)
+      }),
+    ])
   } finally {
-    window.clearTimeout(timeoutId)
+    if (timeoutId) window.clearTimeout(timeoutId)
   }
 }
 
@@ -557,6 +570,7 @@ export function PortfolioManager({
   const [currencies, setCurrencies] = useState<UserCurrencyItem[]>(initialCurrencies)
   const [loading, setLoading] = useState(!preloaded)
   const [banksLoading, setBanksLoading] = useState(!preloaded)
+  const [currenciesLoading, setCurrenciesLoading] = useState(!preloaded && initialCurrencies.length === 0)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(preloadError)
   const [form, setForm] = useState<AccountForm>(EMPTY_FORM)
@@ -610,9 +624,31 @@ export function PortfolioManager({
     }
   }, [])
 
+  const loadCurrencies = useCallback(async () => {
+    setCurrenciesLoading(true)
+
+    try {
+      const result = await withPortfolioTimeout(
+        listCurrenciesAction(),
+        'No se pudieron cargar las monedas',
+      )
+
+      if (!result.ok) {
+        throw new Error(result.error.message)
+      }
+
+      setCurrencies(result.data as UserCurrencyItem[])
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : 'No se pudieron cargar las monedas'
+      setError(prev => prev ?? message)
+    } finally {
+      setCurrenciesLoading(false)
+    }
+  }, [])
+
   const reloadPortfolioData = useCallback(async () => {
-    await Promise.all([loadAccounts(), loadBanks()])
-  }, [loadAccounts, loadBanks])
+    await Promise.all([loadAccounts(), loadBanks(), loadCurrencies()])
+  }, [loadAccounts, loadBanks, loadCurrencies])
 
   useEffect(() => {
     if (preloaded) return
@@ -1158,9 +1194,10 @@ export function PortfolioManager({
                   onChange={value => setCurrencyFilter(value as CurrencyFilter)}
                   className="filters-control sm:w-[120px]"
                   compact
+                  disabled={currenciesLoading}
                   searchable={false}
                   options={[
-                    { value: 'all', label: 'Moneda' },
+                    { value: 'all', label: currenciesLoading ? 'Cargando...' : 'Moneda' },
                     ...currencyOptions.map(option => ({
                       value: option.value,
                       label: option.value,
@@ -1640,6 +1677,7 @@ export function PortfolioManager({
                 value={form.currency}
                 onChange={value => setForm(prev => ({ ...prev, currency: value as CurrencyCode }))}
                 testId="portfolio-currency-select"
+                disabled={currenciesLoading}
                 searchable={false}
                 options={[
                   ...currencyOptions,
@@ -1809,7 +1847,7 @@ export function PortfolioManager({
               primaryAction={(
                 <Button
                   type="submit"
-                  disabled={saving}
+                  disabled={saving || loading || banksLoading || currenciesLoading}
                   loading={saving}
                   testId="portfolio-submit-button"
                   variant="primary"
