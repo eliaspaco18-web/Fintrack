@@ -18,9 +18,17 @@ import {
   type OperationType,
 } from '@/components/transactions/OperationTypeSelector'
 
+export interface TransactionPreloadWarning {
+  area: 'options' | 'initialValues'
+  message: string
+  detail?: string
+  affectedOptions: string[]
+}
+
 interface TransactionsWorkspaceProps {
   options: TransactionFormOptions
   initialValues: Partial<TransactionFormValues>
+  preloadWarnings?: TransactionPreloadWarning[]
 }
 
 const PREFILL_QUERY_KEYS = [
@@ -126,6 +134,7 @@ function parseDownloadFilename(contentDisposition: string | null, fallback: stri
 export function TransactionsWorkspace({
   options,
   initialValues,
+  preloadWarnings = [],
 }: TransactionsWorkspaceProps) {
   const pathname = usePathname()
   const router = useRouter()
@@ -144,6 +153,9 @@ export function TransactionsWorkspace({
   const [allPortfolios, setAllPortfolios] = useState(true)
   const [selectedPortfolioIds, setSelectedPortfolioIds] = useState<string[]>([])
   const handledQueryOpenRef = useRef(false)
+  const primaryPreloadWarning = preloadWarnings[0] ?? null
+  const optionsLoadWarning =
+    preloadWarnings.find(warning => warning.area === 'options') ?? null
 
   // PRD: flujo de 2 pasos para crear transacción
   const [modalStep, setModalStep] = useState<'select_type' | 'form'>('select_type')
@@ -188,6 +200,10 @@ export function TransactionsWorkspace({
     setSelectedOperationType(null)
     clearCreateQueryParams()
   }, [clearCreateQueryParams])
+
+  const retryPreload = useCallback(() => {
+    router.refresh()
+  }, [router])
 
   // PRD: cuando el usuario elige un tipo de operación, pasar al formulario
   const handleOperationTypeSelected = useCallback((opType: OperationType) => {
@@ -495,6 +511,31 @@ export function TransactionsWorkspace({
         </div>
       </section>
 
+      {primaryPreloadWarning && (
+        <section className="rounded-[16px] border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-[13px] text-amber-100">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 space-y-1">
+              <p className="font-semibold text-amber-50">
+                {primaryPreloadWarning.message}
+              </p>
+              {primaryPreloadWarning.detail && (
+                <p className="text-[12px] leading-5 text-amber-100/80">
+                  {primaryPreloadWarning.detail}
+                </p>
+              )}
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={retryPreload}
+            >
+              Reintentar
+            </Button>
+          </div>
+        </section>
+      )}
+
       {/* ── TABLA CON FILTROS (PRD §3 "Después de parte superior" + "Parte intermedia") ── */}
       <TransactionTable options={options} />
 
@@ -533,6 +574,7 @@ export function TransactionsWorkspace({
               className="tx-modal-form !space-y-2.5"
               hideTypeSelector
               operationType={selectedOperationType ?? undefined}
+              optionsLoadWarning={optionsLoadWarning}
             />
           </div>
         )}

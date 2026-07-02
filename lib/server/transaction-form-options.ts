@@ -321,14 +321,14 @@ export async function getTransactionFormOptions(userId: string): Promise<Transac
     const supabase = createClient()
 
     const [
-      { data: accounts },
-      { data: categories },
-      { data: assetTypes },
-      { data: credits },
-      { data: creditors },
-      { data: debtors },
-      { data: pendingReceivables },
-      { data: pendingPayables },
+      accountsResult,
+      categoriesResult,
+      assetTypesResult,
+      creditsResult,
+      creditorsResult,
+      debtorsResult,
+      pendingReceivablesResult,
+      pendingPayablesResult,
     ] = await Promise.all([
       supabase
         .from('accounts')
@@ -380,6 +380,34 @@ export async function getTransactionFormOptions(userId: string): Promise<Transac
         .in('status', ['PENDING', 'PARTIAL'])
         .order('due_date', { ascending: true, nullsFirst: false }),
     ])
+
+    const failedOptionQueries = [
+      { name: 'accounts', error: accountsResult.error },
+      { name: 'categories', error: categoriesResult.error },
+      { name: 'asset_types', error: assetTypesResult.error },
+      { name: 'credits', error: creditsResult.error },
+      { name: 'creditors', error: creditorsResult.error },
+      { name: 'debtors', error: debtorsResult.error },
+      { name: 'pending_receivables', error: pendingReceivablesResult.error },
+      { name: 'pending_payables', error: pendingPayablesResult.error },
+    ].filter(item => item.error)
+
+    if (failedOptionQueries.length > 0) {
+      throw new Error(
+        `Transaction option preload failed: ${failedOptionQueries
+          .map(item => item.name)
+          .join(', ')}`
+      )
+    }
+
+    const { data: accounts } = accountsResult
+    const { data: categories } = categoriesResult
+    const { data: assetTypes } = assetTypesResult
+    const { data: credits } = creditsResult
+    const { data: creditors } = creditorsResult
+    const { data: debtors } = debtorsResult
+    const { data: pendingReceivables } = pendingReceivablesResult
+    const { data: pendingPayables } = pendingPayablesResult
 
   const toAccountOption = (a: {
     id: string
