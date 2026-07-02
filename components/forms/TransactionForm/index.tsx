@@ -152,6 +152,11 @@ function cardAvailableFor(option: FormSelectOption | null, currency: CreditCurre
 
 interface TransactionFormProps {
   options:       TransactionFormOptions
+  optionsLoadWarning?: {
+    message: string
+    detail?: string
+    affectedOptions: string[]
+  } | null
   onSuccess?:    (result: CreateTransactionResult) => void
   /** Si se pasa, muestra el summary de éxito en lugar de resetear el form */
   showSuccessSummary?: boolean
@@ -177,6 +182,7 @@ interface TransactionFormProps {
 
 export function TransactionForm({
   options,
+  optionsLoadWarning = null,
   onSuccess,
   showSuccessSummary = true,
   initialValues,
@@ -824,7 +830,12 @@ export function TransactionForm({
   const hasDebtors = debtorOptions.length > 0
   const hasPendingReceivables = pendingReceivableOptions.length > 0
   const hasPendingPayables = pendingPayableOptions.length > 0
+  const hasLoadedCategories = formOptions.categories.income.length > 0 || formOptions.categories.expense.length > 0
   const hasVisibleCategories = visibleCategoryOptions.length > 0
+  const optionsUnavailableDetail =
+    optionsLoadWarning?.detail ?? 'Recarga la página para volver a intentar.'
+  const accountsUnavailable = Boolean(optionsLoadWarning) && !hasAccounts
+  const categoriesUnavailable = Boolean(optionsLoadWarning) && !hasLoadedCategories
   const showDerivedSections =
     !isEditMode && (
       (sections.assetModule && operationType !== 'asset_purchase') ||
@@ -1557,7 +1568,11 @@ export function TransactionForm({
         </Select>
         {!hasAccounts && (
           <div className="mt-2">
-            <InlineFeedback type="warning" message="No tienes cuentas activas." detail="Crea una en Portafolio." />
+            <InlineFeedback
+              type="warning"
+              message={accountsUnavailable ? 'No se pudieron cargar tus cuentas.' : 'No tienes cuentas activas.'}
+              detail={accountsUnavailable ? optionsUnavailableDetail : 'Crea una en Portafolio.'}
+            />
           </div>
         )}
       </FieldWrapper>
@@ -1659,8 +1674,8 @@ export function TransactionForm({
             <div className="mt-2">
               <InlineFeedback
                 type="warning"
-                message="No tienes portafolios compatibles para esta operación."
-                detail="Crea o activa un portafolio apto en Portafolio y vuelve para seleccionarlo."
+                message={accountsUnavailable ? 'No se pudieron cargar tus portafolios.' : 'No tienes portafolios compatibles para esta operación.'}
+                detail={accountsUnavailable ? optionsUnavailableDetail : 'Crea o activa un portafolio apto en Portafolio y vuelve para seleccionarlo.'}
               />
             </div>
           )}
@@ -2120,9 +2135,9 @@ export function TransactionForm({
       {!hasVisibleCategories && (
         <div className="mt-2">
           <InlineFeedback
-            type="info"
-            message="No tienes categorías disponibles para este tipo."
-            detail="Crea la categoría en Administración y vuelve para seleccionarla."
+            type={categoriesUnavailable ? 'warning' : 'info'}
+            message={categoriesUnavailable ? 'No se pudieron cargar tus categorías.' : 'No tienes categorías disponibles para este tipo.'}
+            detail={categoriesUnavailable ? optionsUnavailableDetail : 'Crea la categoría en Administración y vuelve para seleccionarla.'}
           />
         </div>
       )}
