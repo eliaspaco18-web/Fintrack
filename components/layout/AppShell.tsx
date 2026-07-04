@@ -16,6 +16,7 @@ import { useCallback }              from 'react'
 import useSWR from 'swr'
 import { usePathname, useRouter }   from 'next/navigation'
 import { createClient }             from '@/lib/supabase.client'
+import { fetchWithTimeout }         from '@/lib/client/fetch-with-timeout'
 import { LayoutProvider, useLayout } from '@/lib/hooks/useLayout'
 import { CurrencyProvider }         from '@/lib/hooks/useDashboard'
 import { StaticSidebar, MobileDrawer } from './Sidebar'
@@ -25,6 +26,8 @@ import { Topbar }                   from './Topbar'
 import { QuickActionsFAB }          from './QuickActionsFAB'
 
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
+
+const NAV_BADGES_FETCH_TIMEOUT_MS = 5_000
 
 interface ShellUser {
   email:   string
@@ -58,16 +61,21 @@ function InnerShell({ user, navBadges = {}, children }: Omit<AppShellProps, 'exc
   const { data: liveNavBadges } = useSWR<Partial<Record<string, number>>>(
     '/api/dashboard/nav-badges',
     async (url: string) => {
-      const response = await fetch(url, { cache: 'no-store' })
+      const response = await fetchWithTimeout(url, {
+        cache: 'no-store',
+        timeoutMs: NAV_BADGES_FETCH_TIMEOUT_MS,
+        timeoutMessage: 'No se pudo actualizar el estado del menu.',
+      })
       const payload = await response.json().catch(() => null)
       if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.error?.message ?? 'No se pudo cargar el estado del sidebar')
+        throw new Error('No se pudo cargar el estado del menu')
       }
       return payload.data as Partial<Record<string, number>>
     },
     {
       fallbackData: navBadges,
       revalidateOnFocus: false,
+      shouldRetryOnError: false,
       dedupingInterval: 30_000,
       refreshInterval: 60_000,
     },
