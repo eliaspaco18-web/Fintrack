@@ -137,6 +137,7 @@ export function NotificationsPanel() {
   const { toast } = useToast()
   const [prefs, setPrefs] = useState<NotifPrefs>(DEFAULT_PREFS)
   const [loading, setLoading] = useState(true)
+  const [loadWarning, setLoadWarning] = useState(false)
   const [saving, setSaving] = useState(false)
   const savedPrefs = useRef<NotifPrefs>(DEFAULT_PREFS)
 
@@ -149,9 +150,11 @@ export function NotificationsPanel() {
           const merged = { ...DEFAULT_PREFS, ...(data.data ?? data) }
           setPrefs(merged)
           savedPrefs.current = merged
+        } else {
+          setLoadWarning(true)
         }
       } catch {
-        // Keep defaults silently.
+        setLoadWarning(true)
       } finally {
         setLoading(false)
       }
@@ -168,6 +171,14 @@ export function NotificationsPanel() {
   const changed = JSON.stringify(savedPrefs.current) !== JSON.stringify(prefs)
 
   const handleSave = async () => {
+    if (loadWarning) {
+      toast.warning(
+        'Carga incompleta',
+        'Actualiza la pagina antes de guardar alertas para evitar usar preferencias temporales.',
+      )
+      return
+    }
+
     setSaving(true)
     try {
       const response = await fetch('/api/profile/notifications', {
@@ -198,9 +209,27 @@ export function NotificationsPanel() {
       description="Decide qué eventos financieros deben interrumpirte primero y cuáles solo merecen seguimiento."
       density="compact"
       className="mx-auto max-w-[900px]"
-      action={<SettingsBadge tone="accent">{enabledCount} activas</SettingsBadge>}
+      action={
+        loadWarning ? (
+          <SettingsBadge tone="warning">Carga incompleta</SettingsBadge>
+        ) : (
+          <SettingsBadge tone="accent">{enabledCount} activas</SettingsBadge>
+        )
+      }
     >
       <div className="space-y-4">
+        {loadWarning ? (
+          <div role="alert" className="rounded-[20px] border border-[color:rgba(169,120,47,0.28)] bg-[var(--c-warning-soft)]/60 px-4 py-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <SettingsBadge tone="warning">Carga incompleta</SettingsBadge>
+              <p className="text-[13px] font-semibold text-[var(--c-text)]">No pudimos confirmar tus alertas</p>
+            </div>
+            <p className="mt-2 text-[12px] leading-5 text-[var(--c-text-muted)]">
+              Mostramos reglas temporales para que la pantalla siga disponible. Actualiza la pagina antes de guardar cambios.
+            </p>
+          </div>
+        ) : null}
+
         <SettingsSubsection
           title="Alertas críticas"
           description="Liquidez, cobranza y riesgo operativo. Estas reglas deben verse primero."
@@ -309,7 +338,7 @@ export function NotificationsPanel() {
             <span className="text-[12px] font-medium text-[var(--c-text-muted)]">
               {enabledCount} de 7 activas
             </span>
-            <Button onClick={handleSave} loading={saving} disabled={loading || !changed}>
+            <Button onClick={handleSave} loading={saving} disabled={loading || loadWarning || !changed}>
               Guardar alertas
             </Button>
           </div>

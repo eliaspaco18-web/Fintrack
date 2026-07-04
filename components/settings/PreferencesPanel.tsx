@@ -71,6 +71,12 @@ interface PreferencesPanelProps {
   initialTheme: 'dark' | 'light'
   initialCurrency: 'PEN' | 'USD'
   initialPrivateMode: boolean
+  profilePreloadWarning?: SettingsPreloadWarning | null
+}
+
+type SettingsPreloadWarning = {
+  title: string
+  message: string
 }
 
 const TIMEZONES = [
@@ -87,6 +93,7 @@ export function PreferencesPanel({
   initialTheme,
   initialCurrency,
   initialPrivateMode,
+  profilePreloadWarning,
 }: PreferencesPanelProps) {
   const { toast } = useToast()
   const { theme, mounted, setTheme } = useTheme()
@@ -96,12 +103,21 @@ export function PreferencesPanel({
   const [privateMode, setPrivateMode] = useState(initialPrivateMode)
   const [timezone] = useState('America/Lima')
   const [saving, setSaving] = useState(false)
+  const profileLocked = Boolean(profilePreloadWarning)
 
   const handleThemeChange = (nextTheme: 'dark' | 'light') => {
     setTheme(nextTheme)
   }
 
   const handleSave = async () => {
+    if (profileLocked) {
+      toast.warning(
+        'Carga incompleta',
+        'Actualiza la pagina antes de guardar la moneda base para evitar usar datos temporales.',
+      )
+      return
+    }
+
     setSaving(true)
     try {
       const profileResponse = await fetch('/api/profile')
@@ -146,6 +162,18 @@ export function PreferencesPanel({
       action={<SettingsBadge tone="accent">Tema {effectiveTheme === 'dark' ? 'oscuro' : 'claro'}</SettingsBadge>}
     >
       <div className="space-y-4">
+        {profilePreloadWarning ? (
+          <div role="alert" className="rounded-[20px] border border-[color:rgba(169,120,47,0.28)] bg-[var(--c-warning-soft)]/60 px-4 py-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <SettingsBadge tone="warning">Carga incompleta</SettingsBadge>
+              <p className="text-[13px] font-semibold text-[var(--c-text)]">{profilePreloadWarning.title}</p>
+            </div>
+            <p className="mt-2 text-[12px] leading-5 text-[var(--c-text-muted)]">
+              {profilePreloadWarning.message}
+            </p>
+          </div>
+        ) : null}
+
         <SettingsSubsection
           title="Apariencia"
           description="El tema se aplica al instante y se mantiene en tu dispositivo."
@@ -245,6 +273,7 @@ export function PreferencesPanel({
                 onChange={value => setCurrency(value as 'PEN' | 'USD')}
                 ariaLabel="Seleccionar moneda base"
                 compact
+                disabled={profileLocked}
                 searchable={false}
                 options={[
                   { value: 'PEN', label: 'S/ (PEN)' },
@@ -272,7 +301,7 @@ export function PreferencesPanel({
             <p className="text-[12px] leading-5 text-[var(--c-text-muted)]">
               El tema se aplica al instante. Aquí solo guardas datos persistentes de tu cuenta.
             </p>
-            <Button onClick={handleSave} loading={saving}>
+            <Button onClick={handleSave} loading={saving} disabled={profileLocked}>
               Guardar moneda base
             </Button>
           </div>

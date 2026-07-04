@@ -21,6 +21,12 @@ interface AccountsPanelProps {
   accounts: AccountRow[]
   totalPen: number
   totalUsd: number
+  accountsPreloadWarning?: SettingsPreloadWarning | null
+}
+
+type SettingsPreloadWarning = {
+  title: string
+  message: string
 }
 
 const ACCOUNT_TYPE_LABELS: Record<string, string> = {
@@ -40,7 +46,12 @@ function formatAmount(amount: number, currency: string) {
   }).format(amount)
 }
 
-export function AccountsPanel({ accounts, totalPen, totalUsd }: AccountsPanelProps) {
+export function AccountsPanel({
+  accounts,
+  totalPen,
+  totalUsd,
+  accountsPreloadWarning,
+}: AccountsPanelProps) {
   return (
     <SettingsPanel
       eyebrow="Datos"
@@ -50,7 +61,11 @@ export function AccountsPanel({ accounts, totalPen, totalUsd }: AccountsPanelPro
       className="mx-auto max-w-[920px]"
       action={
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <SettingsBadge tone="accent">{accounts.length} registradas</SettingsBadge>
+          {accountsPreloadWarning ? (
+            <SettingsBadge tone="warning">Carga incompleta</SettingsBadge>
+          ) : (
+            <SettingsBadge tone="accent">{accounts.length} registradas</SettingsBadge>
+          )}
           <Button href="/portfolio" variant="secondary" size="sm">
             Abrir Portafolio
           </Button>
@@ -58,6 +73,18 @@ export function AccountsPanel({ accounts, totalPen, totalUsd }: AccountsPanelPro
       }
     >
       <div className="space-y-4">
+        {accountsPreloadWarning ? (
+          <div role="alert" className="rounded-[20px] border border-[color:rgba(169,120,47,0.28)] bg-[var(--c-warning-soft)]/60 px-4 py-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <SettingsBadge tone="warning">Carga incompleta</SettingsBadge>
+              <p className="text-[13px] font-semibold text-[var(--c-text)]">{accountsPreloadWarning.title}</p>
+            </div>
+            <p className="mt-2 text-[12px] leading-5 text-[var(--c-text-muted)]">
+              {accountsPreloadWarning.message}
+            </p>
+          </div>
+        ) : null}
+
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-[20px] border border-[var(--c-border)] bg-[var(--c-surface-2)] px-4 py-4">
             <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--c-text-faint)]">
@@ -67,7 +94,7 @@ export function AccountsPanel({ accounts, totalPen, totalUsd }: AccountsPanelPro
               {formatAmount(totalPen, 'PEN')}
             </p>
             <p className="mt-1 text-[12px] leading-5 text-[var(--c-text-muted)]">
-              Saldo consolidado en moneda local.
+              {accountsPreloadWarning ? 'Saldo temporal hasta recargar las cuentas.' : 'Saldo consolidado en moneda local.'}
             </p>
           </div>
           <div className="rounded-[20px] border border-[var(--c-border)] bg-[var(--c-surface-2)] px-4 py-4">
@@ -78,7 +105,7 @@ export function AccountsPanel({ accounts, totalPen, totalUsd }: AccountsPanelPro
               {formatAmount(totalUsd, 'USD')}
             </p>
             <p className="mt-1 text-[12px] leading-5 text-[var(--c-text-muted)]">
-              Saldo consolidado en moneda extranjera.
+              {accountsPreloadWarning ? 'Saldo temporal hasta recargar las cuentas.' : 'Saldo consolidado en moneda extranjera.'}
             </p>
           </div>
         </div>
@@ -96,9 +123,13 @@ export function AccountsPanel({ accounts, totalPen, totalUsd }: AccountsPanelPro
                   <path d="M4 8v9.5A2.5 2.5 0 0 0 6.5 20H20v-6h-4a2 2 0 1 1 0-4h4V6" />
                 </svg>
               </div>
-              <p className="mt-4 text-sm font-semibold text-[var(--c-text)]">Aún no tienes cuentas registradas</p>
+              <p className="mt-4 text-sm font-semibold text-[var(--c-text)]">
+                {accountsPreloadWarning ? 'No pudimos cargar tus cuentas' : 'Aún no tienes cuentas registradas'}
+              </p>
               <p className="mt-2 max-w-md text-[12px] leading-5 text-[var(--c-text-muted)]">
-                Crea tu primera cuenta desde Portafolio para empezar a registrar movimientos, balances y conciliaciones.
+                {accountsPreloadWarning
+                  ? 'Actualiza la pagina para volver a intentar. No asumimos que tu inventario este vacio cuando la carga fallo.'
+                  : 'Crea tu primera cuenta desde Portafolio para empezar a registrar movimientos, balances y conciliaciones.'}
               </p>
               <div className="mt-5">
                 <Button href="/portfolio">Abrir Portafolio</Button>

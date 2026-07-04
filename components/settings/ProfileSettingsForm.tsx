@@ -30,6 +30,13 @@ interface ProfilePayload {
 interface ProfileSettingsFormProps {
   initialProfile: ProfilePayload
   accountCount: number
+  profilePreloadWarning?: SettingsPreloadWarning | null
+  accountsPreloadWarning?: SettingsPreloadWarning | null
+}
+
+type SettingsPreloadWarning = {
+  title: string
+  message: string
 }
 
 type ApiSuccess<T> = { ok: true; data: T }
@@ -75,7 +82,26 @@ async function parseResponse<T>(response: Response): Promise<ApiResult<T>> {
   }
 }
 
-export function ProfileSettingsForm({ initialProfile, accountCount }: ProfileSettingsFormProps) {
+function PreloadWarningBox({ warning }: { warning: SettingsPreloadWarning }) {
+  return (
+    <div role="alert" className="rounded-[20px] border border-[color:rgba(169,120,47,0.28)] bg-[var(--c-warning-soft)]/60 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <SettingsBadge tone="warning">Carga incompleta</SettingsBadge>
+        <p className="text-[13px] font-semibold text-[var(--c-text)]">{warning.title}</p>
+      </div>
+      <p className="mt-2 text-[12px] leading-5 text-[var(--c-text-muted)]">
+        {warning.message}
+      </p>
+    </div>
+  )
+}
+
+export function ProfileSettingsForm({
+  initialProfile,
+  accountCount,
+  profilePreloadWarning,
+  accountsPreloadWarning,
+}: ProfileSettingsFormProps) {
   const router = useRouter()
   const { toast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -99,6 +125,14 @@ export function ProfileSettingsForm({ initialProfile, accountCount }: ProfileSet
     () => (isAvatarPreset(avatarUrl) ? avatarUrl : null),
     [avatarUrl],
   )
+  const profileLocked = Boolean(profilePreloadWarning)
+
+  const showProfileLockedWarning = () => {
+    toast.warning(
+      'Carga incompleta',
+      'Actualiza la pagina antes de guardar cambios de perfil para evitar usar datos temporales.',
+    )
+  }
 
   useEffect(() => {
     return () => {
@@ -108,6 +142,11 @@ export function ProfileSettingsForm({ initialProfile, accountCount }: ProfileSet
 
   const handleSaveProfile = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+
+    if (profileLocked) {
+      showProfileLockedWarning()
+      return
+    }
 
     const cleanName = fullName.trim()
     if (cleanName.length < 2) {
@@ -149,11 +188,21 @@ export function ProfileSettingsForm({ initialProfile, accountCount }: ProfileSet
   }
 
   const handleOpenPicker = () => {
+    if (profileLocked) {
+      showProfileLockedWarning()
+      return
+    }
     if (uploadingAvatar || removingAvatar) return
     fileInputRef.current?.click()
   }
 
   const handleAvatarChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (profileLocked) {
+      showProfileLockedWarning()
+      event.target.value = ''
+      return
+    }
+
     const file = event.target.files?.[0]
     if (!file) return
 
@@ -207,6 +256,11 @@ export function ProfileSettingsForm({ initialProfile, accountCount }: ProfileSet
   }
 
   const handleRemoveAvatar = async () => {
+    if (profileLocked) {
+      showProfileLockedWarning()
+      return
+    }
+
     if (!avatarUrl || removingAvatar || uploadingAvatar) return
 
     setRemovingAvatar(true)
@@ -235,6 +289,11 @@ export function ProfileSettingsForm({ initialProfile, accountCount }: ProfileSet
   }
 
   const handleSelectPreset = (preset: string) => {
+    if (profileLocked) {
+      showProfileLockedWarning()
+      return
+    }
+
     if (uploadingAvatar || removingAvatar) return
     setPreviewUrl(null)
     setAvatarUrl(preset)
@@ -248,12 +307,19 @@ export function ProfileSettingsForm({ initialProfile, accountCount }: ProfileSet
       density="compact"
       className="mx-auto max-w-[920px]"
       action={
-        <SettingsBadge tone="accent">
-          {accountCount} cuenta{accountCount === 1 ? '' : 's'} activa{accountCount === 1 ? '' : 's'}
-        </SettingsBadge>
+        accountsPreloadWarning ? (
+          <SettingsBadge tone="warning">Cuentas sin confirmar</SettingsBadge>
+        ) : (
+          <SettingsBadge tone="accent">
+            {accountCount} cuenta{accountCount === 1 ? '' : 's'} activa{accountCount === 1 ? '' : 's'}
+          </SettingsBadge>
+        )
       }
     >
       <form onSubmit={handleSaveProfile} className="space-y-4">
+        {profilePreloadWarning ? <PreloadWarningBox warning={profilePreloadWarning} /> : null}
+        {accountsPreloadWarning ? <PreloadWarningBox warning={accountsPreloadWarning} /> : null}
+
         <section className="ft-profile-identity-card">
           <div className="ft-profile-identity-main">
             <div className="ft-profile-avatar-shell">
@@ -299,7 +365,7 @@ export function ProfileSettingsForm({ initialProfile, accountCount }: ProfileSet
                 type="button"
                 onClick={handleOpenPicker}
                 loading={uploadingAvatar}
-                disabled={removingAvatar}
+                disabled={profileLocked || removingAvatar}
                 size="sm"
               >
                 Cambiar foto
@@ -309,7 +375,7 @@ export function ProfileSettingsForm({ initialProfile, accountCount }: ProfileSet
                 variant="secondary"
                 onClick={handleRemoveAvatar}
                 loading={removingAvatar}
-                disabled={!avatarUrl || uploadingAvatar}
+                disabled={profileLocked || !avatarUrl || uploadingAvatar}
                 size="sm"
               >
                 Quitar
@@ -323,6 +389,7 @@ export function ProfileSettingsForm({ initialProfile, accountCount }: ProfileSet
             accept="image/png,image/jpeg,image/webp,image/gif"
             className="hidden"
             onChange={handleAvatarChange}
+            disabled={profileLocked}
           />
 
           <details className="ft-profile-presets">
@@ -335,6 +402,7 @@ export function ProfileSettingsForm({ initialProfile, accountCount }: ProfileSet
                   key={preset}
                   type="button"
                   onClick={() => handleSelectPreset(preset)}
+                  disabled={profileLocked || uploadingAvatar || removingAvatar}
                   aria-label={`Seleccionar avatar sugerido ${index + 1}`}
                   aria-pressed={selectedPreset === preset}
                   className={`ft-profile-preset-button ${
@@ -419,7 +487,7 @@ export function ProfileSettingsForm({ initialProfile, accountCount }: ProfileSet
           <Button
             type="submit"
             loading={savingProfile}
-            disabled={uploadingAvatar || removingAvatar}
+            disabled={profileLocked || uploadingAvatar || removingAvatar}
           >
             Guardar cambios
           </Button>

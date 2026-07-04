@@ -21,6 +21,21 @@ import { withTimeout } from '@/lib/server/promise-timeout'
 
 const SERVER_QUERY_TIMEOUT_MS = 4_000
 
+type SettingsPreloadWarning = {
+  title: string
+  message: string
+}
+
+const PROFILE_PRELOAD_WARNING: SettingsPreloadWarning = {
+  title: 'No pudimos confirmar tu perfil',
+  message: 'Mostramos datos temporales para que Configuracion siga disponible. Actualiza la pagina antes de guardar cambios.',
+}
+
+const ACCOUNTS_PRELOAD_WARNING: SettingsPreloadWarning = {
+  title: 'No pudimos confirmar tus cuentas',
+  message: 'La lista de cuentas y balances puede estar incompleta. Actualiza la pagina antes de tomar decisiones con esta informacion.',
+}
+
 export const metadata: Metadata = {
   title: 'Configuración | FinTrack',
   description: 'Perfil, seguridad, notificaciones y preferencias de la cuenta.',
@@ -34,6 +49,8 @@ function renderPanel({
   totalUsd,
   email,
   currentTheme,
+  profilePreloadWarning,
+  accountsPreloadWarning,
 }: {
   activeTab: SettingsTab
   profilePayload: {
@@ -56,12 +73,16 @@ function renderPanel({
   totalUsd: number
   email: string
   currentTheme: 'dark' | 'light'
+  profilePreloadWarning: SettingsPreloadWarning | null
+  accountsPreloadWarning: SettingsPreloadWarning | null
 }) {
   if (activeTab === 'profile') {
     return (
       <ProfileSettingsForm
         initialProfile={profilePayload}
         accountCount={accountRows.length}
+        profilePreloadWarning={profilePreloadWarning}
+        accountsPreloadWarning={accountsPreloadWarning}
       />
     )
   }
@@ -76,6 +97,7 @@ function renderPanel({
         initialTheme={currentTheme}
         initialCurrency={profilePayload.default_currency}
         initialPrivateMode={false}
+        profilePreloadWarning={profilePreloadWarning}
       />
     )
   }
@@ -90,6 +112,7 @@ function renderPanel({
         accounts={accountRows}
         totalPen={totalPen}
         totalUsd={totalUsd}
+        accountsPreloadWarning={accountsPreloadWarning}
       />
     )
   }
@@ -127,6 +150,15 @@ export default async function SettingsPage({
       ? accountsResult.value.data
       : []
 
+  const profilePreloadWarning =
+    profileResult.status === 'fulfilled' && !profileResult.value.error
+      ? null
+      : PROFILE_PRELOAD_WARNING
+  const accountsPreloadWarning =
+    accountsResult.status === 'fulfilled' && !accountsResult.value.error
+      ? null
+      : ACCOUNTS_PRELOAD_WARNING
+
   const activeTab = getSettingsTabValue(searchParams?.tab)
   const accountRows = accounts ?? []
 
@@ -147,7 +179,11 @@ export default async function SettingsPage({
   }
 
   const currentTheme = (profile as { theme?: string } | null)?.theme === 'light' ? 'light' : 'dark'
-  const profileState = profilePayload.full_name && profilePayload.avatar_url ? 'Completo' : 'En revisión'
+  const profileState = profilePreloadWarning
+    ? 'Carga parcial'
+    : profilePayload.full_name && profilePayload.avatar_url
+      ? 'Completo'
+      : 'En revisión'
 
   return (
     <PageLayout
@@ -205,6 +241,8 @@ export default async function SettingsPage({
             totalUsd,
             email,
             currentTheme,
+            profilePreloadWarning,
+            accountsPreloadWarning,
           })}
         </main>
       </div>
