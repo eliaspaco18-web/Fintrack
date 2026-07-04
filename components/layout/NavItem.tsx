@@ -58,6 +58,7 @@ function CollapsedNavItem({
     <li>
       <Link
         href={item.href}
+        prefetch={false}
         onClick={onClick}
         aria-label={tooltipLabel}
         aria-current={isActive ? 'page' : undefined}
@@ -104,6 +105,7 @@ export function NavItem({ item, mode, badge = 0, onClick }: NavItemProps) {
     <li>
       <Link
         href={item.href}
+        prefetch={false}
         onClick={handleClick}
         className="sidebar-nav-link"
         data-active={isActive ? 'true' : 'false'}

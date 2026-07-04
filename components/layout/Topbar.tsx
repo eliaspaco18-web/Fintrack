@@ -208,6 +208,7 @@ export function Topbar(props: TopbarProps) {
         <div className="flex shrink-0 items-center gap-1.5">
           <Link
             href="/alerts"
+            prefetch={false}
             aria-label={alertCount > 0 ? `${alertCount} alertas críticas` : 'Alertas'}
             title="Alertas"
             className="
@@ -265,16 +266,16 @@ export function Topbar(props: TopbarProps) {
                   p-1 shadow-[var(--shadow-md)]
                 "
               >
-                <Link className="topbar-menu-item" href="/transactions?new=transaction">
+                <Link className="topbar-menu-item" href="/transactions?new=transaction" prefetch={false}>
                   Nueva transacción
                 </Link>
-                <Link className="topbar-menu-item" href="/portfolio?new=portfolio">
+                <Link className="topbar-menu-item" href="/portfolio?new=portfolio" prefetch={false}>
                   Nuevo portafolio
                 </Link>
-                <Link className="topbar-menu-item" href="/budgets?new=budget">
+                <Link className="topbar-menu-item" href="/budgets?new=budget" prefetch={false}>
                   Nuevo presupuesto
                 </Link>
-                <Link className="topbar-menu-item" href="/recurring?new=template">
+                <Link className="topbar-menu-item" href="/recurring?new=template" prefetch={false}>
                   Nuevo recurrente
                 </Link>
               </div>
@@ -364,10 +365,10 @@ export function Topbar(props: TopbarProps) {
                 >
                   {isLight ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro'}
                 </button>
-                <Link className="topbar-menu-item" href="/settings?tab=profile">
+                <Link className="topbar-menu-item" href="/settings?tab=profile" prefetch={false}>
                   Configuración
                 </Link>
-                <Link className="topbar-menu-item" href="/settings?tab=security">
+                <Link className="topbar-menu-item" href="/settings?tab=security" prefetch={false}>
                   Seguridad
                 </Link>
                 <button type="button" onClick={onSignOut} className="topbar-menu-item w-full">

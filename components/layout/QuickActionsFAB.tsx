@@ -133,6 +133,7 @@ export function QuickActionsFAB() {
               <Link
                 key={action.id}
                 href={action.href}
+                prefetch={false}
                 scroll={false}
                 onClick={() => setOpen(false)}
                 style={{ transitionDelay: open ? `${idx * 30}ms` : '0ms' }}
