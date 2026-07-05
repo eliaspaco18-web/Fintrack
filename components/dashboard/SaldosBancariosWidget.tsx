@@ -59,6 +59,7 @@ export function SaldosBancariosWidget() {
   const [showAll, setShowAll] = useState(false)
   const { data, isLoading } = useSWR('/api/dashboard/sidebar', fetcher, {
     revalidateOnFocus: false,
+    revalidateIfStale: false,
     dedupingInterval: 30_000,
   })
 

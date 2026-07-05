@@ -2,10 +2,6 @@
 
 import { DashboardWorkspace } from './DashboardWorkspace'
 
-interface DashboardClientProps {
-  initialExchangeRate?: number
-}
-
-export function DashboardClient(_props: DashboardClientProps) {
+export function DashboardClient() {
   return <DashboardWorkspace />
 }

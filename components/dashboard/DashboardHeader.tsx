@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import useSWR from 'swr'
 import { formatAxisValue, smoothPath, type SvgPoint } from '@/lib/charts/svg-utils'
 import { formatCurrency, formatNumber } from '@/lib/contracts/ui.contracts'
@@ -396,22 +396,32 @@ function KpiTrendPanel({
 }
 
 export function DashboardHeader() {
+  const [loadRecurring, setLoadRecurring] = useState(false)
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setLoadRecurring(true), 0)
+    return () => window.clearTimeout(timer)
+  }, [])
+
   const { data: summary, isLoading: summaryLoading } = useSWR('/api/dashboard/summary', summaryFetcher, {
     revalidateOnFocus: false,
+    revalidateIfStale: false,
     dedupingInterval: 30_000,
   })
 
   const { data: modules, isLoading: modulesLoading } = useSWR('/api/dashboard/modules-summary', modulesFetcher, {
     revalidateOnFocus: false,
+    revalidateIfStale: false,
     dedupingInterval: 30_000,
   })
 
   const { data: moneyFlow } = useSWR('/api/dashboard/money-flow?months=6&mode=acumulado', moneyFlowFetcher, {
     revalidateOnFocus: false,
+    revalidateIfStale: false,
     dedupingInterval: 30_000,
   })
 
-  const { data: recurring } = useSWR('/api/recurring?type=EXPENSE', recurringFetcher, {
+  const { data: recurring } = useSWR(loadRecurring ? '/api/recurring?type=EXPENSE' : null, recurringFetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 30_000,
   })

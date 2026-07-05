@@ -59,6 +59,7 @@ function targetHref(item: DashboardSidebar['vencimientos_proximos'][number]) {
 export function VencimientosWidget() {
   const { data, isLoading } = useSWR('/api/dashboard/sidebar', fetcher, {
     revalidateOnFocus: false,
+    revalidateIfStale: false,
     dedupingInterval: 30_000,
   })
 

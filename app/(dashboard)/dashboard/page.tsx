@@ -5,7 +5,6 @@
 // =============================================================================
 
 import type { Metadata }         from 'next'
-import { resolveLiveUsdPenExchangeRate } from '@/lib/server/exchange-rate'
 import { DashboardClient }       from '@/components/dashboard/DashboardClient'
 
 export const metadata: Metadata = {
@@ -21,11 +20,8 @@ export const revalidate = 60
 
 // ─── PAGE ─────────────────────────────────────────────────────────────────────
 
-export default async function DashboardPage() {
-  // SSR mínimo: solo tipo de cambio (el resto se resuelve en cliente con fetch paralelo).
-  const exchangeRateSnapshot = await resolveLiveUsdPenExchangeRate()
-
+export default function DashboardPage() {
   return (
-    <DashboardClient initialExchangeRate={exchangeRateSnapshot.rate} />
+    <DashboardClient />
   )
 }

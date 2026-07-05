@@ -201,6 +201,7 @@ export function SavingsRateTrendChart() {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   const { data, isLoading } = useSWR('/api/dashboard/money-flow?months=6&mode=acumulado', fetcher, {
     revalidateOnFocus: false,
+    revalidateIfStale: false,
     dedupingInterval: 30_000,
   })
 

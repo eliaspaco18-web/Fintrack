@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import useSWR from 'swr'
 import { formatNumber } from '@/lib/contracts/ui.contracts'
 import type {
@@ -184,7 +184,14 @@ export function CashFlowProjectionWidget({
 }: CashFlowProjectionWidgetProps = {}) {
   const compact = variant === 'compact'
   const [hoveredWeek, setHoveredWeek] = useState<number | null>(null)
-  const { data, isLoading } = useSWR('/api/dashboard/projection', fetcher, {
+  const [loadProjection, setLoadProjection] = useState(false)
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setLoadProjection(true), 0)
+    return () => window.clearTimeout(timer)
+  }, [])
+
+  const { data, isLoading } = useSWR(loadProjection ? '/api/dashboard/projection' : null, fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 30_000,
   })
@@ -274,7 +281,7 @@ export function CashFlowProjectionWidget({
     }
   }, [compact, data, horizon])
 
-  if (isLoading && !data) return <ProjectionSkeleton compact={compact} />
+  if ((!loadProjection || isLoading) && !data) return <ProjectionSkeleton compact={compact} />
 
   const hasSignals = (data?.projectionPoints ?? []).some((point) => point.inflows > 0 || point.outflows > 0)
     || (data?.recurringMonthlyExpense ?? 0) > 0

@@ -116,6 +116,7 @@ function CreditEmptyState() {
 export function CreditosUsoRapidoWidget() {
   const { data, isLoading } = useSWR('/api/dashboard/modules-summary', fetcher, {
     revalidateOnFocus: false,
+    revalidateIfStale: false,
     dedupingInterval: 30_000,
   })
 
