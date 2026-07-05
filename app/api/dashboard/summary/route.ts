@@ -23,7 +23,7 @@ export async function GET() {
     if (!userId) return apiUnauthorized()
 
     const service = new DashboardService(supabase)
-    const result = await service.getSummary(userId)
+    const result = await service.getSummary(userId, { includeDailyFlow: false })
     if (!result.ok) return fromResult(result)
 
     const s = result.data

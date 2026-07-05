@@ -26,6 +26,9 @@ import type {
 }                                     from './dashboard.types'
 
 type DbClient = SupabaseClient<Database>
+type DashboardSummaryOptions = {
+  includeDailyFlow?: boolean
+}
 
 export class DashboardService {
   constructor(private readonly db: DbClient) {}
@@ -44,13 +47,19 @@ export class DashboardService {
    *   if (!result.ok) { ... }
    *   const { data } = result
    */
-  async getSummary(userId: string): Promise<Result<DashboardSummary>> {
+  async getSummary(
+    userId: string,
+    options: DashboardSummaryOptions = {}
+  ): Promise<Result<DashboardSummary>> {
     try {
+      const includeDailyFlow = options.includeDailyFlow ?? true
       const [{ data, error }, dailyFlowResult] = await Promise.all([
         this.db.rpc('fn_dashboard_summary', {
           p_user_id: userId,
         }),
-        this.getDailyFlow(userId, 370),
+        includeDailyFlow
+          ? this.getDailyFlow(userId, 370)
+          : Promise.resolve(ok<DailyFlowPoint[]>([])),
       ])
 
       if (error) return Errors.database(error.message)
