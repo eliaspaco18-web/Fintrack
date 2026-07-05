@@ -78,6 +78,7 @@ function TopCounterpartyList({
 export function FlujoPendienteWidget() {
   const { data, isLoading } = useSWR('/api/dashboard/sidebar', fetcher, {
     revalidateOnFocus: false,
+    revalidateIfStale: false,
     dedupingInterval: 30_000,
   })
 

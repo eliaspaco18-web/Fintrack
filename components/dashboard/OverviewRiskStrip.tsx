@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
 import useSWR from 'swr'
 import { formatCurrency } from '@/lib/contracts/ui.contracts'
 import type {
@@ -160,16 +161,24 @@ function buildRiskItems(
 
 export function OverviewRiskStrip({ variant = 'band' }: OverviewRiskStripProps = {}) {
   const stacked = variant === 'stacked'
-  const { data: alerts, isLoading: alertsLoading } = useSWR('/api/dashboard/alerts', alertsFetcher, {
+  const [loadAlerts, setLoadAlerts] = useState(false)
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setLoadAlerts(true), 0)
+    return () => window.clearTimeout(timer)
+  }, [])
+
+  const { data: alerts, isLoading: alertsLoading } = useSWR(loadAlerts ? '/api/dashboard/alerts' : null, alertsFetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 30_000,
   })
   const { data: sidebar, isLoading: sidebarLoading } = useSWR('/api/dashboard/sidebar', sidebarFetcher, {
     revalidateOnFocus: false,
+    revalidateIfStale: false,
     dedupingInterval: 30_000,
   })
 
-  const loading = (alertsLoading && !alerts) || (sidebarLoading && !sidebar)
+  const loading = ((!loadAlerts || alertsLoading) && !alerts) || (sidebarLoading && !sidebar)
   const items = buildRiskItems(alerts, sidebar)
   const criticalCount = alerts?.criticalCount ?? 0
   const dueCount = sidebar?.vencimientos_proximos.length ?? 0

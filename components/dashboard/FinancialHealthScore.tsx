@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import useSWR from 'swr'
 import { formatNumber } from '@/lib/contracts/ui.contracts'
 import type {
@@ -205,19 +205,29 @@ function EmptyRadar() {
 
 export function FinancialHealthScore() {
   const [hoveredAxis, setHoveredAxis] = useState<number | null>(null)
+  const [loadFullDashboard, setLoadFullDashboard] = useState(false)
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setLoadFullDashboard(true), 0)
+    return () => window.clearTimeout(timer)
+  }, [])
+
   const { data: summary } = useSWR('/api/dashboard/summary', summaryFetcher, {
     revalidateOnFocus: false,
+    revalidateIfStale: false,
     dedupingInterval: 30_000,
   })
   const { data: modules } = useSWR('/api/dashboard/modules-summary', modulesFetcher, {
     revalidateOnFocus: false,
+    revalidateIfStale: false,
     dedupingInterval: 30_000,
   })
   const { data: sidebar, isLoading: sidebarLoading } = useSWR('/api/dashboard/sidebar', sidebarFetcher, {
     revalidateOnFocus: false,
+    revalidateIfStale: false,
     dedupingInterval: 30_000,
   })
-  const { data: fullDashboard } = useSWR('/api/dashboard', fullDashboardFetcher, {
+  const { data: fullDashboard } = useSWR(loadFullDashboard ? '/api/dashboard' : null, fullDashboardFetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 30_000,
   })
