@@ -395,6 +395,37 @@ function KpiTrendPanel({
   )
 }
 
+function KpiTrendLoadingPanel({
+  tone,
+  footerLeft,
+  footerRight = 'Cargando',
+}: {
+  tone: TileTone
+  footerLeft: string
+  footerRight?: string
+}) {
+  return (
+    <div className="rounded-[14px] bg-[color-mix(in_oklch,var(--ft-surface-muted)_68%,transparent)] px-3 py-2">
+      <div
+        className="relative h-[58px] overflow-hidden rounded-[10px] bg-[var(--ft-surface-muted)]"
+        aria-hidden="true"
+      >
+        <div
+          className="absolute bottom-3 left-0 h-[2px] w-full animate-pulse rounded-full opacity-40"
+          style={{ background: tileAccent(tone) }}
+        />
+        <div className="absolute left-[12%] top-5 h-2 w-2 animate-pulse rounded-full bg-[var(--ft-surface)]" />
+        <div className="absolute left-[42%] top-3 h-2 w-2 animate-pulse rounded-full bg-[var(--ft-surface)]" />
+        <div className="absolute left-[74%] top-7 h-2 w-2 animate-pulse rounded-full bg-[var(--ft-surface)]" />
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-3 text-[10px] text-[var(--ft-text-muted)]">
+        <span className="min-w-0 truncate">{footerLeft}</span>
+        <span className="shrink-0 tabular-nums">{footerRight}</span>
+      </div>
+    </div>
+  )
+}
+
 export function DashboardHeader() {
   const [loadRecurring, setLoadRecurring] = useState(false)
 
@@ -415,7 +446,7 @@ export function DashboardHeader() {
     dedupingInterval: 30_000,
   })
 
-  const { data: moneyFlow } = useSWR('/api/dashboard/money-flow?months=6&mode=acumulado', moneyFlowFetcher, {
+  const { data: moneyFlow, isLoading: moneyFlowLoading } = useSWR('/api/dashboard/money-flow?months=6&mode=acumulado', moneyFlowFetcher, {
     revalidateOnFocus: false,
     revalidateIfStale: false,
     dedupingInterval: 30_000,
@@ -464,6 +495,7 @@ export function DashboardHeader() {
   const expenseValues = series.map((point) => point.egresos)
   const balanceValues = series.map((point) => point.saldo_mensual)
   const liquidityValues = patrimonioValues.length > 0 ? patrimonioValues : [liquidezPropiaPen]
+  const trendLoading = moneyFlowLoading && series.length === 0
 
   if ((summaryLoading || modulesLoading) && !summary && !modules) {
     return (
@@ -503,14 +535,22 @@ export function DashboardHeader() {
           value={toMoney(patrimonioPen)}
           tone="primary"
         >
-          <KpiTrendPanel
-            values={patrimonioValues.length > 0 ? patrimonioValues : [patrimonioPen]}
-            tone="primary"
-            footerLeft="Últimos 6 meses"
-            footerRight={formatAxisValue(patrimonioPen, 'PEN')}
-            ariaLabel="Tendencia del patrimonio neto de los últimos seis meses"
-            gradientId="kpi-trend-patrimonio"
-          />
+          {trendLoading ? (
+            <KpiTrendLoadingPanel
+              tone="primary"
+              footerLeft="Últimos 6 meses"
+              footerRight={formatAxisValue(patrimonioPen, 'PEN')}
+            />
+          ) : (
+            <KpiTrendPanel
+              values={patrimonioValues.length > 0 ? patrimonioValues : [patrimonioPen]}
+              tone="primary"
+              footerLeft="Últimos 6 meses"
+              footerRight={formatAxisValue(patrimonioPen, 'PEN')}
+              ariaLabel="Tendencia del patrimonio neto de los últimos seis meses"
+              gradientId="kpi-trend-patrimonio"
+            />
+          )}
         </KpiTile>
 
         <KpiTile
@@ -519,14 +559,21 @@ export function DashboardHeader() {
           value={toMoney(ingresosMes)}
           tone="success"
         >
-          <KpiTrendPanel
-            values={incomeValues}
-            tone={incomeTone === 'negative' ? 'danger' : 'success'}
-            footerLeft="Vs mes anterior"
-            footerRight={deltaLabel(ingresosMes, previousIncome)}
-            ariaLabel="Tendencia de ingresos mensuales"
-            gradientId="kpi-trend-ingresos"
-          />
+          {trendLoading ? (
+            <KpiTrendLoadingPanel
+              tone="success"
+              footerLeft="Vs mes anterior"
+            />
+          ) : (
+            <KpiTrendPanel
+              values={incomeValues}
+              tone={incomeTone === 'negative' ? 'danger' : 'success'}
+              footerLeft="Vs mes anterior"
+              footerRight={deltaLabel(ingresosMes, previousIncome)}
+              ariaLabel="Tendencia de ingresos mensuales"
+              gradientId="kpi-trend-ingresos"
+            />
+          )}
         </KpiTile>
 
         <KpiTile
@@ -535,14 +582,21 @@ export function DashboardHeader() {
           value={toMoney(egresosMes)}
           tone="danger"
         >
-          <KpiTrendPanel
-            values={expenseValues}
-            tone={expenseTone === 'positive' ? 'success' : 'danger'}
-            footerLeft={`${formatAxisValue(recurringExpensePen, 'PEN')} recurrentes`}
-            footerRight={deltaLabel(egresosMes, previousExpense)}
-            ariaLabel="Tendencia de egresos mensuales"
-            gradientId="kpi-trend-egresos"
-          />
+          {trendLoading ? (
+            <KpiTrendLoadingPanel
+              tone="danger"
+              footerLeft="Recurrentes"
+            />
+          ) : (
+            <KpiTrendPanel
+              values={expenseValues}
+              tone={expenseTone === 'positive' ? 'success' : 'danger'}
+              footerLeft={`${formatAxisValue(recurringExpensePen, 'PEN')} recurrentes`}
+              footerRight={deltaLabel(egresosMes, previousExpense)}
+              ariaLabel="Tendencia de egresos mensuales"
+              gradientId="kpi-trend-egresos"
+            />
+          )}
         </KpiTile>
 
         <KpiTile
@@ -551,14 +605,21 @@ export function DashboardHeader() {
           value={toMoney(balanceMes)}
           tone={balancePositive ? 'primary' : 'danger'}
         >
-          <KpiTrendPanel
-            values={balanceValues}
-            tone={balancePositive ? 'primary' : 'danger'}
-            footerLeft="Resultado mensual"
-            footerRight={deltaLabel(balanceMes, previousPoint?.saldo_mensual ?? 0)}
-            ariaLabel="Tendencia del balance neto mensual"
-            gradientId="kpi-trend-balance"
-          />
+          {trendLoading ? (
+            <KpiTrendLoadingPanel
+              tone={balancePositive ? 'primary' : 'danger'}
+              footerLeft="Resultado mensual"
+            />
+          ) : (
+            <KpiTrendPanel
+              values={balanceValues}
+              tone={balancePositive ? 'primary' : 'danger'}
+              footerLeft="Resultado mensual"
+              footerRight={deltaLabel(balanceMes, previousPoint?.saldo_mensual ?? 0)}
+              ariaLabel="Tendencia del balance neto mensual"
+              gradientId="kpi-trend-balance"
+            />
+          )}
         </KpiTile>
       </div>
 
@@ -584,14 +645,22 @@ export function DashboardHeader() {
             helper={`${modules?.cuentas ?? 0} cuenta${modules?.cuentas === 1 ? '' : 's'} operativa${modules?.cuentas === 1 ? '' : 's'} con dinero real disponible.`}
             tone="primary"
           >
-            <KpiTrendPanel
-              values={liquidityValues}
-              tone="primary"
-              footerLeft="Solo cuentas no técnicas"
-              footerRight={formatAxisValue(liquidezPropiaPen, 'PEN')}
-              ariaLabel="Tendencia de liquidez propia de los últimos seis meses"
-              gradientId="kpi-trend-liquidez-operativa"
-            />
+            {trendLoading ? (
+              <KpiTrendLoadingPanel
+                tone="primary"
+                footerLeft="Solo cuentas no técnicas"
+                footerRight={formatAxisValue(liquidezPropiaPen, 'PEN')}
+              />
+            ) : (
+              <KpiTrendPanel
+                values={liquidityValues}
+                tone="primary"
+                footerLeft="Solo cuentas no técnicas"
+                footerRight={formatAxisValue(liquidezPropiaPen, 'PEN')}
+                ariaLabel="Tendencia de liquidez propia de los últimos seis meses"
+                gradientId="kpi-trend-liquidez-operativa"
+              />
+            )}
           </OperatingMetricCard>
 
           <OperatingMetricCard
