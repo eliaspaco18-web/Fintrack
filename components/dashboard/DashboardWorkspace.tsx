@@ -5,10 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { SWRConfig, useSWRConfig } from 'swr'
 import type {
   DashboardSummary,
-  DashboardSidebar,
   ModulesSummary,
-  MoneyFlowMode,
-  MoneyFlowPoint,
 } from '@/lib/dashboard/types'
 import { fetchDashboardData } from './api'
 import { DashboardHeader } from './DashboardHeader'
@@ -34,17 +31,9 @@ import {
   type DashboardWorkspaceTabId,
 } from './DashboardTabs'
 
-type MoneyFlowResponse = {
-  mode: MoneyFlowMode
-  months: number
-  series: MoneyFlowPoint[]
-}
-
 interface DashboardWorkspaceData {
   summary: DashboardSummary
-  moneyFlow: MoneyFlowResponse
   modules: ModulesSummary
-  sidebar: DashboardSidebar
 }
 
 const DASHBOARD_KEYS = {
@@ -54,15 +43,13 @@ const DASHBOARD_KEYS = {
   sidebar: '/api/dashboard/sidebar',
 } as const
 
-async function fetchWorkspaceData(): Promise<DashboardWorkspaceData> {
-  const [summary, moneyFlow, modules, sidebar] = await Promise.all([
+async function fetchCriticalWorkspaceData(): Promise<DashboardWorkspaceData> {
+  const [summary, modules] = await Promise.all([
     fetchDashboardData<DashboardSummary>(DASHBOARD_KEYS.summary),
-    fetchDashboardData<MoneyFlowResponse>(DASHBOARD_KEYS.moneyFlow),
     fetchDashboardData<ModulesSummary>(DASHBOARD_KEYS.modules),
-    fetchDashboardData<DashboardSidebar>(DASHBOARD_KEYS.sidebar),
   ])
 
-  return { summary, moneyFlow, modules, sidebar }
+  return { summary, modules }
 }
 
 function WorkspaceSkeleton() {
@@ -143,9 +130,7 @@ function DashboardWorkspaceContent({
   const fallback = useMemo(
     () => ({
       [DASHBOARD_KEYS.summary]: seed.summary,
-      [DASHBOARD_KEYS.moneyFlow]: seed.moneyFlow,
       [DASHBOARD_KEYS.modules]: seed.modules,
-      [DASHBOARD_KEYS.sidebar]: seed.sidebar,
     }),
     [seed]
   )
@@ -265,15 +250,13 @@ export function DashboardWorkspace() {
     if (mode === 'refresh') setRefreshing(true)
 
     try {
-      const data = await fetchWorkspaceData()
+      const data = await fetchCriticalWorkspaceData()
       setSeed(data)
       setError(null)
 
       await Promise.all([
         mutate(DASHBOARD_KEYS.summary, data.summary, false),
-        mutate(DASHBOARD_KEYS.moneyFlow, data.moneyFlow, false),
         mutate(DASHBOARD_KEYS.modules, data.modules, false),
-        mutate(DASHBOARD_KEYS.sidebar, data.sidebar, false),
       ])
     } catch (e) {
       const message = e instanceof Error ? e.message : 'No se pudo cargar el dashboard'
@@ -312,6 +295,8 @@ export function DashboardWorkspace() {
       onRefresh={async () => {
         await loadData('refresh')
         await Promise.all([
+          mutate(DASHBOARD_KEYS.moneyFlow),
+          mutate(DASHBOARD_KEYS.sidebar),
           mutate('/api/dashboard/saldos-dia?period=5D'),
           mutate('/api/dashboard/saldos-dia?period=1M'),
           mutate('/api/dashboard/saldos-dia?period=3M'),
