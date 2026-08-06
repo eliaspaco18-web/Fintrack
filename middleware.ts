@@ -16,31 +16,6 @@ import {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Crear respuesta mutable para poder escribir cookies de sesión
-  const response = NextResponse.next({
-    request: { headers: request.headers },
-  })
-  type CookieOptions = Parameters<typeof response.cookies.set>[2]
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll()                           { return request.cookies.getAll() },
-        setAll(cookiesToSet: Array<{ name: string; value: string; options?: CookieOptions }>) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value))
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options))
-        },
-      },
-    }
-  )
-
-  // Refrescar la sesión si expiró
-  const { data: { user } } = await supabase.auth.getUser()
-
   const isAuthEntryRoute = pathname.startsWith('/login') || pathname.startsWith('/register')
   const isAuthCallbackRoute = pathname.startsWith('/auth/callback')
   const isApiRoute = pathname.startsWith('/api/')
@@ -66,8 +41,41 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // No interceptar rutas estáticas ni API
-  if (isStaticAsset || isApiRoute || isAuthCallbackRoute) return response
+  // Las API validan autenticación dentro de cada Route Handler.
+  // El modo mantenimiento debe resolverse antes de este pass-through.
+  if (isApiRoute) {
+    return NextResponse.next({
+      request: { headers: request.headers },
+    })
+  }
+
+  // Crear respuesta mutable para poder escribir cookies de sesión
+  const response = NextResponse.next({
+    request: { headers: request.headers },
+  })
+  type CookieOptions = Parameters<typeof response.cookies.set>[2]
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll()                           { return request.cookies.getAll() },
+        setAll(cookiesToSet: Array<{ name: string; value: string; options?: CookieOptions }>) {
+          cookiesToSet.forEach(({ name, value }) =>
+            request.cookies.set(name, value))
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options))
+        },
+      },
+    }
+  )
+
+  // Refrescar la sesión si expiró
+  const { data: { user } } = await supabase.auth.getUser()
+
+  // No interceptar rutas estáticas ni el callback de autenticación
+  if (isStaticAsset || isAuthCallbackRoute) return response
   if (isStateScreenRoute) return response
 
   // Landing page: accesible sin sesión; con sesión → dashboard
