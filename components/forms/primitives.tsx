@@ -89,7 +89,7 @@ export function FormField({
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <label
           htmlFor={controlId}
-          className="text-[13px] font-semibold leading-[1.3] tracking-[-0.01em] text-[var(--c-text)]"
+          className="text-[13px] font-semibold leading-[1.3] tracking-[-0.01em] text-[var(--ft-text-strong)]"
         >
           {label}
           {optional ? (
@@ -162,7 +162,7 @@ export function FormSection({
       {title || description ? (
         <div className="space-y-1">
           {title ? (
-            <h3 className="text-[15px] font-semibold tracking-[-0.02em] text-[var(--c-text)]">
+            <h3 className="text-[15px] font-semibold tracking-[-0.02em] text-[var(--ft-text-strong)]">
               {title}
             </h3>
           ) : null}
@@ -304,7 +304,7 @@ export function OptionalSection({
       >
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[13px] font-semibold tracking-[-0.01em] text-[var(--c-text)]">
+            <span className="text-[13px] font-semibold tracking-[-0.01em] text-[var(--ft-text-strong)]">
               {title}
             </span>
             {hasError ? (
@@ -331,7 +331,7 @@ export function OptionalSection({
         <span
           aria-hidden="true"
           className={joinClasses(
-            'shrink-0 text-[var(--ft-form-muted)] transition-transform duration-150 ease-[var(--ease-out)]',
+            'shrink-0 text-[var(--ft-form-muted)] transition-transform duration-fast ease-[var(--ft-ease-out)]',
             isOpen && 'rotate-180',
           )}
         >
@@ -343,7 +343,7 @@ export function OptionalSection({
 
       <div
         id={panelId}
-        className="overflow-hidden transition-[height,opacity] duration-200 ease-[var(--ease-out)]"
+        className="overflow-hidden transition-[height,opacity] duration-base ease-[var(--ft-ease-out)]"
         style={{
           height: isOpen ? `${contentHeight}px` : '0px',
           opacity: isOpen ? 1 : 0,
@@ -352,7 +352,7 @@ export function OptionalSection({
         <div
           ref={contentRef}
           className={joinClasses(
-            'space-y-[var(--ft-form-field-gap)] border-t border-[var(--ft-form-border)] px-4 py-4 transition-transform duration-200 ease-[var(--ease-out)]',
+            'space-y-[var(--ft-form-field-gap)] border-t border-[var(--ft-form-border)] px-4 py-4 transition-transform duration-base ease-[var(--ft-ease-out)]',
             isOpen ? 'translate-y-0' : '-translate-y-1',
           )}
         >
