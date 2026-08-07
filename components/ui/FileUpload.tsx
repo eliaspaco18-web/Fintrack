@@ -39,7 +39,7 @@ interface FileUploadProps {
 
 function UploadIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--color-text-faint)]">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--ft-text-subtle)]">
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
       <polyline points="17 8 12 3 7 8" />
       <line x1="12" y1="3" x2="12" y2="15" />
@@ -134,23 +134,23 @@ export function FileUpload({
   // ─── Archivo seleccionado (nuevo) ─────────────────────────────────────────
   if (value) {
     return (
-      <div id={id} className="space-y-1">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.09em] text-[var(--color-text-muted)]">
+      <div id={id} className="space-y-[var(--ft-form-label-gap)]">
+        <p className="text-[13px] font-semibold leading-[1.3] tracking-[-0.01em] text-[var(--ft-text-strong)]">
           {label}
         </p>
-        <div className="flex items-center gap-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5">
+        <div className="flex min-h-11 items-center gap-3 rounded-[var(--ft-radius-surface)] border border-[color-mix(in_srgb,var(--ft-success)_22%,transparent)] bg-[color-mix(in_srgb,var(--ft-success)_8%,var(--ft-surface))] px-3 py-2.5">
           {value.type.startsWith('image/')
-            ? <ImageIcon className="text-blue-400 shrink-0" />
-            : <FileTextIcon className="text-amber-400 shrink-0" />
+            ? <ImageIcon className="shrink-0 text-[var(--ft-info)]" />
+            : <FileTextIcon className="shrink-0 text-[var(--ft-warning)]" />
           }
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-[var(--color-text)] truncate">{value.name}</p>
-            <p className="text-[11px] text-[var(--color-text-muted)]">{formatFileSize(value.size)}</p>
+            <p className="truncate text-sm font-medium text-[var(--ft-text-strong)]">{value.name}</p>
+            <p className="text-[12px] text-[var(--ft-text-muted)]">{formatFileSize(value.size)}</p>
           </div>
           <button
             type="button"
             onClick={handleRemove}
-            className="p-1 rounded-md text-[var(--color-text-muted)] hover:text-red-400 hover:bg-red-500/10 transition-all"
+            className="ui-pressable inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-control text-[var(--ft-text-muted)] transition-[background-color,color,box-shadow,transform] duration-fast ease-[var(--ft-ease-out)] hover:bg-[var(--ft-danger-soft)] hover:text-[var(--ft-danger)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[color:var(--ft-focus-ring-color)]"
             aria-label="Eliminar archivo"
           >
             <CloseIcon />
@@ -163,20 +163,20 @@ export function FileUpload({
   // ─── Archivo existente (URL guardada) ─────────────────────────────────────
   if (existingUrl) {
     return (
-      <div id={id} className="space-y-1">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.09em] text-[var(--color-text-muted)]">
+      <div id={id} className="space-y-[var(--ft-form-label-gap)]">
+        <p className="text-[13px] font-semibold leading-[1.3] tracking-[-0.01em] text-[var(--ft-text-strong)]">
           {label}
         </p>
-        <div className="flex items-center gap-3 rounded-lg border border-[color:var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2.5">
-          <FileTextIcon className="text-[var(--color-text-muted)] shrink-0" />
-          <p className="flex-1 text-sm text-[var(--color-text)] truncate">
+        <div className="flex min-h-11 items-center gap-3 rounded-[var(--ft-radius-surface)] border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-3 py-2.5">
+          <FileTextIcon className="shrink-0 text-[var(--ft-text-muted)]" />
+          <p className="flex-1 truncate text-sm text-[var(--ft-text-strong)]">
             {getFileNameFromPath(existingUrl)}
           </p>
           {onRemoveExisting && (
             <button
               type="button"
               onClick={onRemoveExisting}
-              className="p-1 rounded-md text-[var(--color-text-muted)] hover:text-red-400 hover:bg-red-500/10 transition-all"
+              className="ui-pressable inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-control text-[var(--ft-text-muted)] transition-[background-color,color,box-shadow,transform] duration-fast ease-[var(--ft-ease-out)] hover:bg-[var(--ft-danger-soft)] hover:text-[var(--ft-danger)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[color:var(--ft-focus-ring-color)]"
               aria-label="Eliminar archivo"
             >
               <CloseIcon />
@@ -189,8 +189,8 @@ export function FileUpload({
 
   // ─── Dropzone ─────────────────────────────────────────────────────────────
   return (
-    <div id={id} className="space-y-1">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.09em] text-[var(--color-text-muted)]">
+    <div id={id} className="space-y-[var(--ft-form-label-gap)]">
+      <p className="text-[13px] font-semibold leading-[1.3] tracking-[-0.01em] text-[var(--ft-text-strong)]">
         {label}
       </p>
       <div
@@ -199,20 +199,23 @@ export function FileUpload({
         onDrop={handleDrop}
         onClick={() => !disabled && inputRef.current?.click()}
         className={`
-          flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed
-          px-4 py-5 transition-all duration-150 cursor-pointer
+          flex flex-col items-center justify-center gap-2 rounded-[var(--ft-radius-surface)] border border-dashed
+          px-4 py-5 transition-[background-color,border-color,color,opacity] duration-fast ease-[var(--ft-ease-out)]
           ${isDragging
-            ? 'border-emerald-500/40 bg-emerald-500/5'
-            : 'border-[color:var(--color-border)] bg-[var(--color-surface-2)] hover:border-[color:var(--color-border-hover)]'
+            ? 'border-[var(--ft-primary)] bg-[var(--ft-primary-soft)]'
+            : 'border-[var(--ft-border)] bg-[var(--ft-surface-muted)]'
           }
-          ${disabled ? 'opacity-40 cursor-not-allowed' : ''}
+          ${disabled
+            ? 'cursor-not-allowed opacity-45'
+            : 'cursor-pointer hover:border-[var(--ft-border-strong)] hover:bg-[var(--ft-surface-hover)]'
+          }
         `.trim()}
       >
         <UploadIcon />
-        <p className="text-xs text-[var(--color-text-muted)] text-center">
-          Arrastra un archivo o <span className="text-emerald-400 font-medium">haz clic</span>
+        <p className="text-center text-[12px] text-[var(--ft-text-muted)]">
+          Arrastra un archivo o <span className="font-medium text-[var(--ft-primary)]">haz clic</span>
         </p>
-        <p className="text-[10px] text-[var(--color-text-faint)]">
+        <p className="text-[11px] text-[var(--ft-text-subtle)]">
           {acceptedTypesDescription ?? `JPG, PNG, PDF, DOC, XLS — Máx ${maxSizeMB}MB`}
         </p>
         <input
@@ -225,7 +228,7 @@ export function FileUpload({
         />
       </div>
       {error && (
-        <p className="text-[11px] text-red-400 mt-1">{error}</p>
+        <p className="mt-1 text-[12px] font-medium leading-[1.45] text-[var(--ft-danger)]">{error}</p>
       )}
     </div>
   )

@@ -48,51 +48,50 @@ const BASE_CLASS_NAME = [
   'ui-pressable inline-flex items-center justify-center whitespace-nowrap',
   'rounded-[var(--ft-radius-control)] border font-medium tracking-[-0.01em]',
   'transition-[background-color,border-color,color,box-shadow,transform]',
-  'duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]',
+  'duration-fast ease-[var(--ft-ease-out)]',
   'focus-visible:outline-none',
-  'focus-visible:ring-2 focus-visible:ring-[color:var(--c-primary-soft)]',
-  'focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--c-bg)]',
-  'disabled:cursor-not-allowed disabled:opacity-50',
+  'focus-visible:ring-[3px] focus-visible:ring-[color:var(--ft-focus-ring-color)]',
+  'focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ft-canvas)]',
+  'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:active:scale-100',
+  'aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:translate-y-0 aria-disabled:active:scale-100',
 ].join(' ')
 
 const VARIANT_CLASS_NAMES: Record<ButtonVariant, string> = {
   primary: [
-    'border-transparent bg-[var(--c-primary)] text-[var(--c-text-on-primary)]',
-    'shadow-[0_1px_2px_rgba(13,107,94,0.18)]',
-    'hover:bg-[var(--c-primary-hover)] hover:shadow-[0_6px_16px_rgba(13,107,94,0.14)]',
+    'border-transparent bg-[var(--ft-primary)] text-[var(--ft-text-on-primary)]',
+    'shadow-elevation-sm hover:bg-[var(--ft-primary-hover)]',
   ].join(' '),
   secondary: [
-    'border-[var(--c-border)] bg-[var(--c-surface)] text-[var(--c-text)]',
-    'shadow-[0_1px_2px_rgba(25,25,23,0.04)]',
-    'hover:border-[var(--c-border-hover)] hover:bg-[var(--c-surface-2)]',
+    'border-[var(--ft-border)] bg-[var(--ft-surface)] text-[var(--ft-text-strong)]',
+    'shadow-elevation-sm hover:border-[var(--ft-border-strong)] hover:bg-[var(--ft-surface-muted)]',
   ].join(' '),
   ghost: [
-    'border-transparent bg-transparent text-[var(--c-text-muted)] shadow-none',
-    'hover:bg-[var(--c-surface-2)] hover:text-[var(--c-text)]',
+    'border-transparent bg-transparent text-[var(--ft-text-muted)] shadow-none',
+    'hover:bg-[var(--ft-surface-hover)] hover:text-[var(--ft-text-strong)]',
   ].join(' '),
   danger: [
-    'border-[rgba(184,74,74,0.18)] bg-[var(--c-danger-soft)] text-[var(--c-danger)]',
-    'shadow-none hover:border-[rgba(184,74,74,0.28)] hover:bg-[rgba(184,74,74,0.12)]',
+    'border-[color-mix(in_srgb,var(--ft-danger)_18%,transparent)] bg-[var(--ft-danger-soft)] text-[var(--ft-danger)]',
+    'shadow-none hover:border-[color-mix(in_srgb,var(--ft-danger)_28%,transparent)] hover:bg-[color-mix(in_srgb,var(--ft-danger)_12%,var(--ft-surface))]',
   ].join(' '),
   success: [
-    'border-[var(--c-primary-border)] bg-[var(--c-primary-soft)] text-[var(--c-primary)]',
-    'shadow-none hover:border-[rgba(13,107,94,0.22)] hover:bg-[rgba(13,107,94,0.12)]',
+    'border-[var(--ft-primary-border)] bg-[var(--ft-primary-soft)] text-[var(--ft-primary)]',
+    'shadow-none hover:border-[color-mix(in_srgb,var(--ft-primary)_24%,transparent)] hover:bg-[color-mix(in_srgb,var(--ft-primary)_12%,var(--ft-surface))]',
   ].join(' '),
 }
 
 const SIZE_CLASS_NAMES: Record<ButtonSize, string> = {
-  sm: 'h-8 gap-1.5 px-3 text-[12px]',
-  md: 'h-9 gap-2 px-4 text-sm',
-  lg: 'h-10 gap-2 px-[1.125rem] text-sm',
-  'icon-sm': 'h-8 w-8 p-0 text-[13px]',
-  'icon-md': 'h-9 w-9 p-0 text-sm',
+  sm: 'h-9 gap-1.5 px-3 text-[12px]',
+  md: 'h-10 gap-2 px-4 text-sm',
+  lg: 'h-11 gap-2 px-[1.125rem] text-sm',
+  'icon-sm': 'h-9 w-9 p-0 text-[13px]',
+  'icon-md': 'h-10 w-10 p-0 text-sm',
 }
 
 function Spinner() {
   return (
     <svg
       aria-hidden="true"
-      className="h-3.5 w-3.5 animate-spin"
+      className="h-4 w-4 animate-spin motion-reduce:animate-none"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"

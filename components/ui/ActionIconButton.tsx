@@ -87,16 +87,16 @@ function iconSvg(icon: ActionIcon): ReactNode {
 
 function resolveIconColor(variant: ActionVariant): string {
   if (variant === 'danger') {
-    return 'text-[var(--c-danger)]'
+    return 'text-[var(--ft-danger)]'
   }
   if (variant === 'success') {
-    return 'text-[var(--c-primary)]'
+    return 'text-[var(--ft-primary)]'
   }
-  return 'text-[var(--c-text-muted)] hover:text-[var(--c-text)]'
+  return 'text-[var(--ft-text-muted)] hover:text-[var(--ft-text-strong)]'
 }
 
 function baseClasses(variant: ActionVariant, className: string): string {
-  return `rounded-[10px] ${resolveIconColor(variant)} ${className}`.trim()
+  return `rounded-[var(--ft-radius-control)] ${resolveIconColor(variant)} ${className}`.trim()
 }
 
 function resolveButtonVariant(variant: ActionVariant) {
@@ -106,9 +106,9 @@ function resolveButtonVariant(variant: ActionVariant) {
 }
 
 function resolveTooltipDot(variant: ActionVariant): string {
-  if (variant === 'danger') return 'bg-[var(--c-danger)]'
-  if (variant === 'success') return 'bg-[var(--c-primary)]'
-  return 'bg-[var(--c-text-faint)]'
+  if (variant === 'danger') return 'bg-[var(--ft-danger)]'
+  if (variant === 'success') return 'bg-[var(--ft-primary)]'
+  return 'bg-[var(--ft-text-subtle)]'
 }
 
 export function ActionIconButton(props: ActionIconButtonProps) {
@@ -133,27 +133,27 @@ export function ActionIconButton(props: ActionIconButtonProps) {
       id={tooltipId}
       role="tooltip"
       className="
-        pointer-events-none absolute bottom-[calc(100%+10px)] right-0 z-[60] hidden w-56
-        origin-bottom-right rounded-[16px] border border-[var(--c-border)] bg-[var(--c-surface)]
-        px-3.5 py-3 text-left opacity-0 shadow-[var(--shadow-md)]
-        transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]
+        pointer-events-none absolute bottom-[calc(100%+10px)] right-0 z-tooltip hidden w-56
+        origin-bottom-right rounded-surface border border-[var(--ft-border)] bg-[var(--ft-surface)]
+        px-3.5 py-3 text-left opacity-0 shadow-elevation-md
+        transition-[opacity,transform] duration-fast ease-[var(--ft-ease-out)]
         translate-y-1 sm:block group-hover/action:translate-y-0 group-hover/action:opacity-100
         group-focus-within/action:translate-y-0 group-focus-within/action:opacity-100
       "
     >
       <span
         aria-hidden="true"
-        className="absolute -bottom-1 right-4 h-2.5 w-2.5 rotate-45 border-b border-r border-[var(--c-border)] bg-[var(--c-surface)]"
+        className="absolute -bottom-1 right-4 h-2.5 w-2.5 rotate-45 border-b border-r border-[var(--ft-border)] bg-[var(--ft-surface)]"
       />
       <span className="relative block">
         <span className="mb-1.5 flex items-center gap-2">
           <span className={`h-1.5 w-1.5 rounded-full ${resolveTooltipDot(variant)}`.trim()} />
-          <span className="text-[11px] font-semibold leading-none tracking-[-0.01em] text-[var(--c-text)]">
+          <span className="text-[12px] font-semibold leading-none tracking-[-0.01em] text-[var(--ft-text-strong)]">
             {buttonTitle}
           </span>
         </span>
         {description ? (
-          <span className="block text-[11px] leading-[1.45] text-[var(--c-text-muted)]">
+          <span className="block text-[12px] leading-[1.45] text-[var(--ft-text-muted)]">
             {description}
           </span>
         ) : null}

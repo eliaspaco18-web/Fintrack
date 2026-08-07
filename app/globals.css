@@ -1331,28 +1331,46 @@ input:-webkit-autofill:focus {
   /* Campo de formulario base */
   .field-base {
     @apply w-full
-           transition-[border-color,box-shadow,background-color,color] duration-150;
+           transition-[border-color,box-shadow,background-color,color] duration-fast;
     padding: 0.5rem 0.75rem;
-    border-radius: 0.5rem;         /* 8px — consistente con botones */
+    border-radius: var(--ft-radius-control);
     font-size: 0.8125rem;          /* 13px — legible */
     font-weight: 450;
-    background: var(--c-surface);
-    border: 1px solid var(--c-border);
-    color: var(--c-text);
+    background: var(--ft-surface);
+    border: 1px solid var(--ft-border);
+    color: var(--ft-text-strong);
+    transition-timing-function: var(--ft-ease-out);
   }
 
   .field-base::placeholder {
-    color: var(--c-text-faint);
+    color: var(--ft-text-subtle);
   }
 
-  .field-base:hover {
-    border-color: var(--c-border-hover);
+  .field-base:hover:not(:disabled):not([aria-disabled='true']) {
+    border-color: var(--ft-border-strong);
   }
 
   .field-base:focus {
     outline: none;
-    border-color: var(--c-primary);
-    box-shadow: 0 0 0 3px var(--c-primary-soft);
+    border-color: var(--ft-primary);
+    box-shadow: var(--ft-focus-ring);
+  }
+
+  .field-base:disabled,
+  .field-base[aria-disabled='true'] {
+    cursor: not-allowed;
+    background: var(--ft-surface-muted);
+    color: var(--ft-text-subtle);
+    opacity: 0.55;
+  }
+
+  .field-base[aria-invalid='true'] {
+    border-color: color-mix(in srgb, var(--ft-danger) 48%, transparent);
+  }
+
+  .field-base[aria-invalid='true']:focus {
+    border-color: var(--ft-danger);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ft-danger) 16%, transparent);
   }
 
   .ft-form-input {
@@ -1918,12 +1936,12 @@ input:-webkit-autofill:focus {
   }
 
   .app-select-trigger-compact {
-    @apply min-h-[38px] py-1.5;
+    @apply min-h-9 py-1.5;
   }
 
   .app-select-trigger-open {
-    border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 16%, transparent);
+    border-color: var(--ft-primary);
+    box-shadow: var(--ft-focus-ring);
   }
 
   .app-select-trigger-copy {
@@ -1932,20 +1950,21 @@ input:-webkit-autofill:focus {
 
   .app-select-trigger-label {
     @apply block truncate text-[13px] font-medium;
-    color: var(--color-text);
+    color: var(--ft-text-strong);
   }
 
   .app-select-placeholder {
-    color: var(--color-text-faint);
+    color: var(--ft-text-subtle);
   }
 
   .app-select-trigger-hint {
     @apply mt-0.5 block truncate text-[10px];
-    color: var(--color-text-muted);
+    color: var(--ft-text-muted);
   }
 
   .app-select-chevron {
-    @apply text-[var(--color-text-faint)] transition-transform duration-150;
+    @apply text-[var(--ft-text-subtle)] transition-transform duration-fast;
+    transition-timing-function: var(--ft-ease-out);
   }
 
   .app-select-chevron-open {
@@ -1953,10 +1972,9 @@ input:-webkit-autofill:focus {
   }
 
   .app-select-menu {
-    @apply absolute left-0 right-0 z-[85] mt-1 overflow-hidden rounded-2xl
-      border border-[color:var(--color-border-hover)] bg-[var(--color-surface)]
-      shadow-[0_18px_44px_var(--color-shadow)];
-    animation: liquid-menu-enter 210ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    @apply absolute left-0 right-0 z-dropdown mt-1 overflow-hidden rounded-surface
+      border border-[var(--ft-border-strong)] bg-[var(--ft-surface)] shadow-elevation-md;
+    animation: liquid-menu-enter var(--ft-duration-base) var(--ft-ease-out) both;
   }
 
   .app-select-menu-compact {
@@ -1964,22 +1982,22 @@ input:-webkit-autofill:focus {
   }
 
   .app-select-search-wrap {
-    @apply border-b border-[color:var(--color-border)] p-2;
+    @apply border-b border-[var(--ft-border)] p-2;
   }
 
   .app-select-search {
-    @apply w-full rounded-xl border border-[color:var(--color-border-hover)]
-      bg-[var(--color-surface-2)] px-3 py-2 text-[13px] font-medium
-      text-[var(--color-text)] outline-none;
+    @apply min-h-9 w-full rounded-control border border-[var(--ft-border)]
+      bg-[var(--ft-surface-muted)] px-3 py-2 text-[13px] font-medium
+      text-[var(--ft-text-strong)] outline-none;
   }
 
   .app-select-search::placeholder {
-    color: var(--color-text-faint);
+    color: var(--ft-text-subtle);
   }
 
   .app-select-search:focus {
-    border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 14%, transparent);
+    border-color: var(--ft-primary);
+    box-shadow: var(--ft-focus-ring);
   }
 
   .app-select-options {
@@ -1988,21 +2006,22 @@ input:-webkit-autofill:focus {
 
   .app-select-empty {
     @apply px-3 py-3 text-[12px];
-    color: var(--color-text-muted);
+    color: var(--ft-text-muted);
   }
 
   .app-select-option {
-    @apply w-full border-0 bg-transparent px-3 py-2.5 text-left transition-colors duration-150;
+    @apply w-full border-0 bg-transparent px-3 py-2.5 text-left transition-colors duration-fast;
+    transition-timing-function: var(--ft-ease-out);
   }
 
   .app-select-option:focus-visible {
     outline: none;
-    background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface));
-    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--color-accent) 24%, transparent);
+    background: color-mix(in srgb, var(--ft-primary) 10%, var(--ft-surface));
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--ft-primary) 24%, transparent);
   }
 
   .app-select-option + .app-select-option {
-    border-top: 1px solid color-mix(in srgb, var(--color-border) 85%, transparent);
+    border-top: 1px solid color-mix(in srgb, var(--ft-border) 85%, transparent);
   }
 
   .app-select-option-row {
@@ -2010,7 +2029,7 @@ input:-webkit-autofill:focus {
   }
 
   .app-select-option-icon {
-    @apply text-[var(--color-text-muted)];
+    @apply text-[var(--ft-text-muted)];
   }
 
   .app-select-option-copy {
@@ -2019,24 +2038,24 @@ input:-webkit-autofill:focus {
 
   .app-select-option-label {
     @apply block truncate text-[13px] font-medium;
-    color: var(--color-text);
+    color: var(--ft-text-strong);
   }
 
   .app-select-option-hint {
     @apply mt-0.5 block truncate text-[11px];
-    color: var(--color-text-muted);
+    color: var(--ft-text-muted);
   }
 
   .app-select-option-active {
-    background: color-mix(in srgb, var(--color-surface-2) 78%, transparent);
+    background: color-mix(in srgb, var(--ft-surface-muted) 78%, transparent);
   }
 
   .app-select-option-selected {
-    background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface));
+    background: color-mix(in srgb, var(--ft-primary) 14%, var(--ft-surface));
   }
 
   .app-select-option-selected .app-select-option-label {
-    color: color-mix(in srgb, var(--color-accent) 76%, var(--color-text));
+    color: color-mix(in srgb, var(--ft-primary) 76%, var(--ft-text-strong));
   }
 
   .app-select-option-disabled {
@@ -2044,8 +2063,8 @@ input:-webkit-autofill:focus {
   }
 
   .app-select-invalid {
-    border-color: rgba(239, 68, 68, 0.42) !important;
-    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12) !important;
+    border-color: color-mix(in srgb, var(--ft-danger) 48%, transparent) !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ft-danger) 16%, transparent) !important;
   }
 
   /* Campos compactos dentro de modales complejos (ej: Créditos) */
@@ -2191,19 +2210,28 @@ input:-webkit-autofill:focus {
 
   /* Dark mode: inputs */
   :root[data-theme='dark'] .field-base {
-    background: var(--c-surface-2);
-    border-color: var(--c-border);
-    color: var(--c-text);
+    background: var(--ft-surface-muted);
+    border-color: var(--ft-border);
+    color: var(--ft-text-strong);
   }
 
-  :root[data-theme='dark'] .field-base:hover {
-    border-color: var(--c-border-hover);
+  :root[data-theme='dark'] .field-base:hover:not(:disabled):not([aria-disabled='true']) {
+    border-color: var(--ft-border-strong);
   }
 
   :root[data-theme='dark'] .field-base:focus {
-    border-color: var(--c-primary);
-    box-shadow: 0 0 0 3px var(--c-primary-soft);
-    background: var(--c-surface);
+    border-color: var(--ft-primary);
+    box-shadow: var(--ft-focus-ring);
+    background: var(--ft-surface);
+  }
+
+  :root[data-theme='dark'] .field-base[aria-invalid='true'] {
+    border-color: color-mix(in srgb, var(--ft-danger) 48%, transparent);
+  }
+
+  :root[data-theme='dark'] .field-base[aria-invalid='true']:focus {
+    border-color: var(--ft-danger);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ft-danger) 16%, transparent);
   }
 
   :root[data-theme='dark'] input:-webkit-autofill {
