@@ -16,28 +16,68 @@ const config: Config = {
         mono:    ['"Geist Mono"', '"SF Mono"', '"JetBrains Mono"', 'monospace'],
       },
       colors: {
-        // ── Warm Neutral + Teal Accent (redesign v3) ───────────────────
-        'primary':      '#0D6B5E',
-        'primary-hover':'#095C51',
-        'primary-soft': 'rgba(13,107,94,0.07)',
-        // warm neutrals
-        'warm-bg':      '#FAFAF9',
-        'warm-surface': '#FFFFFF',
-        'warm-surface-2':'#F5F5F3',
-        'warm-hover':   '#EEEEEC',
-        'warm-border':  '#E8E8E6',
-        // text
-        'ink':          '#1A1A19',
-        'ink-muted':    '#6B6B69',
-        'ink-faint':    '#9C9C99',
-        // legacy aliases kept for backward compat
-        'forest':       '#0D6B5E',
-        'forest-hover': '#095C51',
-        'forest-soft':  'rgba(13,107,94,0.07)',
-        accent: {
-          DEFAULT: '#0D6B5E',
-          hover:   '#095C51',
+        // Canonical semantic roles for new redesign work.
+        canvas: 'var(--ft-canvas)',
+        surface: {
+          DEFAULT: 'var(--ft-surface)',
+          muted: 'var(--ft-surface-muted)',
+          hover: 'var(--ft-surface-hover)',
         },
+        content: {
+          strong: 'var(--ft-text-strong)',
+          muted: 'var(--ft-text-muted)',
+          subtle: 'var(--ft-text-subtle)',
+        },
+        border: {
+          DEFAULT: 'var(--ft-border)',
+          strong: 'var(--ft-border-strong)',
+        },
+        focus: 'var(--ft-focus-ring-color)',
+        success: 'var(--ft-success)',
+        warning: 'var(--ft-warning)',
+        danger: 'var(--ft-danger)',
+        info: 'var(--ft-info)',
+
+        // Compatibility utility names; keep until consumers migrate.
+        'primary':      'var(--ft-primary)',
+        'primary-hover':'var(--ft-primary-hover)',
+        'primary-soft': 'var(--ft-primary-soft)',
+        'warm-bg':      'var(--ft-canvas)',
+        'warm-surface': 'var(--ft-surface)',
+        'warm-surface-2':'var(--ft-surface-muted)',
+        'warm-hover':   'var(--ft-surface-hover)',
+        'warm-border':  'var(--ft-border)',
+        'ink':          'var(--ft-text-strong)',
+        'ink-muted':    'var(--ft-text-muted)',
+        'ink-faint':    'var(--ft-text-subtle)',
+        'forest':       'var(--ft-primary)',
+        'forest-hover': 'var(--ft-primary-hover)',
+        'forest-soft':  'var(--ft-primary-soft)',
+        accent: {
+          DEFAULT: 'var(--ft-primary)',
+          hover:   'var(--ft-primary-hover)',
+        },
+      },
+      borderRadius: {
+        control: 'var(--ft-radius-control)',
+        surface: 'var(--ft-radius-surface)',
+        panel: 'var(--ft-radius-panel)',
+        modal: 'var(--ft-radius-modal)',
+      },
+      transitionDuration: {
+        instant: 'var(--ft-duration-instant)',
+        fast: 'var(--ft-duration-fast)',
+        base: 'var(--ft-duration-base)',
+        slow: 'var(--ft-duration-slow)',
+      },
+      zIndex: {
+        sticky: 'var(--ft-z-sticky)',
+        dropdown: 'var(--ft-z-dropdown)',
+        drawer: 'var(--ft-z-drawer)',
+        tooltip: 'var(--ft-z-tooltip)',
+        overlay: 'var(--ft-z-overlay)',
+        modal: 'var(--ft-z-modal)',
+        toast: 'var(--ft-z-toast)',
       },
       animation: {
         'slide-down':  'slide-down 0.18s ease-out',
@@ -83,6 +123,11 @@ const config: Config = {
         '8xl': '88rem',
       },
       boxShadow: {
+        'elevation-sm': 'var(--ft-elevation-sm)',
+        'elevation-md': 'var(--ft-elevation-md)',
+        'elevation-lg': 'var(--ft-elevation-lg)',
+        'elevation-xl': 'var(--ft-elevation-xl)',
+        // Compatibility utility names; preserve their historical values.
         'card':    '0 1px 2px rgba(26,26,25,0.04)',
         'card-md': '0 4px 12px rgba(26,26,25,0.06)',
         'card-lg': '0 12px 32px rgba(26,26,25,0.08)',
