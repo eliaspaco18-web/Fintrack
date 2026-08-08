@@ -21,16 +21,16 @@ function Bone({
     : w === 'full' ? 'w-full' : `w-[${w}]`
 
   const radiusClass = {
-    sm:   'rounded',
-    md:   'rounded-md',
-    lg:   'rounded-lg',
-    xl:   'rounded-xl',
+    sm:   'rounded-control',
+    md:   'rounded-control',
+    lg:   'rounded-surface',
+    xl:   'rounded-panel',
     full: 'rounded-full',
   }[rounded]
 
   return (
     <div
-      className={`animate-pulse bg-[var(--c-surface-2)] ${radiusClass} ${widthClass} ${className}`}
+      className={`animate-pulse bg-[var(--ft-surface-muted)] motion-reduce:animate-none ${radiusClass} ${widthClass} ${className}`}
       style={{
         height: `${h * 4}px`,
         ...(typeof w === 'number' ? { width: `${w}px` } : {}),
@@ -45,7 +45,7 @@ function Bone({
 
 export function CardSkeleton({ className = '' }: { className?: string }) {
   return (
-    <div className={`rounded-2xl border border-[var(--c-border)] bg-[var(--c-surface)] p-5 ${className}`}
+    <div className={`rounded-surface border border-[var(--ft-border)] bg-[var(--ft-surface)] p-5 ${className}`}
       role="status" aria-label="Cargando…">
       <div className="space-y-3">
         <Bone w={120} h={3}/>
@@ -60,7 +60,7 @@ export function CardSkeleton({ className = '' }: { className?: string }) {
 
 export function KpiRowSkeleton() {
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" aria-hidden>
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-hidden>
       {Array.from({ length: 4 }).map((_, i) => (
         <CardSkeleton key={i}/>
       ))}
@@ -73,7 +73,7 @@ export function KpiRowSkeleton() {
 export function ChartSkeleton({ height = 160 }: { height?: number }) {
   return (
     <div
-      className="rounded-2xl border border-[var(--c-border)] bg-[var(--c-surface)] p-5"
+      className="rounded-surface border border-[var(--ft-border)] bg-[var(--ft-surface)] p-5"
       role="status" aria-label="Cargando gráfico…"
     >
       <div className="space-y-4">
@@ -85,11 +85,11 @@ export function ChartSkeleton({ height = 160 }: { height?: number }) {
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="flex-1 flex gap-0.5 items-end h-full">
               <div
-                className="flex-1 rounded-t animate-pulse bg-[var(--c-surface-2)]"
+                className="flex-1 animate-pulse rounded-t bg-[var(--ft-surface-muted)] motion-reduce:animate-none"
                 style={{ height: `${35 + (i % 3) * 20}%` }}
               />
               <div
-                className="flex-1 rounded-t animate-pulse bg-[var(--c-surface-hover)]"
+                className="flex-1 animate-pulse rounded-t bg-[var(--ft-surface-hover)] motion-reduce:animate-none"
                 style={{ height: `${25 + (i % 4) * 15}%` }}
               />
             </div>
@@ -105,11 +105,11 @@ export function ChartSkeleton({ height = 160 }: { height?: number }) {
 export function TableSkeleton({ rows = 8, cols = 5 }: { rows?: number; cols?: number }) {
   return (
     <div
-      className="overflow-hidden rounded-2xl border border-[var(--c-border)]"
+      className="overflow-hidden rounded-surface border border-[var(--ft-border)] bg-[var(--ft-surface)]"
       role="status" aria-label="Cargando tabla…"
     >
       {/* Toolbar */}
-      <div className="flex gap-2 border-b border-[var(--c-border)] bg-[var(--c-surface)] p-4">
+      <div className="flex gap-2 border-b border-[var(--ft-border)] bg-[var(--ft-surface)] p-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <Bone key={i} w={i === 0 ? 60 : i === 1 ? 70 : 80} h={7} rounded="lg"/>
         ))}
@@ -119,7 +119,7 @@ export function TableSkeleton({ rows = 8, cols = 5 }: { rows?: number; cols?: nu
       </div>
 
       {/* Header */}
-      <div className="flex gap-4 border-b border-[var(--c-border)] bg-[var(--c-surface-2)] px-4 py-3">
+      <div className="flex gap-4 border-b border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-4 py-3">
         {Array.from({ length: cols }).map((_, i) => (
           <Bone key={i} w={[60, 140, 100, 70, 60][i] ?? 80} h={3}/>
         ))}
@@ -127,7 +127,7 @@ export function TableSkeleton({ rows = 8, cols = 5 }: { rows?: number; cols?: nu
 
       {/* Rows */}
       {Array.from({ length: rows }).map((_, ri) => (
-        <div key={ri} className="flex gap-4 border-b border-[var(--c-border)] px-4 py-3.5">
+        <div key={ri} className="flex gap-4 border-b border-[var(--ft-border)] px-4 py-3.5 last:border-b-0">
           {Array.from({ length: cols }).map((_, ci) => (
             <Bone
               key={ci}
@@ -146,12 +146,12 @@ export function TableSkeleton({ rows = 8, cols = 5 }: { rows?: number; cols?: nu
 
 export function FormSkeleton() {
   return (
-    <div className="space-y-5 max-w-lg" role="status" aria-label="Cargando formulario…">
+    <div className="max-w-lg space-y-5" role="status" aria-label="Cargando formulario…">
       {/* Type selector */}
       <Bone w="full" h={11} rounded="lg"/>
       {/* Amount row */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="col-span-2 space-y-2">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="space-y-2 sm:col-span-2">
           <Bone w={60} h={3}/><Bone w="full" h={10} rounded="lg"/>
         </div>
         <div className="space-y-2">
@@ -163,7 +163,7 @@ export function FormSkeleton() {
         <Bone w={80} h={3}/><Bone w="full" h={10} rounded="lg"/>
       </div>
       {/* Description + date */}
-      <div className="grid grid-cols-[1fr_140px] gap-3">
+      <div className="grid gap-3 sm:grid-cols-[1fr_140px]">
         <div className="space-y-2">
           <Bone w={80} h={3}/><Bone w="full" h={10} rounded="lg"/>
         </div>
@@ -181,10 +181,10 @@ export function FormSkeleton() {
 
 export function DetailSkeleton() {
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6"
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]"
       role="status" aria-label="Cargando…">
       <div className="space-y-5">
-        <div className="rounded-2xl border border-[var(--c-border)] bg-[var(--c-surface)] p-6 space-y-4">
+        <div className="space-y-4 rounded-surface border border-[var(--ft-border)] bg-[var(--ft-surface)] p-6">
           <div className="flex items-start gap-4">
             <Bone w={48} h={12} rounded="lg"/>
             <div className="flex-1 space-y-3">

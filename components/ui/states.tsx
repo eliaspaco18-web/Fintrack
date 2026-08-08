@@ -6,10 +6,9 @@
 
 'use client'
 
-import Link                              from 'next/link'
-import { useRouter }                     from 'next/navigation'
 import { Component, type ReactNode,
          type ErrorInfo }                from 'react'
+import { Button }                        from '@/components/ui/Button'
 
 // ═════════════════════════════════════════════════════════════════════════════
 // EMPTY STATES
@@ -31,36 +30,32 @@ export function EmptyPage({
   const pad = { sm: 'py-12', md: 'py-20', lg: 'py-28' }[size]
 
   return (
-    <div className={`flex flex-col items-center justify-center text-center ${pad}`}>
+    <div className={`flex flex-col items-center justify-center px-4 text-center ${pad}`}>
       <div className={`
-        ${iconSize} rounded-2xl bg-[var(--c-surface-2)] border border-[var(--c-border)]
-        flex items-center justify-center mb-5 text-[var(--c-text-faint)]
+        ${iconSize} mb-5 flex items-center justify-center rounded-surface
+        border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] text-[var(--ft-text-subtle)]
       `}>
         {icon}
       </div>
-      <p className={`font-semibold text-[var(--c-text)] ${titleSize}`}>{title}</p>
-      <p className="text-[12px] text-[var(--c-text-muted)] mt-1.5 max-w-xs leading-relaxed">
+      <p className={`font-semibold tracking-[-0.01em] text-[var(--ft-text-strong)] ${titleSize}`}>{title}</p>
+      <p className="mt-1.5 max-w-sm text-[13px] leading-5 text-[var(--ft-text-muted)]">
         {description}
       </p>
       {action && (
         <div className="mt-6">
           {action.href ? (
-            <Link href={action.href}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl
-                bg-[var(--c-primary)] hover:bg-[var(--c-primary-hover)] text-[var(--c-text-on-primary)] text-sm font-bold
-                transition-all shadow-lg shadow-[rgba(14,79,70,0.16)]
-                focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-primary)]">
+            <Button href={action.href} variant="primary" size="md">
               {action.label}
-            </Link>
+            </Button>
           ) : (
-            <button
+            <Button
+              type="button"
               onClick={action.onClick}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl
-                bg-[var(--c-surface-2)] hover:bg-[var(--c-surface)] border border-[var(--c-border)]
-                text-[var(--c-text-muted)] hover:text-[var(--c-text)] text-sm font-semibold
-                transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-border-hover)]">
+              variant="secondary"
+              size="md"
+            >
               {action.label}
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -139,27 +134,22 @@ export function ErrorState({
   onRetry,
 }: ErrorStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center py-20 text-center">
-      <div className="w-12 h-12 rounded-2xl bg-red-500/[0.08] border border-red-500/20
-        flex items-center justify-center mb-4">
+    <div className="flex flex-col items-center justify-center px-4 py-16 text-center sm:py-20">
+      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-surface border border-[color-mix(in_srgb,var(--ft-danger)_20%,transparent)] bg-[var(--ft-danger-soft)] text-[var(--ft-danger)]">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
-          stroke="#ef4444" strokeWidth="2" strokeLinecap="round">
+          stroke="currentColor" strokeWidth="2" strokeLinecap="round">
           <circle cx="12" cy="12" r="10"/>
           <path d="M12 8v4m0 4h.01"/>
         </svg>
       </div>
-      <p className="text-sm font-semibold text-[var(--c-text)]">{title}</p>
-      <p className="text-[12px] text-[var(--c-text-muted)] mt-1 max-w-xs">{message}</p>
+      <p className="text-[15px] font-semibold tracking-[-0.01em] text-[var(--ft-text-strong)]">{title}</p>
+      <p className="mt-1.5 max-w-sm text-[13px] leading-5 text-[var(--ft-text-muted)]">{message}</p>
       {onRetry && (
-        <button
-          onClick={onRetry}
-          className="mt-5 px-4 py-2 rounded-xl text-sm
-            bg-[var(--c-surface-2)] hover:bg-[var(--c-surface)]
-            border border-[var(--c-border)] text-[var(--c-text-muted)] hover:text-[var(--c-text)] hover:border-[var(--c-border-hover)]
-            transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--c-border-hover)]"
-        >
-          Reintentar
-        </button>
+        <div className="mt-5">
+          <Button type="button" onClick={onRetry} variant="secondary" size="md">
+            Reintentar
+          </Button>
+        </div>
       )}
     </div>
   )
@@ -172,12 +162,13 @@ export function OfflineBanner() {
     <div
       role="status"
       aria-live="polite"
-      className="fixed top-[52px] left-0 right-0 z-50
-        flex items-center justify-center gap-2
-        py-2 bg-amber-500/15 border-b border-amber-500/25
-        text-amber-400 text-[12px] font-medium"
+      className="fixed left-0 right-0 top-[52px] z-toast
+        flex items-center justify-center gap-2 border-b
+        border-[color-mix(in_srgb,var(--ft-warning)_24%,var(--ft-border))]
+        bg-[var(--ft-warning-soft)] px-4 py-2.5
+        text-[12px] font-medium text-[var(--ft-warning)] shadow-elevation-sm"
     >
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none"
         stroke="currentColor" strokeWidth="2" strokeLinecap="round">
         <line x1="2" y1="2" x2="22" y2="22"/>
         <path d="M8.5 16.5a5 5 0 0 1 7 0M2 8.82a15 15 0 0 1 4.17-2.65M10.66 5c4.01-.36 8.14.9 11.34 3.76M5 12.859A10 10 0 0 1 12 10c.48 0 .96.04 1.42.12"/>
@@ -241,9 +232,8 @@ export function PageLoader() {
       aria-label="Cargando página…"
     >
       <div className="flex flex-col items-center gap-3">
-        <div className="w-8 h-8 rounded-full border-2 border-[var(--c-primary-border)]
-          border-t-[var(--c-primary)] animate-spin"/>
-        <p className="text-[11px] text-[var(--c-text-muted)]">Cargando…</p>
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--ft-primary-border)] border-t-[var(--ft-primary)] motion-reduce:animate-none"/>
+        <p className="text-[12px] text-[var(--ft-text-muted)]">Cargando…</p>
       </div>
     </div>
   )

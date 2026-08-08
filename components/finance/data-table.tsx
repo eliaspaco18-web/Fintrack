@@ -205,9 +205,34 @@ export function DataErrorBanner({
 }) {
   return (
     <div className={joinClasses('px-4 pt-3', className)}>
-      <div className="flex items-center justify-between gap-3 rounded-lg border border-[rgba(184,74,74,0.24)] bg-[var(--c-danger-soft)] px-3 py-2">
-        <p className="text-[11px] font-medium text-[var(--c-danger)]">{message}</p>
-        <Button type="button" onClick={onRetry} variant="danger" size="sm">
+      <div
+        role="alert"
+        className="flex flex-col items-start gap-3 rounded-surface border border-[color-mix(in_srgb,var(--ft-danger)_22%,var(--ft-border))] bg-[var(--ft-danger-soft)] px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+      >
+        <div className="flex min-w-0 items-start gap-2.5">
+          <svg
+            aria-hidden="true"
+            className="mt-0.5 shrink-0 text-[var(--ft-danger)]"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 8v4m0 4h.01" />
+          </svg>
+          <p className="text-[13px] font-medium leading-5 text-[var(--ft-danger)]">{message}</p>
+        </div>
+        <Button
+          type="button"
+          onClick={onRetry}
+          variant="danger"
+          size="sm"
+          className="w-full shrink-0 focus-visible:ring-offset-[var(--ft-danger-soft)] sm:w-auto"
+        >
           Reintentar
         </Button>
       </div>
@@ -284,7 +309,7 @@ export function DataEmptyStateRow({
 }) {
   return (
     <tr>
-      <td colSpan={99} className="px-5 py-4">
+      <td colSpan={99} className="p-0">
         <FinanceEmptyState
           icon={icon}
           title={title}
@@ -323,7 +348,8 @@ function DataPageButton({
       disabled={disabled}
       className={joinClasses(
         'h-7 min-w-[28px] rounded-lg px-2 text-[12px] font-medium',
-        'transition-all duration-100 disabled:cursor-not-allowed disabled:opacity-25',
+        'transition-all duration-instant focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ft-focus-ring-color)]',
+        'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-[var(--ft-text-muted)]',
         active
           ? 'border border-[var(--c-primary-border)] bg-[var(--c-primary-soft)] text-[var(--c-primary)]'
           : 'text-[var(--c-text-muted)] hover:bg-[var(--c-surface)] hover:text-[var(--c-text)]',
@@ -424,8 +450,23 @@ export function DataRefreshIndicator({ show }: { show: boolean }) {
   if (!show) return null
 
   return (
-    <div className="border-t border-[var(--c-border)] px-4 py-2 text-center">
-      <p className="animate-pulse text-[10px] text-[var(--c-text-muted)]">Actualizando…</p>
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex items-center justify-center gap-2 border-t border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-4 py-2 text-center"
+    >
+      <svg
+        aria-hidden="true"
+        className="h-3.5 w-3.5 animate-spin text-[var(--ft-primary)] motion-reduce:animate-none"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      >
+        <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+      </svg>
+      <p className="text-[11px] font-medium text-[var(--ft-text-muted)]">Actualizando…</p>
     </div>
   )
 }
