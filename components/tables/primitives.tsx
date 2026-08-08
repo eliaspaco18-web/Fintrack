@@ -7,7 +7,10 @@
 'use client'
 
 import { type ReactNode, type InputHTMLAttributes } from 'react'
-import { StatusBadge as FinanceStatusBadge } from '@/components/finance'
+import {
+  EmptyState as FinanceEmptyState,
+  StatusBadge as FinanceStatusBadge,
+} from '@/components/finance'
 import { ActionIconButton } from '@/components/ui/ActionIconButton'
 import { AppSelect } from '@/components/ui/AppSelect'
 
@@ -23,9 +26,9 @@ interface TableShellProps {
 export function TableShell({ children, className = '' }: TableShellProps) {
   return (
     <div
-      className={`relative overflow-hidden rounded-xl border border-[var(--c-border)]
-        bg-[var(--c-surface)]
-        shadow-[var(--shadow-sm)] ${className}`}
+      className={`relative overflow-hidden rounded-panel border border-[var(--ft-border)]
+        bg-[var(--ft-surface)]
+        shadow-elevation-sm ${className}`}
     >
       {children}
     </div>
@@ -58,16 +61,30 @@ export function Th({
   return (
     <th
       onClick={sortable ? () => onSort!(sortKey!) : undefined}
+      onKeyDown={sortable ? event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onSort!(sortKey!)
+        }
+      } : undefined}
+      tabIndex={sortable ? 0 : undefined}
+      aria-sort={sortable
+        ? sortDir === 'asc'
+          ? 'ascending'
+          : sortDir === 'desc'
+            ? 'descending'
+            : 'none'
+        : undefined}
       className={`
-        px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.06em]
-        text-[var(--c-text-faint)] border-b border-[var(--c-border)] bg-[var(--c-surface-2)]
+        border-b border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-4 py-2.5
+        text-left text-[12px] font-semibold tracking-[0.01em] text-[var(--ft-text-muted)]
         whitespace-nowrap
-        ${sortable ? 'cursor-pointer select-none hover:text-[var(--c-text-muted)] transition-colors duration-100' : ''}
+        ${sortable ? 'cursor-pointer select-none transition-colors duration-fast motion-reduce:transition-none hover:bg-[var(--ft-surface-hover)] hover:text-[var(--ft-text-strong)] focus-visible:outline-none focus-visible:ring-inset focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]' : ''}
         ${right ? 'text-right' : ''}
         ${className}
       `}
     >
-      <span className="inline-flex items-center gap-1.5">
+      <span className={`inline-flex items-center gap-1.5 ${right ? 'w-full justify-end' : ''}`}>
         {children}
         {sortable && (
           <SortIndicator dir={sortDir}/>
@@ -79,11 +96,11 @@ export function Th({
 
 function SortIndicator({ dir }: { dir: 'asc' | 'desc' | null }) {
   return (
-    <span className="flex flex-col gap-[2px]">
-      <svg width="7" height="4" viewBox="0 0 7 4" className={dir === 'asc' ? 'text-[var(--c-text)]' : 'text-[var(--c-text-faint)]'}>
+    <span aria-hidden="true" className="flex flex-col gap-[2px]">
+      <svg width="7" height="4" viewBox="0 0 7 4" className={dir === 'asc' ? 'text-[var(--ft-text-strong)]' : 'text-[var(--ft-text-subtle)]'}>
         <path d="M3.5 0L7 4H0L3.5 0Z" fill="currentColor"/>
       </svg>
-      <svg width="7" height="4" viewBox="0 0 7 4" className={dir === 'desc' ? 'text-[var(--c-text)]' : 'text-[var(--c-text-faint)]'}>
+      <svg width="7" height="4" viewBox="0 0 7 4" className={dir === 'desc' ? 'text-[var(--ft-text-strong)]' : 'text-[var(--ft-text-subtle)]'}>
         <path d="M3.5 4L0 0H7L3.5 4Z" fill="currentColor"/>
       </svg>
     </span>
@@ -103,9 +120,9 @@ export function Td({
 }) {
   return (
     <td className={`
-      px-4 py-2.5 text-[13px] align-middle border-b border-[var(--c-border)]
-      ${right ? 'text-right' : ''}
-      ${muted ? 'text-[var(--c-text-muted)]' : 'text-[var(--c-text)]'}
+      border-b border-[var(--ft-border)] px-4 py-2.5 text-[13px] align-middle
+      ${right ? 'text-right tabular-nums' : ''}
+      ${muted ? 'text-[var(--ft-text-muted)]' : 'text-[var(--ft-text-strong)]'}
       ${className}
     `}>
       {children}
@@ -119,7 +136,7 @@ export function Td({
 
 export function Toolbar({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
-    <div className={`filters-row border-b border-[var(--c-border)] bg-[var(--c-surface-2)] p-4 backdrop-blur-sm ${className}`}>
+    <div className={`filters-row border-b border-[var(--ft-border)] bg-[var(--ft-surface-muted)] p-3 sm:p-4 ${className}`}>
       {children}
     </div>
   )
@@ -136,7 +153,8 @@ export function SearchInput({ value, onChange, placeholder = 'Buscar…', classN
   return (
     <div className={`relative ${className}`}>
       <svg
-        className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--c-text-faint)] pointer-events-none"
+        aria-hidden="true"
+        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ft-text-subtle)]"
         width="13" height="13" viewBox="0 0 24 24" fill="none"
         stroke="currentColor" strokeWidth="2" strokeLinecap="round"
       >
@@ -149,13 +167,11 @@ export function SearchInput({ value, onChange, placeholder = 'Buscar…', classN
         placeholder={placeholder}
         {...props}
         className={`
-          w-full pl-8 pr-3 py-1.5 rounded-lg text-[13px]
-          bg-[var(--c-surface)] border border-[var(--c-border)]
-          text-[var(--c-text)] placeholder:text-[var(--c-text-faint)]
-          focus:outline-none focus:border-[var(--c-primary)]
-          focus:ring-2 focus:ring-[var(--c-primary-soft)]
-          hover:border-[var(--c-border-hover)]
-          transition-[border-color,box-shadow] duration-150
+          h-9 w-full rounded-control border border-[var(--ft-border)] bg-[var(--ft-surface)] pl-8 pr-3 text-[13px]
+          text-[var(--ft-text-strong)] placeholder:text-[var(--ft-text-subtle)]
+          transition-[border-color,box-shadow,background-color] duration-fast motion-reduce:transition-none
+          hover:border-[var(--ft-border-strong)] focus:border-[var(--ft-primary)]
+          focus:outline-none focus:ring-[3px] focus:ring-[var(--ft-focus-ring-color)]
         `}
       />
     </div>
@@ -176,14 +192,17 @@ interface FilterPillProps {
 export function FilterPill({ label, active, onClick, count, color, testId }: FilterPillProps) {
   return (
     <button
+      type="button"
       onClick={onClick}
       data-testid={testId}
+      aria-pressed={active}
       className={`
-        flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-medium
-        border transition-colors duration-150 whitespace-nowrap
+        flex h-9 items-center gap-1.5 rounded-control border px-2.5 text-[12px] font-medium
+        whitespace-nowrap transition-colors duration-fast motion-reduce:transition-none
+        focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]
         ${active
-          ? `border-current/30 ${color ? '' : 'bg-[var(--c-primary-soft)] text-[var(--c-primary)] border-[var(--c-primary-border)]'}`
-          : 'border-[var(--c-border)] text-[var(--c-text-muted)] bg-[var(--c-surface)] hover:text-[var(--c-text)] hover:bg-[var(--c-surface-2)] hover:border-[var(--c-border-hover)]'
+          ? `border-current/30 ${color ? '' : 'border-[var(--ft-primary-border)] bg-[var(--ft-primary-soft)] text-[var(--ft-primary)]'}`
+          : 'border-[var(--ft-border)] bg-[var(--ft-surface)] text-[var(--ft-text-muted)] hover:border-[var(--ft-border-strong)] hover:bg-[var(--ft-surface-hover)] hover:text-[var(--ft-text-strong)]'
         }
       `}
       style={active && color ? {
@@ -249,17 +268,17 @@ type StatusVariant =
 
 // Border tokens for badge variants (light / dark via CSS vars)
 const STATUS_BORDER: Record<StatusVariant, string> = {
-  success:   'border-[#D4E8D1]',
-  error:     'border-[#F5D0CE]',
-  warning:   'border-[#F0E2B6]',
-  info:      'border-[#C8DEF5]',
-  pending:   'border-[var(--c-border)]',
-  active:    'border-[#D4E8D1]',
-  closed:    'border-[var(--c-border)]',
-  overdue:   'border-[#F5D0CE]',
-  paid:      'border-[#D4E8D1]',
-  partial:   'border-[#F0E2B6]',
-  collected: 'border-[#D4E8D1]',
+  success:   'border-[color-mix(in_srgb,var(--ft-success)_22%,var(--ft-border))]',
+  error:     'border-[color-mix(in_srgb,var(--ft-danger)_22%,var(--ft-border))]',
+  warning:   'border-[color-mix(in_srgb,var(--ft-warning)_22%,var(--ft-border))]',
+  info:      'border-[color-mix(in_srgb,var(--ft-info)_22%,var(--ft-border))]',
+  pending:   'border-[var(--ft-border)]',
+  active:    'border-[color-mix(in_srgb,var(--ft-success)_22%,var(--ft-border))]',
+  closed:    'border-[var(--ft-border)]',
+  overdue:   'border-[color-mix(in_srgb,var(--ft-danger)_22%,var(--ft-border))]',
+  paid:      'border-[color-mix(in_srgb,var(--ft-success)_22%,var(--ft-border))]',
+  partial:   'border-[color-mix(in_srgb,var(--ft-warning)_22%,var(--ft-border))]',
+  collected: 'border-[color-mix(in_srgb,var(--ft-success)_22%,var(--ft-border))]',
 }
 
 export function StatusBadge({
@@ -315,8 +334,8 @@ function iconFromActionLabel(label: string): 'view' | 'edit' | 'delete' | 'use' 
 
 export function RowActions({ actions }: { actions: RowAction[] }) {
   return (
-    <div className="flex items-center justify-end gap-2
-      opacity-100 transition-opacity duration-150">
+    <div className="flex items-center justify-end gap-1.5
+      opacity-100 transition-opacity duration-fast motion-reduce:transition-none">
       {actions.map((action, i) => (
         <ActionIconButton
           key={i}
@@ -346,18 +365,14 @@ interface EmptyStateProps {
 export function EmptyState({ icon, title, description, action }: EmptyStateProps) {
   return (
     <tr>
-      <td colSpan={99}>
-        <div className="flex flex-col items-center justify-center py-16 text-center px-8">
-          {icon && (
-            <div className="w-12 h-12 rounded-2xl bg-[var(--c-surface-2)] border border-[var(--c-border)]
-              flex items-center justify-center mb-4 text-[var(--c-text-faint)]">
-              {icon}
-            </div>
-          )}
-          <p className="text-sm font-semibold text-[var(--c-text)]">{title}</p>
-          <p className="text-[12px] text-[var(--c-text-muted)] mt-1 max-w-xs leading-relaxed">{description}</p>
-          {action && <div className="mt-4">{action}</div>}
-        </div>
+      <td colSpan={99} className="p-0">
+        <FinanceEmptyState
+          icon={icon}
+          title={title}
+          description={description}
+          action={action}
+          compact
+        />
       </td>
     </tr>
   )
@@ -372,14 +387,13 @@ export function SkeletonRows({ cols, rows = 8 }: { cols: number; rows?: number }
   return (
     <>
       {Array.from({ length: rows }).map((_, ri) => (
-        <tr key={ri} className="border-b border-[var(--c-border)]">
+        <tr key={ri} className="border-b border-[var(--ft-border)]">
           {Array.from({ length: cols }).map((_, ci) => (
             <td key={ci} className="px-4 py-3">
               <div
-                className="h-3 rounded animate-pulse"
+                className="h-3 animate-pulse rounded bg-[var(--ft-surface-muted)] motion-reduce:animate-none"
                 style={{
                   width: `${widths[ci % widths.length]}px`,
-                  backgroundColor: 'var(--c-surface-2)',
                 }}
               />
             </td>
@@ -414,13 +428,13 @@ export function Pagination({ page, totalPages, total, perPage, onPage }: Paginat
   )
 
   return (
-    <div className="flex items-center justify-between px-4 py-3
-      border-t border-[var(--c-border)] bg-[var(--c-surface-2)]">
-      <p className="text-[11px] text-[var(--c-text-muted)] tabular-nums">
+    <div className="flex flex-col items-start gap-3 border-t border-[var(--ft-border)]
+      bg-[var(--ft-surface-muted)] px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+      <p className="text-[12px] tabular-nums text-[var(--ft-text-muted)]">
         {from}–{to} de {total}
       </p>
 
-      <div className="flex items-center gap-1">
+      <nav aria-label="Paginación" className="flex max-w-full items-center gap-1 overflow-x-auto">
         <PageBtn onClick={() => onPage(page - 1)} disabled={page <= 1} label="←"/>
 
         {pages.map((p, i) => {
@@ -430,7 +444,7 @@ export function Pagination({ page, totalPages, total, perPage, onPage }: Paginat
           return (
             <span key={p} className="flex items-center gap-1">
               {gap && (
-                <span className="text-[var(--c-text-faint)] text-[11px] px-1">…</span>
+                <span className="px-1 text-[11px] text-[var(--ft-text-subtle)]">…</span>
               )}
               <PageBtn
                 onClick={() => onPage(p)}
@@ -442,7 +456,7 @@ export function Pagination({ page, totalPages, total, perPage, onPage }: Paginat
         })}
 
         <PageBtn onClick={() => onPage(page + 1)} disabled={page >= totalPages} label="→"/>
-      </div>
+      </nav>
     </div>
   )
 }
@@ -455,17 +469,27 @@ function PageBtn({
   active?:   boolean
   label:     string
 }) {
+  const accessibleLabel = label === '←'
+    ? 'Página anterior'
+    : label === '→'
+      ? 'Página siguiente'
+      : `Página ${label}`
+
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={disabled}
+      aria-label={accessibleLabel}
+      aria-current={active ? 'page' : undefined}
       className={`
-        min-w-[28px] h-7 px-2 rounded-lg text-[12px] font-medium
-        transition-all duration-100
-        disabled:opacity-25 disabled:cursor-not-allowed
+        h-9 min-w-9 rounded-control px-2 text-[12px] font-medium
+        transition-colors duration-fast motion-reduce:transition-none
+        focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]
+        disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-[var(--ft-text-muted)]
         ${active
-          ? 'bg-[var(--c-primary-soft)] text-[var(--c-primary)] border border-[var(--c-primary-border)]'
-          : 'text-[var(--c-text-muted)] hover:text-[var(--c-text)] hover:bg-[var(--c-surface-2)]'
+          ? 'border border-[var(--ft-primary-border)] bg-[var(--ft-primary-soft)] text-[var(--ft-primary)]'
+          : 'text-[var(--ft-text-muted)] hover:bg-[var(--ft-surface-hover)] hover:text-[var(--ft-text-strong)]'
         }
       `}
     >
@@ -501,9 +525,9 @@ export function AmountCell({
   const secondaryDisplay = formatter(secondaryAmount, secondaryCurrency)
 
   const colorClass = {
-    income:  'text-[var(--c-success)]',
-    expense: 'text-[var(--c-danger)]',
-    neutral: 'text-[var(--c-text)]',
+    income:  'text-[var(--ft-success)]',
+    expense: 'text-[var(--ft-danger)]',
+    neutral: 'text-[var(--ft-text-strong)]',
   }[variant]
 
   const showOriginal =
@@ -513,14 +537,14 @@ export function AmountCell({
 
   return (
     <div className="text-right">
-      <p className={`text-sm font-bold tabular-nums ${colorClass}`}>
+      <p className={`font-mono text-sm font-semibold tabular-nums ${colorClass}`}>
         {prefix}{display}
       </p>
-      <p className="text-[10px] text-[var(--c-text-muted)] tabular-nums mt-0.5">
+      <p className="mt-0.5 font-mono text-[11px] tabular-nums text-[var(--ft-text-muted)]">
         ≈ {secondaryDisplay}
       </p>
       {showOriginal && (
-        <p className="text-[10px] text-[var(--c-text-muted)] tabular-nums mt-0.5">
+        <p className="mt-0.5 font-mono text-[11px] tabular-nums text-[var(--ft-text-muted)]">
           {formatter(original.amount, original.currency)}
         </p>
       )}
@@ -535,7 +559,7 @@ export function AmountCell({
 export function DateCell({ date, relative }: { date: string; relative?: boolean }) {
   if (!date) {
     return (
-      <span className="text-[12px] text-[var(--c-text-muted)] tabular-nums whitespace-nowrap">
+      <span className="whitespace-nowrap text-[12px] tabular-nums text-[var(--ft-text-muted)]">
         —
       </span>
     )
@@ -551,7 +575,7 @@ export function DateCell({ date, relative }: { date: string; relative?: boolean 
     : '—'
 
   return (
-    <span className="text-[12px] text-[var(--c-text-muted)] tabular-nums whitespace-nowrap">
+    <span className="whitespace-nowrap text-[12px] tabular-nums text-[var(--ft-text-muted)]">
       {formatted}
     </span>
   )

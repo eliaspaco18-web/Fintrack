@@ -20,8 +20,8 @@ export function DataTable({
   return (
     <section
       className={joinClasses(
-        'relative overflow-hidden rounded-xl border border-[var(--c-border)]',
-        'bg-[var(--c-surface)] shadow-[var(--shadow-sm)]',
+        'relative overflow-hidden rounded-panel border border-[var(--ft-border)]',
+        'bg-[var(--ft-surface)] shadow-elevation-sm',
         className,
       )}
     >
@@ -40,7 +40,7 @@ export function DataToolbar({
   return (
     <div
       className={joinClasses(
-        'border-b border-[var(--c-border)] bg-[var(--c-surface-2)] px-4 py-3',
+        'border-b border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-3 py-3 sm:px-4',
         className,
       )}
     >
@@ -79,7 +79,8 @@ export function DataSearchField({
   return (
     <div className={joinClasses('relative', className)}>
       <svg
-        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--c-text-faint)]"
+        aria-hidden="true"
+        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ft-text-subtle)]"
         width="13"
         height="13"
         viewBox="0 0 24 24"
@@ -98,12 +99,12 @@ export function DataSearchField({
         placeholder={placeholder}
         {...props}
         className={joinClasses(
-          'w-full rounded-lg border border-[var(--c-border)] bg-[var(--c-surface)]',
-          'py-1.5 pl-8 pr-3 text-[13px] text-[var(--c-text)]',
-          'placeholder:text-[var(--c-text-faint)]',
-          'transition-[border-color,box-shadow] duration-150',
-          'hover:border-[var(--c-border-hover)] focus:border-[var(--c-primary)]',
-          'focus:outline-none focus:ring-2 focus:ring-[var(--c-primary-soft)]',
+          'h-9 w-full rounded-control border border-[var(--ft-border)] bg-[var(--ft-surface)]',
+          'pl-8 pr-3 text-[13px] text-[var(--ft-text-strong)]',
+          'placeholder:text-[var(--ft-text-subtle)]',
+          'transition-[border-color,box-shadow,background-color] duration-fast motion-reduce:transition-none',
+          'hover:border-[var(--ft-border-strong)] focus:border-[var(--ft-primary)]',
+          'focus:outline-none focus:ring-[3px] focus:ring-[var(--ft-focus-ring-color)]',
           className,
         )}
       />
@@ -133,14 +134,16 @@ export function DataFilterPreset({
       type="button"
       onClick={onClick}
       data-testid={testId}
+      aria-pressed={active}
       className={joinClasses(
-        'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5',
-        'text-[12px] font-medium whitespace-nowrap transition-colors duration-150',
+        'inline-flex h-9 items-center gap-1.5 rounded-control border px-2.5',
+        'whitespace-nowrap text-[12px] font-medium transition-colors duration-fast motion-reduce:transition-none',
+        'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]',
         active
           ? color
             ? ''
-            : 'border-[var(--c-primary-border)] bg-[var(--c-primary-soft)] text-[var(--c-primary)]'
-          : 'border-[var(--c-border)] bg-[var(--c-surface)] text-[var(--c-text-muted)] hover:border-[var(--c-border-hover)] hover:bg-[var(--c-surface)] hover:text-[var(--c-text)]',
+            : 'border-[var(--ft-primary-border)] bg-[var(--ft-primary-soft)] text-[var(--ft-primary)]'
+          : 'border-[var(--ft-border)] bg-[var(--ft-surface)] text-[var(--ft-text-muted)] hover:border-[var(--ft-border-strong)] hover:bg-[var(--ft-surface-hover)] hover:text-[var(--ft-text-strong)]',
       )}
       style={active && color ? {
         backgroundColor: `${color}18`,
@@ -341,18 +344,26 @@ function DataPageButton({
   active?: boolean
   label: string
 }) {
+  const accessibleLabel = label === '←'
+    ? 'Página anterior'
+    : label === '→'
+      ? 'Página siguiente'
+      : `Página ${label}`
+
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
+      aria-label={accessibleLabel}
+      aria-current={active ? 'page' : undefined}
       className={joinClasses(
-        'h-7 min-w-[28px] rounded-lg px-2 text-[12px] font-medium',
-        'transition-all duration-instant focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ft-focus-ring-color)]',
+        'h-9 min-w-9 rounded-control px-2 text-[12px] font-medium',
+        'transition-colors duration-fast motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]',
         'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-[var(--ft-text-muted)]',
         active
-          ? 'border border-[var(--c-primary-border)] bg-[var(--c-primary-soft)] text-[var(--c-primary)]'
-          : 'text-[var(--c-text-muted)] hover:bg-[var(--c-surface)] hover:text-[var(--c-text)]',
+          ? 'border border-[var(--ft-primary-border)] bg-[var(--ft-primary-soft)] text-[var(--ft-primary)]'
+          : 'text-[var(--ft-text-muted)] hover:bg-[var(--ft-surface-hover)] hover:text-[var(--ft-text-strong)]',
       )}
     >
       {label}
@@ -376,12 +387,12 @@ export function DataPagination({
   )
 
   return (
-    <div className="flex items-center justify-between border-t border-[var(--c-border)] bg-[var(--c-surface-2)] px-4 py-3">
-      <p className="text-[11px] text-[var(--c-text-muted)] tabular-nums">
+    <div className="flex flex-col items-start gap-3 border-t border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+      <p className="text-[12px] tabular-nums text-[var(--ft-text-muted)]">
         {from}–{to} de {total}
       </p>
 
-      <div className="flex items-center gap-1">
+      <nav aria-label="Paginación" className="flex max-w-full items-center gap-1 overflow-x-auto">
         <DataPageButton onClick={() => onPage(page - 1)} disabled={page <= 1} label="←" />
 
         {pages.map((current, index) => {
@@ -390,7 +401,7 @@ export function DataPagination({
 
           return (
             <span key={current} className="flex items-center gap-1">
-              {gap ? <span className="px-1 text-[11px] text-[var(--c-text-faint)]">…</span> : null}
+              {gap ? <span className="px-1 text-[11px] text-[var(--ft-text-subtle)]">…</span> : null}
               <DataPageButton
                 onClick={() => onPage(current)}
                 active={current === page}
@@ -401,7 +412,7 @@ export function DataPagination({
         })}
 
         <DataPageButton onClick={() => onPage(page + 1)} disabled={page >= totalPages} label="→" />
-      </div>
+      </nav>
     </div>
   )
 }
@@ -427,7 +438,7 @@ function iconFromActionLabel(label: string): 'view' | 'edit' | 'delete' | 'use' 
 
 export function DataRowActions({ actions }: { actions: DataRowAction[] }) {
   return (
-    <div className="flex items-center justify-end gap-2 opacity-100 transition-opacity duration-150">
+    <div className="flex items-center justify-end gap-1.5 opacity-100 transition-opacity duration-fast motion-reduce:transition-none">
       {actions.map((action, index) => (
         <ActionIconButton
           key={index}
