@@ -488,15 +488,15 @@ export function EmptyState({
 
   return (
     <div
-      className={`${surfaceClassName(compact ? 'px-5 py-8' : 'px-6 py-14')} flex flex-col items-center justify-center text-center ${className}`.trim()}
+      className={`${compact ? 'px-5 py-10' : 'rounded-surface border border-[var(--ft-border)] bg-[var(--ft-surface)] px-6 py-14'} flex flex-col items-center justify-center text-center ${className}`.trim()}
     >
       {icon ? (
-        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--c-border)] bg-[var(--c-surface-2)] text-[var(--c-text-faint)]">
+        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-surface border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] text-[var(--ft-text-subtle)]">
           {icon}
         </div>
       ) : null}
-      <p className="text-sm font-semibold text-[var(--c-text)]">{title}</p>
-      <p className="mt-1.5 max-w-sm text-[12px] leading-6 text-[var(--c-text-muted)]">
+      <p className="text-[15px] font-semibold tracking-[-0.01em] text-[var(--ft-text-strong)]">{title}</p>
+      <p className="mt-1.5 max-w-sm text-[13px] leading-5 text-[var(--ft-text-muted)]">
         {description}
       </p>
       {resolvedAction ? <div className="mt-5">{resolvedAction}</div> : null}
