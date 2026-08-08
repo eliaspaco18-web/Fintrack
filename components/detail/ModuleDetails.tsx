@@ -18,9 +18,20 @@ import {
   DetailField,
   FieldGrid,
   ActionButton,
+  CanonicalDetailBackLink,
+  CanonicalDetailBadge,
+  CanonicalDetailFact,
+  CanonicalDetailFacts,
+  CanonicalDetailLayout,
+  CanonicalDetailNotice,
+  CanonicalDetailRailSection,
+  CanonicalDetailSection,
+  CanonicalDetailSummary,
+  CanonicalRelatedRecordLink,
   ConfirmDialog,
   LinkedModuleBadge,
   InlineError,
+  type CanonicalDetailTone,
 }                                  from './primitives'
 import { ProgressBar } from '@/components/tables/primitives'
 import type { Credit, Asset,
@@ -28,6 +39,16 @@ import type { Credit, Asset,
   Installment }                    from '@/types/database.types'
 
 // ─── INSTALLMENT LIST ─────────────────────────────────────────────────────────
+
+const INSTALLMENT_STATUS = {
+  PENDING: { label: 'Pendiente', tone: 'neutral' },
+  PAID:    { label: 'Pagada',    tone: 'success' },
+  OVERDUE: { label: 'Vencida',   tone: 'danger' },
+  PARTIAL: { label: 'Parcial',   tone: 'warning' },
+} satisfies Record<Installment['status'], {
+  label: string
+  tone: CanonicalDetailTone
+}>
 
 function InstallmentRow({
   inst,
@@ -38,51 +59,45 @@ function InstallmentRow({
 }) {
   const isOverdue = inst.status === 'OVERDUE'
   const isPaid    = inst.status === 'PAID'
-
-  const statusStyles = {
-    PENDING: 'text-white/35',
-    PAID:    'text-[var(--c-primary)]',
-    OVERDUE: 'text-red-400',
-    PARTIAL: 'text-amber-400',
-  }
+  const status     = INSTALLMENT_STATUS[inst.status]
 
   return (
-    <div className={`
-      flex items-center gap-3 py-2.5 border-b border-white/[0.04] last:border-0
-      ${isOverdue ? 'bg-red-500/[0.03] -mx-4 px-4 rounded' : ''}
-    `}>
-      <div className={`
-        w-6 h-6 rounded-full border flex items-center justify-center
-        text-[10px] font-bold flex-shrink-0
-        ${isPaid    ? 'bg-[var(--c-primary-soft)] border-[var(--c-primary-border)] text-[var(--c-primary)]'
-        : isOverdue ? 'bg-red-500/15 border-red-500/30 text-red-400'
-        :             'bg-white/[0.05] border-white/[0.08] text-white/30'}
-      `}>
+    <li className={`grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 border-b border-[var(--ft-border)] px-4 py-3.5 last:border-b-0 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center sm:px-5 ${isOverdue ? 'bg-[var(--ft-danger-soft)]' : ''}`}>
+      <div className={`flex h-8 w-8 flex-none items-center justify-center rounded-full border text-[11px] font-bold tabular-nums ${
+        isPaid
+          ? 'border-[color-mix(in_srgb,var(--ft-success)_20%,transparent)] bg-[var(--ft-success-soft)] text-[var(--ft-success)]'
+          : isOverdue
+            ? 'border-[color-mix(in_srgb,var(--ft-danger)_20%,transparent)] bg-[var(--ft-danger-soft)] text-[var(--ft-danger)]'
+            : 'border-[var(--ft-border)] bg-[var(--ft-surface-muted)] text-[var(--ft-text-muted)]'
+      }`}>
         {isPaid ? '✓' : inst.installment_number}
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-[12px] text-white/60 tabular-nums">
+      <div className="min-w-0">
+        <p className="text-[13px] font-medium leading-5 text-[var(--ft-text-strong)] tabular-nums">
           Cuota {inst.installment_number}
         </p>
         {inst.due_date && (
-          <p className="text-[10px] text-white/25 tabular-nums">
+          <p className="mt-0.5 text-xs leading-4 text-[var(--ft-text-muted)] tabular-nums">
             {new Date(inst.due_date + 'T12:00:00').toLocaleDateString('es-PE', {
               day: 'numeric', month: 'short', year: '2-digit',
             })}
           </p>
         )}
       </div>
-      <div className="text-right">
-        <p className={`text-[12px] font-bold tabular-nums ${statusStyles[inst.status] ?? 'text-white/40'}`}>
-          {formatCurrency(inst.total_amount, currency)}
-        </p>
-        {inst.interest_amount > 0 && (
-          <p className="text-[10px] text-white/20 tabular-nums">
-            Int. {formatCurrency(inst.interest_amount, currency)}
+      <div className="col-start-2 flex min-w-0 flex-wrap items-center justify-between gap-2 sm:col-start-3 sm:block sm:text-right">
+        <CanonicalDetailBadge tone={status.tone}>{status.label}</CanonicalDetailBadge>
+        <div className="text-right sm:mt-1.5">
+          <p className="text-[13px] font-semibold leading-5 text-[var(--ft-text-strong)] tabular-nums">
+            {formatCurrency(inst.total_amount, currency)}
           </p>
-        )}
+          {inst.interest_amount > 0 && (
+            <p className="text-[11px] leading-4 text-[var(--ft-text-subtle)] tabular-nums">
+              Int. {formatCurrency(inst.interest_amount, currency)}
+            </p>
+          )}
+        </div>
       </div>
-    </div>
+    </li>
   )
 }
 
@@ -107,113 +122,110 @@ export function CreditDetail({ credit, installments = [], transaction }: CreditD
   const overdueInstallments = installments.filter(i => i.status === 'OVERDUE')
 
   return (
-    <>
-      <BackLink href="/credits" label="Créditos"/>
-      <DetailShell twoColumn aside={
+    <CanonicalDetailLayout
+      back={<CanonicalDetailBackLink href="/credits" label="Créditos"/>}
+      summary={
+        <CanonicalDetailSummary
+          marker={credit.credit_type === 'CREDIT_CARD' ? (
+            <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2.5" y="5" width="19" height="14" rx="2.5"/>
+              <path d="M2.5 10h19M6.5 15h3"/>
+            </svg>
+          ) : (
+            <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 10h18M5 10v8m4-8v8m6-8v8m4-8v8M3 18h18M12 3l9 5H3l9-5Z"/>
+            </svg>
+          )}
+          tone="primary"
+          badges={
+            <CanonicalDetailBadge>
+              {credit.credit_type === 'CREDIT_CARD' ? 'Tarjeta de crédito' : 'Crédito bancario'}
+            </CanonicalDetailBadge>
+          }
+          title={credit.name}
+          amount={formatCurrency(format(credit.available_amount ?? 0), preferred)}
+          amountMeta={
+            <span className="text-xs font-medium text-[var(--ft-text-muted)]">disponible</span>
+          }
+          supporting={
+            <div>
+              <div className="flex flex-col gap-1 text-xs leading-4 text-[var(--ft-text-muted)] sm:flex-row sm:items-center sm:justify-between">
+                <span>Utilización: {formatPercent(utilPct, { fractionDigits: 1 })}</span>
+                <span className="tabular-nums">
+                  {formatCurrency(format(credit.used_amount), preferred)} / {formatCurrency(format(credit.credit_limit), preferred)}
+                </span>
+              </div>
+              <div className="mt-2.5">
+                <ProgressBar
+                  value={utilPct}
+                  color={utilPct >= 90 ? 'var(--ft-danger)' : utilPct >= 70 ? 'var(--ft-warning)' : 'var(--ft-primary)'}
+                  height={6}
+                />
+              </div>
+            </div>
+          }
+        />
+      }
+      aside={(transaction || overdueInstallments.length > 0) ? (
         <div className="space-y-4">
           {transaction && (
-            <DetailCard className="p-5">
-              <h3 className="text-[11px] font-bold uppercase tracking-[0.1em] text-white/25 mb-3">
-                Transacción origen
-              </h3>
-              <LinkedModuleBadge
+            <CanonicalDetailRailSection title="Transacción origen">
+              <CanonicalRelatedRecordLink
                 label={transaction.description}
                 href={`/transactions/${transaction.id}`}
-                color="#3b82f6"
               />
-            </DetailCard>
+            </CanonicalDetailRailSection>
           )}
           {overdueInstallments.length > 0 && (
-            <div className="rounded-xl bg-red-500/[0.08] border border-red-500/20 p-4">
-              <p className="text-[12px] text-red-400 font-semibold mb-1">
-                {overdueInstallments.length} cuota{overdueInstallments.length > 1 ? 's' : ''} vencida{overdueInstallments.length > 1 ? 's' : ''}
-              </p>
-              <p className="text-[11px] text-red-400/60">
+            <CanonicalDetailNotice
+              tone="danger"
+              title={`${overdueInstallments.length} cuota${overdueInstallments.length > 1 ? 's' : ''} vencida${overdueInstallments.length > 1 ? 's' : ''}`}
+            >
+              <p>
                 Total vencido: {formatCurrency(
                   overdueInstallments.reduce((s, i) => s + i.total_amount, 0),
                   credit.currency as 'PEN' | 'USD'
                 )}
               </p>
-            </div>
+            </CanonicalDetailNotice>
           )}
         </div>
-      }>
-        {/* Header */}
-        <DetailCard>
-          <div className="p-6 border-b border-white/[0.05]">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wide
-                  text-amber-400/70 bg-amber-500/10 px-2 py-0.5 rounded-full">
-                  {credit.credit_type === 'CREDIT_CARD' ? 'Tarjeta de crédito' : 'Crédito bancario'}
-                </span>
-                <h1 className="text-lg font-bold text-white/85 mt-2">{credit.name}</h1>
-              </div>
-              <div className="text-right">
-                <p className="text-2xl font-bold tabular-nums text-[var(--c-primary)]">
-                  {formatCurrency(format(credit.available_amount ?? 0), preferred)}
-                </p>
-                <p className="text-[11px] text-white/25">disponible</p>
-              </div>
-            </div>
+      ) : undefined}
+    >
+      <div className="space-y-4 sm:space-y-5">
+        <CanonicalDetailFacts>
+          <CanonicalDetailFact label="Límite de crédito" mono>
+            {formatCurrency(format(credit.credit_limit), preferred)}
+          </CanonicalDetailFact>
+          <CanonicalDetailFact label="Monto usado" mono>
+            {formatCurrency(format(credit.used_amount), preferred)}
+          </CanonicalDetailFact>
+          <CanonicalDetailFact label="Tasa de interés" mono>
+            {formatPercent(credit.interest_rate, { fractionDigits: 2 })} mensual
+          </CanonicalDetailFact>
+          <CanonicalDetailFact label="Moneda" mono>{credit.currency}</CanonicalDetailFact>
+          {credit.closing_day && (
+            <CanonicalDetailFact label="Día de corte">Día {credit.closing_day}</CanonicalDetailFact>
+          )}
+          {credit.payment_day && (
+            <CanonicalDetailFact label="Día de pago">Día {credit.payment_day}</CanonicalDetailFact>
+          )}
+        </CanonicalDetailFacts>
 
-            <div className="mt-5">
-              <div className="flex justify-between text-[11px] text-white/35 mb-2">
-                <span>Utilización: {formatPercent(utilPct, { fractionDigits: 1 })}</span>
-                <span>{formatCurrency(format(credit.used_amount), preferred)} / {formatCurrency(format(credit.credit_limit), preferred)}</span>
-              </div>
-              <ProgressBar
-                value={utilPct}
-                color={utilPct >= 90 ? '#ef4444' : utilPct >= 70 ? '#f97316' : 'var(--c-primary)'}
-                height={6}
-              />
-            </div>
-          </div>
-
-          <div className="p-6">
-            <FieldGrid>
-              <DetailField label="Límite de crédito" mono>
-                {formatCurrency(format(credit.credit_limit), preferred)}
-              </DetailField>
-              <DetailField label="Monto usado" mono>
-                {formatCurrency(format(credit.used_amount), preferred)}
-              </DetailField>
-              <DetailField label="Tasa de interés" mono>
-                {formatPercent(credit.interest_rate, { fractionDigits: 2 })} mensual
-              </DetailField>
-              <DetailField label="Moneda" mono>{credit.currency}</DetailField>
-              {credit.closing_day && (
-                <DetailField label="Día de corte">Día {credit.closing_day}</DetailField>
-              )}
-              {credit.payment_day && (
-                <DetailField label="Día de pago">Día {credit.payment_day}</DetailField>
-              )}
-            </FieldGrid>
-          </div>
-        </DetailCard>
-
-        {/* Cronograma */}
         {installments.length > 0 && (
-          <DetailCard>
-            <div className="p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-[11px] font-bold uppercase tracking-[0.1em] text-white/30">
-                  Cronograma de cuotas
-                </h2>
-                <span className="text-[11px] text-white/25 tabular-nums">
-                  {paidInstallments}/{totalInstallments} pagadas
-                </span>
-              </div>
-              <div className="max-h-[400px] overflow-y-auto">
-                {installments.map(inst => (
-                  <InstallmentRow key={inst.id} inst={inst} currency={credit.currency as 'PEN' | 'USD'}/>
-                ))}
-              </div>
-            </div>
-          </DetailCard>
+          <CanonicalDetailSection
+            title="Cronograma de cuotas"
+            meta={<>{paidInstallments}/{totalInstallments} pagadas</>}
+          >
+            <ol className="max-h-[400px] overflow-y-auto">
+              {installments.map(inst => (
+                <InstallmentRow key={inst.id} inst={inst} currency={credit.currency as 'PEN' | 'USD'}/>
+              ))}
+            </ol>
+          </CanonicalDetailSection>
         )}
-      </DetailShell>
-    </>
+      </div>
+    </CanonicalDetailLayout>
   )
 }
 

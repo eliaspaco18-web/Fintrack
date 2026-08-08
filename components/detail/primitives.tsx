@@ -265,7 +265,13 @@ export function NotFound({ entity, backHref }: { entity: string; backHref: strin
 // their current presentation until they are migrated explicitly.
 // =============================================================================
 
-export type CanonicalDetailTone = 'neutral' | 'primary' | 'danger' | 'info'
+export type CanonicalDetailTone =
+  | 'neutral'
+  | 'primary'
+  | 'success'
+  | 'warning'
+  | 'danger'
+  | 'info'
 
 const CANONICAL_TONE_CLASSES: Record<CanonicalDetailTone, {
   badge: string
@@ -281,6 +287,16 @@ const CANONICAL_TONE_CLASSES: Record<CanonicalDetailTone, {
     badge: 'border-[var(--ft-primary-border)] bg-[var(--ft-primary-soft)] text-[var(--ft-primary)]',
     marker: 'border-[var(--ft-primary-border)] bg-[var(--ft-primary-soft)] text-[var(--ft-primary)]',
     amount: 'text-[var(--ft-primary)]',
+  },
+  success: {
+    badge: 'border-[color-mix(in_srgb,var(--ft-success)_20%,transparent)] bg-[var(--ft-success-soft)] text-[var(--ft-success)]',
+    marker: 'border-[color-mix(in_srgb,var(--ft-success)_20%,transparent)] bg-[var(--ft-success-soft)] text-[var(--ft-success)]',
+    amount: 'text-[var(--ft-success)]',
+  },
+  warning: {
+    badge: 'border-[color-mix(in_srgb,var(--ft-warning)_20%,transparent)] bg-[var(--ft-warning-soft)] text-[var(--ft-warning)]',
+    marker: 'border-[color-mix(in_srgb,var(--ft-warning)_20%,transparent)] bg-[var(--ft-warning-soft)] text-[var(--ft-warning)]',
+    amount: 'text-[var(--ft-warning)]',
   },
   danger: {
     badge: 'border-[color-mix(in_srgb,var(--ft-danger)_20%,transparent)] bg-[var(--ft-danger-soft)] text-[var(--ft-danger)]',
@@ -324,7 +340,7 @@ export function CanonicalDetailBackLink({ href, label }: { href: string; label: 
 interface CanonicalDetailLayoutProps {
   back: ReactNode
   summary: ReactNode
-  actions: ReactNode
+  actions?: ReactNode
   children: ReactNode
   aside?: ReactNode
 }
@@ -341,6 +357,25 @@ export function CanonicalDetailLayout({
   children,
   aside,
 }: CanonicalDetailLayoutProps) {
+  const hasActions = actions !== undefined && actions !== null
+
+  if (!hasActions) {
+    return (
+      <div className="mx-auto w-full max-w-[1240px]">
+        <div className="mb-4 sm:mb-5">{back}</div>
+        <div className={`grid min-w-0 grid-cols-1 gap-4 sm:gap-5 ${aside ? 'xl:grid-cols-[minmax(0,1fr)_288px] xl:items-start' : ''}`}>
+          <div className="min-w-0 xl:col-start-1 xl:row-start-1">{summary}</div>
+          {aside ? (
+            <aside className="min-w-0 xl:col-start-2 xl:row-start-1">
+              {aside}
+            </aside>
+          ) : null}
+          <div className="min-w-0 xl:col-start-1 xl:row-start-2">{children}</div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="mx-auto w-full max-w-[1240px]">
       <div className="mb-4 sm:mb-5">{back}</div>
@@ -363,9 +398,10 @@ interface CanonicalDetailSummaryProps {
   tone?: CanonicalDetailTone
   badges: ReactNode
   title: ReactNode
-  subtitle: ReactNode
+  subtitle?: ReactNode
   amount: ReactNode
   amountMeta?: ReactNode
+  supporting?: ReactNode
 }
 
 export function CanonicalDetailSummary({
@@ -376,6 +412,7 @@ export function CanonicalDetailSummary({
   subtitle,
   amount,
   amountMeta,
+  supporting,
 }: CanonicalDetailSummaryProps) {
   const toneClasses = CANONICAL_TONE_CLASSES[tone]
 
@@ -394,7 +431,9 @@ export function CanonicalDetailSummary({
             <h1 className="break-words font-display text-[22px] font-bold leading-[1.2] tracking-[-0.025em] text-[var(--ft-text-strong)] sm:text-2xl">
               {title}
             </h1>
-            <p className="mt-1.5 text-sm leading-5 text-[var(--ft-text-muted)]">{subtitle}</p>
+            {subtitle !== undefined && subtitle !== null ? (
+              <p className="mt-1.5 text-sm leading-5 text-[var(--ft-text-muted)]">{subtitle}</p>
+            ) : null}
           </div>
         </div>
 
@@ -407,6 +446,11 @@ export function CanonicalDetailSummary({
           ) : null}
         </div>
       </div>
+      {supporting !== undefined && supporting !== null ? (
+        <div className="mt-5 border-t border-[var(--ft-border)] pt-4 sm:mt-6 sm:pt-5">
+          {supporting}
+        </div>
+      ) : null}
     </header>
   )
 }
@@ -468,6 +512,47 @@ export function CanonicalDetailRailSection({
       <h2 className="mb-3 text-xs font-semibold leading-4 text-[var(--ft-text-muted)]">{title}</h2>
       {children}
     </section>
+  )
+}
+
+export function CanonicalDetailSection({
+  title,
+  meta,
+  children,
+}: {
+  title: string
+  meta?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <section className="overflow-hidden rounded-panel border border-[var(--ft-border)] bg-[var(--ft-surface)] shadow-elevation-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--ft-border)] px-4 py-3.5 sm:px-5">
+        <h2 className="text-sm font-semibold leading-5 text-[var(--ft-text-strong)]">{title}</h2>
+        {meta ? (
+          <div className="text-xs font-medium leading-4 text-[var(--ft-text-muted)] tabular-nums">
+            {meta}
+          </div>
+        ) : null}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+export function CanonicalDetailNotice({
+  title,
+  tone = 'info',
+  children,
+}: {
+  title: string
+  tone?: CanonicalDetailTone
+  children: ReactNode
+}) {
+  return (
+    <div className={`rounded-surface border p-4 ${CANONICAL_TONE_CLASSES[tone].badge}`}>
+      <p className="text-[13px] font-semibold leading-5">{title}</p>
+      <div className="mt-1 text-xs leading-5 opacity-80">{children}</div>
+    </div>
   )
 }
 
