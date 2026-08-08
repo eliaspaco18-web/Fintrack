@@ -103,7 +103,7 @@ export function BankLoanScheduleModal({
       size="full-form"
       widthClassName="w-[calc(100vw-32px)] max-w-[1240px]"
       overlayClassName="z-[132]"
-      bodyClassName="credits-modal-body !overflow-hidden py-4"
+      bodyClassName="credits-modal-body !flex !flex-col !overflow-hidden py-4"
       footer={(
         <FormActions
           secondaryAction={(
@@ -119,7 +119,7 @@ export function BankLoanScheduleModal({
         />
       )}
     >
-      <div className="flex h-full min-h-0 w-full flex-col gap-4">
+      <div className="flex min-h-0 w-full flex-1 flex-col gap-4">
         <div className="space-y-1">
           <p className="text-[13px] font-semibold tracking-[-0.01em] text-[var(--ft-text)]">
             Editor completo de cuotas
