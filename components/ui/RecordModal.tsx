@@ -11,6 +11,7 @@ import {
   useState,
 } from 'react'
 import { createPortal } from 'react-dom'
+import { Button } from '@/components/ui/Button'
 import { FocusTrap } from '@/components/ui/accessibility'
 
 type RecordModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'full-form'
@@ -18,23 +19,23 @@ type RecordModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'full-form'
 const MODAL_SIZE_PRESETS: Record<RecordModalSize, { widthClassName: string; padding: string }> = {
   sm: {
     widthClassName: 'w-[calc(100vw-32px)] max-w-[480px]',
-    padding: '24px',
+    padding: 'var(--ft-space-6)',
   },
   md: {
     widthClassName: 'w-[calc(100vw-32px)] max-w-[760px]',
-    padding: '24px',
+    padding: 'var(--ft-space-6)',
   },
   lg: {
     widthClassName: 'w-[calc(100vw-32px)] max-w-[900px]',
-    padding: '28px',
+    padding: 'var(--ft-space-6)',
   },
   xl: {
     widthClassName: 'w-[calc(100vw-32px)] max-w-[1280px]',
-    padding: '28px',
+    padding: 'var(--ft-space-6)',
   },
   'full-form': {
     widthClassName: 'w-[calc(100vw-16px)] max-w-[1680px]',
-    padding: '20px',
+    padding: 'var(--ft-space-5)',
   },
 }
 
@@ -74,7 +75,7 @@ export function RecordModal({
   widthClassName,
   bodyClassName = '',
   footerClassName = '',
-  overlayClassName = 'z-[120]',
+  overlayClassName = 'z-modal',
   focusTrapActive = true,
 }: RecordModalProps) {
   const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null)
@@ -133,60 +134,56 @@ export function RecordModal({
           onClick={event => event.stopPropagation()}
           className={`
             ${resolvedWidthClassName}
-            flex max-h-[calc(100dvh-32px)] flex-col overflow-hidden
-            rounded-xl border border-[var(--c-border)]
-            bg-[var(--c-modal-bg)]
-            shadow-[var(--shadow-lg)]
+            flex max-h-[calc(100dvh-16px)] flex-col overflow-hidden sm:max-h-[calc(100dvh-32px)]
+            rounded-panel border border-[var(--ft-border)] sm:rounded-modal
+            bg-[var(--ft-modal-bg)]
+            shadow-elevation-xl
           `}
           style={modalStyle}
         >
           <div
             className="
-              sticky top-0 z-[1] flex items-start justify-between gap-3 border-b border-[var(--ft-form-border)]
-              bg-[var(--ft-form-surface)]
-              px-[var(--ft-modal-padding)] pt-5 pb-4 backdrop-blur-xl
+              sticky top-0 z-[1] flex shrink-0 items-start justify-between gap-4 border-b border-[var(--ft-border)]
+              bg-[var(--ft-modal-bg)]
+              px-[var(--ft-modal-padding)] pb-4 pt-5
             "
           >
             <div className="min-w-0">
               {eyebrow && (
-                <p className="mb-1 text-[10px] font-medium tracking-[0.12em] text-[var(--c-text-faint)]">
+                <p className="mb-1 text-[12px] font-medium tracking-[0.04em] text-[var(--ft-text-subtle)]">
                   {eyebrow}
                 </p>
               )}
               <h2
                 id={titleId}
-                className="text-[1rem] font-semibold leading-snug tracking-[-0.02em] text-[var(--c-text)] md:text-[1.05rem]"
+                className="text-[1rem] font-semibold leading-snug tracking-[-0.02em] text-[var(--ft-text-strong)] md:text-[1.05rem]"
               >
                 {title}
               </h2>
               {subtitle && (
-                <p id={subtitleId} className="mt-1 max-w-[65ch] text-[12px] text-[var(--c-text-muted)]">
+                <p id={subtitleId} className="mt-1 max-w-[65ch] text-[13px] leading-5 text-[var(--ft-text-muted)]">
                   {subtitle}
                 </p>
               )}
             </div>
 
-            <button
+            <Button
               type="button"
               onClick={onClose}
-              aria-label="Cerrar modal"
-              className="
-                flex-shrink-0 flex h-7 w-7 items-center justify-center rounded-lg
-                border border-[var(--c-border)] bg-[var(--c-surface-2)]
-                text-[var(--c-text-muted)] hover:text-[var(--c-text)]
-                hover:border-[var(--c-border-hover)] hover:bg-[var(--c-surface-hover)]
-                transition-colors duration-150
-              "
+              ariaLabel="Cerrar modal"
+              variant="secondary"
+              size="icon-md"
+              className="shrink-0 focus-visible:ring-offset-[var(--ft-modal-bg)]"
             >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M18 6 6 18M6 6l12 12"/>
               </svg>
-            </button>
+            </Button>
           </div>
 
           <div
             data-record-modal-body="true"
-            className={`min-h-0 flex-1 overflow-y-auto px-[var(--ft-modal-padding)] py-5 ${bodyClassName}`.trim()}
+            className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-[var(--ft-modal-padding)] py-5 ${bodyClassName}`.trim()}
           >
             {bodyChildren}
           </div>
@@ -194,7 +191,7 @@ export function RecordModal({
           {extractedFooter ? (
             <div
               className={`
-                border-t border-[var(--ft-form-border)] bg-[var(--ft-form-surface)]
+                shrink-0 border-t border-[var(--ft-border)] bg-[var(--ft-modal-bg)]
                 px-[var(--ft-modal-padding)] py-4
                 ${footerClassName}
               `.trim()}

@@ -537,7 +537,7 @@ export function ConfirmDialog({
   if (!open) return null
 
   return (
-    <ModalOverlayPortal className="z-[120]" data-testid={testId} onClick={() => {
+    <ModalOverlayPortal className="z-modal" data-testid={testId} onClick={() => {
       if (!loading) onCancel()
     }}>
       <FocusTrap active={open} onEscape={() => {
@@ -548,22 +548,20 @@ export function ConfirmDialog({
           aria-modal="true"
           aria-labelledby={titleId}
           aria-describedby={descriptionId}
-          className="mx-auto flex min-h-full w-full items-center justify-center px-4"
+          aria-busy={loading || undefined}
+          className="mx-auto flex min-h-full w-full items-center justify-center px-4 py-4"
         >
           <div
-            className={`${surfaceClassName('w-full max-w-sm p-6')} shadow-[var(--shadow-lg)]`}
-            style={{
-              animation: 'dialog-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both',
-            }}
+            className="w-full max-w-sm rounded-modal border border-[var(--ft-border)] bg-[var(--ft-modal-bg)] p-6 shadow-elevation-xl"
           >
-            <h3 id={titleId} className="text-base font-semibold tracking-[-0.02em] text-[var(--c-text)]">
+            <h3 id={titleId} className="text-base font-semibold tracking-[-0.02em] text-[var(--ft-text-strong)]">
               {title}
             </h3>
-            <div id={descriptionId} className="mt-2 text-sm leading-6 text-[var(--c-text-muted)]">
+            <div id={descriptionId} className="mt-2 text-sm leading-6 text-[var(--ft-text-muted)]">
               {message}
             </div>
 
-            <div className="mt-6 flex items-center justify-end gap-3">
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
               <Button
                 type="button"
                 onClick={onCancel}
@@ -571,7 +569,7 @@ export function ConfirmDialog({
                 disabled={loading}
                 variant="secondary"
                 size="md"
-                className="text-[var(--c-text-muted)] hover:text-[var(--c-text)]"
+                className="w-full focus-visible:ring-offset-[var(--ft-modal-bg)] sm:w-auto"
               >
                 {cancelLabel}
               </Button>
@@ -582,6 +580,7 @@ export function ConfirmDialog({
                 loading={loading}
                 variant={danger ? 'danger' : 'primary'}
                 size="md"
+                className="w-full focus-visible:ring-offset-[var(--ft-modal-bg)] sm:w-auto"
               >
                 {confirmLabel}
               </Button>
@@ -626,7 +625,7 @@ export function DetailDrawer({
 
   return (
     <ModalOverlayPortal
-      className="z-[110]"
+      className="z-overlay"
       onClick={() => onClose()}
       onTransitionEnd={() => {
         if (!open) setMounted(false)
@@ -634,38 +633,36 @@ export function DetailDrawer({
     >
       <FocusTrap active={open} onEscape={onClose}>
         <div
-          className={`flex min-h-full ${side === 'right' ? 'justify-end' : 'justify-start'} ${inset ? 'p-3 sm:p-4' : ''}`}
+          className={`flex min-h-full w-screen ${side === 'right' ? 'justify-end' : 'justify-start'} ${inset ? 'p-3 sm:p-4' : ''}`}
         >
           <aside
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
             aria-describedby={descriptionId}
-            className={surfaceClassName(
-              `flex w-full max-w-full flex-col shadow-[var(--shadow-lg)] ${
+            className={`flex w-full max-w-full flex-col border border-[var(--ft-border)] bg-[var(--ft-modal-bg)] shadow-elevation-xl ${
                 inset
-                  ? 'h-[calc(100dvh-24px)] rounded-[24px] border'
-                  : `h-dvh rounded-none border-y-0 md:rounded-none ${side === 'right' ? 'border-r-0' : 'border-l-0'}`
-              }`,
-            )}
+                  ? 'h-[calc(100dvh-24px)] rounded-panel'
+                  : `h-dvh rounded-none border-y-0 ${side === 'right' ? 'border-r-0 md:rounded-l-panel' : 'border-l-0 md:rounded-r-panel'}`
+              }`}
             style={{
               width: inset ? `min(calc(100vw - 24px), ${width}px)` : `min(100vw, ${width}px)`,
               transform: open
                 ? 'translateX(0)'
                 : side === 'right'
-                  ? 'translateX(24px)'
-                  : 'translateX(-24px)',
+                  ? 'translateX(var(--ft-space-3))'
+                  : 'translateX(calc(var(--ft-space-3) * -1))',
               opacity: open ? 1 : 0,
-              transition: 'transform var(--transition-base), opacity var(--transition-base)',
+              transition: 'transform var(--ft-duration-base) var(--ft-ease-out), opacity var(--ft-duration-base) var(--ft-ease-out)',
             }}
           >
-            <header className="flex items-start justify-between gap-4 border-b border-[var(--c-border)] px-5 py-4">
+            <header className="flex shrink-0 items-start justify-between gap-4 border-b border-[var(--ft-border)] bg-[var(--ft-modal-bg)] px-5 py-4">
               <div className="min-w-0">
-                <h2 id={titleId} className="text-lg font-semibold tracking-[-0.02em] text-[var(--c-text)]">
+                <h2 id={titleId} className="text-lg font-semibold tracking-[-0.02em] text-[var(--ft-text-strong)]">
                   {title}
                 </h2>
                 {description ? (
-                  <p id={descriptionId} className="mt-1 text-sm leading-6 text-[var(--c-text-muted)]">
+                  <p id={descriptionId} className="mt-1 max-w-[65ch] text-sm leading-6 text-[var(--ft-text-muted)]">
                     {description}
                   </p>
                 ) : null}
@@ -676,7 +673,7 @@ export function DetailDrawer({
                 className={buttonClassName({
                   variant: 'secondary',
                   size: 'icon-md',
-                  className: 'shrink-0 text-[var(--c-text-muted)] hover:text-[var(--c-text)]',
+                  className: 'shrink-0 focus-visible:ring-offset-[var(--ft-modal-bg)]',
                 })}
                 aria-label="Cerrar panel"
               >
@@ -686,12 +683,12 @@ export function DetailDrawer({
               </button>
             </header>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5">
               {children}
             </div>
 
             {footer ? (
-              <footer className="border-t border-[var(--c-border)] px-5 py-4">
+              <footer className="shrink-0 border-t border-[var(--ft-border)] bg-[var(--ft-modal-bg)] px-5 py-4">
                 {footer}
               </footer>
             ) : null}
