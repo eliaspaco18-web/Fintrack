@@ -2445,16 +2445,18 @@ input:-webkit-autofill:focus {
   .app-modal-overlay {
     position: fixed;
     inset: 0;
+    z-index: var(--ft-z-overlay);
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
     padding: 0;
     /* Simple overlay — no radial gradients */
-    background: var(--c-overlay);
+    background: var(--ft-overlay);
+    overscroll-behavior: contain;
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
-    animation: overlay-enter 180ms ease-out both;
+    animation: overlay-enter var(--ft-duration-base) var(--ft-ease-out) both;
   }
 
   .app-modal-shell {
