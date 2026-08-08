@@ -67,7 +67,7 @@ function CollapsedNavItem({
         data-active={isActive ? 'true' : 'false'}
         data-developer={item.key === 'developer' ? 'true' : undefined}
       >
-        <NavIcon name={item.icon} size={17} strokeWidth={1.65} />
+        <NavIcon name={item.icon} size={18} strokeWidth={1.7} />
         {isLaunch ? <span className="sidebar-collapsed-new-badge">NEW</span> : null}
         {badge > 0 && (
           <span className="sidebar-collapsed-badge">
@@ -113,7 +113,7 @@ export function NavItem({ item, mode, badge = 0, onClick }: NavItemProps) {
         aria-current={isActive ? 'page' : undefined}
       >
         <span className="sidebar-nav-icon">
-          <NavIcon name={item.icon} size={16} strokeWidth={1.65} />
+          <NavIcon name={item.icon} size={18} strokeWidth={1.7} />
         </span>
         <span className="text-[13px] font-medium tracking-[-0.01em] flex-1 min-w-0 truncate">
           {item.label}

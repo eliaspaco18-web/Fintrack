@@ -90,10 +90,9 @@ function InnerShell({ user, navBadges = {}, children }: Omit<AppShellProps, 'exc
   }, [supabase, router])
 
   return (
-    // h-screen + overflow-hidden en el shell evita que el sidebar haga scroll
+    // h-dvh + overflow-hidden en el shell evita que el sidebar haga scroll
     // Solo el <main> scrollea internamente
-    <div className="fin-shell flex h-screen overflow-hidden"
-      style={{ backgroundColor: 'var(--c-bg)', color: 'var(--c-text)' }}>
+    <div className="fin-shell flex h-dvh overflow-hidden bg-[var(--ft-canvas)] text-[var(--ft-text-strong)]">
       <ReleaseAnnouncementGate />
 
       {/* Sidebar estático — tablet y desktop */}
@@ -112,7 +111,7 @@ function InnerShell({ user, navBadges = {}, children }: Omit<AppShellProps, 'exc
       />
 
       {/* Área principal — columna derecha, scroll independiente */}
-      <div className="flex-1 flex min-w-0 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* Topbar fija en la parte superior de la columna derecha */}
         <Topbar
           user={user}
@@ -122,8 +121,12 @@ function InnerShell({ user, navBadges = {}, children }: Omit<AppShellProps, 'exc
         />
 
         {/* Scroll container del contenido — solo esta área scrollea */}
-        <main id="main-content" className="relative flex-1 overflow-y-auto overflow-x-hidden">
-          <div key={pathname} className="page-transition-enter w-full px-3 pt-4 sm:px-4 lg:px-5 xl:px-6" style={{ paddingBottom: 'max(6rem, calc(var(--fab-safe-area, 0px) + 1.5rem))' }}>
+        <main id="main-content" className="relative flex-1 overflow-x-hidden overflow-y-auto bg-[var(--ft-canvas)]">
+          <div
+            key={pathname}
+            className="page-transition-enter w-full px-4 pt-4 md:px-6 md:pt-5 xl:px-8 xl:pt-6"
+            style={{ paddingBottom: 'max(6rem, calc(var(--fab-safe-area, 0px) + 1.5rem))' }}
+          >
             <ProductUpdatesBanner />
             {children}
           </div>

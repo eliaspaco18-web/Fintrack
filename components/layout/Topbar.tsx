@@ -70,15 +70,16 @@ function TopbarIconButton({
       onClick={onClick}
       className={`
         ui-pressable relative inline-flex h-9 w-9 items-center justify-center
-        rounded-[var(--radius-sm)] border border-[var(--ft-border)]
+        rounded-control border border-[var(--ft-border)]
         bg-[var(--ft-surface)] text-[var(--ft-text-muted)]
-        transition-[background-color,border-color,color,transform] duration-[180ms]
-        ease-[var(--ease-out)]
+        transition-[background-color,border-color,color,transform] duration-fast
+        ease-[var(--ft-ease-out)] motion-reduce:transition-none
         hover:border-[var(--ft-border-strong)] hover:bg-[var(--ft-surface-hover)]
-        hover:text-[var(--ft-text)]
+        hover:text-[var(--ft-text-strong)]
         active:scale-[0.97]
-        focus-visible:outline-none focus-visible:ring-2
-        focus-visible:ring-[var(--ft-primary-border)]
+        focus-visible:outline-none focus-visible:ring-[3px]
+        focus-visible:ring-[var(--ft-focus-ring-color)] focus-visible:ring-offset-2
+        focus-visible:ring-offset-[var(--ft-topbar-bg)]
         ${className}
       `.trim()}
     >
@@ -140,12 +141,11 @@ export function Topbar(props: TopbarProps) {
 
   return (
     <header className="
-      fin-topbar sticky top-0 z-30 h-14 shrink-0
+      fin-topbar sticky top-0 z-sticky h-[var(--topbar-height)] shrink-0
       border-b border-[var(--ft-border)]
       bg-[var(--ft-topbar-bg)]
-      backdrop-blur-sm
     ">
-      <div className="flex h-full min-w-0 items-center justify-between gap-3 px-3 sm:px-4 md:px-6">
+      <div className="flex h-full min-w-0 items-center justify-between gap-3 px-4 md:px-6 xl:px-8">
         {/* Mobile menu button */}
         <div className="flex min-w-0 items-center gap-2">
           <button
@@ -153,12 +153,12 @@ export function Topbar(props: TopbarProps) {
             onClick={onMenuClick}
             aria-label="Abrir menú"
             className="
-              md:hidden flex h-8 w-8 items-center justify-center rounded-lg
+              flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-control md:hidden
               border border-[var(--ft-border)] bg-[var(--ft-surface)]
-              text-[var(--ft-text-muted)]
-              hover:text-[var(--ft-primary)] hover:border-[var(--ft-primary-border)]
-              hover:bg-[var(--ft-primary-soft)]
-              transition-colors duration-150 flex-shrink-0
+              text-[var(--ft-text-muted)] transition-colors duration-fast motion-reduce:transition-none
+              hover:border-[var(--ft-border-strong)] hover:bg-[var(--ft-surface-hover)]
+              hover:text-[var(--ft-text-strong)] focus-visible:outline-none focus-visible:ring-[3px]
+              focus-visible:ring-[var(--ft-focus-ring-color)]
             "
           >
             <IconMenu size={15} />
@@ -187,7 +187,7 @@ export function Topbar(props: TopbarProps) {
               />
             ) : null}
 
-            <h1 className="truncate text-[14px] font-semibold leading-none tracking-[-0.01em] text-[var(--ft-text)]">
+            <h1 className="truncate text-[15px] font-semibold leading-none tracking-[-0.015em] text-[var(--ft-text-strong)]">
               {title}
             </h1>
 
@@ -213,14 +213,14 @@ export function Topbar(props: TopbarProps) {
             title="Alertas"
             className="
               ui-pressable relative inline-flex h-9 w-9 items-center justify-center
-              rounded-[var(--radius-sm)] border border-[var(--ft-border)]
+              rounded-control border border-[var(--ft-border)]
               bg-[var(--ft-surface)] text-[var(--ft-text-muted)]
-              transition-[background-color,border-color,color,transform] duration-[180ms]
-              ease-[var(--ease-out)]
+              transition-[background-color,border-color,color,transform] duration-fast
+              ease-[var(--ft-ease-out)] motion-reduce:transition-none
               hover:border-[var(--ft-border-strong)] hover:bg-[var(--ft-surface-hover)]
-              hover:text-[var(--ft-text)] active:scale-[0.97]
-              focus-visible:outline-none focus-visible:ring-2
-              focus-visible:ring-[var(--ft-primary-border)]
+              hover:text-[var(--ft-text-strong)] active:scale-[0.97]
+              focus-visible:outline-none focus-visible:ring-[3px]
+              focus-visible:ring-[var(--ft-focus-ring-color)]
             "
           >
             <IconBell size={16} />
@@ -242,18 +242,22 @@ export function Topbar(props: TopbarProps) {
             <button
               type="button"
               onClick={() => setQuickOpen(open => !open)}
+              aria-expanded={quickOpen}
+              aria-haspopup="true"
               className="
                 ui-pressable inline-flex h-9 items-center gap-2
-                rounded-[var(--radius-sm)] bg-[var(--ft-primary)]
+                rounded-control border border-transparent bg-[var(--ft-primary)]
                 pl-3 pr-2 text-[12px] font-semibold
                 text-[var(--ft-text-on-primary)]
-                transition-[background-color,transform] duration-[180ms]
-                ease-[var(--ease-out)] hover:bg-[var(--ft-primary-hover)]
+                shadow-elevation-sm transition-[background-color,transform] duration-fast
+                ease-[var(--ft-ease-out)] motion-reduce:transition-none hover:bg-[var(--ft-primary-hover)]
                 active:scale-[0.98]
+                focus-visible:outline-none focus-visible:ring-[3px]
+                focus-visible:ring-[var(--ft-focus-ring-color)]
               "
             >
               Nueva
-              <span className="flex h-5 w-5 items-center justify-center rounded-[var(--radius-xs)] bg-white/15">
+              <span className="flex h-5 w-5 items-center justify-center rounded-[6px] bg-white/15">
                 <IconPlus size={13} />
               </span>
             </button>
@@ -261,9 +265,9 @@ export function Topbar(props: TopbarProps) {
             {quickOpen ? (
               <div
                 className="
-                  absolute right-0 top-11 z-40 w-56 rounded-[var(--radius-md)]
+                  absolute right-0 top-[calc(100%+8px)] z-dropdown w-60 rounded-surface
                   border border-[var(--ft-border)] bg-[var(--ft-surface)]
-                  p-1 shadow-[var(--shadow-md)]
+                  p-1.5 shadow-elevation-md
                 "
               >
                 <Link className="topbar-menu-item" href="/transactions?new=transaction" prefetch={false}>
@@ -284,7 +288,7 @@ export function Topbar(props: TopbarProps) {
 
           <div
             className="
-              hidden h-9 items-center gap-2 rounded-[var(--radius-sm)]
+              hidden h-9 items-center gap-2 rounded-control
               border border-[var(--ft-border)] bg-[var(--ft-surface)]
               px-2.5 text-[11px] font-medium text-[var(--ft-text-muted)]
               lg:flex
@@ -297,7 +301,7 @@ export function Topbar(props: TopbarProps) {
 
           <div
             className="
-              hidden h-9 items-center rounded-[var(--radius-sm)]
+              hidden h-9 items-center rounded-control
               border border-[var(--ft-border)] bg-[var(--ft-surface)]
               px-2.5 text-[11px] font-semibold text-[var(--ft-text-muted)]
               lg:flex
@@ -320,16 +324,20 @@ export function Topbar(props: TopbarProps) {
               type="button"
               onClick={() => setProfileOpen(open => !open)}
               aria-label="Abrir perfil"
+              aria-expanded={profileOpen}
+              aria-haspopup="true"
               className="
-                ui-pressable flex h-9 items-center gap-2 rounded-[var(--radius-sm)]
+                ui-pressable flex h-9 items-center gap-2 rounded-control
                 border border-[var(--ft-border)] bg-[var(--ft-surface)]
-                px-1.5 pr-2 text-[var(--ft-text)]
-                transition-[background-color,border-color,transform] duration-[180ms]
-                ease-[var(--ease-out)] hover:border-[var(--ft-border-strong)]
+                px-1.5 pr-2 text-[var(--ft-text-strong)]
+                transition-[background-color,border-color,transform] duration-fast
+                ease-[var(--ft-ease-out)] motion-reduce:transition-none hover:border-[var(--ft-border-strong)]
                 hover:bg-[var(--ft-surface-hover)] active:scale-[0.98]
+                focus-visible:outline-none focus-visible:ring-[3px]
+                focus-visible:ring-[var(--ft-focus-ring-color)]
               "
             >
-              <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-[var(--radius-xs)] bg-[var(--ft-primary-soft)] text-[10px] font-semibold text-[var(--ft-primary)]">
+              <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-[6px] bg-[var(--ft-primary-soft)] text-[10px] font-semibold text-[var(--ft-primary)]">
                 {user.avatar ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={user.avatar} alt="" className="h-full w-full object-cover" />
@@ -347,13 +355,13 @@ export function Topbar(props: TopbarProps) {
             {profileOpen ? (
               <div
                 className="
-                  absolute right-0 top-11 z-40 w-64 rounded-[var(--radius-md)]
+                  absolute right-0 top-[calc(100%+8px)] z-dropdown w-64 rounded-surface
                   border border-[var(--ft-border)] bg-[var(--ft-surface)]
-                  p-1 shadow-[var(--shadow-md)]
+                  p-1.5 shadow-elevation-md
                 "
               >
                 <div className="px-3 py-2">
-                  <p className="truncate text-[13px] font-semibold text-[var(--ft-text)]">{displayName}</p>
+                  <p className="truncate text-[13px] font-semibold text-[var(--ft-text-strong)]">{displayName}</p>
                   <p className="truncate text-[11px] text-[var(--ft-text-muted)]">{user.email}</p>
                   <p className="mt-1 text-[11px] font-medium text-[var(--ft-primary)]">Plan Personal</p>
                   <p className="mt-1 text-[11px] text-[var(--ft-text-subtle)]">Versión {CURRENT_RELEASE.version}</p>
