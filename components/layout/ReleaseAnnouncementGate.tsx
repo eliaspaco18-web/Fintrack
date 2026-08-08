@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import type { ReleaseHighlight, ReleaseHighlightType } from '@/lib/release/current-release'
+import { Button } from '@/components/ui/Button'
 
 interface PendingAnnouncement {
   id: string
@@ -45,23 +46,23 @@ function releaseTone(variant: ReleaseHighlightType) {
   if (variant === 'new') {
     return {
       chipLabel: 'Nuevo',
-      chipClass: 'bg-[color:rgba(15,118,110,0.10)] text-[var(--ft-primary)] border-[color:rgba(15,118,110,0.16)]',
-      iconClass: 'bg-[color:rgba(15,118,110,0.12)] text-[var(--ft-primary)]',
+      chipClass: 'border-[var(--ft-primary-border)] bg-[var(--ft-primary-soft)] text-[var(--ft-primary)]',
+      iconClass: 'bg-[var(--ft-primary-soft)] text-[var(--ft-primary)]',
     }
   }
 
   if (variant === 'fix') {
     return {
       chipLabel: 'Corregido',
-      chipClass: 'bg-[color:rgba(21,128,61,0.10)] text-[color:#166534] border-[color:rgba(21,128,61,0.16)]',
-      iconClass: 'bg-[color:rgba(34,197,94,0.12)] text-[color:#15803d]',
+      chipClass: 'border-[color-mix(in_srgb,var(--ft-success)_22%,var(--ft-border))] bg-[var(--ft-success-soft)] text-[var(--ft-success)]',
+      iconClass: 'bg-[var(--ft-success-soft)] text-[var(--ft-success)]',
     }
   }
 
   return {
     chipLabel: 'Mejorado',
-    chipClass: 'bg-[color:rgba(37,99,235,0.10)] text-[color:#1d4ed8] border-[color:rgba(37,99,235,0.16)]',
-    iconClass: 'bg-[color:rgba(59,130,246,0.12)] text-[color:#1d4ed8]',
+    chipClass: 'border-[color-mix(in_srgb,var(--ft-info)_22%,var(--ft-border))] bg-[var(--ft-info-soft)] text-[var(--ft-info)]',
+    iconClass: 'bg-[var(--ft-info-soft)] text-[var(--ft-info)]',
   }
 }
 
@@ -114,10 +115,10 @@ export function ReleaseAnnouncementGate() {
   })
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[color:rgba(15,23,42,0.36)] px-4 backdrop-blur-[3px]">
-      <div className="w-full max-w-2xl rounded-[24px] border border-[var(--ft-border)] bg-[var(--ft-surface)] p-6 shadow-[0_40px_120px_-48px_rgba(15,23,42,0.45)] sm:p-7">
+    <div className="fixed inset-0 z-modal flex items-center justify-center bg-[var(--ft-overlay)] px-4 py-6">
+      <div className="max-h-[calc(100dvh-48px)] w-full max-w-2xl overflow-y-auto rounded-modal border border-[var(--ft-border)] bg-[var(--ft-modal-bg)] p-5 shadow-elevation-xl sm:p-6">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="inline-flex items-center gap-2 rounded-full bg-[var(--ft-primary-soft)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ft-primary)]">
+          <span className="inline-flex items-center gap-2 rounded-full border border-[var(--ft-primary-border)] bg-[var(--ft-primary-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--ft-primary)]">
             <ReleaseBadgeIcon variant="new" />
             Nueva versión
           </span>
@@ -129,7 +130,7 @@ export function ReleaseAnnouncementGate() {
           </span>
         </div>
 
-        <h2 className="mt-4 text-[28px] font-semibold tracking-[-0.02em] text-[var(--ft-text)]">
+        <h2 className="mt-4 text-[24px] font-semibold leading-8 tracking-[-0.025em] text-[var(--ft-text-strong)] sm:text-[26px]">
           {announcement.title}
         </h2>
         <p className="mt-3 max-w-2xl text-[14px] leading-7 text-[var(--ft-text-muted)]">
@@ -137,30 +138,30 @@ export function ReleaseAnnouncementGate() {
         </p>
 
         {announcement.highlights.length > 0 ? (
-          <div className="mt-5 rounded-[18px] border border-[var(--ft-border)] bg-[var(--ft-surface-2)] px-5 py-4">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[var(--ft-text-subtle)]">
+          <div className="mt-5 overflow-hidden rounded-surface border border-[var(--ft-border)] bg-[var(--ft-surface-muted)]">
+            <p className="px-4 pb-2 pt-4 text-[12px] font-semibold text-[var(--ft-text-muted)]">
               Qué cambió en esta versión
             </p>
-            <ul className="mt-3 space-y-3 text-[14px] leading-6 text-[var(--ft-text)]">
+            <ul className="divide-y divide-[var(--ft-border)] text-[14px] leading-6 text-[var(--ft-text-strong)]">
               {announcement.highlights.map((item) => {
                 const tone = releaseTone(item.type)
 
                 return (
-                  <li key={`${item.module}-${item.title}`} className="rounded-[16px] border border-[var(--ft-border)] bg-[var(--ft-surface)] px-4 py-3">
+                  <li key={`${item.module}-${item.title}`} className="px-4 py-4">
                     <div className="flex gap-3">
-                      <span className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] ${tone.iconClass}`}>
+                      <span className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-control ${tone.iconClass}`}>
                         <ReleaseBadgeIcon variant={item.type} />
                       </span>
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="inline-flex rounded-full border border-[var(--ft-border)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--ft-text-subtle)]">
+                          <span className="inline-flex rounded-full border border-[var(--ft-border)] bg-[var(--ft-surface)] px-2 py-0.5 text-[11px] font-semibold text-[var(--ft-text-subtle)]">
                             {item.module}
                           </span>
-                          <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${tone.chipClass}`}>
+                          <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${tone.chipClass}`}>
                             {tone.chipLabel}
                           </span>
                         </div>
-                        <p className="mt-2 text-[14px] font-semibold text-[var(--ft-text)]">{item.title}</p>
+                        <p className="mt-2 text-[14px] font-semibold text-[var(--ft-text-strong)]">{item.title}</p>
                         <p className="mt-1 text-[13px] leading-6 text-[var(--ft-text-muted)]">{item.detail}</p>
                       </div>
                     </div>
@@ -172,14 +173,16 @@ export function ReleaseAnnouncementGate() {
         ) : null}
 
         <div className="mt-6 flex justify-end">
-          <button
+          <Button
             type="button"
             onClick={() => void acknowledge()}
-            className="inline-flex h-11 items-center justify-center rounded-[14px] bg-[var(--ft-primary)] px-5 text-[13px] font-semibold text-[var(--ft-text-on-primary)] transition-colors duration-150 hover:bg-[var(--ft-primary-hover)] disabled:cursor-not-allowed disabled:opacity-70"
+            variant="primary"
+            size="lg"
+            loading={isClosing}
             disabled={isClosing}
           >
             {isClosing ? 'Guardando...' : 'Entendido'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
