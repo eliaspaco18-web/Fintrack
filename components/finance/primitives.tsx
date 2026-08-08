@@ -322,7 +322,7 @@ export function ControlsBar({
   const hasSecondaryRow = Boolean(search || filters)
 
   return (
-    <section className={`${surfaceClassName('p-3')} ${className}`.trim()}>
+    <section className={`rounded-panel border border-[var(--ft-border)] bg-[var(--ft-surface)] p-3 shadow-elevation-sm ${className}`.trim()}>
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex min-w-0 flex-wrap items-center gap-2">{presets}</div>
@@ -406,7 +406,7 @@ export function AmountCell({
   return (
     <div className={`flex min-w-0 flex-col ${alignClass} ${className}`.trim()}>
       {label ? (
-        <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--c-text-faint)]">
+        <p className="text-[12px] font-medium text-[var(--ft-text-subtle)]">
           {label}
         </p>
       ) : null}
@@ -414,7 +414,7 @@ export function AmountCell({
         {value}
       </p>
       {meta ? (
-        <p className={`text-[11px] ${styles.subtle}`}>
+        <p className={`text-[12px] ${styles.subtle}`}>
           {meta}
         </p>
       ) : null}
@@ -444,23 +444,27 @@ export function ProgressMetric({
     <div className={`flex min-w-0 flex-col gap-2 ${className}`.trim()}>
       {(label || valueLabel) ? (
         <div className="flex items-center justify-between gap-3">
-          <p className="text-[11px] font-medium text-[var(--c-text-muted)]">{label}</p>
-          <p className={`text-[11px] font-semibold tabular-nums ${styles.text}`}>
+          <p className="text-[12px] font-medium text-[var(--ft-text-muted)]">{label}</p>
+          <p className={`text-[12px] font-semibold tabular-nums ${styles.text}`}>
             {valueLabel ?? `${Math.round(percentage)}%`}
           </p>
         </div>
       ) : null}
-      <div className={`h-2 overflow-hidden rounded-full ${styles.progressSoft}`}>
+      <div
+        role="progressbar"
+        aria-label={typeof label === 'string' ? label : 'Progreso'}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(percentage)}
+        className={`h-2 overflow-hidden rounded-full ${styles.progressSoft}`}
+      >
         <div
-          className={`h-full rounded-full ${styles.progress}`}
-          style={{
-            width: `${percentage}%`,
-            transition: 'width var(--transition-base)',
-          }}
+          className={`h-full rounded-full transition-[width] duration-base ease-[var(--ft-ease-out)] motion-reduce:transition-none ${styles.progress}`}
+          style={{ width: `${percentage}%` }}
         />
       </div>
       {description ? (
-        <p className="text-[11px] text-[var(--c-text-faint)]">{description}</p>
+        <p className="text-[12px] text-[var(--ft-text-subtle)]">{description}</p>
       ) : null}
     </div>
   )
