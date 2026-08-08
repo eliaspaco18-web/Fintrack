@@ -256,3 +256,299 @@ export function NotFound({ entity, backHref }: { entity: string; backHref: strin
     </div>
   )
 }
+
+// =============================================================================
+// CANONICAL DETAIL EXPERIENCE (OPT-IN)
+//
+// These primitives are intentionally additive. The legacy exports above remain
+// unchanged so existing credit, asset, receivable, and payable details keep
+// their current presentation until they are migrated explicitly.
+// =============================================================================
+
+export type CanonicalDetailTone = 'neutral' | 'primary' | 'danger' | 'info'
+
+const CANONICAL_TONE_CLASSES: Record<CanonicalDetailTone, {
+  badge: string
+  marker: string
+  amount: string
+}> = {
+  neutral: {
+    badge: 'border-[var(--ft-border)] bg-[var(--ft-surface-muted)] text-[var(--ft-text-muted)]',
+    marker: 'border-[var(--ft-border)] bg-[var(--ft-surface-muted)] text-[var(--ft-text-strong)]',
+    amount: 'text-[var(--ft-text-strong)]',
+  },
+  primary: {
+    badge: 'border-[var(--ft-primary-border)] bg-[var(--ft-primary-soft)] text-[var(--ft-primary)]',
+    marker: 'border-[var(--ft-primary-border)] bg-[var(--ft-primary-soft)] text-[var(--ft-primary)]',
+    amount: 'text-[var(--ft-primary)]',
+  },
+  danger: {
+    badge: 'border-[color-mix(in_srgb,var(--ft-danger)_20%,transparent)] bg-[var(--ft-danger-soft)] text-[var(--ft-danger)]',
+    marker: 'border-[color-mix(in_srgb,var(--ft-danger)_20%,transparent)] bg-[var(--ft-danger-soft)] text-[var(--ft-danger)]',
+    amount: 'text-[var(--ft-danger)]',
+  },
+  info: {
+    badge: 'border-[color-mix(in_srgb,var(--ft-info)_20%,transparent)] bg-[var(--ft-info-soft)] text-[var(--ft-info)]',
+    marker: 'border-[color-mix(in_srgb,var(--ft-info)_20%,transparent)] bg-[var(--ft-info-soft)] text-[var(--ft-info)]',
+    amount: 'text-[var(--ft-info)]',
+  },
+}
+
+export function CanonicalDetailBackLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Link
+      href={href}
+      className="group inline-flex min-h-10 items-center gap-2 rounded-control px-2 text-[13px]
+        font-medium text-[var(--ft-text-muted)] transition-colors duration-fast
+        hover:bg-[var(--ft-surface-hover)] hover:text-[var(--ft-text-strong)]
+        focus-visible:outline-none focus-visible:ring-[3px]
+        focus-visible:ring-[color:var(--ft-focus-ring-color)] focus-visible:ring-offset-2
+        focus-visible:ring-offset-[var(--ft-canvas)] motion-reduce:transition-none"
+    >
+      <svg
+        aria-hidden="true"
+        className="h-4 w-4 transition-transform duration-fast group-hover:-translate-x-0.5 motion-reduce:transform-none motion-reduce:transition-none"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      >
+        <path d="m15 18-6-6 6-6" />
+      </svg>
+      {label}
+    </Link>
+  )
+}
+
+interface CanonicalDetailLayoutProps {
+  back: ReactNode
+  summary: ReactNode
+  actions: ReactNode
+  children: ReactNode
+  aside?: ReactNode
+}
+
+/**
+ * One responsive detail composition with a single action DOM tree.
+ * Mobile order: summary, actions, facts, related context.
+ * Wide desktop: identity/facts with an action/context rail.
+ */
+export function CanonicalDetailLayout({
+  back,
+  summary,
+  actions,
+  children,
+  aside,
+}: CanonicalDetailLayoutProps) {
+  return (
+    <div className="mx-auto w-full max-w-[1240px]">
+      <div className="mb-4 sm:mb-5">{back}</div>
+      <div className="grid min-w-0 grid-cols-1 gap-4 sm:gap-5 xl:grid-cols-[minmax(0,1fr)_288px] xl:items-start">
+        <div className="min-w-0 xl:col-start-1 xl:row-start-1">{summary}</div>
+        <div className="min-w-0 xl:col-start-2 xl:row-start-1">{actions}</div>
+        <div className="min-w-0 xl:col-start-1 xl:row-start-2">{children}</div>
+        {aside ? (
+          <aside className="min-w-0 xl:col-start-2 xl:row-start-2">
+            {aside}
+          </aside>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+interface CanonicalDetailSummaryProps {
+  marker: ReactNode
+  tone?: CanonicalDetailTone
+  badges: ReactNode
+  title: ReactNode
+  subtitle: ReactNode
+  amount: ReactNode
+  amountMeta?: ReactNode
+}
+
+export function CanonicalDetailSummary({
+  marker,
+  tone = 'neutral',
+  badges,
+  title,
+  subtitle,
+  amount,
+  amountMeta,
+}: CanonicalDetailSummaryProps) {
+  const toneClasses = CANONICAL_TONE_CLASSES[tone]
+
+  return (
+    <header className="rounded-panel border border-[var(--ft-border)] bg-[var(--ft-surface)] px-4 py-5 shadow-elevation-sm sm:px-6 sm:py-6">
+      <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3 sm:gap-4">
+          <span
+            aria-hidden="true"
+            className={`flex h-11 w-11 flex-none items-center justify-center rounded-surface border text-base font-semibold sm:h-12 sm:w-12 sm:text-lg ${toneClasses.marker}`}
+          >
+            {marker}
+          </span>
+          <div className="min-w-0">
+            <div className="mb-2 flex flex-wrap items-center gap-2">{badges}</div>
+            <h1 className="break-words font-display text-[22px] font-bold leading-[1.2] tracking-[-0.025em] text-[var(--ft-text-strong)] sm:text-2xl">
+              {title}
+            </h1>
+            <p className="mt-1.5 text-sm leading-5 text-[var(--ft-text-muted)]">{subtitle}</p>
+          </div>
+        </div>
+
+        <div className="min-w-0 border-t border-[var(--ft-border)] pt-4 sm:flex-none sm:border-0 sm:pt-0 sm:text-right">
+          <p className={`break-words text-[28px] font-bold leading-none tracking-[-0.025em] tabular-nums sm:text-[30px] ${toneClasses.amount}`}>
+            {amount}
+          </p>
+          {amountMeta ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2 sm:justify-end">{amountMeta}</div>
+          ) : null}
+        </div>
+      </div>
+    </header>
+  )
+}
+
+export function CanonicalDetailBadge({
+  children,
+  tone = 'neutral',
+}: {
+  children: ReactNode
+  tone?: CanonicalDetailTone
+}) {
+  return (
+    <span className={`inline-flex min-h-6 items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${CANONICAL_TONE_CLASSES[tone].badge}`}>
+      {children}
+    </span>
+  )
+}
+
+export function CanonicalDetailFacts({ children }: { children: ReactNode }) {
+  return (
+    <dl className="grid min-w-0 grid-cols-1 gap-px overflow-hidden rounded-panel border border-[var(--ft-border)] bg-[var(--ft-border)] shadow-elevation-sm sm:grid-cols-2">
+      {children}
+    </dl>
+  )
+}
+
+interface CanonicalDetailFactProps {
+  label: string
+  children: ReactNode
+  full?: boolean
+  mono?: boolean
+}
+
+export function CanonicalDetailFact({
+  label,
+  children,
+  full,
+  mono,
+}: CanonicalDetailFactProps) {
+  return (
+    <div className={`min-w-0 bg-[var(--ft-surface)] px-4 py-4 sm:px-5 ${full ? 'sm:col-span-2' : ''}`}>
+      <dt className="text-xs font-medium leading-4 text-[var(--ft-text-muted)]">{label}</dt>
+      <dd className={`mt-1.5 min-w-0 break-words text-sm leading-5 text-[var(--ft-text-strong)] ${mono ? 'font-mono tabular-nums' : 'font-medium'}`}>
+        {children}
+      </dd>
+    </div>
+  )
+}
+
+export function CanonicalDetailRailSection({
+  title,
+  children,
+}: {
+  title: string
+  children: ReactNode
+}) {
+  return (
+    <section className="rounded-panel border border-[var(--ft-border)] bg-[var(--ft-surface)] p-4 shadow-elevation-sm sm:p-5">
+      <h2 className="mb-3 text-xs font-semibold leading-4 text-[var(--ft-text-muted)]">{title}</h2>
+      {children}
+    </section>
+  )
+}
+
+export function CanonicalDetailActionButton({
+  label,
+  onClick,
+  href,
+  variant = 'secondary',
+  disabled,
+  loading,
+  icon,
+  testId,
+}: ActionButtonProps) {
+  if (href) {
+    return (
+      <Button
+        href={href}
+        testId={testId}
+        variant={VARIANTS[variant]}
+        size="md"
+        leadingIcon={icon}
+        fullWidth
+        className="justify-start"
+      >
+        {label}
+      </Button>
+    )
+  }
+
+  return (
+    <Button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      loading={loading}
+      testId={testId}
+      variant={VARIANTS[variant]}
+      size="md"
+      leadingIcon={icon}
+      fullWidth
+      className="justify-start"
+    >
+      {loading ? 'Procesando…' : label}
+    </Button>
+  )
+}
+
+export function CanonicalRelatedRecordLink({ label, href }: { label: string; href: string }) {
+  return (
+    <Link
+      href={href}
+      className="group flex min-h-11 min-w-0 items-center justify-between gap-3 rounded-control
+        border border-transparent px-3 py-2 text-[13px] font-medium leading-5
+        text-[var(--ft-text-strong)] transition-colors duration-fast
+        hover:border-[var(--ft-border)] hover:bg-[var(--ft-surface-muted)]
+        focus-visible:outline-none focus-visible:ring-[3px]
+        focus-visible:ring-[color:var(--ft-focus-ring-color)] focus-visible:ring-offset-2
+        focus-visible:ring-offset-[var(--ft-surface)] motion-reduce:transition-none"
+    >
+      <span className="min-w-0 break-words">{label}</span>
+      <svg
+        aria-hidden="true"
+        className="h-3.5 w-3.5 flex-none text-[var(--ft-text-subtle)] transition-transform duration-fast group-hover:translate-x-0.5 motion-reduce:transform-none motion-reduce:transition-none"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      >
+        <path d="m9 18 6-6-6-6" />
+      </svg>
+    </Link>
+  )
+}
+
+export function CanonicalInlineError({ message }: { message: string }) {
+  return (
+    <div
+      className="rounded-surface border border-[color-mix(in_srgb,var(--ft-danger)_20%,transparent)] bg-[var(--ft-danger-soft)] px-3 py-2.5"
+    >
+      <p className="text-sm leading-5 text-[var(--ft-danger)]">{message}</p>
+    </div>
+  )
+}
