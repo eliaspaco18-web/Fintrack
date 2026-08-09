@@ -11,12 +11,7 @@ import { useRouter }               from 'next/navigation'
 import { useCurrency }             from '@/lib/hooks/useDashboard'
 import { formatCurrency, formatPercent, toPenAmount } from '@/lib/contracts/ui.contracts'
 import {
-  BackLink,
-  DetailShell,
-  DetailCard,
   DetailSection,
-  DetailField,
-  FieldGrid,
   ActionButton,
   CanonicalDetailBackLink,
   CanonicalDetailBadge,
@@ -29,7 +24,6 @@ import {
   CanonicalDetailSummary,
   CanonicalRelatedRecordLink,
   ConfirmDialog,
-  LinkedModuleBadge,
   InlineError,
   type CanonicalDetailTone,
 }                                  from './primitives'
@@ -252,92 +246,82 @@ export function AssetDetail({ asset, transaction }: AssetDetailProps) {
   }
 
   return (
-    <>
-      <BackLink href="/assets" label="Activos"/>
-      <DetailShell twoColumn aside={
-        <div className="space-y-4">
-          {transaction && (
-            <DetailCard className="p-5">
-              <h3 className="text-[11px] font-bold uppercase tracking-[0.1em] text-white/25 mb-3">
-                Transacción origen
-              </h3>
-              <LinkedModuleBadge
-                label={transaction.description}
-                href={`/transactions/${transaction.id}`}
-                color="#3b82f6"
-              />
-            </DetailCard>
-          )}
-          {/* Variación de valor */}
-          {Math.abs(gainPct) > 0.5 && (
-            <DetailCard className="p-5">
-              <h3 className="text-[11px] font-bold uppercase tracking-[0.1em] text-white/25 mb-3">
-                Variación de valor
-              </h3>
-              <p className={`text-2xl font-bold tabular-nums ${gainPct >= 0 ? 'text-[var(--c-primary)]' : 'text-red-400'}`}>
-                {formatPercent(gainPct, { fractionDigits: 1, signed: true })}
-              </p>
-              <p className={`text-[12px] tabular-nums mt-0.5 ${gainPct >= 0 ? 'text-[var(--c-primary)]/60' : 'text-red-400/60'}`}>
+    <CanonicalDetailLayout
+      back={<CanonicalDetailBackLink href="/assets" label="Activos"/>}
+      summary={
+        <CanonicalDetailSummary
+          marker={
+            <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z"/>
+              <path d="m4 7.5 8 4.5 8-4.5M12 12v9"/>
+            </svg>
+          }
+          tone="primary"
+          badges={
+            <CanonicalDetailBadge>
+              {ASSET_TYPE_LABELS[asset.asset_type] ?? 'Activo'}
+            </CanonicalDetailBadge>
+          }
+          title={asset.name}
+          amount={formatCurrency(format(valuePen), preferred)}
+          amountMeta={
+            <span className="text-xs font-medium text-[var(--ft-text-muted)]">valor actual</span>
+          }
+          supporting={Math.abs(gainPct) > 0.5 ? (
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-xs font-medium leading-4 text-[var(--ft-text-muted)]">Variación de valor</p>
+                <p className={`mt-1 text-xl font-bold leading-6 tabular-nums ${gainPct >= 0 ? 'text-[var(--ft-primary)]' : 'text-[var(--ft-danger)]'}`}>
+                  {formatPercent(gainPct, { fractionDigits: 1, signed: true })}
+                </p>
+              </div>
+              <p className={`text-[13px] font-semibold leading-5 tabular-nums ${gainPct >= 0 ? 'text-[var(--ft-primary)]' : 'text-[var(--ft-danger)]'}`}>
                 {gainPct >= 0 ? '+' : ''}{formatCurrency(format(gainPen), preferred)}
               </p>
-            </DetailCard>
-          )}
-        </div>
-      }>
-        <DetailCard>
-          <div className="p-6 border-b border-white/[0.05]">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wide
-                  text-purple-400/70 bg-purple-500/10 px-2 py-0.5 rounded-full">
-                  {ASSET_TYPE_LABELS[asset.asset_type] ?? 'Activo'}
-                </span>
-                <h1 className="text-lg font-bold text-white/85 mt-2">{asset.name}</h1>
-              </div>
-              <div className="text-right">
-                <p className="text-2xl font-bold tabular-nums text-purple-400">
-                  {formatCurrency(format(valuePen), preferred)}
-                </p>
-                <p className="text-[11px] text-white/25">valor actual</p>
-              </div>
             </div>
-          </div>
-
-          <div className="p-6">
-            <FieldGrid>
-              <DetailField label="Valor de compra" mono>
-                {formatCurrency(format(purchasePen), preferred)}
-              </DetailField>
-              <DetailField label="Valor actual" mono>
-                {formatCurrency(format(valuePen), preferred)}
-              </DetailField>
-              <DetailField label="Fecha de compra">
-                {new Date(asset.purchase_date + 'T12:00:00').toLocaleDateString('es-PE', {
-                  day: 'numeric', month: 'long', year: 'numeric',
-                })}
-              </DetailField>
-              <DetailField label="Moneda" mono>{asset.currency}</DetailField>
-              {asset.serial_number && (
-                <DetailField label="N° de serie" mono>{asset.serial_number}</DetailField>
-              )}
-              {asset.location && (
-                <DetailField label="Ubicación">{asset.location}</DetailField>
-              )}
-              {asset.depreciation_rate != null && asset.depreciation_rate > 0 && (
-                <DetailField label="Tasa depreciación" mono>
-                  {formatPercent(asset.depreciation_rate * 100, { fractionDigits: 2 })} anual
-                </DetailField>
-              )}
-              {asset.notes && (
-                <DetailField label="Notas" full>
-                  <p className="text-white/50 text-sm">{asset.notes}</p>
-                </DetailField>
-              )}
-            </FieldGrid>
-          </div>
-        </DetailCard>
-      </DetailShell>
-    </>
+          ) : undefined}
+        />
+      }
+      aside={transaction ? (
+        <CanonicalDetailRailSection title="Transacción origen">
+          <CanonicalRelatedRecordLink
+            label={transaction.description}
+            href={`/transactions/${transaction.id}`}
+          />
+        </CanonicalDetailRailSection>
+      ) : undefined}
+    >
+      <CanonicalDetailFacts>
+        <CanonicalDetailFact label="Valor de compra" mono>
+          {formatCurrency(format(purchasePen), preferred)}
+        </CanonicalDetailFact>
+        <CanonicalDetailFact label="Valor actual" mono>
+          {formatCurrency(format(valuePen), preferred)}
+        </CanonicalDetailFact>
+        <CanonicalDetailFact label="Fecha de compra">
+          {new Date(asset.purchase_date + 'T12:00:00').toLocaleDateString('es-PE', {
+            day: 'numeric', month: 'long', year: 'numeric',
+          })}
+        </CanonicalDetailFact>
+        <CanonicalDetailFact label="Moneda" mono>{asset.currency}</CanonicalDetailFact>
+        {asset.serial_number && (
+          <CanonicalDetailFact label="N° de serie" mono>{asset.serial_number}</CanonicalDetailFact>
+        )}
+        {asset.location && (
+          <CanonicalDetailFact label="Ubicación">{asset.location}</CanonicalDetailFact>
+        )}
+        {asset.depreciation_rate != null && asset.depreciation_rate > 0 && (
+          <CanonicalDetailFact label="Tasa depreciación" mono>
+            {formatPercent(asset.depreciation_rate * 100, { fractionDigits: 2 })} anual
+          </CanonicalDetailFact>
+        )}
+        {asset.notes && (
+          <CanonicalDetailFact label="Notas" full>
+            <p className="text-sm leading-relaxed text-[var(--ft-text-muted)]">{asset.notes}</p>
+          </CanonicalDetailFact>
+        )}
+      </CanonicalDetailFacts>
+    </CanonicalDetailLayout>
   )
 }
 
@@ -360,99 +344,88 @@ export function ReceivableDetail({ receivable: rec, transaction }: ReceivableDet
   const isOverdue = rec.due_date && new Date(rec.due_date) < new Date() && rec.status !== 'COLLECTED'
 
   return (
-    <>
-      <BackLink href="/receivables" label="Por cobrar"/>
-      <DetailShell twoColumn aside={
+    <CanonicalDetailLayout
+      back={<CanonicalDetailBackLink href="/receivables" label="Por cobrar"/>}
+      summary={
+        <CanonicalDetailSummary
+          marker={
+            <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 3v12"/>
+              <path d="m7 10 5 5 5-5M5 21h14"/>
+            </svg>
+          }
+          tone="primary"
+          badges={<CanonicalDetailBadge>Por cobrar</CanonicalDetailBadge>}
+          title={rec.debtor_name}
+          subtitle={rec.concept || undefined}
+          amount={formatCurrency(format(pendingPen), preferred)}
+          amountMeta={
+            <span className="text-xs font-medium text-[var(--ft-text-muted)]">pendiente</span>
+          }
+          supporting={rec.status === 'PARTIAL' ? (
+            <div>
+              <div className="flex flex-col gap-1 text-xs leading-4 text-[var(--ft-text-muted)] sm:flex-row sm:items-center sm:justify-between">
+                <span>Cobrado: {formatPercent(collectedPct, { fractionDigits: 0 })}</span>
+                <span className="tabular-nums">
+                  {formatCurrency(format(toPenAmount(rec.collected_amount, rec.currency, exchangeRate)), preferred)}
+                  {' / '}{formatCurrency(format(amountPen), preferred)}
+                </span>
+              </div>
+              <div className="mt-2.5">
+                <ProgressBar value={collectedPct} color="var(--ft-primary)" height={5}/>
+              </div>
+            </div>
+          ) : undefined}
+        />
+      }
+      aside={(transaction || isOverdue) ? (
         <div className="space-y-4">
           {transaction && (
-            <DetailCard className="p-5">
-              <h3 className="text-[11px] font-bold uppercase tracking-[0.1em] text-white/25 mb-3">
-                Transacción origen
-              </h3>
-              <LinkedModuleBadge
+            <CanonicalDetailRailSection title="Transacción origen">
+              <CanonicalRelatedRecordLink
                 label={transaction.description}
                 href={`/transactions/${transaction.id}`}
-                color="#3b82f6"
               />
-            </DetailCard>
+            </CanonicalDetailRailSection>
           )}
           {isOverdue && (
-            <div className="rounded-xl bg-red-500/[0.08] border border-red-500/20 p-4">
-              <p className="text-[12px] text-red-400 font-semibold">Cuenta vencida</p>
-              <p className="text-[11px] text-red-400/60 mt-1">
+            <CanonicalDetailNotice tone="danger" title="Cuenta vencida">
+              <p>
                 Venció el {new Date(rec.due_date! + 'T12:00:00').toLocaleDateString('es-PE', {
                   day: 'numeric', month: 'long',
                 })}
               </p>
-            </div>
+            </CanonicalDetailNotice>
           )}
         </div>
-      }>
-        <DetailCard>
-          <div className="p-6 border-b border-white/[0.05]">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wide
-                  text-cyan-400/70 bg-cyan-500/10 px-2 py-0.5 rounded-full">
-                  Por cobrar
-                </span>
-                <h1 className="text-lg font-bold text-white/85 mt-2">{rec.debtor_name}</h1>
-                {rec.concept && (
-                  <p className="text-sm text-white/35 mt-0.5">{rec.concept}</p>
-                )}
-              </div>
-              <div className="text-right">
-                <p className="text-2xl font-bold tabular-nums text-cyan-400">
-                  {formatCurrency(format(pendingPen), preferred)}
-                </p>
-                <p className="text-[11px] text-white/25">pendiente</p>
-              </div>
-            </div>
-
-            {rec.status === 'PARTIAL' && (
-              <div className="mt-4">
-                <div className="flex justify-between text-[11px] text-white/35 mb-2">
-                  <span>Cobrado: {formatPercent(collectedPct, { fractionDigits: 0 })}</span>
-                  <span>
-                    {formatCurrency(format(toPenAmount(rec.collected_amount, rec.currency, exchangeRate)), preferred)}
-                    {' / '}{formatCurrency(format(amountPen), preferred)}
-                  </span>
-                </div>
-                <ProgressBar value={collectedPct} color="#06b6d4" height={5}/>
-              </div>
-            )}
-          </div>
-
-          <div className="p-6">
-            <FieldGrid>
-              <DetailField label="Monto total" mono>
-                {formatCurrency(format(amountPen), preferred)}
-              </DetailField>
-              <DetailField label="Moneda" mono>{rec.currency}</DetailField>
-              <DetailField label="Fecha de emisión">
-                {new Date(rec.issue_date + 'T12:00:00').toLocaleDateString('es-PE', {
-                  day: 'numeric', month: 'long', year: 'numeric',
-                })}
-              </DetailField>
-              {rec.due_date && (
-                <DetailField label="Fecha de vencimiento">
-                  <span className={isOverdue ? 'text-red-400' : ''}>
-                    {new Date(rec.due_date + 'T12:00:00').toLocaleDateString('es-PE', {
-                      day: 'numeric', month: 'long', year: 'numeric',
-                    })}
-                  </span>
-                </DetailField>
-              )}
-              {rec.notes && (
-                <DetailField label="Notas" full>
-                  <p className="text-white/50 text-sm">{rec.notes}</p>
-                </DetailField>
-              )}
-            </FieldGrid>
-          </div>
-        </DetailCard>
-      </DetailShell>
-    </>
+      ) : undefined}
+    >
+      <CanonicalDetailFacts>
+        <CanonicalDetailFact label="Monto total" mono>
+          {formatCurrency(format(amountPen), preferred)}
+        </CanonicalDetailFact>
+        <CanonicalDetailFact label="Moneda" mono>{rec.currency}</CanonicalDetailFact>
+        <CanonicalDetailFact label="Fecha de emisión">
+          {new Date(rec.issue_date + 'T12:00:00').toLocaleDateString('es-PE', {
+            day: 'numeric', month: 'long', year: 'numeric',
+          })}
+        </CanonicalDetailFact>
+        {rec.due_date && (
+          <CanonicalDetailFact label="Fecha de vencimiento">
+            <span className={isOverdue ? 'text-[var(--ft-danger)]' : ''}>
+              {new Date(rec.due_date + 'T12:00:00').toLocaleDateString('es-PE', {
+                day: 'numeric', month: 'long', year: 'numeric',
+              })}
+            </span>
+          </CanonicalDetailFact>
+        )}
+        {rec.notes && (
+          <CanonicalDetailFact label="Notas" full>
+            <p className="text-sm leading-relaxed text-[var(--ft-text-muted)]">{rec.notes}</p>
+          </CanonicalDetailFact>
+        )}
+      </CanonicalDetailFacts>
+    </CanonicalDetailLayout>
   )
 }
 
@@ -475,98 +448,86 @@ export function PayableDetail({ payable: pay, transaction }: PayableDetailProps)
   const isOverdue = pay.due_date && new Date(pay.due_date) < new Date() && pay.status !== 'PAID'
 
   return (
-    <>
-      <BackLink href="/payables" label="Por pagar"/>
-      <DetailShell twoColumn aside={
+    <CanonicalDetailLayout
+      back={<CanonicalDetailBackLink href="/payables" label="Por pagar"/>}
+      summary={
+        <CanonicalDetailSummary
+          marker={
+            <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 21V9"/>
+              <path d="m7 14 5-5 5 5M5 3h14"/>
+            </svg>
+          }
+          badges={<CanonicalDetailBadge>Por pagar</CanonicalDetailBadge>}
+          title={pay.creditor_name}
+          subtitle={pay.concept || undefined}
+          amount={formatCurrency(format(pendingPen), preferred)}
+          amountMeta={
+            <span className="text-xs font-medium text-[var(--ft-text-muted)]">pendiente</span>
+          }
+          supporting={pay.status === 'PARTIAL' ? (
+            <div>
+              <div className="flex flex-col gap-1 text-xs leading-4 text-[var(--ft-text-muted)] sm:flex-row sm:items-center sm:justify-between">
+                <span>Pagado: {formatPercent(paidPct, { fractionDigits: 0 })}</span>
+                <span className="tabular-nums">
+                  {formatCurrency(format(toPenAmount(pay.paid_amount, pay.currency, exchangeRate)), preferred)}
+                  {' / '}{formatCurrency(format(amountPen), preferred)}
+                </span>
+              </div>
+              <div className="mt-2.5">
+                <ProgressBar value={paidPct} color="var(--ft-primary)" height={5}/>
+              </div>
+            </div>
+          ) : undefined}
+        />
+      }
+      aside={(transaction || isOverdue) ? (
         <div className="space-y-4">
           {transaction && (
-            <DetailCard className="p-5">
-              <h3 className="text-[11px] font-bold uppercase tracking-[0.1em] text-white/25 mb-3">
-                Transacción origen
-              </h3>
-              <LinkedModuleBadge
+            <CanonicalDetailRailSection title="Transacción origen">
+              <CanonicalRelatedRecordLink
                 label={transaction.description}
                 href={`/transactions/${transaction.id}`}
-                color="#3b82f6"
               />
-            </DetailCard>
+            </CanonicalDetailRailSection>
           )}
           {isOverdue && (
-            <div className="rounded-xl bg-red-500/[0.08] border border-red-500/20 p-4">
-              <p className="text-[12px] text-red-400 font-semibold">Pago vencido</p>
-              <p className="text-[11px] text-red-400/60 mt-1">
+            <CanonicalDetailNotice tone="danger" title="Pago vencido">
+              <p>
                 Venció el {new Date(pay.due_date! + 'T12:00:00').toLocaleDateString('es-PE', {
                   day: 'numeric', month: 'long',
                 })}
               </p>
-            </div>
+            </CanonicalDetailNotice>
           )}
         </div>
-      }>
-        <DetailCard>
-          <div className="p-6 border-b border-white/[0.05]">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wide
-                  text-orange-400/70 bg-orange-500/10 px-2 py-0.5 rounded-full">
-                  Por pagar
-                </span>
-                <h1 className="text-lg font-bold text-white/85 mt-2">{pay.creditor_name}</h1>
-                {pay.concept && (
-                  <p className="text-sm text-white/35 mt-0.5">{pay.concept}</p>
-                )}
-              </div>
-              <div className="text-right">
-                <p className="text-2xl font-bold tabular-nums text-orange-400">
-                  {formatCurrency(format(pendingPen), preferred)}
-                </p>
-                <p className="text-[11px] text-white/25">pendiente</p>
-              </div>
-            </div>
-
-            {pay.status === 'PARTIAL' && (
-              <div className="mt-4">
-                <div className="flex justify-between text-[11px] text-white/35 mb-2">
-                  <span>Pagado: {formatPercent(paidPct, { fractionDigits: 0 })}</span>
-                  <span>
-                    {formatCurrency(format(toPenAmount(pay.paid_amount, pay.currency, exchangeRate)), preferred)}
-                    {' / '}{formatCurrency(format(amountPen), preferred)}
-                  </span>
-                </div>
-                <ProgressBar value={paidPct} color="#f97316" height={5}/>
-              </div>
-            )}
-          </div>
-
-          <div className="p-6">
-            <FieldGrid>
-              <DetailField label="Monto total" mono>
-                {formatCurrency(format(amountPen), preferred)}
-              </DetailField>
-              <DetailField label="Moneda" mono>{pay.currency}</DetailField>
-              <DetailField label="Fecha de emisión">
-                {new Date(pay.issue_date + 'T12:00:00').toLocaleDateString('es-PE', {
-                  day: 'numeric', month: 'long', year: 'numeric',
-                })}
-              </DetailField>
-              {pay.due_date && (
-                <DetailField label="Fecha de vencimiento">
-                  <span className={isOverdue ? 'text-red-400' : ''}>
-                    {new Date(pay.due_date + 'T12:00:00').toLocaleDateString('es-PE', {
-                      day: 'numeric', month: 'long', year: 'numeric',
-                    })}
-                  </span>
-                </DetailField>
-              )}
-              {pay.notes && (
-                <DetailField label="Notas" full>
-                  <p className="text-white/50 text-sm">{pay.notes}</p>
-                </DetailField>
-              )}
-            </FieldGrid>
-          </div>
-        </DetailCard>
-      </DetailShell>
-    </>
+      ) : undefined}
+    >
+      <CanonicalDetailFacts>
+        <CanonicalDetailFact label="Monto total" mono>
+          {formatCurrency(format(amountPen), preferred)}
+        </CanonicalDetailFact>
+        <CanonicalDetailFact label="Moneda" mono>{pay.currency}</CanonicalDetailFact>
+        <CanonicalDetailFact label="Fecha de emisión">
+          {new Date(pay.issue_date + 'T12:00:00').toLocaleDateString('es-PE', {
+            day: 'numeric', month: 'long', year: 'numeric',
+          })}
+        </CanonicalDetailFact>
+        {pay.due_date && (
+          <CanonicalDetailFact label="Fecha de vencimiento">
+            <span className={isOverdue ? 'text-[var(--ft-danger)]' : ''}>
+              {new Date(pay.due_date + 'T12:00:00').toLocaleDateString('es-PE', {
+                day: 'numeric', month: 'long', year: 'numeric',
+              })}
+            </span>
+          </CanonicalDetailFact>
+        )}
+        {pay.notes && (
+          <CanonicalDetailFact label="Notas" full>
+            <p className="text-sm leading-relaxed text-[var(--ft-text-muted)]">{pay.notes}</p>
+          </CanonicalDetailFact>
+        )}
+      </CanonicalDetailFacts>
+    </CanonicalDetailLayout>
   )
 }
