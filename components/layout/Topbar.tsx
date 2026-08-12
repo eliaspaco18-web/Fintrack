@@ -146,24 +146,7 @@ export function Topbar(props: TopbarProps) {
       bg-[var(--ft-topbar-bg)]
     ">
       <div className="flex h-full min-w-0 items-center justify-between gap-3 px-4 md:px-6 xl:px-8">
-        {/* Mobile menu button */}
         <div className="flex min-w-0 items-center gap-2">
-          <button
-            type="button"
-            onClick={onMenuClick}
-            aria-label="Abrir menú"
-            className="
-              flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-control md:hidden
-              border border-[var(--ft-border)] bg-[var(--ft-surface)]
-              text-[var(--ft-text-muted)] transition-colors duration-fast motion-reduce:transition-none
-              hover:border-[var(--ft-border-strong)] hover:bg-[var(--ft-surface-hover)]
-              hover:text-[var(--ft-text-strong)] focus-visible:outline-none focus-visible:ring-[3px]
-              focus-visible:ring-[var(--ft-focus-ring-color)]
-            "
-          >
-            <IconMenu size={15} />
-          </button>
-
           {activeItem ? (
             <span className="hidden shrink-0 text-[12px] font-medium text-[var(--ft-text-subtle)] md:inline">
               FinTrack
@@ -183,7 +166,7 @@ export function Topbar(props: TopbarProps) {
                 name={activeItem.icon}
                 size={15}
                 strokeWidth={1.75}
-                className="hidden shrink-0 text-[var(--ft-primary)] sm:block"
+                className="shrink-0 text-[var(--ft-primary)]"
               />
             ) : null}
 
@@ -206,6 +189,26 @@ export function Topbar(props: TopbarProps) {
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onMenuClick}
+            aria-label="Abrir módulos"
+            title="Módulos"
+            className="
+              ui-pressable inline-flex h-9 shrink-0 items-center justify-center gap-1.5
+              rounded-control border border-[var(--ft-primary-border)]
+              bg-[var(--ft-primary-soft)] px-2.5 text-[11px] font-semibold
+              text-[var(--ft-primary)] transition-[background-color,border-color,transform]
+              duration-fast ease-[var(--ft-ease-out)] motion-reduce:transition-none
+              hover:border-[var(--ft-primary)] hover:bg-[var(--ft-primary-soft)]
+              active:scale-[0.98] focus-visible:outline-none focus-visible:ring-[3px]
+              focus-visible:ring-[var(--ft-focus-ring-color)] md:hidden
+            "
+          >
+            <IconMenu size={15} />
+            <span className="hidden min-[360px]:inline">Módulos</span>
+          </button>
+
           <Link
             href="/alerts"
             prefetch={false}

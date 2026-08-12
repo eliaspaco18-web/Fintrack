@@ -474,55 +474,28 @@ export function TransactionsWorkspace({
   }, [allPortfolios, exportExercise, exportFormat, exportPeriod, selectedPortfolioIds, toast])
 
   return (
-    <div className="space-y-5">
-      <section className="rounded-[24px] border border-[var(--c-border)] bg-[var(--c-surface)] px-4 py-4 sm:px-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--c-text-faint)]">
-              Libro operativo
-            </p>
-            <p className="mt-1 max-w-2xl text-[13px] leading-5 text-[var(--c-text-muted)]">
-              Registra ingresos, egresos, transferencias y movimientos vinculados a activos, cuentas por pagar y cuentas por cobrar.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              onClick={openExportModal}
-              variant="secondary"
-              size="md"
-              testId="transactions-summary-export-button"
-              leadingIcon={(
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                  <path d="m7 10 5 5 5-5" />
-                  <path d="M12 15V3" />
-                </svg>
-              )}
-            >
-              Exportar
-            </Button>
-            <CreateModuleButton
-              onClick={openCreateModal}
-              label="Nueva transacción"
-              testId="transactions-summary-create-button"
-            />
-          </div>
-        </div>
-      </section>
-
+    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-4 pb-10">
       {primaryPreloadWarning && (
-        <section className="rounded-[16px] border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-[13px] text-amber-100">
+        <section
+          role="alert"
+          className="rounded-panel border border-[color-mix(in_srgb,var(--ft-warning)_24%,var(--ft-border))] bg-[var(--ft-warning-soft)] px-4 py-3.5 text-[13px] text-[var(--ft-warning)] shadow-elevation-sm"
+        >
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0 space-y-1">
-              <p className="font-semibold text-amber-50">
-                {primaryPreloadWarning.message}
-              </p>
-              {primaryPreloadWarning.detail && (
-                <p className="text-[12px] leading-5 text-amber-100/80">
-                  {primaryPreloadWarning.detail}
+            <div className="flex min-w-0 items-start gap-2.5">
+              <svg aria-hidden="true" className="mt-0.5 shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M12 9v4m0 4h.01" />
+                <path d="M10.3 3.9 2.2 18a2 2 0 0 0 1.7 3h16.2a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+              </svg>
+              <div className="min-w-0 space-y-1">
+                <p className="font-semibold">
+                  {primaryPreloadWarning.message}
                 </p>
-              )}
+                {primaryPreloadWarning.detail && (
+                  <p className="text-[12px] leading-5 text-[var(--ft-text-muted)]">
+                    {primaryPreloadWarning.detail}
+                  </p>
+                )}
+              </div>
             </div>
             <Button
               type="button"
@@ -536,8 +509,53 @@ export function TransactionsWorkspace({
         </section>
       )}
 
-      {/* ── TABLA CON FILTROS (PRD §3 "Después de parte superior" + "Parte intermedia") ── */}
-      <TransactionTable options={options} />
+      {/* ── REGISTRO CON FILTROS Y REVISIÓN CONTEXTUAL ──────────────── */}
+      <TransactionTable
+        options={options}
+        workspaceHeader={(
+          <header
+            aria-labelledby="transactions-workspace-heading"
+            className="flex flex-col gap-3 border-b border-[var(--ft-border)] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5"
+          >
+            <div className="min-w-0">
+              <h1
+                id="transactions-workspace-heading"
+                className="font-display text-[22px] font-bold leading-7 tracking-[-0.035em] text-[var(--ft-text-strong)] sm:text-2xl"
+              >
+                Movimientos
+              </h1>
+              <p className="mt-0.5 max-w-2xl text-[12px] leading-5 text-[var(--ft-text-muted)]">
+                Revisa movimientos, confirma su contexto y actúa sin perder tu lugar en el registro.
+              </p>
+            </div>
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:shrink-0 sm:items-center sm:justify-end">
+              <Button
+                type="button"
+                onClick={openExportModal}
+                variant="secondary"
+                size="sm"
+                className="w-full sm:w-auto"
+                testId="transactions-summary-export-button"
+                leadingIcon={(
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <path d="m7 10 5 5 5-5" />
+                    <path d="M12 15V3" />
+                  </svg>
+                )}
+              >
+                Exportar
+              </Button>
+              <CreateModuleButton
+                onClick={openCreateModal}
+                label="Nueva transacción"
+                className="w-full !h-9 !px-3 !text-[12px] sm:w-auto"
+                testId="transactions-summary-create-button"
+              />
+            </div>
+          </header>
+        )}
+      />
 
       {/* ── MODAL CREAR TRANSACCIÓN (PRD: flujo 2 pasos) ─────────── */}
       <RecordModal
@@ -557,7 +575,7 @@ export function TransactionsWorkspace({
               type="button"
               onClick={handleBackToTypeSelection}
               disabled={openFromQuery && hasPrefillParams && !!prefilledOperationType}
-              className="mb-3 inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--c-text-muted)] hover:text-[var(--c-text)] transition-colors"
+              className="mb-3 inline-flex items-center gap-1 rounded-control text-[11px] font-semibold text-[var(--ft-text-muted)] transition-colors duration-fast hover:text-[var(--ft-text-strong)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)] motion-reduce:transition-none"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M19 12H5M12 19l-7-7 7-7"/>
@@ -592,7 +610,7 @@ export function TransactionsWorkspace({
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <label className="block space-y-1.5">
-              <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Periodo</span>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ft-text-muted)]">Periodo</span>
               <select
                 value={exportPeriod}
                 onChange={event => setExportPeriod(event.target.value as ExportPeriod)}
@@ -605,7 +623,7 @@ export function TransactionsWorkspace({
             </label>
 
             <label className="block space-y-1.5">
-              <span className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Ejercicio</span>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ft-text-muted)]">Ejercicio</span>
               <select
                 value={exportExercise}
                 onChange={event => setExportExercise(event.target.value)}
@@ -620,8 +638,8 @@ export function TransactionsWorkspace({
           </div>
 
           <div className="space-y-2">
-            <p className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Portafolios</p>
-            <label className="flex items-center gap-2 rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2 text-[12px] font-semibold text-[var(--c-text)]">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ft-text-muted)]">Portafolios</p>
+            <label className="flex items-center gap-2 rounded-surface border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-3 py-2 text-[12px] font-semibold text-[var(--ft-text-strong)]">
               <input
                 type="checkbox"
                 checked={allPortfolios}
@@ -634,9 +652,9 @@ export function TransactionsWorkspace({
               Todos
             </label>
 
-            <div className="max-h-44 overflow-y-auto rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] p-2">
+            <div className="max-h-44 overflow-y-auto rounded-surface border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] p-2">
               {exportPortfolios.length === 0 ? (
-                <p className="px-2 py-3 text-[12px] text-[var(--c-text-muted)]">
+                <p className="px-2 py-3 text-[12px] text-[var(--ft-text-muted)]">
                   No hay portafolios disponibles para seleccionar.
                 </p>
               ) : (
@@ -646,7 +664,7 @@ export function TransactionsWorkspace({
                     return (
                       <label
                         key={portfolio.id}
-                        className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-[12px] hover:bg-[var(--c-surface)]"
+                        className="flex items-center justify-between gap-3 rounded-control px-2 py-1.5 text-[12px] transition-colors duration-fast hover:bg-[var(--ft-surface-hover)] motion-reduce:transition-none"
                       >
                         <span className="flex min-w-0 items-center gap-2">
                           <input
@@ -655,9 +673,9 @@ export function TransactionsWorkspace({
                             disabled={allPortfolios}
                             onChange={event => togglePortfolio(portfolio.id, event.target.checked)}
                           />
-                          <span className="truncate text-[var(--c-text)]">{portfolio.name}</span>
+                          <span className="truncate text-[var(--ft-text-strong)]">{portfolio.name}</span>
                         </span>
-                        <span className="text-[10px] uppercase tracking-[0.06em] text-[var(--c-text-faint)]">
+                        <span className="text-[10px] uppercase tracking-[0.06em] text-[var(--ft-text-subtle)]">
                           {portfolio.currency}
                         </span>
                       </label>
@@ -669,7 +687,7 @@ export function TransactionsWorkspace({
           </div>
 
           <div className="space-y-2">
-            <p className="text-[11px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">Formato</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ft-text-muted)]">Formato</p>
             <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
               {EXPORT_FORMAT_OPTIONS.map(option => {
                 const active = option.value === exportFormat
@@ -678,14 +696,14 @@ export function TransactionsWorkspace({
                     key={option.value}
                     type="button"
                     onClick={() => setExportFormat(option.value)}
-                    className={`rounded-xl border px-3 py-2 text-left transition-all ${
+                    className={`rounded-surface border px-3 py-2 text-left transition-[background-color,border-color,box-shadow] duration-fast focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)] motion-reduce:transition-none ${
                       active
-                        ? 'border-[var(--c-primary-border)] bg-[var(--c-primary-soft)]'
-                        : 'border-[var(--c-border)] bg-[var(--c-surface-2)] hover:border-[var(--c-border-hover)]'
+                        ? 'border-[var(--ft-primary-border)] bg-[var(--ft-primary-soft)] shadow-elevation-sm'
+                        : 'border-[var(--ft-border)] bg-[var(--ft-surface-muted)] hover:border-[var(--ft-border-strong)] hover:bg-[var(--ft-surface-hover)]'
                     }`}
                   >
-                    <p className="text-[12px] font-bold text-[var(--c-text)]">{option.label}</p>
-                    <p className="mt-0.5 text-[11px] text-[var(--c-text-muted)]">{option.hint}</p>
+                    <p className="text-[12px] font-bold text-[var(--ft-text-strong)]">{option.label}</p>
+                    <p className="mt-0.5 text-[11px] text-[var(--ft-text-muted)]">{option.hint}</p>
                   </button>
                 )
               })}
@@ -693,37 +711,34 @@ export function TransactionsWorkspace({
           </div>
 
           {(exportMetaError || isLoadingExportMeta) && (
-            <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2 text-[12px] text-[var(--c-text-muted)]">
+            <div className="rounded-surface border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-3 py-2 text-[12px] text-[var(--ft-text-muted)]">
               {isLoadingExportMeta
                 ? 'Cargando opciones de exportación...'
                 : `Aviso: ${exportMetaError}`}
             </div>
           )}
 
-          <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
-            <p className="text-[12px] font-semibold text-[var(--c-text)]">Resumen de selección</p>
-            <p className="mt-0.5 text-[11px] text-[var(--c-text-muted)]">
+          <div className="rounded-surface border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-3 py-2.5">
+            <p className="text-[12px] font-semibold text-[var(--ft-text-strong)]">Resumen de selección</p>
+            <p className="mt-0.5 text-[11px] leading-5 text-[var(--ft-text-muted)]">
               Periodo: {EXPORT_PERIOD_OPTIONS.find(option => option.value === exportPeriod)?.label ?? 'Todos'} · Ejercicio: {exportExercise === 'all' ? 'Todos' : exportExercise} · Portafolios: {selectedPortfoliosLabel}
             </p>
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={closeExportModal}
-              disabled={isExporting}
-              className="btn-secondary !w-auto px-4 py-2 text-[12px]"
-            >
+            <Button type="button" onClick={closeExportModal} disabled={isExporting} variant="secondary" size="sm">
               Cancelar
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               onClick={handleExport}
               disabled={isExporting || (!allPortfolios && selectedPortfolioIds.length === 0)}
-              className="btn-primary !w-auto px-4 py-2 text-[12px]"
+              loading={isExporting}
+              variant="primary"
+              size="sm"
             >
               {isExporting ? 'Generando...' : 'Exportar ahora'}
-            </button>
+            </Button>
           </div>
         </div>
       </RecordModal>

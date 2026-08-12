@@ -217,20 +217,37 @@ export function StaticSidebar({ mode, user, badges = {} }: StaticSidebarProps) {
       }}
     >
       <div className="relative flex h-full flex-col overflow-visible bg-[var(--sidebar-panel-bg)]">
-        <div className="relative flex h-[var(--sidebar-header-height)] items-center border-b border-[var(--sidebar-panel-border)] px-4">
-          <div className={collapsed ? 'mx-auto' : 'min-w-0 flex-1 pr-10'}>
+        <div className={`flex h-[var(--sidebar-header-height)] items-center border-b border-[var(--sidebar-panel-border)] px-4 ${collapsed ? 'justify-center' : 'justify-between gap-3'}`}>
+          <div className={collapsed ? 'mx-auto' : 'min-w-0 flex-1'}>
             <SidebarLogo collapsed={collapsed} />
           </div>
 
-          <button
-            onClick={toggleUserCollapse}
-            aria-label={collapsed ? 'Expandir sidebar' : 'Colapsar sidebar'}
-            title={collapsed ? 'Expandir' : 'Colapsar'}
-            className={`sidebar-collapse-button absolute top-1/2 -translate-y-1/2 ${collapsed ? '-right-4' : 'right-3'}`}
-          >
-            {collapsed ? <IconChevronRight size={13} /> : <IconChevronLeft size={13} />}
-          </button>
+          {!collapsed ? (
+            <button
+              type="button"
+              onClick={toggleUserCollapse}
+              aria-label="Colapsar sidebar"
+              title="Colapsar"
+              className="sidebar-collapse-button shrink-0"
+            >
+              <IconChevronLeft size={13} />
+            </button>
+          ) : null}
         </div>
+
+        {collapsed ? (
+          <div className="flex shrink-0 justify-center border-b border-[var(--sidebar-panel-border)] px-2 py-2.5">
+            <button
+              type="button"
+              onClick={toggleUserCollapse}
+              aria-label="Expandir sidebar"
+              title="Expandir módulos"
+              className="sidebar-collapse-button !h-10 !w-10"
+            >
+              <IconChevronRight size={14} />
+            </button>
+          </div>
+        ) : null}
 
         <SidebarNavigation mode={mode} badges={badges} />
 
