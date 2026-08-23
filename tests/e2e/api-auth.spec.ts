@@ -44,6 +44,25 @@ test('/api/auth/forgot-password remains public with a generic response', async (
   })
 })
 
+test('account identity PATCH remains inert without a session', async ({ request }) => {
+  const response = await request.patch('/api/accounts/00000000-0000-0000-0000-000000000000', {
+    data: {
+      currency: 'USD',
+      type: 'CREDIT_CARD',
+    },
+    maxRedirects: 0,
+  })
+  const payload = await response.json()
+
+  expect(response.status()).toBe(401)
+  expect(payload).toMatchObject({
+    ok: false,
+    error: {
+      code: 'UNAUTHORIZED',
+    },
+  })
+})
+
 test('billing-cycle DELETE remains inert without a session', async ({ request }) => {
   const response = await request.delete('/api/credits/test/billing-cycles', {
     maxRedirects: 0,

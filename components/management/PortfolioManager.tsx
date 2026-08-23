@@ -38,6 +38,10 @@ import {
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { fetchWithTimeout } from '@/lib/client/fetch-with-timeout'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
+import {
+  crossesTechnicalAccountBoundary,
+  getAccountIdentityViolation,
+} from '@/modules/portfolio/account-identity'
 
 type BankEntityRef = {
   id: string
@@ -874,6 +878,23 @@ export function PortfolioManager({
       return
     }
 
+    const currentAccount = editingId
+      ? accounts.find(account => account.id === editingId) ?? null
+      : null
+    const identityViolation = currentAccount
+      ? getAccountIdentityViolation(currentAccount, {
+          currency: form.currency,
+          type: form.type,
+        })
+      : null
+
+    if (identityViolation) {
+      const message = `${identityViolation.message} ${identityViolation.detail}`
+      setError(message)
+      toast.error('No se pudo guardar la cuenta', message)
+      return
+    }
+
     const formIsTechnicalAccount = form.type === 'CREDIT_CARD'
     const parsedInitialBalance = formIsTechnicalAccount
       ? 0
@@ -970,7 +991,7 @@ export function PortfolioManager({
     } finally {
       setSaving(false)
     }
-  }, [banks, clearCreateQueryParam, editingId, form, loadAccounts, resetForm, toast])
+  }, [accounts, banks, clearCreateQueryParam, editingId, form, loadAccounts, resetForm, toast])
 
   const openDeactivateModal = useCallback((account: AccountItem) => {
     if (!account.is_active || saving || loading || rowActionId !== null) return
@@ -1612,7 +1633,16 @@ export function PortfolioManager({
               />
             </FormField>
 
-            <FormField label="Tipo">
+            <FormField
+              label="Tipo"
+              description={
+                editingAccount?.type === 'CREDIT_CARD'
+                  ? 'La tarjeta conserva su identidad técnica. Para otro uso, crea una cuenta nueva.'
+                  : editingAccount
+                    ? 'Puedes ajustar el tipo operativo, pero no convertir esta cuenta en tarjeta.'
+                    : undefined
+              }
+            >
               <AppSelect
                 value={form.type}
                 onChange={handleSelectAccountType}
@@ -1620,6 +1650,9 @@ export function PortfolioManager({
                 options={ACCOUNT_TYPE_OPTIONS.map(option => ({
                   value: option.value,
                   label: option.label,
+                  disabled: editingAccount
+                    ? crossesTechnicalAccountBoundary(editingAccount.type, option.value)
+                    : false,
                 }))}
               />
             </FormField>
@@ -1672,12 +1705,19 @@ export function PortfolioManager({
               />
             </FormField>
 
-            <FormField label="Moneda">
+            <FormField
+              label="Moneda"
+              description={
+                editingAccount
+                  ? 'La moneda se fijó al crear la cuenta. Crea otra cuenta para usar una moneda distinta.'
+                  : undefined
+              }
+            >
               <AppSelect
                 value={form.currency}
                 onChange={value => setForm(prev => ({ ...prev, currency: value as CurrencyCode }))}
                 testId="portfolio-currency-select"
-                disabled={currenciesLoading}
+                disabled={currenciesLoading || Boolean(editingAccount)}
                 searchable={false}
                 options={[
                   ...currencyOptions,
