@@ -20,6 +20,7 @@ import {
   apiZodError,
   getSessionUserId,
 } from '@/lib/api/response'
+import { getAccountIdentityViolation } from '@/modules/portfolio/account-identity'
 
 const zAccountType = z.enum([
   'CHECKING',
@@ -152,13 +153,22 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
   const { data: existingAccount, error: existingAccountError } = await supabase
     .from('accounts')
-    .select('id, name, type, balance, initial_balance, initial_balance_date, created_at')
+    .select('id, name, type, currency, balance, initial_balance, initial_balance_date, created_at')
     .eq('id', params.id)
     .eq('user_id', userId)
     .single()
 
   if (existingAccountError || !existingAccount) {
     return apiError({ code: 'NOT_FOUND', message: 'Cuenta no encontrada' })
+  }
+
+  const identityViolation = getAccountIdentityViolation(existingAccount, payload)
+  if (identityViolation) {
+    return apiError({
+      code: 'BUSINESS_RULE_ERROR',
+      message: identityViolation.message,
+      detail: identityViolation.detail,
+    })
   }
 
   const nextAccountType = payload.type ?? existingAccount.type
