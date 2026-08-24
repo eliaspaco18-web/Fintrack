@@ -42,6 +42,7 @@ import {
   crossesTechnicalAccountBoundary,
   getAccountIdentityViolation,
 } from '@/modules/portfolio/account-identity'
+import { requestPortfolioMutation } from '@/modules/portfolio/account-mutation-timeout'
 
 type BankEntityRef = {
   id: string
@@ -964,14 +965,13 @@ export function PortfolioManager({
     try {
       const endpoint = editingId ? `/api/accounts/${editingId}` : '/api/accounts'
       const method = editingId ? 'PATCH' : 'POST'
-      const res = await fetch(endpoint, {
+      const { response: res, payload: json } = await requestPortfolioMutation(endpoint, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-      })
-      const json = await res.json()
+      }, loadAccounts)
 
-      if (!res.ok || !json.ok) {
+      if (!res.ok || !json?.ok) {
         throw new Error(getApiErrorMessage(json, 'No se pudo guardar la cuenta'))
       }
 
@@ -1008,15 +1008,13 @@ export function PortfolioManager({
     setError(null)
 
     try {
-      const res = await fetch(`/api/accounts/${id}`, {
+      const { response: res, payload: json } = await requestPortfolioMutation(`/api/accounts/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_active: false }),
-      })
+      }, loadAccounts)
 
-      const json = await res.json()
-
-      if (!res.ok || !json.ok) {
+      if (!res.ok || !json?.ok) {
         throw new Error(getApiErrorMessage(json, 'No se pudo desactivar la cuenta'))
       }
 
@@ -1037,14 +1035,13 @@ export function PortfolioManager({
     setError(null)
 
     try {
-      const res = await fetch(`/api/accounts/${id}`, {
+      const { response: res, payload: json } = await requestPortfolioMutation(`/api/accounts/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_active: true }),
-      })
-      const json = await res.json()
+      }, loadAccounts)
 
-      if (!res.ok || !json.ok) {
+      if (!res.ok || !json?.ok) {
         throw new Error(getApiErrorMessage(json, 'No se pudo reactivar la cuenta'))
       }
 
@@ -1066,10 +1063,13 @@ export function PortfolioManager({
     setError(null)
 
     try {
-      const res = await fetch(`/api/accounts/${account.id}`, { method: 'DELETE' })
+      const { response: res, payload: json } = await requestPortfolioMutation(
+        `/api/accounts/${account.id}`,
+        { method: 'DELETE' },
+        loadAccounts,
+      )
 
       if (!res.ok && res.status !== 204) {
-        const json = await res.json()
         throw new Error(getApiErrorMessage(json, 'No se pudo eliminar el portafolio'))
       }
 
