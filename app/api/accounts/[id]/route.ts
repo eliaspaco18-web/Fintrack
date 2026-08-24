@@ -21,6 +21,10 @@ import {
   getSessionUserId,
 } from '@/lib/api/response'
 import { getAccountIdentityViolation } from '@/modules/portfolio/account-identity'
+import {
+  ACCOUNT_LINK_VERIFICATION_UNAVAILABLE_ERROR,
+  checkAccountLinkedRecords,
+} from '@/modules/portfolio/account-linked-records'
 
 const zAccountType = z.enum([
   'CHECKING',
@@ -96,20 +100,26 @@ async function getAccountBlockers(
   userId: string,
   accountId: string,
 ) {
-  const [{ count: txCount }, { count: creditCount }] = await Promise.all([
-    supabase
-      .from('transactions')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .or(`source_account_id.eq.${accountId},destination_account_id.eq.${accountId}`),
-    supabase
-      .from('credits')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('account_id', accountId),
-  ])
+  return checkAccountLinkedRecords(
+    async () => {
+      const { count, error } = await supabase
+        .from('transactions')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .or(`source_account_id.eq.${accountId},destination_account_id.eq.${accountId}`)
 
-  return (txCount ?? 0) + (creditCount ?? 0)
+      return { count, error }
+    },
+    async () => {
+      const { count, error } = await supabase
+        .from('credits')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .eq('account_id', accountId)
+
+      return { count, error }
+    },
+  )
 }
 
 function accountFeatureUnavailable() {
@@ -206,8 +216,11 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 
   if (payload.is_active === false) {
-    const blockers = await getAccountBlockers(supabase, userId, params.id)
-    if (blockers > 0) {
+    const linkedRecords = await getAccountBlockers(supabase, userId, params.id)
+    if (linkedRecords.status === 'unavailable') {
+      return apiError(ACCOUNT_LINK_VERIFICATION_UNAVAILABLE_ERROR)
+    }
+    if (linkedRecords.status === 'linked') {
       return apiError({
         code: 'BUSINESS_RULE_ERROR',
         message: 'No puedes desactivar esta cuenta porque tiene registros vinculados.',
@@ -335,8 +348,11 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     return apiError({ code: 'NOT_FOUND', message: 'Cuenta no encontrada' })
   }
 
-  const blockers = await getAccountBlockers(supabase, userId, params.id)
-  if (blockers > 0) {
+  const linkedRecords = await getAccountBlockers(supabase, userId, params.id)
+  if (linkedRecords.status === 'unavailable') {
+    return apiError(ACCOUNT_LINK_VERIFICATION_UNAVAILABLE_ERROR)
+  }
+  if (linkedRecords.status === 'linked') {
     return apiError({
       code: 'BUSINESS_RULE_ERROR',
       message: 'No puedes eliminar esta cuenta porque tiene registros vinculados.',
