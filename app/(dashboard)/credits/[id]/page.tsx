@@ -4,6 +4,7 @@ import { createClient }       from '@/lib/supabase.server'
 import { withTimeout } from '@/lib/server/promise-timeout'
 import { CreditDetail }       from '@/components/detail/ModuleDetails'
 import { getLoanScheduleIntegrity } from '@/modules/credits/loan-schedule-integrity'
+import type { CreditDetailLoanEvidence } from '@/modules/credits/credit-detail-presentation'
 
 const SERVER_QUERY_TIMEOUT_MS = 4_000
 
@@ -19,7 +20,7 @@ export default async function CreditDetailPage({ params }: { params: { id: strin
     ),
     withTimeout(
       supabase.from('loans')
-        .select('id,total_installments')
+        .select('id,total_installments,currency,principal_amount')
         .eq('credit_id', params.id)
         .eq('user_id', user.id)
         .maybeSingle(),
@@ -64,6 +65,15 @@ export default async function CreditDetailPage({ params }: { params: { id: strin
       || (installmentsResult.status === 'fulfilled' && Boolean(installmentsResult.value.error))
     ),
   })
+  const loanEvidence: CreditDetailLoanEvidence = loanVerificationFailed
+    ? { status: 'UNAVAILABLE' }
+    : loan
+      ? {
+          status: 'VERIFIED',
+          currency: loan.currency,
+          principalAmount: loan.principal_amount,
+        }
+      : { status: 'NOT_APPLICABLE' }
 
   const txId = credit.transaction_id
   const transaction = txId
@@ -78,6 +88,7 @@ export default async function CreditDetailPage({ params }: { params: { id: strin
       credit={credit}
       installments={installments ?? []}
       scheduleIntegrity={scheduleIntegrity}
+      loanEvidence={loanEvidence}
       transaction={transaction}
     />
   )
