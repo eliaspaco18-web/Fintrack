@@ -6,15 +6,20 @@ import { FocusTrap } from '@/components/ui/accessibility'
 import { formatCurrency } from '@/lib/contracts/ui.contracts'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import type { CurrencyCode, BudgetPeriod } from '@/types/database.types'
+import { createBudgetRecordActionScope } from '@/modules/budgets/budget-action-scope'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
 type BudgetRef = {
   id: string
+  series_id: string
   name: string
   description: string | null
+  category_id: string | null
   currency: CurrencyCode
   period_type: BudgetPeriod
+  start_date: string
+  end_date: string | null
   period_start: string
   period_end: string
   amount: number
@@ -296,7 +301,10 @@ export function BudgetDetail({ budget, periods, onClose, onPeriodUpdated }: Prop
       const res = await fetch(`/api/budgets/${selectedBudget.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: nextAmount }),
+        body: JSON.stringify({
+          amount: nextAmount,
+          action_scope: createBudgetRecordActionScope(selectedBudget),
+        }),
       })
       const json = await res.json().catch(() => null)
       if (!res.ok || !json?.ok) {

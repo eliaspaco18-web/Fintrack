@@ -32,6 +32,10 @@ import {
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 import { BudgetDetail } from '@/components/management/BudgetDetail'
+import {
+  BUDGET_SCOPE_REQUIRED_ERROR,
+  createBudgetRecordActionScope,
+} from '@/modules/budgets/budget-action-scope'
 
 type BudgetCategoryRef = {
   id: string
@@ -299,6 +303,7 @@ export function BudgetsManager() {
   const [form, setForm] = useState<BudgetForm>(EMPTY_FORM)
   const [formMode, setFormMode] = useState<FormMode>('create')
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingBudget, setEditingBudget] = useState<BudgetItem | null>(null)
   const [continuationPreview, setContinuationPreview] = useState<ContinuationPreview | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -388,6 +393,7 @@ export function BudgetsManager() {
     })
     setFormMode('create')
     setEditingId(null)
+    setEditingBudget(null)
     setContinuationPreview(null)
   }, [])
 
@@ -440,6 +446,7 @@ export function BudgetsManager() {
   const startEdit = useCallback((budget: BudgetItem) => {
     setFormMode('edit')
     setEditingId(budget.id)
+    setEditingBudget(budget)
     setContinuationPreview(null)
     setForm({
       name: budget.name,
@@ -612,6 +619,13 @@ export function BudgetsManager() {
       return
     }
 
+    if (editingId && (!editingBudget || editingBudget.id !== editingId)) {
+      const message = `${BUDGET_SCOPE_REQUIRED_ERROR.message} ${BUDGET_SCOPE_REQUIRED_ERROR.detail}`
+      setError(message)
+      toast.error('No se pudo guardar el periodo', message)
+      return
+    }
+
     setSaving(true)
     setError(null)
 
@@ -650,7 +664,12 @@ export function BudgetsManager() {
           : {
               method,
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload),
+              body: JSON.stringify(editingBudget
+                ? {
+                    ...payload,
+                    action_scope: createBudgetRecordActionScope(editingBudget),
+                  }
+                : payload),
             },
       )
       const json = await res.json().catch(() => null)
@@ -664,11 +683,13 @@ export function BudgetsManager() {
       clearCreateQueryParam()
       toast.success(
         editingId
-          ? 'Presupuesto actualizado'
+          ? 'Periodo actualizado'
           : formMode === 'continuation'
             ? 'Período creado'
             : 'Presupuesto creado',
-        formMode === 'continuation'
+        editingId && editingBudget
+          ? `${trimmedName} se actualizo solo para ${formatRange(editingBudget.period_start, editingBudget.period_end)}.`
+          : formMode === 'continuation'
           ? `${trimmedName} continuó correctamente con un nuevo período.`
           : `${trimmedName} se guardó correctamente.`,
         { persist: false },
@@ -680,7 +701,7 @@ export function BudgetsManager() {
     } finally {
       setSaving(false)
     }
-  }, [clearCreateQueryParam, continuationPreview, editingId, form, formMode, loadBudgets, resetForm, toast])
+  }, [clearCreateQueryParam, continuationPreview, editingBudget, editingId, form, formMode, loadBudgets, resetForm, toast])
 
   const toggleActive = useCallback(async (budget: BudgetItem, nextValue: boolean) => {
     setRowActionId(budget.id)
@@ -689,7 +710,10 @@ export function BudgetsManager() {
       const res = await fetch(`/api/budgets/${budget.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_active: nextValue }),
+        body: JSON.stringify({
+          is_active: nextValue,
+          action_scope: createBudgetRecordActionScope(budget),
+        }),
       })
       const json = await res.json().catch(() => null)
       if (!res.ok || !json?.ok) {
@@ -698,8 +722,8 @@ export function BudgetsManager() {
 
       await loadBudgets()
       toast.success(
-        nextValue ? 'Presupuesto reactivado' : 'Presupuesto desactivado',
-        undefined,
+        nextValue ? 'Periodo reactivado' : 'Periodo desactivado',
+        `${formatRange(budget.period_start, budget.period_end)}. Los demas periodos de la serie no cambiaron.`,
         { persist: false },
       )
     } catch (caught) {
@@ -727,7 +751,13 @@ export function BudgetsManager() {
     setRowActionId(pendingDeleteBudget.id)
     setError(null)
     try {
-      const res = await fetch(`/api/budgets/${pendingDeleteBudget.id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/budgets/${pendingDeleteBudget.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action_scope: createBudgetRecordActionScope(pendingDeleteBudget),
+        }),
+      })
       if (!res.ok && res.status !== 204) {
         const json = await res.json().catch(() => null)
         throw new Error(getApiErrorMessage(json, 'No se pudo eliminar el presupuesto'))
@@ -735,7 +765,11 @@ export function BudgetsManager() {
 
       await loadBudgets()
       setPendingDeleteBudget(null)
-      toast.success('Presupuesto eliminado', undefined, { persist: false })
+      toast.success(
+        'Periodo eliminado',
+        'Los demas periodos de la serie se conservaron.',
+        { persist: false },
+      )
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'No se pudo eliminar el presupuesto'
       setError(message)
@@ -1135,7 +1169,7 @@ export function BudgetsManager() {
                         onClick={() => startEdit(budget)}
                         disabled={saving || loading || rowActionId !== null}
                         icon="edit"
-                        label="Editar presupuesto"
+                        label="Editar solo este periodo"
                         testId={`budget-edit-${budget.id}`}
                       />
                       {budget.is_active ? (
@@ -1143,7 +1177,7 @@ export function BudgetsManager() {
                           onClick={() => void toggleActive(budget, false)}
                           disabled={saving || loading || rowActionId !== null}
                           icon="deactivate"
-                          label="Desactivar presupuesto"
+                          label="Desactivar solo este periodo"
                           variant="danger"
                           testId={`budget-deactivate-${budget.id}`}
                         />
@@ -1152,7 +1186,7 @@ export function BudgetsManager() {
                           onClick={() => void toggleActive(budget, true)}
                           disabled={saving || loading || rowActionId !== null}
                           icon="reactivate"
-                          label="Reactivar presupuesto"
+                          label="Reactivar solo este periodo"
                           variant="success"
                           testId={`budget-reactivate-${budget.id}`}
                         />
@@ -1161,7 +1195,7 @@ export function BudgetsManager() {
                         onClick={() => confirmDelete(budget)}
                         disabled={saving || loading || rowActionId !== null}
                         icon="delete"
-                        label="Eliminar presupuesto"
+                        label="Eliminar solo este periodo"
                         variant="danger"
                         testId={`budget-delete-${budget.id}`}
                       />
@@ -1243,14 +1277,14 @@ export function BudgetsManager() {
                           onClick={() => startEdit(budget)}
                           disabled={saving || loading || rowActionId !== null}
                           icon="edit"
-                          label="Editar presupuesto"
+                          label="Editar solo este periodo"
                         />
                         {budget.is_active ? (
                           <ActionIconButton
                             onClick={() => void toggleActive(budget, false)}
                             disabled={saving || loading || rowActionId !== null}
                             icon="deactivate"
-                            label="Desactivar presupuesto"
+                            label="Desactivar solo este periodo"
                             variant="danger"
                           />
                         ) : (
@@ -1258,7 +1292,7 @@ export function BudgetsManager() {
                             onClick={() => void toggleActive(budget, true)}
                             disabled={saving || loading || rowActionId !== null}
                             icon="reactivate"
-                            label="Activar presupuesto"
+                            label="Activar solo este periodo"
                             variant="success"
                           />
                         )}
@@ -1266,7 +1300,7 @@ export function BudgetsManager() {
                           onClick={() => confirmDelete(budget)}
                           disabled={saving || loading || rowActionId !== null}
                           icon="delete"
-                          label="Eliminar presupuesto"
+                          label="Eliminar solo este periodo"
                           variant="danger"
                         />
                       </div>
@@ -1285,13 +1319,15 @@ export function BudgetsManager() {
         eyebrow="Presupuestos"
         title={
           editingId
-            ? 'Editar presupuesto'
+            ? 'Editar este periodo'
             : formMode === 'continuation'
               ? 'Nuevo período continuo'
               : 'Nuevo presupuesto'
         }
         subtitle={
-          formMode === 'continuation'
+          editingBudget
+            ? `Los cambios se aplican solo a ${formatRange(editingBudget.period_start, editingBudget.period_end)}. Los demas periodos de la serie no se modifican.`
+            : formMode === 'continuation'
             ? 'Previsualiza el siguiente rango y conserva la configuración operativa de la serie.'
             : 'Define límites por categoría y controla tu gasto del período actual.'
         }
@@ -1593,7 +1629,7 @@ export function BudgetsManager() {
                 variant="primary"
                 size="lg"
               >
-                {editingId ? 'Guardar cambios' : isContinuationMode ? 'Crear siguiente período' : 'Crear presupuesto'}
+                {editingId ? 'Guardar solo este periodo' : isContinuationMode ? 'Crear siguiente período' : 'Crear presupuesto'}
               </Button>
             )}
           />
@@ -1612,18 +1648,24 @@ export function BudgetsManager() {
 
       <ConfirmDialog
         open={Boolean(pendingDeleteBudget)}
-        title="Eliminar presupuesto"
+        title="Eliminar solo este periodo"
         message={(
           <>
-            Esta accion removera <span className="font-semibold text-[var(--c-text)]">{pendingDeleteBudget?.name}</span> del
-            modulo de presupuestos.
+            Esta accion eliminara unicamente el periodo{' '}
+            <span className="font-semibold text-[var(--c-text)]">
+              {pendingDeleteBudget
+                ? formatRange(pendingDeleteBudget.period_start, pendingDeleteBudget.period_end)
+                : ''}
+            </span>{' '}
+            de <span className="font-semibold text-[var(--c-text)]">{pendingDeleteBudget?.name}</span>.
+            Los demas periodos de la serie y sus categorias no se modificaran.
           </>
         )}
         onCancel={closeDeleteModal}
         onConfirm={() => void removeBudget()}
         loading={pendingDeleteBudget ? rowActionId === pendingDeleteBudget.id : false}
         danger
-        confirmLabel="Eliminar"
+        confirmLabel="Eliminar este periodo"
         testId="budgets-delete-modal"
         cancelTestId="budgets-delete-cancel-button"
         confirmTestId="budgets-delete-confirm-button"
