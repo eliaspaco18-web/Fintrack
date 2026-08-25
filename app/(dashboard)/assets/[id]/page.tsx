@@ -13,7 +13,7 @@ export default async function AssetDetailPage({ params }: { params: { id: string
 
   const [assetResult] = await Promise.allSettled([
     withTimeout(
-      supabase.from('assets').select('*')
+      supabase.from('assets').select('*, asset_type_info:asset_types(id, name, color, icon)')
         .eq('id', params.id).eq('user_id', user.id).single(),
       SERVER_QUERY_TIMEOUT_MS,
     ),

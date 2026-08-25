@@ -31,14 +31,16 @@ import {
 } from '@/components/finance'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
-import type { Asset } from '@/types/database.types'
+import {
+  getAssetStatusPresentation,
+  getAssetTypePresentation,
+  matchesAssetStatusFilter,
+  type AssetStatusFilter,
+  type AssetWithTypeInfo,
+} from '@/modules/assets/asset-presentation'
 
 type ViewMode = 'list' | 'cards'
-type StatusFilter = 'all' | 'ACTIVE' | 'INACTIVE'
 type AssetTypeOption = { id: string; name: string; color: string | null; icon: string | null }
-type AssetWithType = Asset & {
-  asset_type_info?: { id: string; name: string; color: string | null; icon: string | null } | null
-}
 type AssetEditForm = {
   name: string
   current_value: string
@@ -90,16 +92,16 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
   const [typeFilter, setTypeFilter] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ACTIVE')
+  const [statusFilter, setStatusFilter] = useState<AssetStatusFilter>('ACTIVE')
   const [assetTypes, setAssetTypes] = useState<AssetTypeOption[]>([])
-  const [editingAsset, setEditingAsset] = useState<AssetWithType | null>(null)
+  const [editingAsset, setEditingAsset] = useState<AssetWithTypeInfo | null>(null)
   const [editForm, setEditForm] = useState<AssetEditForm>({
     name: '',
     current_value: '',
     recipient: '',
     notes: '',
   })
-  const [pendingDelete, setPendingDelete] = useState<AssetWithType | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<AssetWithTypeInfo | null>(null)
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -119,14 +121,14 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
       .catch(() => null)
   }, [])
 
-  const typedAssets = assets as AssetWithType[]
+  const typedAssets = assets as AssetWithTypeInfo[]
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
 
     return typedAssets.filter(asset => {
       if (typeFilter && asset.asset_type_id !== typeFilter) return false
-      if (statusFilter !== 'all' && asset.status !== statusFilter) return false
+      if (!matchesAssetStatusFilter(asset.status, statusFilter)) return false
       if (dateFrom && asset.purchase_date < dateFrom) return false
       if (dateTo && asset.purchase_date > dateTo) return false
       if (!q) return true
@@ -140,8 +142,18 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
     [typedAssets],
   )
 
-  const inactiveCount = useMemo(
-    () => typedAssets.filter(asset => asset.status !== 'ACTIVE').length,
+  const soldCount = useMemo(
+    () => typedAssets.filter(asset => asset.status === 'SOLD').length,
+    [typedAssets],
+  )
+
+  const depreciatedCount = useMemo(
+    () => typedAssets.filter(asset => asset.status === 'DEPRECIATED').length,
+    [typedAssets],
+  )
+
+  const unverifiedStatusCount = useMemo(
+    () => typedAssets.filter(asset => !getAssetStatusPresentation(asset.status).isVerified).length,
     [typedAssets],
   )
 
@@ -162,15 +174,15 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
   const typeCount = useMemo(() => {
     const names = new Set<string>()
     for (const asset of typedAssets) {
-      const typeName = asset.asset_type_info?.name
-      if (typeName) names.add(typeName)
+      const type = getAssetTypePresentation(asset)
+      if (type.isVerified) names.add(`${type.source}:${type.label}`)
     }
     return names.size
   }, [typedAssets])
 
   const surfaceError = actionError ?? resolveErrorMessage(hookError)
 
-  const openEditModal = useCallback((asset: AssetWithType) => {
+  const openEditModal = useCallback((asset: AssetWithTypeInfo) => {
     setActionError(null)
     setEditingAsset(asset)
     setEditForm({
@@ -192,7 +204,7 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
     })
   }, [actionLoadingId])
 
-  const handleToggleStatus = useCallback(async (asset: AssetWithType, nextStatus: 'ACTIVE' | 'SOLD') => {
+  const handleToggleStatus = useCallback(async (asset: AssetWithTypeInfo, nextStatus: 'ACTIVE' | 'SOLD') => {
     if (actionLoadingId) return
 
     setActionLoadingId(asset.id)
@@ -214,7 +226,7 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
       await mutate((key: unknown) => typeof key === 'string' && key.startsWith('/api/assets'))
       router.refresh()
       toast.success(
-        nextStatus === 'ACTIVE' ? 'Activo activado' : 'Activo dado de baja',
+        nextStatus === 'ACTIVE' ? 'Activo reactivado' : 'Activo marcado como vendido',
         asset.name,
         { persist: false },
       )
@@ -339,7 +351,9 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
             <StatCard
               label="Tipos activos"
               value={String(typeCount)}
-              detail={inactiveCount > 0 ? `${inactiveCount} inactivo${inactiveCount === 1 ? '' : 's'}` : 'Sin bajas'}
+              detail={soldCount > 0 || depreciatedCount > 0
+                ? `${soldCount} vendido${soldCount === 1 ? '' : 's'} · ${depreciatedCount} depreciado${depreciatedCount === 1 ? '' : 's'}`
+                : 'Sin vendidos ni depreciados'}
               caption="Diversidad de clases en el inventario actual."
             />
             <StatCard
@@ -361,11 +375,25 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
                   onClick={() => setStatusFilter('ACTIVE')}
                 />
                 <DataFilterPreset
-                  label="Inactivos"
-                  active={statusFilter === 'INACTIVE'}
-                  count={inactiveCount}
-                  onClick={() => setStatusFilter('INACTIVE')}
+                  label="Vendidos"
+                  active={statusFilter === 'SOLD'}
+                  count={soldCount}
+                  onClick={() => setStatusFilter('SOLD')}
                 />
+                <DataFilterPreset
+                  label="Depreciados"
+                  active={statusFilter === 'DEPRECIATED'}
+                  count={depreciatedCount}
+                  onClick={() => setStatusFilter('DEPRECIATED')}
+                />
+                {unverifiedStatusCount > 0 ? (
+                  <DataFilterPreset
+                    label="Sin verificar"
+                    active={statusFilter === 'UNKNOWN'}
+                    count={unverifiedStatusCount}
+                    onClick={() => setStatusFilter('UNKNOWN')}
+                  />
+                ) : null}
                 <DataFilterPreset
                   label="Todos"
                   active={statusFilter === 'all'}
@@ -468,9 +496,10 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
 
             <div className="divide-y divide-[var(--c-border)]">
               {filtered.map(asset => {
-                const isActive = asset.status === 'ACTIVE'
+                const status = getAssetStatusPresentation(asset.status)
+                const isActive = status.status === 'ACTIVE'
                 const typeColor = asset.asset_type_info?.color ?? 'var(--c-primary)'
-                const typeName = asset.asset_type_info?.name ?? 'Sin tipo'
+                const typeName = getAssetTypePresentation(asset).label
                 const currentValue = asset.current_value ?? asset.purchase_value
 
                 return (
@@ -506,8 +535,8 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
 
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <StatusBadge tone={isActive ? 'success' : 'muted'}>
-                            {isActive ? 'Activo' : 'Inactivo'}
+                          <StatusBadge tone={status.tone}>
+                            {status.label}
                           </StatusBadge>
                           <StatusBadge tone="primary" dot={false} className="max-w-full">
                             {typeName}
@@ -536,9 +565,11 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
                         />
                         <ActionIconButton
                           icon={isActive ? 'deactivate' : 'reactivate'}
-                          label={isActive ? 'Desactivar' : 'Activar'}
+                          label={status.isVerified
+                            ? isActive ? 'Marcar como vendido' : 'Reactivar'
+                            : 'Estado no verificable'}
                           variant={isActive ? 'danger' : 'success'}
-                          disabled={Boolean(actionLoadingId)}
+                          disabled={Boolean(actionLoadingId) || !status.isVerified}
                           testId={isActive ? `asset-deactivate-${asset.id}` : `asset-reactivate-${asset.id}`}
                           onClick={() => void handleToggleStatus(asset, isActive ? 'SOLD' : 'ACTIVE')}
                         />
@@ -563,8 +594,9 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
         ) : (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {filtered.map(asset => {
-              const isActive = asset.status === 'ACTIVE'
-              const typeName = asset.asset_type_info?.name ?? 'Sin tipo'
+              const status = getAssetStatusPresentation(asset.status)
+              const isActive = status.status === 'ACTIVE'
+              const typeName = getAssetTypePresentation(asset).label
               const typeColor = asset.asset_type_info?.color ?? 'var(--c-primary)'
               const currentValue = asset.current_value ?? asset.purchase_value
 
@@ -594,8 +626,8 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
                           <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">{typeName}</p>
                         </div>
                       </div>
-                      <StatusBadge tone={isActive ? 'success' : 'muted'}>
-                        {isActive ? 'Activo' : 'Inactivo'}
+                      <StatusBadge tone={status.tone}>
+                        {status.label}
                       </StatusBadge>
                     </div>
 
@@ -632,9 +664,11 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
                           />
                           <ActionIconButton
                             icon={isActive ? 'deactivate' : 'reactivate'}
-                            label={isActive ? 'Desactivar' : 'Activar'}
+                            label={status.isVerified
+                              ? isActive ? 'Marcar como vendido' : 'Reactivar'
+                              : 'Estado no verificable'}
                             variant={isActive ? 'danger' : 'success'}
-                            disabled={Boolean(actionLoadingId)}
+                            disabled={Boolean(actionLoadingId) || !status.isVerified}
                             testId={isActive ? `asset-deactivate-card-${asset.id}` : `asset-reactivate-card-${asset.id}`}
                             onClick={() => void handleToggleStatus(asset, isActive ? 'SOLD' : 'ACTIVE')}
                           />

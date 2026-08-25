@@ -28,7 +28,7 @@ import {
   type CanonicalDetailTone,
 }                                  from './primitives'
 import { ProgressBar } from '@/components/tables/primitives'
-import type { Credit, Asset,
+import type { Credit,
   AccountReceivable, AccountPayable,
   Installment }                    from '@/types/database.types'
 import type { LoanScheduleIntegrity } from '@/modules/credits/loan-schedule-integrity'
@@ -37,6 +37,11 @@ import {
   type CreditDetailLoanEvidence,
   type CreditNativeCurrency,
 } from '@/modules/credits/credit-detail-presentation'
+import {
+  getAssetStatusPresentation,
+  getAssetTypePresentation,
+  type AssetWithTypeInfo,
+} from '@/modules/assets/asset-presentation'
 
 // ─── INSTALLMENT LIST ─────────────────────────────────────────────────────────
 
@@ -290,22 +295,19 @@ export function CreditDetail({
 // =============================================================================
 
 interface AssetDetailProps {
-  asset:       Asset
+  asset:       AssetWithTypeInfo
   transaction?: { id: string; description: string } | null
 }
 
 export function AssetDetail({ asset, transaction }: AssetDetailProps) {
   const { preferred, format, exchangeRate } = useCurrency()
+  const assetStatus = getAssetStatusPresentation(asset.status)
+  const assetType = getAssetTypePresentation(asset)
 
   const purchasePen = toPenAmount(asset.purchase_value, asset.currency, exchangeRate)
   const valuePen    = toPenAmount(asset.current_value, asset.currency, exchangeRate)
   const gainPen     = valuePen - purchasePen
   const gainPct     = purchasePen > 0 ? (gainPen / purchasePen) * 100 : 0
-
-  const ASSET_TYPE_LABELS: Record<string, string> = {
-    REAL_ESTATE: 'Inmueble', VEHICLE: 'Vehículo',
-    EQUIPMENT: 'Equipo', INVESTMENT: 'Inversión', OTHER: 'Otro',
-  }
 
   return (
     <CanonicalDetailLayout
@@ -320,9 +322,14 @@ export function AssetDetail({ asset, transaction }: AssetDetailProps) {
           }
           tone="primary"
           badges={
-            <CanonicalDetailBadge>
-              {ASSET_TYPE_LABELS[asset.asset_type] ?? 'Activo'}
-            </CanonicalDetailBadge>
+            <>
+              <CanonicalDetailBadge>
+                {assetType.label}
+              </CanonicalDetailBadge>
+              <CanonicalDetailBadge tone={assetStatus.tone}>
+                {assetStatus.label}
+              </CanonicalDetailBadge>
+            </>
           }
           title={asset.name}
           amount={formatCurrency(format(valuePen), preferred)}
@@ -366,6 +373,10 @@ export function AssetDetail({ asset, transaction }: AssetDetailProps) {
           })}
         </CanonicalDetailFact>
         <CanonicalDetailFact label="Moneda" mono>{asset.currency}</CanonicalDetailFact>
+        <CanonicalDetailFact label={assetType.source === 'CUSTOM' ? 'Tipo personalizado' : 'Tipo'}>
+          {assetType.label}
+        </CanonicalDetailFact>
+        <CanonicalDetailFact label="Estado">{assetStatus.label}</CanonicalDetailFact>
         {asset.serial_number && (
           <CanonicalDetailFact label="N° de serie" mono>{asset.serial_number}</CanonicalDetailFact>
         )}
