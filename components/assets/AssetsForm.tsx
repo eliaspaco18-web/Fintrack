@@ -25,6 +25,7 @@ import { RecordModalFooter } from '@/components/ui/RecordModal'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 import { formatCurrency } from '@/lib/contracts/ui.contracts'
+import { ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE } from '@/modules/attachments/attachment-integrity'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -50,9 +51,6 @@ interface AssetsFormProps {
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
-const MAX_FILE_BYTES = 8 * 1024 * 1024
-const ALLOWED_EXTS = ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'doc', 'docx', 'xls', 'xlsx']
-
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10)
 }
@@ -68,9 +66,6 @@ export function AssetsForm({ onSuccess, onCancel }: AssetsFormProps) {
   const [loadingData, setLoadingData] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  // ── Archivo adjunto
-  const [attachment, setAttachment] = useState<File | null>(null)
 
   // ── Estado del formulario
   const [form, setForm] = useState({
@@ -130,15 +125,6 @@ export function AssetsForm({ onSuccess, onCancel }: AssetsFormProps) {
     void load()
   }, [])
 
-  const handleFileChange = useCallback((file: File | null) => {
-    if (!file) { setAttachment(null); return }
-    if (file.size > MAX_FILE_BYTES) { setError('El archivo supera 8 MB.'); return }
-    const ext = file.name.toLowerCase().split('.').pop() ?? ''
-    if (!ALLOWED_EXTS.includes(ext)) { setError('Formato no permitido.'); return }
-    setError(null)
-    setAttachment(file)
-  }, [])
-
   const handleSubmit = useCallback(async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (saving) return
@@ -176,21 +162,13 @@ export function AssetsForm({ onSuccess, onCancel }: AssetsFormProps) {
       const json = await res.json().catch(() => null)
       if (!res.ok || !json?.ok) throw new Error(getApiErrorMessage(json, 'No se pudo registrar el activo'))
 
-      // Subir adjunto si existe (endpoint genérico)
-      if (attachment && json.data?.id) {
-        const fd = new FormData()
-        fd.append('file', attachment)
-        await fetch(`/api/assets/${json.data.id}/attachment`, { method: 'POST', body: fd })
-          .catch(() => null) // No bloquear si falla el adjunto
-      }
-
       onSuccess(name)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo registrar el activo')
     } finally {
       setSaving(false)
     }
-  }, [form, saving, selectedAccount, attachment, onSuccess])
+  }, [form, saving, selectedAccount, onSuccess])
 
   return (
     <>
@@ -364,42 +342,21 @@ export function AssetsForm({ onSuccess, onCancel }: AssetsFormProps) {
 
         <FormSection
           title="Comprobante"
-          description="Adjunta la constancia o documento de respaldo en una tira compacta."
+          description="La carga permanecerá deshabilitada hasta que exista una asociación verificable con el activo."
           columns="1"
           className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
         >
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <label className="ui-pressable inline-flex min-w-0 cursor-pointer items-center gap-2 rounded-[var(--ft-form-radius)] border border-dashed border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-4 py-3 text-[12px] font-medium text-[var(--ft-form-muted)] hover:border-[var(--c-primary)] hover:text-[var(--c-primary)]">
+          <div className="flex min-w-0 items-center gap-3 rounded-[var(--ft-form-radius)] border border-dashed border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-4 py-3 text-[12px] text-[var(--ft-form-muted)]" data-testid="asset-attachment-unavailable">
+            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--ft-surface)]" aria-hidden="true">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                 <polyline points="17 8 12 3 7 8"/>
                 <line x1="12" y1="3" x2="12" y2="15"/>
               </svg>
-              <span className="min-w-0 truncate" title={attachment?.name}>
-                {attachment ? attachment.name : 'Subir archivo (PDF, imagen, Word o Excel)'}
-              </span>
-              <input
-                type="file"
-                className="sr-only"
-                accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx"
-                onChange={e => handleFileChange(e.target.files?.[0] ?? null)}
-              />
-            </label>
-
-            <div className="flex items-center gap-3">
-              <p className="text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-                {attachment ? 'Archivo listo para enviarse con el activo.' : 'Opcional. Maximo 8 MB.'}
-              </p>
-              {attachment ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setAttachment(null)}
-                >
-                  Quitar
-                </Button>
-              ) : null}
+            </span>
+            <div className="min-w-0">
+              <p className="font-semibold text-[var(--ft-text)]">Carga no disponible</p>
+              <p className="mt-0.5 leading-[1.45]">{ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE}</p>
             </div>
           </div>
         </FormSection>

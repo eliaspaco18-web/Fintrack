@@ -41,6 +41,15 @@ export const ATTACHMENT_DELETE_BLOCKED_MESSAGE =
 export const ATTACHMENT_UPDATE_BLOCKED_MESSAGE =
   'No se puede reemplazar esta información mientras conserve una referencia de adjunto que no puede preservarse de forma segura.'
 
+export const ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE =
+  'La carga de adjuntos no está disponible en este módulo porque su asociación segura aún no puede confirmarse.'
+
+export const ATTACHMENT_LEGACY_REFERENCE_NOTICE =
+  'Este registro conserva una referencia de adjunto anterior. No se modificó, pero su disponibilidad no puede verificarse desde esta pantalla.'
+
+export const ATTACHMENT_VERIFICATION_FAILED_MESSAGE =
+  'No se pudo verificar si el registro conserva referencias de adjuntos. No se realizaron cambios.'
+
 export type AttachmentAvailability = 'AVAILABLE' | 'UNVERIFIED'
 
 export type FinancialAttachmentResult = {
@@ -227,4 +236,39 @@ export function hasCreditAttachmentReference(notes: unknown): boolean {
 
 export function hasTransactionAttachmentReference(notes: unknown): boolean {
   return typeof notes === 'string' && /\[adjunto:[^\]]+\]/.test(notes)
+}
+
+export function hasLegacyAttachmentNoteReference(notes: unknown): boolean {
+  return hasCreditAttachmentReference(notes) || hasTransactionAttachmentReference(notes)
+}
+
+export function hasUnsupportedAttachmentWrite(
+  body: unknown,
+  fields: readonly string[] = ['attachment_url'],
+): boolean {
+  if (!body || typeof body !== 'object') return false
+  if (Array.isArray(body)) {
+    return body.some(value => hasUnsupportedAttachmentWrite(value, fields))
+  }
+
+  const record = body as Record<string, unknown>
+  return fields.some(field => Object.prototype.hasOwnProperty.call(record, field))
+    || Object.values(record).some(value => hasUnsupportedAttachmentWrite(value, fields))
+}
+
+export type LegacyAttachmentReferenceState = 'CLEAR' | 'PRESENT' | 'UNVERIFIED'
+
+export function getLegacyAttachmentReferenceState(input: {
+  references?: readonly unknown[]
+  verificationFailed?: boolean
+}): LegacyAttachmentReferenceState {
+  if (input.verificationFailed) return 'UNVERIFIED'
+  return input.references?.some(hasStoredAttachmentReference) ? 'PRESENT' : 'CLEAR'
+}
+
+export function wouldReplaceLegacyAttachmentNotes(
+  existingNotes: unknown,
+  nextNotes: unknown,
+): boolean {
+  return hasLegacyAttachmentNoteReference(existingNotes) && nextNotes !== existingNotes
 }

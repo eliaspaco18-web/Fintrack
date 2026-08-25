@@ -9,6 +9,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient }              from '@/lib/supabase.server'
 import { getSessionUserId }          from '@/lib/api/response'
+import {
+  ATTACHMENT_DELETE_BLOCKED_MESSAGE,
+  ATTACHMENT_UPDATE_BLOCKED_MESSAGE,
+  ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE,
+  ATTACHMENT_VERIFICATION_FAILED_MESSAGE,
+  getLegacyAttachmentReferenceState,
+  hasLegacyAttachmentNoteReference,
+  hasStoredAttachmentReference,
+  hasTransactionAttachmentReference,
+  hasUnsupportedAttachmentWrite,
+  wouldReplaceLegacyAttachmentNotes,
+} from '@/modules/attachments/attachment-integrity'
 
 type Ctx = { params: { id: string } }
 const ASSET_STATUSES = new Set(['ACTIVE', 'SOLD', 'DEPRECIATED'] as const)
@@ -42,14 +54,31 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   try { body = await req.json() }
   catch { return NextResponse.json({ ok: false, error: { code: 'INVALID_JSON' } }, { status: 400 }) }
 
+  if (hasUnsupportedAttachmentWrite(body, ['attachment_url', 'attachment'])) {
+    return NextResponse.json(
+      { ok: false, error: { code: 'BUSINESS_RULE_ERROR', message: ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE } },
+      { status: 422 },
+    )
+  }
+
   // Verificar propiedad
   const { data: existing, error: fetchErr } = await supabase
     .from('assets')
-    .select('id, user_id')
+    .select('id, user_id, notes, attachment_url')
     .eq('id', params.id)
     .eq('user_id', userId)
     .single()
   if (fetchErr || !existing) return NextResponse.json({ ok: false, error: { code: 'NOT_FOUND' } }, { status: 404 })
+
+  if (
+    Object.prototype.hasOwnProperty.call(body, 'notes')
+    && wouldReplaceLegacyAttachmentNotes(existing.notes, body.notes)
+  ) {
+    return NextResponse.json(
+      { ok: false, error: { code: 'BUSINESS_RULE_ERROR', message: ATTACHMENT_UPDATE_BLOCKED_MESSAGE } },
+      { status: 422 },
+    )
+  }
 
   // Campos actualizables
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
@@ -90,12 +119,53 @@ export async function DELETE(_req: NextRequest, { params }: Ctx) {
   // Obtener activo para conseguir el transaction_id
   const { data: asset, error: fetchErr } = await supabase
     .from('assets')
-    .select('id, transaction_id, user_id')
+    .select('id, transaction_id, user_id, notes, attachment_url')
     .eq('id', params.id)
     .eq('user_id', userId)
     .single()
 
   if (fetchErr || !asset) return NextResponse.json({ ok: false, error: { code: 'NOT_FOUND', message: 'Activo no encontrado' } }, { status: 404 })
+
+  if (
+    hasStoredAttachmentReference(asset.attachment_url)
+    || hasLegacyAttachmentNoteReference(asset.notes)
+  ) {
+    return NextResponse.json(
+      { ok: false, error: { code: 'BUSINESS_RULE_ERROR', message: ATTACHMENT_DELETE_BLOCKED_MESSAGE } },
+      { status: 422 },
+    )
+  }
+
+  if (asset.transaction_id) {
+    const linkedTransactionResult = await supabase
+      .from('transactions')
+      .select('attachment_url, notes')
+      .eq('id', asset.transaction_id)
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    const linkedReferenceState = getLegacyAttachmentReferenceState({
+      verificationFailed: Boolean(linkedTransactionResult.error),
+      references: [linkedTransactionResult.data?.attachment_url],
+    })
+
+    if (linkedReferenceState === 'UNVERIFIED') {
+      return NextResponse.json(
+        { ok: false, error: { code: 'BUSINESS_RULE_ERROR', message: ATTACHMENT_VERIFICATION_FAILED_MESSAGE } },
+        { status: 422 },
+      )
+    }
+
+    if (
+      linkedReferenceState === 'PRESENT'
+      || hasTransactionAttachmentReference(linkedTransactionResult.data?.notes)
+    ) {
+      return NextResponse.json(
+        { ok: false, error: { code: 'BUSINESS_RULE_ERROR', message: ATTACHMENT_DELETE_BLOCKED_MESSAGE } },
+        { status: 422 },
+      )
+    }
+  }
 
   // PRD: "Elimina el activo Y su transacción (egreso)"
   // Eliminar primero el activo (FK → transaction), luego la transacción

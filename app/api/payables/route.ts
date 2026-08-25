@@ -16,6 +16,10 @@ import {
   getSessionUserId,
 }                                    from '@/lib/api/response'
 import type { CreateTransactionResult } from '@/modules/transactions/transaction.service.types'
+import {
+  ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE,
+  hasUnsupportedAttachmentWrite,
+} from '@/modules/attachments/attachment-integrity'
 
 const PAYABLE_SELECT = `
   *,
@@ -116,6 +120,13 @@ export async function POST(req: NextRequest) {
     return apiError({ code: 'VALIDATION_ERROR', message: 'Cuerpo inválido' })
   }
 
+  if (hasUnsupportedAttachmentWrite(body, ['attachment_url', 'attachment'])) {
+    return apiError({
+      code: 'BUSINESS_RULE_ERROR',
+      message: ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE,
+    })
+  }
+
   const creditor_id   = typeof body.creditor_id === 'string'   ? body.creditor_id  : null
   const concept       = typeof body.concept === 'string'       ? body.concept.trim() || null : null
   const amount        = typeof body.amount === 'number'        ? body.amount : Number(body.amount)
@@ -123,7 +134,6 @@ export async function POST(req: NextRequest) {
   const issue_date    = typeof body.issue_date === 'string'    ? body.issue_date : new Date().toISOString().slice(0, 10)
   const due_date      = typeof body.due_date === 'string'      ? body.due_date || null : null
   const notes         = typeof body.notes === 'string'         ? body.notes.trim() || null : null
-  const attachment_url = typeof body.attachment_url === 'string' ? body.attachment_url || null : null
   const source_account_id = typeof body.source_account_id === 'string' ? body.source_account_id : ''
   const save_recurring = body.save_recurring === true
   const recurring_name = typeof body.recurring_name === 'string' ? body.recurring_name.trim() : ''
@@ -220,7 +230,6 @@ export async function POST(req: NextRequest) {
     .from('accounts_payable')
     .update({
       creditor_id,
-      attachment_url,
     })
     .eq('id', payableId)
     .eq('user_id', userId)
@@ -256,7 +265,6 @@ export async function POST(req: NextRequest) {
       payable: {
         ...transactionResult.data.payable,
         creditor_id,
-        attachment_url,
       },
       transaction: transactionResult.data.transaction,
       recurring_template: recurringTemplate,

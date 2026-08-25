@@ -9,6 +9,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient }              from '@/lib/supabase.server'
 import { getSessionUserId }          from '@/lib/api/response'
 import { resolveAccountingUsdPenExchangeRate } from '@/lib/server/exchange-rate'
+import {
+  ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE,
+  hasUnsupportedAttachmentWrite,
+} from '@/modules/attachments/attachment-integrity'
 
 const ASSET_STATUSES = ['ACTIVE', 'SOLD', 'DEPRECIATED'] as const
 type AssetStatus = (typeof ASSET_STATUSES)[number]
@@ -82,6 +86,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { ok: false, error: { code: 'INVALID_JSON', message: 'Cuerpo inválido' } },
       { status: 400 }
+    )
+  }
+
+  if (hasUnsupportedAttachmentWrite(body, ['attachment_url', 'attachment'])) {
+    return NextResponse.json(
+      { ok: false, error: { code: 'BUSINESS_RULE_ERROR', message: ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE } },
+      { status: 422 },
     )
   }
 

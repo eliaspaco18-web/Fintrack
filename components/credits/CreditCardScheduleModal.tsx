@@ -13,6 +13,10 @@ import {
   formatDuplicateCycleMessage,
 } from '@/components/credits/credits-schedule.constants'
 import { formatNumber } from '@/lib/contracts/ui.contracts'
+import {
+  ATTACHMENT_LEGACY_REFERENCE_NOTICE,
+  ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE,
+} from '@/modules/attachments/attachment-integrity'
 
 type BillingCycleRow = {
   id: string
@@ -26,7 +30,7 @@ type BillingCycleRow = {
   total_to_pay_usd?: number
   movement_summary?: BillingCycleMovementSummary | null
   can_delete?: boolean
-  statement_file: File | null
+  statement_url: string | null
 }
 
 type BillingCycleMovement = {
@@ -72,7 +76,6 @@ interface CreditCardScheduleEditorProps {
   onAddCycle: () => void
   onRemoveCycle: (id: string) => void
   onUpdateCycle: (id: string, patch: Partial<BillingCycleRow>) => void
-  onFileChange: (id: string, file: File | null) => void
   onMovementModalOpenChange?: (open: boolean) => void
 }
 
@@ -161,7 +164,6 @@ export function CreditCardScheduleEditor({
   onAddCycle,
   onRemoveCycle,
   onUpdateCycle,
-  onFileChange,
   onMovementModalOpenChange,
 }: CreditCardScheduleEditorProps) {
   const duplicateMessage = formatDuplicateCycleMessage(duplicateCycleLabels)
@@ -204,7 +206,7 @@ export function CreditCardScheduleEditor({
             Ciclos de facturación
           </p>
           <p className="max-w-[68ch] text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-            Ajusta periodos, fechas, adjuntos y revisa los movimientos del periodo desde esta misma vista.
+            Ajusta periodos y fechas, y revisa los movimientos del periodo desde esta misma vista.
           </p>
         </div>
 
@@ -261,7 +263,6 @@ export function CreditCardScheduleEditor({
               {cycles.map(cycle => {
                 const cycleKey = `${cycle.billing_year}-${cycle.billing_month}`
                 const isDuplicate = duplicateCycleKeys.has(cycleKey)
-                const inputId = `cycle-statement-${cycle.id}`
                 const periodLabel = formatBillingCycleLabel(cycle.billing_month, cycle.billing_year)
 
                 return (
@@ -358,42 +359,23 @@ export function CreditCardScheduleEditor({
                     </td>
 
                     <td className="px-3 py-3 align-middle">
-                      <input
-                        id={inputId}
-                        type="file"
-                        className="sr-only"
-                        accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx"
-                        onChange={event => onFileChange(cycle.id, event.target.files?.[0] ?? null)}
-                        disabled={disabled}
-                      />
                       <div className="flex items-center gap-2">
-                        <label
-                          htmlFor={inputId}
-                          role="button"
-                          tabIndex={disabled ? -1 : 0}
-                          title={cycle.statement_file ? cycle.statement_file.name : `Subir estado de cuenta de ${periodLabel}`}
-                          aria-label={cycle.statement_file
-                            ? `Reemplazar estado de cuenta de ${periodLabel}`
-                            : `Subir estado de cuenta de ${periodLabel}`}
-                          onKeyDown={event => {
-                            if (event.key === 'Enter' || event.key === ' ') {
-                              event.preventDefault()
-                              document.getElementById(inputId)?.click()
-                            }
-                          }}
+                        <span
+                          title={cycle.statement_url
+                            ? ATTACHMENT_LEGACY_REFERENCE_NOTICE
+                            : ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE}
+                          aria-label={`Carga de estado de cuenta no disponible para ${periodLabel}`}
                           className="
                             inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--ft-radius-control)]
                             border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] text-[var(--ft-form-muted)]
-                            transition-[background-color,border-color,color,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]
-                            hover:border-[var(--ft-border-strong)] hover:text-[var(--ft-text)]
-                            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ft-primary-soft)] focus-visible:ring-offset-2
-                            focus-visible:ring-offset-[var(--ft-bg)]
+                            cursor-not-allowed opacity-60
                           "
+                          data-testid={`billing-cycle-attachment-unavailable-${cycle.id}`}
                         >
                           <UploadDocumentIcon className="h-4 w-4" />
-                        </label>
-                        <span className="min-w-0 truncate text-[11px] font-medium text-[var(--ft-form-muted)]">
-                          {cycle.statement_file ? cycle.statement_file.name : 'Sin archivo'}
+                        </span>
+                        <span className="min-w-0 text-[11px] font-medium leading-[1.35] text-[var(--ft-form-muted)]">
+                          {cycle.statement_url ? 'Referencia anterior · no verificada' : 'Carga no disponible'}
                         </span>
                       </div>
                     </td>

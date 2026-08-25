@@ -16,6 +16,10 @@ import {
   getSessionUserId,
 } from '@/lib/api/response'
 import type { CreateTransactionResult } from '@/modules/transactions/transaction.service.types'
+import {
+  ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE,
+  hasUnsupportedAttachmentWrite,
+} from '@/modules/attachments/attachment-integrity'
 
 const RECEIVABLE_SELECT = `
   *,
@@ -128,6 +132,13 @@ export async function POST(req: NextRequest) {
     return apiError({ code: 'VALIDATION_ERROR', message: 'Cuerpo inválido' })
   }
 
+  if (hasUnsupportedAttachmentWrite(body, ['attachment_url', 'attachment'])) {
+    return apiError({
+      code: 'BUSINESS_RULE_ERROR',
+      message: ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE,
+    })
+  }
+
   const debtorId = typeof body.debtor_id === 'string' ? body.debtor_id : null
   const concept = typeof body.concept === 'string' ? body.concept.trim() || null : null
   const amount = typeof body.amount === 'number' ? body.amount : Number(body.amount)
@@ -137,7 +148,6 @@ export async function POST(req: NextRequest) {
     : new Date().toISOString().slice(0, 10)
   const dueDate = typeof body.due_date === 'string' ? body.due_date || null : null
   const notes = typeof body.notes === 'string' ? body.notes.trim() || null : null
-  const attachmentUrl = typeof body.attachment_url === 'string' ? body.attachment_url || null : null
   const sourceAccountId = typeof body.source_account_id === 'string' ? body.source_account_id : ''
   const saveRecurring = body.save_recurring === true
   const recurringName = typeof body.recurring_name === 'string' ? body.recurring_name.trim() : ''
@@ -271,7 +281,6 @@ export async function POST(req: NextRequest) {
     .from('accounts_receivable')
     .update({
       debtor_id: debtorId,
-      attachment_url: attachmentUrl,
     })
     .eq('id', receivableId)
     .eq('user_id', userId)
@@ -308,7 +317,6 @@ export async function POST(req: NextRequest) {
       receivable: {
         ...transactionResult.data.receivable,
         debtor_id: debtorId,
-        attachment_url: attachmentUrl,
       },
       transaction: transactionResult.data.transaction,
       recurring_template: recurringTemplate,
