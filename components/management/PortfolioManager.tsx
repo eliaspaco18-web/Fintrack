@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AccountType, CurrencyCode } from '@/types/database.types'
-import { formatCurrency } from '@/lib/contracts/ui.contracts'
 import { useToast } from '@/lib/toast/toast'
 import { FormActions, FormField, FormSection, OptionalSection } from '@/components/forms/primitives'
 import { FinancialIcon } from '@/components/ui/FinancialIcon'
@@ -47,6 +46,11 @@ import {
   PORTFOLIO_POSITION_COMPARISON_DISCLOSURE,
   PORTFOLIO_POSITION_COMPARISON_TITLE,
 } from '@/modules/portfolio/account-position'
+import {
+  formatPortfolioAmount,
+  getPortfolioCurrencyPresentation,
+  groupPortfolioBalancesByCurrency,
+} from '@/modules/portfolio/currency-display'
 
 type BankEntityRef = {
   id: string
@@ -260,7 +264,13 @@ function formatStoredPortfolioDate(value: string | null) {
     .replace('.', '')
 }
 
-function PortfolioPositionComparison({ account }: { account: AccountItem }) {
+function PortfolioPositionComparison({
+  account,
+  currencies,
+}: {
+  account: AccountItem
+  currencies: readonly UserCurrencyItem[]
+}) {
   const facts = getPortfolioPositionFacts(account)
 
   return (
@@ -287,7 +297,7 @@ function PortfolioPositionComparison({ account }: { account: AccountItem }) {
         <div className="min-w-0">
           <p className="text-[10px] font-medium text-[var(--c-text-faint)]">Saldo de apertura</p>
           <p className="mt-1 truncate font-mono text-[13px] font-semibold tabular-nums text-[var(--c-text)]">
-            {formatCurrency(facts.opening.amount, facts.currency as CurrencyCode)}
+            {formatPortfolioAmount(facts.opening.amount, facts.currency, currencies)}
           </p>
           <p className="mt-1 text-[10px] text-[var(--c-text-muted)]">
             {formatStoredPortfolioDate(facts.opening.recordedDate)}
@@ -298,7 +308,7 @@ function PortfolioPositionComparison({ account }: { account: AccountItem }) {
           <p className={`mt-1 truncate font-mono text-[13px] font-semibold tabular-nums ${
             facts.current.amount < 0 ? 'text-[var(--c-danger)]' : 'text-[var(--c-text)]'
           }`}>
-            {formatCurrency(facts.current.amount, facts.currency as CurrencyCode)}
+            {formatPortfolioAmount(facts.current.amount, facts.currency, currencies)}
           </p>
           <p className="mt-1 text-[10px] text-[var(--c-text-muted)]">Posición registrada ahora</p>
         </div>
@@ -484,14 +494,7 @@ export function PortfolioManager({
   const technicalCount = technicalAccounts.length
 
   const totalBalanceByCurrency = useMemo(() => {
-    const totals = new Map<string, number>()
-
-    for (const account of activeOperationalAccounts) {
-      const current = totals.get(account.currency) ?? 0
-      totals.set(account.currency, current + account.balance)
-    }
-
-    return totals
+    return groupPortfolioBalancesByCurrency(activeOperationalAccounts)
   }, [activeOperationalAccounts])
 
   const totalPen = totalBalanceByCurrency.get('PEN') ?? 0
@@ -527,7 +530,7 @@ export function PortfolioManager({
     if (activeCurrencies.length > 0) {
       return activeCurrencies.map(currency => ({
         value: currency.code,
-        label: `${currency.code} · ${currency.name}`,
+        label: `${currency.code} · ${currency.name}${currency.is_system ? '' : ' · Personalizada'}`,
       }))
     }
 
@@ -852,9 +855,18 @@ export function PortfolioManager({
     return [...totalBalanceByCurrency.entries()]
       .filter(([currency]) => currency !== 'PEN' && currency !== 'USD')
       .slice(0, 2)
-      .map(([currency, total]) => `${currency} ${formatCurrency(total, currency as CurrencyCode)}`)
+      .map(([currency, total]) => {
+        const presentation = getPortfolioCurrencyPresentation(currency, currencies)
+        const qualifier = presentation.kind === 'custom'
+          ? ' · personalizada'
+          : presentation.kind === 'unavailable'
+            ? ' · código registrado'
+            : ''
+
+        return `${formatPortfolioAmount(total, currency, currencies)}${qualifier}`
+      })
       .join(' · ')
-  }, [totalBalanceByCurrency])
+  }, [currencies, totalBalanceByCurrency])
 
   const selectedBankLabel = useMemo(() => {
     if (!form.bank_entity_id) return 'Sin banco asignado'
@@ -865,8 +877,8 @@ export function PortfolioManager({
   const formInitialBalanceValue = useMemo(() => {
     const parsed = roundToDecimals(parseNumericInput(form.initial_balance, Number.NaN), 2)
     if (!Number.isFinite(parsed)) return '--'
-    return formatCurrency(parsed, form.currency)
-  }, [form.currency, form.initial_balance])
+    return formatPortfolioAmount(parsed, form.currency, currencies)
+  }, [currencies, form.currency, form.initial_balance])
 
   const formIsTechnicalAccount = form.type === 'CREDIT_CARD'
 
@@ -903,13 +915,13 @@ export function PortfolioManager({
           <StatGrid>
             <StatCard
               label="Saldo PEN"
-              value={formatCurrency(totalPen, 'PEN')}
+              value={formatPortfolioAmount(totalPen, 'PEN', currencies)}
               detail={`${activeCount} activa${activeCount === 1 ? '' : 's'}`}
               caption="Liquidez propia consolidada en soles peruanos."
             />
             <StatCard
               label="Saldo USD"
-              value={formatCurrency(totalUsd, 'USD')}
+              value={formatPortfolioAmount(totalUsd, 'USD', currencies)}
               detail={totalUsd === 0 ? 'Sin exposicion' : 'Caja dolarizada'}
               caption="Fondos disponibles en cuentas dolarizadas."
             />
@@ -1103,6 +1115,7 @@ export function PortfolioManager({
             <div className="divide-y divide-[var(--c-border)]">
               {filteredAccounts.map(account => {
                 const technical = isTechnicalAccount(account)
+                const currencyPresentation = getPortfolioCurrencyPresentation(account.currency, currencies)
 
                 return (
                 <article
@@ -1145,7 +1158,12 @@ export function PortfolioManager({
                               {ACCOUNT_TYPE_LABEL[account.type]}
                             </StatusBadge>
                             <StatusBadge tone="muted" dot={false}>
-                              {account.currency}
+                              {currencyPresentation.code}
+                              {currencyPresentation.kind === 'custom'
+                                ? ' · Personalizada'
+                                : currencyPresentation.kind === 'unavailable'
+                                  ? ' · Código registrado'
+                                  : ''}
                             </StatusBadge>
                           </div>
                         </div>
@@ -1167,7 +1185,7 @@ export function PortfolioManager({
 
                     <AmountCell
                       label={technical ? 'Cuenta técnica' : 'Saldo actual'}
-                      value={technical ? 'No patrimonial' : formatCurrency(account.balance, account.currency)}
+                      value={technical ? 'No patrimonial' : formatPortfolioAmount(account.balance, account.currency, currencies)}
                       meta={
                         technical
                           ? (
@@ -1231,6 +1249,7 @@ export function PortfolioManager({
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {filteredAccounts.map(account => {
               const technical = isTechnicalAccount(account)
+              const currencyPresentation = getPortfolioCurrencyPresentation(account.currency, currencies)
 
               return (
               <article
@@ -1279,7 +1298,7 @@ export function PortfolioManager({
                       <p className={`mt-2 truncate font-mono text-[1.45rem] font-semibold tracking-[-0.03em] tabular-nums ${
                         account.balance < 0 && !technical ? 'text-[var(--c-danger)]' : 'text-[var(--c-text)]'
                       }`}>
-                        {technical ? 'No patrimonial' : formatCurrency(account.balance, account.currency)}
+                        {technical ? 'No patrimonial' : formatPortfolioAmount(account.balance, account.currency, currencies)}
                       </p>
                       {technical ? (
                         <Link href="/credits" className="mt-2 inline-flex text-[11px] font-semibold text-[var(--c-primary)] hover:text-[var(--c-primary-hover)]">
@@ -1289,7 +1308,12 @@ export function PortfolioManager({
                     </div>
                     <div className="rounded-[12px] border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-2 text-right">
                       <p className="text-[10px] font-medium text-[var(--c-text-faint)]">Moneda</p>
-                      <p className="mt-1 text-[12px] font-semibold text-[var(--c-text)]">{account.currency}</p>
+                      <p className="mt-1 text-[12px] font-semibold text-[var(--c-text)]">{currencyPresentation.code}</p>
+                      {currencyPresentation.kind !== 'standard' ? (
+                        <p className="mt-0.5 text-[9px] font-medium text-[var(--c-text-muted)]">
+                          {currencyPresentation.kind === 'custom' ? 'Personalizada' : 'Código registrado'}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
 
@@ -1300,7 +1324,7 @@ export function PortfolioManager({
                       </p>
                     </div>
                   ) : (
-                    <PortfolioPositionComparison account={account} />
+                    <PortfolioPositionComparison account={account} currencies={currencies} />
                   )}
                 </div>
 
@@ -1540,7 +1564,7 @@ export function PortfolioManager({
                   {formIsTechnicalAccount
                     ? 'No patrimonial'
                     : editingAccount
-                      ? formatCurrency(editingAccount.balance, editingAccount.currency)
+                      ? formatPortfolioAmount(editingAccount.balance, editingAccount.currency, currencies)
                       : '--'}
                 </p>
                 <p className="mt-2 text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
