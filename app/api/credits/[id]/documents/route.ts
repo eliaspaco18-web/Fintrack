@@ -7,35 +7,39 @@ import {
   AttachmentIntegrityError,
   FINANCIAL_ATTACHMENT_MIME_TYPES,
   MAX_FINANCIAL_ATTACHMENT_BYTES,
-  hasStoredAttachmentReference,
-  hasTransactionAttachmentReference,
+  hasCreditAttachmentReference,
+  sanitizeAttachmentLabel,
   storeFinancialAttachment,
 } from '@/modules/attachments/attachment-integrity'
 
 type Params = { params: { id: string } }
 
-const ATTACHMENT_BUCKET = 'transaction-documents'
+const ATTACHMENT_BUCKET = 'credit-documents'
 
 export async function POST(req: NextRequest, { params }: Params) {
   const supabase = createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
-  const { data: transaction, error: transactionError } = await supabase
-    .from('transactions')
-    .select('id, attachment_url, notes')
+  const { data: credit, error: creditError } = await supabase
+    .from('credits')
+    .select('id, credit_type, notes')
     .eq('id', params.id)
     .eq('user_id', userId)
     .single()
 
-  if (transactionError || !transaction) {
-    return apiError({ code: 'NOT_FOUND', message: 'Transaccion no encontrada' })
+  if (creditError || !credit) {
+    return apiError({ code: 'NOT_FOUND', message: 'Crédito no encontrado' })
   }
 
-  if (
-    hasStoredAttachmentReference(transaction.attachment_url)
-    || hasTransactionAttachmentReference(transaction.notes)
-  ) {
+  if (credit.credit_type !== 'LINE_OF_CREDIT') {
+    return apiError({
+      code: 'BUSINESS_RULE_ERROR',
+      message: 'Este flujo solo admite documentos generales de préstamos.',
+    })
+  }
+
+  if (hasCreditAttachmentReference(credit.notes)) {
     return apiError({
       code: 'BUSINESS_RULE_ERROR',
       message: ATTACHMENT_UPDATE_BLOCKED_MESSAGE,
@@ -51,7 +55,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   const fileValue = formData.get('file')
   if (!(fileValue instanceof File)) {
-    return apiError({ code: 'VALIDATION_ERROR', message: 'Debes adjuntar un archivo valido' })
+    return apiError({ code: 'VALIDATION_ERROR', message: 'Debes adjuntar un archivo válido' })
   }
 
   const service = createServiceClient() as any
@@ -65,16 +69,21 @@ export async function POST(req: NextRequest, { params }: Params) {
   try {
     const result = await storeFinancialAttachment({
       userId,
-      module: 'transactions',
+      module: 'credits',
       recordId: params.id,
       file: fileValue,
       storage,
       associate: async path => {
+        const attachmentLine = `[adjunto_credito:${sanitizeAttachmentLabel(fileValue.name)}|${path}]`
+        const nextNotes = credit.notes
+          ? `${credit.notes}\n${attachmentLine}`
+          : attachmentLine
         const { data, error } = await supabase
-          .from('transactions')
-          .update({ attachment_url: path })
+          .from('credits')
+          .update({ notes: nextNotes })
           .eq('id', params.id)
           .eq('user_id', userId)
+          .eq('credit_type', 'LINE_OF_CREDIT')
           .select('id')
           .single()
 

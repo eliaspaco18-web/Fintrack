@@ -59,6 +59,12 @@ import {
 import { type Result, Errors, ok }      from '@/modules/shared/result.types'
 import { resolveAccountingUsdPenExchangeRate } from '@/lib/server/exchange-rate'
 import { CategoryKeys } from '@/lib/constants/category-keys'
+import {
+  ATTACHMENT_DELETE_BLOCKED_MESSAGE,
+  ATTACHMENT_UPDATE_BLOCKED_MESSAGE,
+  hasStoredAttachmentReference,
+  hasTransactionAttachmentReference,
+} from '@/modules/attachments/attachment-integrity'
 
 type DbClient = SupabaseClient<Database>
 
@@ -388,6 +394,13 @@ export class TransactionService {
     const existingResult = await this.txRepo.findByIdForUser(input.id, userId)
     if (!existingResult.ok) return existingResult
     const existingTx = existingResult.data as EditableTransactionRecord
+
+    if (
+      input.notes !== existingTx.notes
+      && hasTransactionAttachmentReference(existingTx.notes)
+    ) {
+      return Errors.businessRule(ATTACHMENT_UPDATE_BLOCKED_MESSAGE)
+    }
 
     const existingCategorySystemKey = typeof existingTx.category?.system_key === 'string'
       ? existingTx.category.system_key
@@ -830,6 +843,13 @@ export class TransactionService {
 
     const tx           = existing.data
     const unlinked: string[] = []
+
+    if (
+      hasStoredAttachmentReference(tx.attachment_url)
+      || hasTransactionAttachmentReference(tx.notes)
+    ) {
+      return Errors.businessRule(ATTACHMENT_DELETE_BLOCKED_MESSAGE)
+    }
 
     // Verificar si tiene cuotas pagadas (no se puede eliminar el préstamo padre)
     if (!options.force) {

@@ -13,6 +13,11 @@ import { formatNumber } from '@/lib/contracts/ui.contracts'
 import type { AccountType, CurrencyCode } from '@/types/database.types'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
+import {
+  getAttachmentAvailabilityOutcome,
+  requestAttachmentUpload,
+  type AttachmentUploadResponse,
+} from '@/modules/attachments/attachment-client'
 
 type CreditMode = 'CARD' | 'BANK'
 
@@ -365,17 +370,7 @@ export function CreditsManager() {
   }, [])
 
   const uploadBankAttachment = useCallback(async (creditId: string, file: File) => {
-    const formData = new FormData()
-    formData.append('file', file)
-
-    const response = await fetch(`/api/credits/${creditId}/attachment`, {
-      method: 'POST',
-      body: formData,
-    })
-    const json = await response.json().catch(() => null)
-    if (!response.ok || !json?.ok) {
-      throw new Error(getApiErrorMessage(json, 'No se pudo adjuntar el documento del crédito'))
-    }
+    return requestAttachmentUpload(`/api/credits/${creditId}/documents`, file)
   }, [])
 
   const submitCard = useCallback(async (event: FormEvent<HTMLFormElement>) => {
@@ -621,10 +616,11 @@ export function CreditsManager() {
       }
 
       let attachmentUploadFailedMessage: string | null = null
+      let attachmentUploadResult: AttachmentUploadResponse | null = null
       const createdCreditId = json?.data?.credit?.id as string | undefined
       if (bankAttachment && createdCreditId) {
         try {
-          await uploadBankAttachment(createdCreditId, bankAttachment)
+          attachmentUploadResult = await uploadBankAttachment(createdCreditId, bankAttachment)
         } catch (attachmentCaught) {
           attachmentUploadFailedMessage = attachmentCaught instanceof Error
             ? attachmentCaught.message
@@ -638,7 +634,15 @@ export function CreditsManager() {
       if (attachmentUploadFailedMessage) {
         toast.error('Crédito registrado con observación', attachmentUploadFailedMessage)
       } else {
-        toast.success('Crédito bancario registrado', 'Se creó el ingreso automático por desembolso.')
+        const attachmentAvailability = attachmentUploadResult
+          ? getAttachmentAvailabilityOutcome(attachmentUploadResult)
+          : null
+
+        if (attachmentAvailability?.kind === 'UNVERIFIED') {
+          toast.warning('Crédito registrado con observación', attachmentAvailability.message)
+        } else {
+          toast.success('Crédito bancario registrado', 'Se creó el ingreso automático por desembolso.')
+        }
       }
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'No se pudo registrar el crédito bancario'
