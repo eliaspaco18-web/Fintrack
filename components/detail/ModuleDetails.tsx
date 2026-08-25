@@ -32,6 +32,11 @@ import type { Credit, Asset,
   AccountReceivable, AccountPayable,
   Installment }                    from '@/types/database.types'
 import type { LoanScheduleIntegrity } from '@/modules/credits/loan-schedule-integrity'
+import {
+  getCreditDetailPresentation,
+  type CreditDetailLoanEvidence,
+  type CreditNativeCurrency,
+} from '@/modules/credits/credit-detail-presentation'
 
 // ─── INSTALLMENT LIST ─────────────────────────────────────────────────────────
 
@@ -50,7 +55,7 @@ function InstallmentRow({
   currency,
 }: {
   inst: Installment
-  currency: 'PEN' | 'USD'
+  currency: CreditNativeCurrency | null
 }) {
   const isOverdue = inst.status === 'OVERDUE'
   const isPaid    = inst.status === 'PAID'
@@ -83,13 +88,17 @@ function InstallmentRow({
         <CanonicalDetailBadge tone={status.tone}>{status.label}</CanonicalDetailBadge>
         <div className="text-right sm:mt-1.5">
           <p className="text-[13px] font-semibold leading-5 text-[var(--ft-text-strong)] tabular-nums">
-            {formatCurrency(inst.total_amount, currency)}
+            {currency ? formatCurrency(inst.total_amount, currency) : 'Moneda no verificable'}
           </p>
           <p className="text-[11px] leading-4 text-[var(--ft-text-subtle)] tabular-nums">
-            Cap. {formatCurrency(inst.principal_amount, currency)} · Int. {formatCurrency(inst.interest_amount, currency)}
+            {currency
+              ? <>Cap. {formatCurrency(inst.principal_amount, currency)} · Int. {formatCurrency(inst.interest_amount, currency)}</>
+              : 'Componentes sin moneda verificable'}
           </p>
           <p className="text-[11px] leading-4 text-[var(--ft-text-subtle)] tabular-nums">
-            Seg. {formatCurrency(inst.insurance_amount, currency)} · Otros {formatCurrency(inst.other_charges, currency)}
+            {currency
+              ? <>Seg. {formatCurrency(inst.insurance_amount, currency)} · Otros {formatCurrency(inst.other_charges, currency)}</>
+              : null}
           </p>
         </div>
       </div>
@@ -105,6 +114,7 @@ interface CreditDetailProps {
   credit:       Credit
   installments?: Installment[]
   scheduleIntegrity?: LoanScheduleIntegrity
+  loanEvidence?: CreditDetailLoanEvidence
   transaction?: { id: string; description: string } | null
 }
 
@@ -112,12 +122,18 @@ export function CreditDetail({
   credit,
   installments = [],
   scheduleIntegrity,
+  loanEvidence = { status: 'UNAVAILABLE' },
   transaction,
 }: CreditDetailProps) {
-  const { preferred, format } = useCurrency()
-  const utilPct = credit.credit_limit > 0
-    ? (credit.used_amount / credit.credit_limit) * 100
-    : 0
+  const presentation = getCreditDetailPresentation(credit, loanEvidence)
+  const availability = presentation.availability
+  const displayCurrency = presentation.currency
+  const canShowAvailability = availability.status === 'AVAILABLE' && displayCurrency !== null
+  const primaryAmount = presentation.primaryAmount.status === 'AVAILABLE'
+    && presentation.primaryAmount.amount !== null
+    && presentation.currency
+      ? formatCurrency(presentation.primaryAmount.amount, presentation.currency)
+      : 'No verificable'
 
   const paidInstallments = installments.filter(i => i.status === 'PAID').length
   const totalInstallments = installments.length
@@ -145,30 +161,37 @@ export function CreditDetail({
           tone="primary"
           badges={
             <CanonicalDetailBadge>
-              {credit.credit_type === 'CREDIT_CARD' ? 'Tarjeta de crédito' : 'Crédito bancario'}
+              {presentation.productLabel}
             </CanonicalDetailBadge>
           }
           title={credit.name}
-          amount={formatCurrency(format(credit.available_amount ?? 0), preferred)}
+          amount={primaryAmount}
           amountMeta={
-            <span className="text-xs font-medium text-[var(--ft-text-muted)]">disponible</span>
+            <span className="text-xs font-medium text-[var(--ft-text-muted)]">
+              {presentation.primaryAmount.label}
+              {canShowAvailability ? ` en ${presentation.currencyLabel}` : ''}
+            </span>
           }
           supporting={
-            <div>
+            canShowAvailability && availability.status === 'AVAILABLE' ? <div>
               <div className="flex flex-col gap-1 text-xs leading-4 text-[var(--ft-text-muted)] sm:flex-row sm:items-center sm:justify-between">
-                <span>Utilización: {formatPercent(utilPct, { fractionDigits: 1 })}</span>
+                <span>Utilización: {formatPercent(availability.utilizationPct, { fractionDigits: 1 })}</span>
                 <span className="tabular-nums">
-                  {formatCurrency(format(credit.used_amount), preferred)} / {formatCurrency(format(credit.credit_limit), preferred)}
+                  {formatCurrency(availability.used, displayCurrency)} / {formatCurrency(availability.limit, displayCurrency)}
                 </span>
               </div>
               <div className="mt-2.5">
                 <ProgressBar
-                  value={utilPct}
-                  color={utilPct >= 90 ? 'var(--ft-danger)' : utilPct >= 70 ? 'var(--ft-warning)' : 'var(--ft-primary)'}
+                  value={availability.utilizationPct}
+                  color={availability.utilizationPct >= 90 ? 'var(--ft-danger)' : availability.utilizationPct >= 70 ? 'var(--ft-warning)' : 'var(--ft-primary)'}
                   height={6}
                 />
               </div>
-            </div>
+            </div> : (
+              <p className="text-xs leading-5 text-[var(--ft-text-muted)]">
+                {presentation.availabilityMessage}
+              </p>
+            )
           }
         />
       }
@@ -188,10 +211,12 @@ export function CreditDetail({
               title={`${overdueInstallments.length} cuota${overdueInstallments.length > 1 ? 's' : ''} vencida${overdueInstallments.length > 1 ? 's' : ''}`}
             >
               <p>
-                Total vencido: {formatCurrency(
-                  overdueInstallments.reduce((s, i) => s + i.total_amount, 0),
-                  credit.currency as 'PEN' | 'USD'
-                )}
+                Total vencido: {presentation.currency
+                  ? formatCurrency(
+                      overdueInstallments.reduce((s, i) => s + i.total_amount, 0),
+                      presentation.currency,
+                    )
+                  : 'Moneda no verificable'}
               </p>
             </CanonicalDetailNotice>
           )}
@@ -200,16 +225,28 @@ export function CreditDetail({
     >
       <div className="space-y-4 sm:space-y-5">
         <CanonicalDetailFacts>
-          <CanonicalDetailFact label="Límite de crédito" mono>
-            {formatCurrency(format(credit.credit_limit), preferred)}
-          </CanonicalDetailFact>
-          <CanonicalDetailFact label="Monto usado" mono>
-            {formatCurrency(format(credit.used_amount), preferred)}
-          </CanonicalDetailFact>
+          {presentation.product === 'LOAN' ? (
+            <CanonicalDetailFact label="Capital original" mono>
+              {primaryAmount}
+            </CanonicalDetailFact>
+          ) : (
+            <>
+              <CanonicalDetailFact label="Límite de crédito" mono>
+                {canShowAvailability && availability.status === 'AVAILABLE'
+                  ? formatCurrency(availability.limit, displayCurrency)
+                  : 'No verificable'}
+              </CanonicalDetailFact>
+              <CanonicalDetailFact label="Monto usado" mono>
+                {canShowAvailability && availability.status === 'AVAILABLE'
+                  ? formatCurrency(availability.used, displayCurrency)
+                  : 'No verificable'}
+              </CanonicalDetailFact>
+            </>
+          )}
           <CanonicalDetailFact label="Tasa de interés" mono>
             {formatPercent(credit.interest_rate, { fractionDigits: 2 })} mensual
           </CanonicalDetailFact>
-          <CanonicalDetailFact label="Moneda" mono>{credit.currency}</CanonicalDetailFact>
+          <CanonicalDetailFact label="Moneda" mono>{presentation.currencyLabel}</CanonicalDetailFact>
           {credit.closing_day && (
             <CanonicalDetailFact label="Día de corte">Día {credit.closing_day}</CanonicalDetailFact>
           )}
@@ -236,7 +273,7 @@ export function CreditDetail({
               {installments.length > 0 ? (
                 <ol className="max-h-[400px] overflow-y-auto">
                   {installments.map(inst => (
-                    <InstallmentRow key={inst.id} inst={inst} currency={credit.currency as 'PEN' | 'USD'}/>
+                    <InstallmentRow key={inst.id} inst={inst} currency={presentation.currency}/>
                   ))}
                 </ol>
               ) : null}
