@@ -62,8 +62,12 @@ import { CategoryKeys } from '@/lib/constants/category-keys'
 import {
   ATTACHMENT_DELETE_BLOCKED_MESSAGE,
   ATTACHMENT_UPDATE_BLOCKED_MESSAGE,
+  ATTACHMENT_VERIFICATION_FAILED_MESSAGE,
+  getLegacyAttachmentReferenceState,
+  hasLegacyAttachmentNoteReference,
   hasStoredAttachmentReference,
   hasTransactionAttachmentReference,
+  wouldReplaceLegacyAttachmentNotes,
 } from '@/modules/attachments/attachment-integrity'
 
 type DbClient = SupabaseClient<Database>
@@ -527,7 +531,7 @@ export class TransactionService {
       .eq('transaction_id', existingTx.id)
       .maybeSingle()
     if (linkedReceivableResult.error) {
-      return Errors.database(linkedReceivableResult.error.message)
+      return Errors.businessRule(ATTACHMENT_VERIFICATION_FAILED_MESSAGE)
     }
     const linkedPayableResult = await this.db
       .from('accounts_payable')
@@ -535,12 +539,26 @@ export class TransactionService {
       .eq('transaction_id', existingTx.id)
       .maybeSingle()
     if (linkedPayableResult.error) {
-      return Errors.database(linkedPayableResult.error.message)
+      return Errors.businessRule(ATTACHMENT_VERIFICATION_FAILED_MESSAGE)
     }
 
     const linkedAsset = linkedAssetResult.data
     const linkedReceivable = linkedReceivableResult.data
     const linkedPayable = linkedPayableResult.data
+
+    const nextReceivableNotes = preparedInput.type === 'EXPENSE' && preparedInput.receivable
+      ? preparedInput.receivable.notes ?? preparedInput.notes ?? null
+      : linkedReceivable?.notes
+    const nextPayableNotes = preparedInput.type === 'INCOME' && preparedInput.payable
+      ? preparedInput.payable.notes ?? preparedInput.notes ?? null
+      : linkedPayable?.notes
+
+    if (
+      wouldReplaceLegacyAttachmentNotes(linkedReceivable?.notes, nextReceivableNotes)
+      || wouldReplaceLegacyAttachmentNotes(linkedPayable?.notes, nextPayableNotes)
+    ) {
+      return Errors.businessRule(ATTACHMENT_UPDATE_BLOCKED_MESSAGE)
+    }
 
     if (linkedReceivable) {
       const nextDebtorId = preparedInput.type === 'EXPENSE' && preparedInput.receivable
@@ -865,30 +883,43 @@ export class TransactionService {
     // Eliminar cuentas por cobrar / pagar creadas por esta transacción.
     // Si el usuario borra el movimiento origen desde Movimientos, el módulo
     // derivado no debe quedarse huérfano con transaction_id = null.
-    const linkedReceivableResult = await this.db
-      .from('accounts_receivable')
-      .select('id')
-      .eq('transaction_id', transactionId)
-      .maybeSingle()
+    const [linkedReceivableResult, linkedPayableResult] = await Promise.all([
+      this.db
+        .from('accounts_receivable')
+        .select('id, attachment_url, notes')
+        .eq('transaction_id', transactionId)
+        .maybeSingle(),
+      this.db
+        .from('accounts_payable')
+        .select('id, attachment_url, notes')
+        .eq('transaction_id', transactionId)
+        .maybeSingle(),
+    ])
 
-    if (linkedReceivableResult.error) {
-      return Errors.database(linkedReceivableResult.error.message)
+    const linkedReferenceState = getLegacyAttachmentReferenceState({
+      verificationFailed: Boolean(linkedReceivableResult.error || linkedPayableResult.error),
+      references: [
+        linkedReceivableResult.data?.attachment_url,
+        linkedPayableResult.data?.attachment_url,
+      ],
+    })
+
+    if (linkedReferenceState === 'UNVERIFIED') {
+      return Errors.businessRule(ATTACHMENT_VERIFICATION_FAILED_MESSAGE)
+    }
+
+    if (
+      linkedReferenceState === 'PRESENT'
+      || hasLegacyAttachmentNoteReference(linkedReceivableResult.data?.notes)
+      || hasLegacyAttachmentNoteReference(linkedPayableResult.data?.notes)
+    ) {
+      return Errors.businessRule(ATTACHMENT_DELETE_BLOCKED_MESSAGE)
     }
 
     if (linkedReceivableResult.data?.id) {
       const deleteReceivableResult = await this.receivableRepo.delete(linkedReceivableResult.data.id)
       if (!deleteReceivableResult.ok) return deleteReceivableResult
       unlinked.push('accounts_receivable')
-    }
-
-    const linkedPayableResult = await this.db
-      .from('accounts_payable')
-      .select('id')
-      .eq('transaction_id', transactionId)
-      .maybeSingle()
-
-    if (linkedPayableResult.error) {
-      return Errors.database(linkedPayableResult.error.message)
     }
 
     if (linkedPayableResult.data?.id) {

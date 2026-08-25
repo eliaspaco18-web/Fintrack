@@ -15,6 +15,7 @@ import { getApiErrorMessage } from '@/lib/api/error-message'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 import { formatNumber } from '@/lib/contracts/ui.contracts'
 import type { CreditListItem } from '@/lib/credits/display-type'
+import { ATTACHMENT_UPDATE_BLOCKED_MESSAGE } from '@/modules/attachments/attachment-integrity'
 
 type BankEntityOption = {
   id: string
@@ -35,7 +36,7 @@ type BillingCycleRow = {
   total_to_pay_usd?: number
   movement_summary?: BillingCycleMovementSummary | null
   can_delete?: boolean
-  statement_file: File | null
+  statement_url: string | null
 }
 
 type BillingCycleMovement = {
@@ -84,9 +85,6 @@ interface CreditCardFormProps {
 }
 
 const YEARS = getBillingCycleYearOptions()
-const MAX_FILE_BYTES = 8 * 1024 * 1024
-const ALLOWED_EXTS = ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'doc', 'docx', 'xls', 'xlsx']
-
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10)
 }
@@ -108,7 +106,7 @@ function newCycleRow(): BillingCycleRow {
     total_to_pay_usd: 0,
     movement_summary: null,
     can_delete: true,
-    statement_file: null,
+    statement_url: null,
   }
 }
 
@@ -250,6 +248,7 @@ export function CreditCardForm({
           total_to_pay_usd?: number
           movement_summary?: BillingCycleMovementSummary | null
           can_delete?: boolean
+          statement_url?: string | null
         }>).map(cycle => ({
           id: cycle.id,
           billing_month: String(cycle.billing_month).padStart(2, '0'),
@@ -262,7 +261,7 @@ export function CreditCardForm({
           total_to_pay_usd: Number(cycle.total_to_pay_usd ?? 0),
           movement_summary: cycle.movement_summary ?? null,
           can_delete: cycle.can_delete ?? true,
-          statement_file: null,
+          statement_url: cycle.statement_url ?? null,
         }))
 
         setCycles(loaded.length > 0 ? loaded : [newCycleRow()])
@@ -290,27 +289,6 @@ export function CreditCardForm({
     setCycles(prev => prev.map(cycle => (cycle.id === id ? { ...cycle, ...patch } : cycle)))
   }, [])
 
-  const handleFileChange = useCallback((id: string, file: File | null) => {
-    if (!file) {
-      updateCycle(id, { statement_file: null })
-      return
-    }
-
-    if (file.size > MAX_FILE_BYTES) {
-      setError('El archivo supera 8 MB.')
-      return
-    }
-
-    const ext = file.name.toLowerCase().split('.').pop() ?? ''
-    if (!ALLOWED_EXTS.includes(ext)) {
-      setError('Formato no permitido.')
-      return
-    }
-
-    setError(null)
-    updateCycle(id, { statement_file: file })
-  }, [updateCycle])
-
   const handleSubmit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (saving) return
@@ -323,6 +301,11 @@ export function CreditCardForm({
 
     if (!form.bank_entity_id) {
       setError('Selecciona la entidad bancaria emisora.')
+      return
+    }
+
+    if (cyclesDirty && cycles.some(cycle => Boolean(cycle.statement_url?.trim()))) {
+      setError(ATTACHMENT_UPDATE_BLOCKED_MESSAGE)
       return
     }
 
@@ -384,16 +367,6 @@ export function CreditCardForm({
       }
 
       const creditId = (mode === 'edit' ? credit?.id : json.data?.credit?.id) as string
-      const uploadStatementFile = async (file: File) => {
-        const formData = new FormData()
-        formData.append('file', file)
-        const attachmentRes = await fetch(`/api/credits/${creditId}/attachment`, { method: 'POST', body: formData })
-        const attachmentJson = await attachmentRes.json().catch(() => null)
-        if (!attachmentRes.ok || !attachmentJson?.ok) {
-          throw new Error(getApiErrorMessage(attachmentJson, 'No se pudo subir el estado de cuenta'))
-        }
-      }
-
       if (mode === 'edit' && cyclesDirty) {
         const cycleRes = await fetch(`/api/credits/${creditId}/billing-cycles`, {
           method: 'PUT',
@@ -413,12 +386,6 @@ export function CreditCardForm({
         if (!cycleRes.ok || !cycleJson?.ok) {
           throw new Error(getApiErrorMessage(cycleJson, 'No se pudieron actualizar los ciclos de facturación'))
         }
-
-        for (const cycle of cycles) {
-          if (cycle.statement_file) {
-            await uploadStatementFile(cycle.statement_file)
-          }
-        }
       } else if (mode === 'create') {
         for (const cycle of cycles) {
           const totalToPay = roundToDecimals(parseNumericInput(cycle.total_to_pay || '0', 0), 2)
@@ -434,10 +401,6 @@ export function CreditCardForm({
               total_to_pay: totalToPay,
             }),
           })
-
-          if (cycle.statement_file) {
-            await uploadStatementFile(cycle.statement_file)
-          }
         }
       }
 
@@ -648,7 +611,6 @@ export function CreditCardForm({
             onAddCycle={addCycle}
             onRemoveCycle={removeCycle}
             onUpdateCycle={updateCycle}
-            onFileChange={handleFileChange}
             onMovementModalOpenChange={onNestedModalOpenChange}
           />
         </div>

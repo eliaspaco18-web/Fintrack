@@ -8,6 +8,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient }              from '@/lib/supabase.server'
 import { apiError, apiNoContent, apiUnauthorized, getSessionUserId } from '@/lib/api/response'
 import { TransactionService } from '@/modules/transactions/transaction.service'
+import {
+  ATTACHMENT_DELETE_BLOCKED_MESSAGE,
+  ATTACHMENT_UPDATE_BLOCKED_MESSAGE,
+  ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE,
+  ATTACHMENT_VERIFICATION_FAILED_MESSAGE,
+  hasLegacyAttachmentNoteReference,
+  hasStoredAttachmentReference,
+  hasUnsupportedAttachmentWrite,
+  wouldReplaceLegacyAttachmentNotes,
+} from '@/modules/attachments/attachment-integrity'
 
 const PAYABLE_SELECT = `
   *,
@@ -69,6 +79,29 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const body = await req.json().catch(() => null)
   if (!body) return apiError({ code: 'VALIDATION_ERROR', message: 'Cuerpo inválido' })
 
+  if (hasUnsupportedAttachmentWrite(body, ['attachment_url', 'attachment'])) {
+    return apiError({ code: 'BUSINESS_RULE_ERROR', message: ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE })
+  }
+
+  const { data: existing, error: existingError } = await supabase
+    .from('accounts_payable')
+    .select('id, notes, attachment_url')
+    .eq('id', params.id)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (existingError) {
+    return apiError({ code: 'BUSINESS_RULE_ERROR', message: ATTACHMENT_VERIFICATION_FAILED_MESSAGE })
+  }
+  if (!existing) return apiError({ code: 'NOT_FOUND', message: 'Registro no encontrado' })
+
+  if (
+    Object.prototype.hasOwnProperty.call(body, 'notes')
+    && wouldReplaceLegacyAttachmentNotes(existing.notes, body.notes)
+  ) {
+    return apiError({ code: 'BUSINESS_RULE_ERROR', message: ATTACHMENT_UPDATE_BLOCKED_MESSAGE })
+  }
+
   const patch: Record<string, unknown> = {}
   if ('creditor_id'   in body) patch.creditor_id   = body.creditor_id ?? null
   if ('creditor_name' in body) patch.creditor_name = typeof body.creditor_name === 'string' ? body.creditor_name.trim() : body.creditor_name
@@ -81,7 +114,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if ('status'        in body) patch.status        = body.status
   if ('paid_amount'   in body) patch.paid_amount   = body.paid_amount
   if ('paid_date'     in body) patch.paid_date     = body.paid_date ?? null
-  if ('attachment_url' in body) patch.attachment_url = body.attachment_url ?? null
 
   const { data, error } = await supabase
     .from('accounts_payable')
@@ -102,13 +134,22 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
 
   const { data: payable, error: payableError } = await supabase
     .from('accounts_payable')
-    .select('id, transaction_id')
+    .select('id, transaction_id, notes, attachment_url')
     .eq('id', params.id)
     .eq('user_id', userId)
     .maybeSingle()
 
-  if (payableError) return apiError({ code: 'DATABASE_ERROR', message: payableError.message })
+  if (payableError) {
+    return apiError({ code: 'BUSINESS_RULE_ERROR', message: ATTACHMENT_VERIFICATION_FAILED_MESSAGE })
+  }
   if (!payable) return apiError({ code: 'NOT_FOUND', message: 'Registro no encontrado' })
+
+  if (
+    hasStoredAttachmentReference(payable.attachment_url)
+    || hasLegacyAttachmentNoteReference(payable.notes)
+  ) {
+    return apiError({ code: 'BUSINESS_RULE_ERROR', message: ATTACHMENT_DELETE_BLOCKED_MESSAGE })
+  }
 
   if (payable.transaction_id) {
     const service = new TransactionService(supabase)

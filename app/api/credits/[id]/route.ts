@@ -13,6 +13,8 @@ import { getLoanScheduleIntegrity } from '@/modules/credits/loan-schedule-integr
 import {
   ATTACHMENT_DELETE_BLOCKED_MESSAGE,
   ATTACHMENT_UPDATE_BLOCKED_MESSAGE,
+  ATTACHMENT_VERIFICATION_FAILED_MESSAGE,
+  getLegacyAttachmentReferenceState,
   hasCreditAttachmentReference,
 } from '@/modules/attachments/attachment-integrity'
 
@@ -372,8 +374,7 @@ export async function PATCH(
   }
 
   if (
-    credit.credit_type === 'LINE_OF_CREDIT'
-    && parsed.data.notes !== undefined
+    parsed.data.notes !== undefined
     && parsed.data.notes !== credit.notes
     && hasCreditAttachmentReference(credit.notes)
   ) {
@@ -605,13 +606,38 @@ export async function DELETE(
   }
 
   if (
-    credit.credit_type === 'LINE_OF_CREDIT'
-    && hasCreditAttachmentReference(credit.notes)
+    hasCreditAttachmentReference(credit.notes)
   ) {
     return apiError({
       code: 'BUSINESS_RULE_ERROR',
       message: ATTACHMENT_DELETE_BLOCKED_MESSAGE,
     })
+  }
+
+  if (credit.credit_type === 'CREDIT_CARD') {
+    const billingStatementResult = await supabase
+      .from('billing_cycles')
+      .select('statement_url')
+      .eq('credit_id', creditId)
+
+    const statementReferenceState = getLegacyAttachmentReferenceState({
+      verificationFailed: Boolean(billingStatementResult.error),
+      references: (billingStatementResult.data ?? []).map(cycle => cycle.statement_url),
+    })
+
+    if (statementReferenceState === 'UNVERIFIED') {
+      return apiError({
+        code: 'BUSINESS_RULE_ERROR',
+        message: ATTACHMENT_VERIFICATION_FAILED_MESSAGE,
+      })
+    }
+
+    if (statementReferenceState === 'PRESENT') {
+      return apiError({
+        code: 'BUSINESS_RULE_ERROR',
+        message: ATTACHMENT_DELETE_BLOCKED_MESSAGE,
+      })
+    }
   }
 
   const [

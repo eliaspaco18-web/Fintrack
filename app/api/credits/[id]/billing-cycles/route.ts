@@ -26,6 +26,13 @@ import {
   apiZodError,
   getSessionUserId,
 } from '@/lib/api/response'
+import {
+  ATTACHMENT_UPDATE_BLOCKED_MESSAGE,
+  ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE,
+  ATTACHMENT_VERIFICATION_FAILED_MESSAGE,
+  getLegacyAttachmentReferenceState,
+  hasUnsupportedAttachmentWrite,
+} from '@/modules/attachments/attachment-integrity'
 
 export const dynamic = 'force-dynamic'
 
@@ -217,6 +224,13 @@ export async function POST(
     return apiError({ code: 'VALIDATION_ERROR', message: 'Body JSON inválido' })
   }
 
+  if (hasUnsupportedAttachmentWrite(body, ['statement_url', 'statement_file', 'attachment'])) {
+    return apiError({
+      code: 'BUSINESS_RULE_ERROR',
+      message: ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE,
+    })
+  }
+
   const parsed = zBillingCycleSchema.safeParse(body)
   if (!parsed.success) return apiZodError(parsed.error)
 
@@ -299,6 +313,13 @@ export async function PUT(
     return apiError({ code: 'VALIDATION_ERROR', message: 'Body JSON inválido' })
   }
 
+  if (hasUnsupportedAttachmentWrite(body, ['statement_url', 'statement_file', 'attachment'])) {
+    return apiError({
+      code: 'BUSINESS_RULE_ERROR',
+      message: ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE,
+    })
+  }
+
   const parsed = zBillingCyclesReplaceSchema.safeParse(body)
   if (!parsed.success) return apiZodError(parsed.error)
 
@@ -319,6 +340,30 @@ export async function PUT(
       })
     }
     seen.add(key)
+  }
+
+  const existingStatementsResult = await supabase
+    .from('billing_cycles')
+    .select('statement_url')
+    .eq('credit_id', params.id)
+
+  const statementReferenceState = getLegacyAttachmentReferenceState({
+    verificationFailed: Boolean(existingStatementsResult.error),
+    references: (existingStatementsResult.data ?? []).map(cycle => cycle.statement_url),
+  })
+
+  if (statementReferenceState === 'UNVERIFIED') {
+    return apiError({
+      code: 'BUSINESS_RULE_ERROR',
+      message: ATTACHMENT_VERIFICATION_FAILED_MESSAGE,
+    })
+  }
+
+  if (statementReferenceState === 'PRESENT') {
+    return apiError({
+      code: 'BUSINESS_RULE_ERROR',
+      message: ATTACHMENT_UPDATE_BLOCKED_MESSAGE,
+    })
   }
 
   const { error: deleteError } = await supabase
