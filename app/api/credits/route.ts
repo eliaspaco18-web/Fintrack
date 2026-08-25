@@ -21,17 +21,21 @@ import {
 } from '@/lib/api/response'
 import { TransactionService } from '@/modules/transactions/transaction.service'
 import { LoanRepository } from '@/modules/loans/loan.repository'
+import {
+  addUsdCreditExchangeRateIssue,
+  bankCreditExchangeRateFields,
+  zCreditSubmissionCurrency,
+} from '@/modules/credits/exchange-rate-integrity'
 import type { TablesInsert } from '@/types/database.types'
 
 const zDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)')
-const zCurrency = z.enum(['PEN', 'USD'])
 
 const zCreateCreditCardSchema = z.object({
   kind: z.literal('CARD'),
   name: z.string().trim().min(2).max(100),
   bank_entity_id: z.string().uuid().optional(),
   account_id: z.string().uuid().optional().nullable(),
-  currency: zCurrency.default('PEN'),
+  currency: zCreditSubmissionCurrency.default('PEN'),
   credit_limit: z.number().positive().optional(),
   credit_limit_pen: z.number().min(0).optional(),
   credit_limit_usd: z.number().min(0).optional(),
@@ -51,14 +55,13 @@ const zCreateBankCreditSchema = z.object({
   bank_entity_id: z.string().uuid(),
   account_id: z.string().uuid(),
   category_id: z.string().uuid().optional(),
-  currency: zCurrency.default('PEN'),
+  ...bankCreditExchangeRateFields,
   principal_amount: z.number().positive(),
   interest_rate: z.number().min(0).max(9.9999).default(0),
   total_installments: z.number().int().min(1).max(600),
   start_date: zDate,
   end_date: zDate,
   transaction_date: zDate.optional(),
-  exchange_rate: z.number().positive().optional(),
   description: z.string().trim().min(2).max(255).optional(),
   generate_schedule: z.boolean().default(true),
   installments: z.array(z.object({
@@ -119,13 +122,7 @@ const zCreateCreditSchema = z.discriminatedUnion('kind', [
     })
   }
 
-  if (data.currency === 'USD' && (!data.exchange_rate || data.exchange_rate <= 0)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['exchange_rate'],
-      message: 'El tipo de cambio es obligatorio para créditos en USD',
-    })
-  }
+  addUsdCreditExchangeRateIssue(data, ctx)
 
   if (data.installments && data.installments.length > 0 && data.installments.length !== data.total_installments) {
     ctx.addIssue({

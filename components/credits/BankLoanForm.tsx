@@ -11,6 +11,7 @@ import { formatScheduleDateLabel } from '@/components/credits/credits-schedule.c
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 import { formatNumber } from '@/lib/contracts/ui.contracts'
+import { resolveCreditExchangeRateInput } from '@/modules/credits/exchange-rate-integrity'
 
 type BankEntityOption = {
   id: string
@@ -46,6 +47,7 @@ type LoanFormState = {
   start_date: string
   total_installments: string
   principal_amount: string
+  exchange_rate: string
   description: string
 }
 
@@ -135,6 +137,7 @@ export function BankLoanForm({
     start_date: today,
     total_installments: '12',
     principal_amount: '',
+    exchange_rate: '',
     description: '',
   })
 
@@ -297,13 +300,20 @@ export function BankLoanForm({
       return null
     }
 
+    const exchangeRateResult = resolveCreditExchangeRateInput(currency, form.exchange_rate)
+    if (!exchangeRateResult.ok) {
+      setError(exchangeRateResult.message)
+      return null
+    }
+
     setError(null)
 
     return {
       trimmedName,
       principalAmount,
+      exchangeRate: exchangeRateResult.exchangeRate,
     }
-  }, [form, totalInstallmentsNum])
+  }, [currency, form, totalInstallmentsNum])
 
   const handleSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -337,6 +347,7 @@ export function BankLoanForm({
           bank_entity_id: form.bank_entity_id,
           account_id: form.account_id,
           currency: selectedAccount?.currency ?? 'PEN',
+          exchange_rate: valid.exchangeRate,
           principal_amount: valid.principalAmount,
           interest_rate: 0,
           total_installments: totalInstallmentsNum,
@@ -472,6 +483,27 @@ export function BankLoanForm({
               required
             />
           </FormField>
+
+          {currency === 'USD' ? (
+            <FormField label="Tipo de cambio USD → PEN">
+              <NumericInput
+                step="0.001"
+                decimals={3}
+                min={0.01}
+                max={100}
+                value={form.exchange_rate}
+                onValueChange={value => setForm(prev => ({ ...prev, exchange_rate: value }))}
+                disabled={isDisabled}
+                data-testid="bank-loan-exchange-rate-input"
+                className="field-base ft-form-input w-full"
+                placeholder="Ej: 3.750"
+                required
+              />
+              <p className="mt-1.5 text-[11px] leading-[1.4] text-[var(--ft-form-muted)]">
+                Indica cuántos soles equivalen a 1 USD para registrar el desembolso.
+              </p>
+            </FormField>
+          ) : null}
 
           <FormField label="Número de cuotas">
             <NumericInput
