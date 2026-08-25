@@ -51,6 +51,11 @@ import {
   getPortfolioCurrencyPresentation,
   groupPortfolioBalancesByCurrency,
 } from '@/modules/portfolio/currency-display'
+import {
+  getIdentifiedPortfolioInstitution,
+  getPortfolioBankDisplayName,
+  getPortfolioReferenceDataState,
+} from '@/modules/portfolio/reference-data-state'
 
 type BankEntityRef = {
   id: string
@@ -161,6 +166,12 @@ type CurrencyFilter = 'all' | CurrencyCode
 type TypeFilter = 'all' | AccountType
 
 const CLIENT_FETCH_TIMEOUT_MS = 10_000
+const ACCOUNTS_LOAD_ERROR_MESSAGE =
+  'No se pudieron cargar las cuentas. Reintenta para recuperar la información del portafolio.'
+const BANKS_LOAD_ERROR_MESSAGE =
+  'No se pudo cargar el catálogo de bancos.'
+const CURRENCIES_LOAD_ERROR_MESSAGE =
+  'No se pudo cargar el catálogo de monedas.'
 
 async function fetchPortfolioData<T>(url: string, fallbackMessage: string): Promise<T> {
   const res = await fetchWithTimeout(url, {
@@ -217,13 +228,6 @@ const EMPTY_FORM: AccountForm = {
 
 function getIconLabel(icon: string): string {
   return ACCOUNT_ICON_OPTIONS.find(option => option.value === icon)?.label ?? icon
-}
-
-function displayBankName(account: AccountItem): string {
-  if (account.bank_entity?.name) return account.bank_entity.name
-  if (account.bank_entity?.short_name) return account.bank_entity.short_name
-  if (account.institution) return account.institution
-  return 'Sin banco'
 }
 
 function withAlpha(color: string, alpha: string) {
@@ -350,7 +354,10 @@ export function PortfolioManager({
   const [banksLoading, setBanksLoading] = useState(!preloaded)
   const [currenciesLoading, setCurrenciesLoading] = useState(!preloaded && initialCurrencies.length === 0)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(preloadError)
+  const [accountsError, setAccountsError] = useState<string | null>(preloadError)
+  const [banksError, setBanksError] = useState<string | null>(null)
+  const [currenciesError, setCurrenciesError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState<AccountForm>(EMPTY_FORM)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
@@ -370,6 +377,7 @@ export function PortfolioManager({
 
   const loadAccounts = useCallback(async () => {
     setLoading(true)
+    setAccountsError(null)
     setError(null)
 
     try {
@@ -378,8 +386,8 @@ export function PortfolioManager({
         'No se pudieron cargar las cuentas',
       )
       setAccounts(data)
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'No se pudieron cargar las cuentas')
+    } catch {
+      setAccountsError(ACCOUNTS_LOAD_ERROR_MESSAGE)
     } finally {
       setLoading(false)
     }
@@ -387,6 +395,7 @@ export function PortfolioManager({
 
   const loadBanks = useCallback(async () => {
     setBanksLoading(true)
+    setBanksError(null)
 
     try {
       const data = await fetchPortfolioData<BankEntityItem[]>(
@@ -394,9 +403,10 @@ export function PortfolioManager({
         'No se pudieron cargar los bancos',
       )
       setBanks(data)
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : 'No se pudieron cargar los bancos'
-      setError(prev => prev ?? message)
+    } catch {
+      setBanks([])
+      setBankFilter('all')
+      setBanksError(BANKS_LOAD_ERROR_MESSAGE)
     } finally {
       setBanksLoading(false)
     }
@@ -404,6 +414,7 @@ export function PortfolioManager({
 
   const loadCurrencies = useCallback(async () => {
     setCurrenciesLoading(true)
+    setCurrenciesError(null)
 
     try {
       const result = await withPortfolioTimeout(
@@ -416,9 +427,10 @@ export function PortfolioManager({
       }
 
       setCurrencies(result.data as UserCurrencyItem[])
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : 'No se pudieron cargar las monedas'
-      setError(prev => prev ?? message)
+    } catch {
+      setCurrencies([])
+      setCurrencyFilter('all')
+      setCurrenciesError(CURRENCIES_LOAD_ERROR_MESSAGE)
     } finally {
       setCurrenciesLoading(false)
     }
@@ -427,6 +439,13 @@ export function PortfolioManager({
   const reloadPortfolioData = useCallback(async () => {
     await Promise.all([loadAccounts(), loadBanks(), loadCurrencies()])
   }, [loadAccounts, loadBanks, loadCurrencies])
+
+  const reloadFailedReferenceData = useCallback(async () => {
+    const requests: Array<Promise<void>> = []
+    if (banksError) requests.push(loadBanks())
+    if (currenciesError) requests.push(loadCurrencies())
+    await Promise.all(requests)
+  }, [banksError, currenciesError, loadBanks, loadCurrencies])
 
   useEffect(() => {
     if (preloaded) return
@@ -513,7 +532,8 @@ export function PortfolioManager({
   const activeInstitutions = useMemo(() => {
     const names = new Set<string>()
     for (const account of activeOperationalAccounts) {
-      names.add(displayBankName(account))
+      const institutionName = getIdentifiedPortfolioInstitution(account)
+      if (institutionName) names.add(institutionName)
     }
     return names.size
   }, [activeOperationalAccounts])
@@ -527,17 +547,10 @@ export function PortfolioManager({
         return a.code.localeCompare(b.code)
       })
 
-    if (activeCurrencies.length > 0) {
-      return activeCurrencies.map(currency => ({
-        value: currency.code,
-        label: `${currency.code} · ${currency.name}${currency.is_system ? '' : ' · Personalizada'}`,
-      }))
-    }
-
-    return [
-      { value: 'PEN', label: 'PEN · Sol peruano' },
-      { value: 'USD', label: 'USD · Dolar americano' },
-    ]
+    return activeCurrencies.map(currency => ({
+      value: currency.code,
+      label: `${currency.code} · ${currency.name}${currency.is_system ? '' : ' · Personalizada'}`,
+    }))
   }, [currencies])
 
   const filteredAccounts = useMemo(() => {
@@ -556,7 +569,7 @@ export function PortfolioManager({
 
       if (!q) return true
 
-      const bankName = displayBankName(account).toLowerCase()
+      const bankName = getPortfolioBankDisplayName(account).toLowerCase()
       return (
         account.name.toLowerCase().includes(q) ||
         bankName.includes(q) ||
@@ -570,7 +583,7 @@ export function PortfolioManager({
     setEditingId(null)
     setForm({
       ...EMPTY_FORM,
-      currency: (currencyOptions[0]?.value ?? 'PEN') as CurrencyCode,
+      currency: (currencyOptions[0]?.value ?? '') as CurrencyCode,
       initial_balance_date: isoToday(),
     })
     setModalOpen(true)
@@ -640,6 +653,23 @@ export function PortfolioManager({
     const trimmedName = form.name.trim()
     if (trimmedName.length < 2) {
       const message = 'El nombre debe tener al menos 2 caracteres.'
+      setError(message)
+      toast.error('No se pudo guardar la cuenta', message)
+      return
+    }
+
+    if (!editingId && (
+      currenciesError
+      || !currencyOptions.some(option => option.value === form.currency)
+    )) {
+      const message = 'No se pudo verificar una moneda disponible. Reintenta la carga antes de crear la cuenta.'
+      setError(message)
+      toast.error('No se pudo guardar la cuenta', message)
+      return
+    }
+
+    if (banksError && form.bank_entity_id) {
+      const message = 'No se pudo verificar la entidad bancaria. Reintenta la carga antes de guardar cambios en esta cuenta.'
       setError(message)
       toast.error('No se pudo guardar la cuenta', message)
       return
@@ -757,7 +787,19 @@ export function PortfolioManager({
     } finally {
       setSaving(false)
     }
-  }, [accounts, banks, clearCreateQueryParam, editingId, form, loadAccounts, resetForm, toast])
+  }, [
+    accounts,
+    banks,
+    banksError,
+    clearCreateQueryParam,
+    currenciesError,
+    currencyOptions,
+    editingId,
+    form,
+    loadAccounts,
+    resetForm,
+    toast,
+  ])
 
   const openDeactivateModal = useCallback((account: AccountItem) => {
     if (!account.is_active || saving || loading || rowActionId !== null) return
@@ -886,7 +928,29 @@ export function PortfolioManager({
     () => (editingId ? accounts.find(account => account.id === editingId) ?? null : null),
     [accounts, editingId],
   )
-  const hasBlockingLoadError = Boolean(error) && accounts.length === 0 && !loading
+  const dataState = useMemo(() => getPortfolioReferenceDataState({
+    accountCount: accounts.length,
+    accountsLoading: loading,
+    accountsError,
+    banksLoading,
+    banksError,
+    currenciesLoading,
+    currenciesError,
+  }), [
+    accounts.length,
+    accountsError,
+    banksError,
+    banksLoading,
+    currenciesError,
+    currenciesLoading,
+    loading,
+  ])
+  const accountsSummaryAvailable = !loading && !accountsError
+  const summaryUnavailableDetail = loading ? 'Cargando...' : 'No disponible'
+  const summaryUnavailableCaption = loading
+    ? 'El resumen se mostrará cuando finalice la carga de cuentas.'
+    : 'No se presenta un total hasta recuperar las cuentas.'
+  const canCreateWithAvailableCurrency = Boolean(currencyOptions.length) && dataState.currenciesAvailable
 
   return (
     <>
@@ -897,7 +961,7 @@ export function PortfolioManager({
             eyebrow="Registro financiero"
             title="Portafolio"
             description={
-              exposureSummary
+              accountsSummaryAvailable && exposureSummary
                 ? `Cuentas, efectivo e instrumentos patrimoniales con lectura inmediata por entidad, moneda y saldo. Otras exposiciones: ${exposureSummary}.`
                 : 'Cuentas, efectivo e instrumentos patrimoniales con lectura inmediata por entidad, moneda y saldo.'
             }
@@ -915,28 +979,32 @@ export function PortfolioManager({
           <StatGrid>
             <StatCard
               label="Saldo PEN"
-              value={formatPortfolioAmount(totalPen, 'PEN', currencies)}
-              detail={`${activeCount} activa${activeCount === 1 ? '' : 's'}`}
-              caption="Liquidez propia consolidada en soles peruanos."
+              value={accountsSummaryAvailable ? formatPortfolioAmount(totalPen, 'PEN', currencies) : '—'}
+              detail={accountsSummaryAvailable ? `${activeCount} activa${activeCount === 1 ? '' : 's'}` : summaryUnavailableDetail}
+              caption={accountsSummaryAvailable ? 'Liquidez propia consolidada en soles peruanos.' : summaryUnavailableCaption}
             />
             <StatCard
               label="Saldo USD"
-              value={formatPortfolioAmount(totalUsd, 'USD', currencies)}
-              detail={totalUsd === 0 ? 'Sin exposicion' : 'Caja dolarizada'}
-              caption="Fondos disponibles en cuentas dolarizadas."
+              value={accountsSummaryAvailable ? formatPortfolioAmount(totalUsd, 'USD', currencies) : '—'}
+              detail={accountsSummaryAvailable ? (totalUsd === 0 ? 'Sin exposicion' : 'Caja dolarizada') : summaryUnavailableDetail}
+              caption={accountsSummaryAvailable ? 'Fondos disponibles en cuentas dolarizadas.' : summaryUnavailableCaption}
             />
             <StatCard
               label="Cuentas operativas"
-              value={String(activeCount)}
-              detail={inactiveCount > 0 ? `${inactiveCount} inactiva${inactiveCount === 1 ? '' : 's'}` : 'Sin rezagos'}
-              caption="Cuentas patrimoniales disponibles para nuevos registros."
+              value={accountsSummaryAvailable ? String(activeCount) : '—'}
+              detail={accountsSummaryAvailable ? (inactiveCount > 0 ? `${inactiveCount} inactiva${inactiveCount === 1 ? '' : 's'}` : 'Sin rezagos') : summaryUnavailableDetail}
+              caption={accountsSummaryAvailable ? 'Cuentas patrimoniales disponibles para nuevos registros.' : summaryUnavailableCaption}
             />
             <StatCard
               label="Técnicas y patrimonio"
-              value={String(accountsInNetWorth)}
-              detail={technicalCount > 0 ? `${technicalCount} técnica${technicalCount === 1 ? '' : 's'}` : `${activeInstitutions} entidad${activeInstitutions === 1 ? '' : 'es'}`}
+              value={accountsSummaryAvailable ? String(accountsInNetWorth) : '—'}
+              detail={accountsSummaryAvailable
+                ? (technicalCount > 0 ? `${technicalCount} técnica${technicalCount === 1 ? '' : 's'}` : `${activeInstitutions} entidad${activeInstitutions === 1 ? '' : 'es'}`)
+                : summaryUnavailableDetail}
               caption={
-                technicalCount > 0
+                !accountsSummaryAvailable
+                  ? summaryUnavailableCaption
+                  : technicalCount > 0
                   ? 'Las tarjetas se gestionan en Créditos y no suman patrimonio.'
                   : accountsWithoutBank > 0
                   ? `${accountsWithoutBank} cuenta${accountsWithoutBank === 1 ? '' : 's'} sin banco asociado.`
@@ -990,10 +1058,17 @@ export function PortfolioManager({
                   onChange={value => setCurrencyFilter(value as CurrencyFilter)}
                   className="filters-control sm:w-[120px]"
                   compact
-                  disabled={currenciesLoading}
+                  disabled={!dataState.currenciesAvailable}
                   searchable={false}
                   options={[
-                    { value: 'all', label: currenciesLoading ? 'Cargando...' : 'Moneda' },
+                    {
+                      value: 'all',
+                      label: currenciesLoading
+                        ? 'Cargando...'
+                        : currenciesError
+                          ? 'Monedas no disponibles'
+                          : 'Moneda',
+                    },
                     ...currencyOptions.map(option => ({
                       value: option.value,
                       label: option.value,
@@ -1018,15 +1093,22 @@ export function PortfolioManager({
                   value={bankFilter}
                   onChange={setBankFilter}
                   className="filters-control sm:w-[220px]"
-                  disabled={banksLoading}
+                  disabled={!dataState.banksAvailable}
                   compact
                   searchPlaceholder="Buscar banco..."
                   options={[
-                    { value: 'all', label: 'Banco' },
+                    {
+                      value: 'all',
+                      label: banksLoading
+                        ? 'Cargando...'
+                        : banksError
+                          ? 'Bancos no disponibles'
+                          : 'Banco',
+                    },
                     { value: 'none', label: 'Sin banco' },
                     ...banks.map(bank => ({
                       value: bank.id,
-                      label: bank.name ?? bank.short_name ?? 'Sin nombre',
+                      label: bank.name ?? bank.short_name ?? 'Entidad sin nombre',
                     })),
                   ]}
                 />
@@ -1044,6 +1126,21 @@ export function PortfolioManager({
           />
         )}
       >
+        {accountsError ? (
+          <div data-testid="portfolio-accounts-error">
+            <DataErrorBanner message={accountsError} onRetry={loadAccounts} />
+          </div>
+        ) : null}
+
+        {dataState.referenceNotice ? (
+          <div data-testid="portfolio-reference-data-warning">
+            <DataErrorBanner
+              message={dataState.referenceNotice}
+              onRetry={reloadFailedReferenceData}
+            />
+          </div>
+        ) : null}
+
         {error ? <DataErrorBanner message={error} onRetry={reloadPortfolioData} /> : null}
 
         {loading ? (
@@ -1063,38 +1160,40 @@ export function PortfolioManager({
               </div>
             ))}
           </div>
-        ) : hasBlockingLoadError ? null : filteredAccounts.length === 0 ? (
-          <EmptyState
-            icon={stackIcon()}
-            title={
-              query.trim() || currencyFilter !== 'all' || typeFilter !== 'all' || bankFilter !== 'all' || statusFilter !== 'all' || showTechnicalAccounts
-                ? 'No encontramos cuentas para esa combinacion.'
-                : 'Todavia no tienes portafolios registrados.'
-            }
-            description={
-              query.trim() || currencyFilter !== 'all' || typeFilter !== 'all' || bankFilter !== 'all' || statusFilter !== 'all' || showTechnicalAccounts
-                ? 'Ajusta los filtros o amplia la busqueda para recuperar cuentas, custodios o monedas.'
-                : 'Crea tu primera cuenta operativa para empezar a ordenar liquidez, bancos y patrimonio.'
-            }
-            action={
-              query.trim() || currencyFilter !== 'all' || typeFilter !== 'all' || bankFilter !== 'all' || statusFilter !== 'all' || showTechnicalAccounts
-                ? {
-                    label: 'Limpiar filtros',
-                    onClick: () => {
-                      setQuery('')
-                      setCurrencyFilter('all')
-                      setTypeFilter('all')
-                      setBankFilter('all')
-                      setStatusFilter('all')
-                      setShowTechnicalAccounts(false)
-                    },
-                  }
-                : {
-                    label: 'Nuevo portafolio',
-                    onClick: openCreateModal,
-                  }
-            }
-          />
+        ) : dataState.hasBlockingAccountsError ? null : filteredAccounts.length === 0 ? (
+          <div data-testid={dataState.showEmptyState ? 'portfolio-empty-state' : 'portfolio-filtered-empty-state'}>
+            <EmptyState
+              icon={stackIcon()}
+              title={
+                query.trim() || currencyFilter !== 'all' || typeFilter !== 'all' || bankFilter !== 'all' || statusFilter !== 'all' || showTechnicalAccounts
+                  ? 'No encontramos cuentas para esa combinacion.'
+                  : 'Todavia no tienes portafolios registrados.'
+              }
+              description={
+                query.trim() || currencyFilter !== 'all' || typeFilter !== 'all' || bankFilter !== 'all' || statusFilter !== 'all' || showTechnicalAccounts
+                  ? 'Ajusta los filtros o amplia la busqueda para recuperar cuentas, custodios o monedas.'
+                  : 'Crea tu primera cuenta operativa para empezar a ordenar liquidez, bancos y patrimonio.'
+              }
+              action={
+                query.trim() || currencyFilter !== 'all' || typeFilter !== 'all' || bankFilter !== 'all' || statusFilter !== 'all' || showTechnicalAccounts
+                  ? {
+                      label: 'Limpiar filtros',
+                      onClick: () => {
+                        setQuery('')
+                        setCurrencyFilter('all')
+                        setTypeFilter('all')
+                        setBankFilter('all')
+                        setStatusFilter('all')
+                        setShowTechnicalAccounts(false)
+                      },
+                    }
+                  : {
+                      label: 'Nuevo portafolio',
+                      onClick: openCreateModal,
+                    }
+              }
+            />
+          </div>
         ) : viewMode === 'list' ? (
           <DataTable className="overflow-hidden">
             <div className="hidden border-b border-[var(--c-border)] bg-[var(--c-surface-2)] px-4 py-3 md:grid md:grid-cols-[minmax(0,1.8fr)_minmax(0,1.15fr)_minmax(170px,0.9fr)_auto] md:items-center md:gap-4">
@@ -1172,7 +1271,7 @@ export function PortfolioManager({
 
                     <div className="min-w-0">
                       <p className="truncate text-[13px] font-medium text-[var(--c-text)]">
-                        {displayBankName(account)}
+                        {getPortfolioBankDisplayName(account)}
                       </p>
                       <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">
                         {technical
@@ -1280,7 +1379,7 @@ export function PortfolioManager({
                           {account.name}
                         </p>
                         <p className="mt-1 truncate text-[12px] text-[var(--c-text-muted)]">
-                          {displayBankName(account)}
+                          {getPortfolioBankDisplayName(account)}
                         </p>
                       </div>
                     </div>
@@ -1474,19 +1573,27 @@ export function PortfolioManager({
             columns="1"
             className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
           >
-            <FormField label="Entidad financiera" optional>
+            <FormField
+              label="Entidad financiera"
+              optional
+              description={
+                banksError
+                  ? 'El catálogo bancario no está disponible. No se puede cambiar ni verificar esta asociación hasta reintentar la carga.'
+                  : undefined
+              }
+            >
               <AppSelect
                 value={form.bank_entity_id}
                 onChange={handleSelectBank}
                 className="w-full"
-                disabled={banksLoading}
+                disabled={!dataState.banksAvailable}
                 testId="portfolio-bank-entity-select"
                 searchPlaceholder="Buscar entidad..."
                 options={[
                   { value: '', label: 'Sin banco' },
                   ...banks.map(bank => ({
                     value: bank.id,
-                    label: bank.name ?? bank.short_name ?? 'Sin nombre',
+                    label: bank.name ?? bank.short_name ?? 'Entidad sin nombre',
                   })),
                 ]}
               />
@@ -1495,7 +1602,11 @@ export function PortfolioManager({
             <FormField
               label="Moneda"
               description={
-                editingAccount
+                currenciesError
+                  ? 'El catálogo de monedas no está disponible. Los códigos existentes se conservan, pero no se puede elegir una moneda nueva.'
+                  : !editingAccount && !currenciesLoading && currencyOptions.length === 0
+                    ? 'No hay monedas disponibles para registrar una cuenta.'
+                    : editingAccount
                   ? 'La moneda se fijó al crear la cuenta. Crea otra cuenta para usar una moneda distinta.'
                   : undefined
               }
@@ -1504,12 +1615,12 @@ export function PortfolioManager({
                 value={form.currency}
                 onChange={value => setForm(prev => ({ ...prev, currency: value as CurrencyCode }))}
                 testId="portfolio-currency-select"
-                disabled={currenciesLoading || Boolean(editingAccount)}
+                disabled={!dataState.currenciesAvailable || Boolean(editingAccount) || currencyOptions.length === 0}
                 searchable={false}
                 options={[
                   ...currencyOptions,
                   ...(
-                    currencyOptions.some(option => option.value === form.currency)
+                    !editingAccount || currencyOptions.some(option => option.value === form.currency)
                       ? []
                       : [{ value: form.currency, label: form.currency }]
                   ),
@@ -1674,7 +1785,14 @@ export function PortfolioManager({
               primaryAction={(
                 <Button
                   type="submit"
-                  disabled={saving || loading || banksLoading || currenciesLoading}
+                  disabled={
+                    saving
+                    || loading
+                    || banksLoading
+                    || currenciesLoading
+                    || (!editingAccount && !canCreateWithAvailableCurrency)
+                    || (Boolean(banksError) && Boolean(form.bank_entity_id))
+                  }
                   loading={saving}
                   testId="portfolio-submit-button"
                   variant="primary"
