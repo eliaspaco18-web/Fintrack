@@ -12,6 +12,7 @@ import { getApiErrorMessage } from '@/lib/api/error-message'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 import { formatNumber } from '@/lib/contracts/ui.contracts'
 import { resolveCreditExchangeRateInput } from '@/modules/credits/exchange-rate-integrity'
+import { resizeScheduleRows } from '@/modules/credits/loan-schedule-integrity'
 
 type BankEntityOption = {
   id: string
@@ -68,17 +69,21 @@ function addMonths(isoDate: string, months: number): string {
   return base.toISOString().slice(0, 10)
 }
 
-function buildSchedule(installments: number, startDate: string): InstallmentRow[] {
-  if (!Number.isFinite(installments) || installments < 1) return []
-
-  return Array.from({ length: installments }, (_, index) => ({
+function buildScheduleRow(index: number, startDate: string): InstallmentRow {
+  return {
     id: crypto.randomUUID(),
     due_date: addMonths(startDate, index),
     principal_amount: '0.00',
     interest_amount: '0.00',
     insurance_amount: '0.00',
     other_charges: '0.00',
-  }))
+  }
+}
+
+function buildSchedule(installments: number, startDate: string): InstallmentRow[] {
+  if (!Number.isFinite(installments) || installments < 1) return []
+
+  return Array.from({ length: installments }, (_, index) => buildScheduleRow(index, startDate))
 }
 
 function SummaryStat({
@@ -174,14 +179,15 @@ export function BankLoanForm({
   }, [isScheduleModalOpen, onNestedModalOpenChange])
 
   useEffect(() => {
-    if (totalInstallmentsNum < 1) {
-      setInstallments([])
-      return
-    }
+    if (totalInstallmentsNum < 1) return
 
     setInstallments(prev => {
       if (prev.length === totalInstallmentsNum) return prev
-      return buildSchedule(totalInstallmentsNum, form.start_date)
+      return resizeScheduleRows(
+        prev,
+        totalInstallmentsNum,
+        index => buildScheduleRow(index, form.start_date),
+      )
     })
   }, [form.start_date, totalInstallmentsNum])
 
@@ -332,6 +338,7 @@ export function BankLoanForm({
         principal_amount: roundToDecimals(parseNumericInput(row.principal_amount, 0) ?? 0, 2),
         interest_amount: roundToDecimals(parseNumericInput(row.interest_amount, 0) ?? 0, 2),
         insurance_amount: roundToDecimals(parseNumericInput(row.insurance_amount, 0) ?? 0, 2),
+        other_charges: roundToDecimals(parseNumericInput(row.other_charges, 0) ?? 0, 2),
       }))
 
       const endDate = addMonths(form.start_date, totalInstallmentsNum)

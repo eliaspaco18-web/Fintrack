@@ -9,6 +9,7 @@ import {
   apiZodError,
   getSessionUserId,
 } from '@/lib/api/response'
+import { getLoanScheduleIntegrity } from '@/modules/credits/loan-schedule-integrity'
 
 export const dynamic = 'force-dynamic'
 
@@ -225,11 +226,23 @@ export async function GET(
   const accountId = credit.account_id
   const isCreditCard = credit.credit_type === 'CREDIT_CARD'
 
-  const installmentsPromise = supabase
-    .from('installments')
-    .select('id, installment_number, due_date, principal_amount, interest_amount, total_amount, status, paid_amount, paid_date, loan:loans!inner(credit_id)')
-    .eq('loan.credit_id', creditId)
-    .order('installment_number')
+  const loanPromise = isCreditCard
+    ? Promise.resolve({ data: null, error: null })
+    : supabase
+      .from('loans')
+      .select('id, total_installments')
+      .eq('credit_id', creditId)
+      .eq('user_id', userId)
+      .maybeSingle()
+
+  const installmentsPromise = isCreditCard
+    ? Promise.resolve({ data: [], error: null })
+    : supabase
+      .from('installments')
+      .select('id, installment_number, due_date, principal_amount, interest_amount, insurance_amount, other_charges, total_amount, status, paid_amount, paid_date, loan:loans!inner(credit_id, user_id)')
+      .eq('loan.credit_id', creditId)
+      .eq('loan.user_id', userId)
+      .order('installment_number')
 
   const consumptionPromise = isCreditCard && accountId
     ? supabase
@@ -254,18 +267,16 @@ export async function GET(
     : Promise.resolve({ data: [] as MovementRow[], error: null })
 
   const [
+    { data: loan, error: loanError },
     { data: installments, error: installmentsError },
     { data: consumptions, error: consumptionsError },
     { data: payments, error: paymentsError },
   ] = await Promise.all([
+    loanPromise,
     installmentsPromise,
     consumptionPromise,
     paymentPromise,
   ])
-
-  if (installmentsError) {
-    return apiError({ code: 'DATABASE_ERROR', message: installmentsError.message })
-  }
 
   if (consumptionsError) {
     return apiError({ code: 'DATABASE_ERROR', message: consumptionsError.message })
@@ -278,6 +289,13 @@ export async function GET(
   const safeConsumptions = (consumptions ?? []) as MovementRow[]
   const safePayments = (payments ?? []) as MovementRow[]
   const safeInstallments = installments ?? []
+  const loanVerificationFailed = Boolean(loanError)
+  const scheduleIntegrity = getLoanScheduleIntegrity({
+    requiresSchedule: !isCreditCard && (loanVerificationFailed || Boolean(loan)),
+    expectedInstallments: loan?.total_installments ?? null,
+    installments: safeInstallments,
+    verificationFailed: Boolean(loanError || installmentsError),
+  })
 
   const consumptionTotal = safeConsumptions.reduce((sum, item) => sum + Number(item.amount ?? 0), 0)
   const paymentTotal = safePayments.reduce((sum, item) => sum + Number(item.amount ?? 0), 0)
@@ -294,6 +312,13 @@ export async function GET(
   return apiOk({
     credit,
     installments: safeInstallments,
+    schedule_integrity: {
+      status: scheduleIntegrity.status,
+      expected_installments: scheduleIntegrity.expectedInstallments,
+      actual_installments: scheduleIntegrity.actualInstallments,
+      is_complete: scheduleIntegrity.isComplete,
+      message: scheduleIntegrity.message,
+    },
     movements: {
       consumptions: safeConsumptions,
       payments: safePayments,
@@ -456,6 +481,45 @@ export async function PATCH(
       code: 'VALIDATION_ERROR',
       message: 'El consumo en la moneda de la línea no puede superar el límite de crédito.',
     })
+  }
+
+  if (credit.credit_type !== 'CREDIT_CARD') {
+    const { data: loan, error: loanError } = await supabase
+      .from('loans')
+      .select('id, total_installments')
+      .eq('credit_id', creditId)
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (loanError) {
+      return apiError({
+        code: 'BUSINESS_RULE_ERROR',
+        message: 'No se pudo verificar el cronograma del crédito. No se realizaron cambios.',
+      })
+    }
+
+    if (loan) {
+      const { data: installments, error: installmentsError } = await supabase
+        .from('installments')
+        .select('installment_number, due_date, principal_amount, interest_amount, insurance_amount, other_charges, total_amount')
+        .eq('loan_id', loan.id)
+        .order('installment_number')
+
+      const scheduleIntegrity = getLoanScheduleIntegrity({
+        requiresSchedule: true,
+        expectedInstallments: loan.total_installments,
+        installments: installments ?? [],
+        verificationFailed: Boolean(installmentsError),
+      })
+
+      if (!scheduleIntegrity.isComplete) {
+        return apiError({
+          code: 'BUSINESS_RULE_ERROR',
+          message: 'El crédito no se actualizó porque su cronograma no pudo verificarse como completo.',
+          detail: scheduleIntegrity.message ?? undefined,
+        })
+      }
+    }
   }
 
   const dualCurrencyUpdate = supportsDualCurrency

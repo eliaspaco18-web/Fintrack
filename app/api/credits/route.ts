@@ -26,6 +26,13 @@ import {
   bankCreditExchangeRateFields,
   zCreditSubmissionCurrency,
 } from '@/modules/credits/exchange-rate-integrity'
+import {
+  buildManualLoanSchedule,
+  getLoanScheduleIntegrity,
+  getManualScheduleSubmissionIssue,
+  type LoanScheduleIntegrity,
+  zManualLoanInstallmentInput,
+} from '@/modules/credits/loan-schedule-integrity'
 import type { TablesInsert } from '@/types/database.types'
 
 const zDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)')
@@ -64,13 +71,7 @@ const zCreateBankCreditSchema = z.object({
   transaction_date: zDate.optional(),
   description: z.string().trim().min(2).max(255).optional(),
   generate_schedule: z.boolean().default(true),
-  installments: z.array(z.object({
-    installment_number: z.number().int().min(1),
-    due_date: zDate,
-    principal_amount: z.number().min(0),
-    interest_amount: z.number().min(0),
-    insurance_amount: z.number().min(0).default(0),
-  })).optional(),
+  installments: z.array(zManualLoanInstallmentInput).optional(),
   notes: z.string().trim().max(500).optional().nullable(),
 })
 
@@ -124,11 +125,17 @@ const zCreateCreditSchema = z.discriminatedUnion('kind', [
 
   addUsdCreditExchangeRateIssue(data, ctx)
 
-  if (data.installments && data.installments.length > 0 && data.installments.length !== data.total_installments) {
+  const scheduleIssue = getManualScheduleSubmissionIssue({
+    generateSchedule: data.generate_schedule,
+    totalInstallments: data.total_installments,
+    installments: data.installments,
+  })
+
+  if (scheduleIssue) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['installments'],
-      message: 'La cantidad de cuotas manuales debe coincidir con el número de cuotas',
+      message: scheduleIssue,
     })
   }
 })
@@ -208,21 +215,43 @@ async function rollbackCreatedRecords(params: {
   transactionId?: string | null
   creditId?: string | null
   loanId?: string | null
-}) {
+}): Promise<boolean> {
   const supabase = createClient()
   const txService = new TransactionService(supabase)
+  let rollbackComplete = true
 
   if (params.loanId) {
-    await supabase.from('loans').delete().eq('id', params.loanId).eq('user_id', params.userId)
+    const { error } = await supabase
+      .from('loans')
+      .delete()
+      .eq('id', params.loanId)
+      .eq('user_id', params.userId)
+    if (error) rollbackComplete = false
   }
 
   if (params.creditId) {
-    await supabase.from('credits').delete().eq('id', params.creditId).eq('user_id', params.userId)
+    const { error } = await supabase
+      .from('credits')
+      .delete()
+      .eq('id', params.creditId)
+      .eq('user_id', params.userId)
+    if (error) rollbackComplete = false
   }
 
   if (params.transactionId) {
-    await txService.deleteTransaction(params.userId, params.transactionId, { force: true })
+    const result = await txService.deleteTransaction(params.userId, params.transactionId, { force: true })
+    if (!result.ok) rollbackComplete = false
   }
+
+  return rollbackComplete
+}
+
+function scheduleRollbackFailure() {
+  return apiError({
+    code: 'ATOMICITY_FAILURE',
+    message: 'No se pudo completar ni revertir de forma íntegra el registro del crédito.',
+    detail: 'No vuelvas a enviarlo hasta revisar si el crédito aparece en la lista.',
+  })
 }
 
 async function createCreditCard(userId: string, payload: Extract<CreditCreateRequest, { kind: 'CARD' }>) {
@@ -431,7 +460,8 @@ async function createBankCredit(userId: string, payload: Extract<CreditCreateReq
     .single()
 
   if (creditError || !credit) {
-    await rollbackCreatedRecords({ userId, transactionId: transaction.id })
+    const rollbackComplete = await rollbackCreatedRecords({ userId, transactionId: transaction.id })
+    if (!rollbackComplete) return scheduleRollbackFailure()
     return apiError({ code: 'DATABASE_ERROR', message: creditError?.message ?? 'No se pudo crear el crédito bancario' })
   }
 
@@ -459,30 +489,21 @@ async function createBankCredit(userId: string, payload: Extract<CreditCreateReq
     .single()
 
   if (loanError || !loan) {
-    await rollbackCreatedRecords({ userId, transactionId: transaction.id, creditId: credit.id })
+    const rollbackComplete = await rollbackCreatedRecords({
+      userId,
+      transactionId: transaction.id,
+      creditId: credit.id,
+    })
+    if (!rollbackComplete) return scheduleRollbackFailure()
     return apiError({ code: 'DATABASE_ERROR', message: loanError?.message ?? 'No se pudo crear el préstamo' })
   }
 
   const manualSchedule: TablesInsert<'installments'>[] | null = payload.installments && payload.installments.length > 0
-    ? payload.installments.map(item => {
-      const interestPlusInsurance = item.interest_amount + item.insurance_amount
-      const totalAmount = item.principal_amount + interestPlusInsurance
-      return {
-        loan_id: loan.id,
-        transaction_id: null,
-        installment_number: item.installment_number,
-        principal_amount: item.principal_amount,
-        interest_amount: interestPlusInsurance,
-        total_amount: totalAmount,
-        due_date: item.due_date,
-        paid_date: null,
-        paid_amount: null,
-        status: 'PENDING' as const,
-      }
-    })
+    ? buildManualLoanSchedule(loan.id, payload.installments)
     : null
 
   let installmentsGenerated = 0
+  let scheduleIntegrity: LoanScheduleIntegrity | null = null
   if (manualSchedule || payload.generate_schedule) {
     const schedule: TablesInsert<'installments'>[] = manualSchedule ?? LoanRepository.buildInstallmentSchedule({
       loanId: loan.id,
@@ -493,22 +514,61 @@ async function createBankCredit(userId: string, payload: Extract<CreditCreateReq
     })
 
     if (schedule.length > 0) {
-      const { error: installmentsError } = await supabase
+      const { data: persistedSchedule, error: installmentsError } = await supabase
         .from('installments')
         .insert(schedule)
+        .select('installment_number, due_date, principal_amount, interest_amount, insurance_amount, other_charges, total_amount')
 
       if (installmentsError) {
-        await rollbackCreatedRecords({
+        const rollbackComplete = await rollbackCreatedRecords({
           userId,
           transactionId: transaction.id,
           creditId: credit.id,
           loanId: loan.id,
         })
-        return apiError({ code: 'DATABASE_ERROR', message: installmentsError.message })
+        if (!rollbackComplete) return scheduleRollbackFailure()
+        return apiError({
+          code: 'DATABASE_ERROR',
+          message: 'No se pudo guardar el cronograma del crédito.',
+        })
       }
 
-      installmentsGenerated = schedule.length
+      scheduleIntegrity = getLoanScheduleIntegrity({
+        requiresSchedule: true,
+        expectedInstallments: payload.total_installments,
+        installments: persistedSchedule ?? [],
+      })
+
+      if (!scheduleIntegrity.isComplete) {
+        const rollbackComplete = await rollbackCreatedRecords({
+          userId,
+          transactionId: transaction.id,
+          creditId: credit.id,
+          loanId: loan.id,
+        })
+        if (!rollbackComplete) return scheduleRollbackFailure()
+        return apiError({
+          code: 'ATOMICITY_FAILURE',
+          message: 'El crédito no se guardó porque no fue posible verificar su cronograma completo.',
+        })
+      }
+
+      installmentsGenerated = persistedSchedule?.length ?? 0
     }
+  }
+
+  if (!scheduleIntegrity?.isComplete) {
+    const rollbackComplete = await rollbackCreatedRecords({
+      userId,
+      transactionId: transaction.id,
+      creditId: credit.id,
+      loanId: loan.id,
+    })
+    if (!rollbackComplete) return scheduleRollbackFailure()
+    return apiError({
+      code: 'ATOMICITY_FAILURE',
+      message: 'El crédito no se guardó porque su cronograma no pudo verificarse.',
+    })
   }
 
   return apiCreated({
@@ -516,6 +576,7 @@ async function createBankCredit(userId: string, payload: Extract<CreditCreateReq
     loan,
     transaction,
     installments_generated: installmentsGenerated,
+    schedule_integrity: scheduleIntegrity,
     auto_income_created: true,
   })
 }

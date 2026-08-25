@@ -31,6 +31,7 @@ import { ProgressBar } from '@/components/tables/primitives'
 import type { Credit, Asset,
   AccountReceivable, AccountPayable,
   Installment }                    from '@/types/database.types'
+import type { LoanScheduleIntegrity } from '@/modules/credits/loan-schedule-integrity'
 
 // ─── INSTALLMENT LIST ─────────────────────────────────────────────────────────
 
@@ -84,11 +85,12 @@ function InstallmentRow({
           <p className="text-[13px] font-semibold leading-5 text-[var(--ft-text-strong)] tabular-nums">
             {formatCurrency(inst.total_amount, currency)}
           </p>
-          {inst.interest_amount > 0 && (
-            <p className="text-[11px] leading-4 text-[var(--ft-text-subtle)] tabular-nums">
-              Int. {formatCurrency(inst.interest_amount, currency)}
-            </p>
-          )}
+          <p className="text-[11px] leading-4 text-[var(--ft-text-subtle)] tabular-nums">
+            Cap. {formatCurrency(inst.principal_amount, currency)} · Int. {formatCurrency(inst.interest_amount, currency)}
+          </p>
+          <p className="text-[11px] leading-4 text-[var(--ft-text-subtle)] tabular-nums">
+            Seg. {formatCurrency(inst.insurance_amount, currency)} · Otros {formatCurrency(inst.other_charges, currency)}
+          </p>
         </div>
       </div>
     </li>
@@ -102,10 +104,16 @@ function InstallmentRow({
 interface CreditDetailProps {
   credit:       Credit
   installments?: Installment[]
+  scheduleIntegrity?: LoanScheduleIntegrity
   transaction?: { id: string; description: string } | null
 }
 
-export function CreditDetail({ credit, installments = [], transaction }: CreditDetailProps) {
+export function CreditDetail({
+  credit,
+  installments = [],
+  scheduleIntegrity,
+  transaction,
+}: CreditDetailProps) {
   const { preferred, format } = useCurrency()
   const utilPct = credit.credit_limit > 0
     ? (credit.used_amount / credit.credit_limit) * 100
@@ -114,6 +122,10 @@ export function CreditDetail({ credit, installments = [], transaction }: CreditD
   const paidInstallments = installments.filter(i => i.status === 'PAID').length
   const totalInstallments = installments.length
   const overdueInstallments = installments.filter(i => i.status === 'OVERDUE')
+  const requiresSchedule = scheduleIntegrity
+    ? scheduleIntegrity.status !== 'NOT_APPLICABLE'
+    : installments.length > 0
+  const scheduleIsLimited = requiresSchedule && scheduleIntegrity && !scheduleIntegrity.isComplete
 
   return (
     <CanonicalDetailLayout
@@ -206,16 +218,29 @@ export function CreditDetail({ credit, installments = [], transaction }: CreditD
           )}
         </CanonicalDetailFacts>
 
-        {installments.length > 0 && (
+        {requiresSchedule && (scheduleIntegrity || installments.length > 0) && (
           <CanonicalDetailSection
             title="Cronograma de cuotas"
-            meta={<>{paidInstallments}/{totalInstallments} pagadas</>}
+            meta={scheduleIntegrity?.expectedInstallments
+              ? <>{totalInstallments}/{scheduleIntegrity.expectedInstallments} cuotas · {paidInstallments} pagadas</>
+              : <>{paidInstallments}/{totalInstallments} pagadas</>}
           >
-            <ol className="max-h-[400px] overflow-y-auto">
-              {installments.map(inst => (
-                <InstallmentRow key={inst.id} inst={inst} currency={credit.currency as 'PEN' | 'USD'}/>
-              ))}
-            </ol>
+            <div>
+              {scheduleIsLimited ? (
+                <div className="border-b border-[var(--ft-border)] p-4 sm:p-5">
+                  <CanonicalDetailNotice tone="warning" title="Cronograma no verificado">
+                    <p>{scheduleIntegrity.message}</p>
+                  </CanonicalDetailNotice>
+                </div>
+              ) : null}
+              {installments.length > 0 ? (
+                <ol className="max-h-[400px] overflow-y-auto">
+                  {installments.map(inst => (
+                    <InstallmentRow key={inst.id} inst={inst} currency={credit.currency as 'PEN' | 'USD'}/>
+                  ))}
+                </ol>
+              ) : null}
+            </div>
           </CanonicalDetailSection>
         )}
       </div>
