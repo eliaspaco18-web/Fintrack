@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AccountType, CurrencyCode } from '@/types/database.types'
-import { smoothPath } from '@/lib/charts/svg-utils'
 import { formatCurrency } from '@/lib/contracts/ui.contracts'
 import { useToast } from '@/lib/toast/toast'
 import { FormActions, FormField, FormSection, OptionalSection } from '@/components/forms/primitives'
@@ -43,6 +42,11 @@ import {
   getAccountIdentityViolation,
 } from '@/modules/portfolio/account-identity'
 import { requestPortfolioMutation } from '@/modules/portfolio/account-mutation-timeout'
+import {
+  getPortfolioPositionFacts,
+  PORTFOLIO_POSITION_COMPARISON_DISCLOSURE,
+  PORTFOLIO_POSITION_COMPARISON_TITLE,
+} from '@/modules/portfolio/account-position'
 
 type BankEntityRef = {
   id: string
@@ -245,308 +249,67 @@ function balanceTone(balance: number): 'neutral' | 'danger' {
   return balance < 0 ? 'danger' : 'neutral'
 }
 
-const TREND_CHART_WIDTH = 360
-const TREND_CHART_HEIGHT = 138
-const TREND_CHART_PADDING = { top: 18, right: 18, bottom: 28, left: 18 }
-const TREND_MONTHS = 6
+function formatStoredPortfolioDate(value: string | null) {
+  if (!value) return 'Fecha no disponible'
 
-type PortfolioTrendPoint = {
-  date: string
-  label: string
-  shortLabel: string
-  balance: number
-}
-
-function clampRatio(value: number) {
-  if (!Number.isFinite(value)) return 0
-  return Math.max(0, Math.min(1, value))
-}
-
-function toIsoDate(date: Date) {
-  return date.toISOString().slice(0, 10)
-}
-
-function addMonths(date: Date, months: number) {
-  const next = new Date(date)
-  next.setMonth(next.getMonth() + months)
-  return next
-}
-
-function parseLocalDate(value: string | null | undefined) {
-  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
   const date = new Date(`${value}T12:00:00`)
-  return Number.isNaN(date.getTime()) ? null : date
-}
+  if (Number.isNaN(date.getTime())) return 'Fecha no disponible'
 
-function formatMonthLabel(date: Date) {
   return date
-    .toLocaleDateString('es-PE', { month: 'short', year: 'numeric' })
+    .toLocaleDateString('es-PE', { day: 'numeric', month: 'short', year: 'numeric' })
     .replace('.', '')
 }
 
-function formatShortMonthLabel(date: Date) {
-  return date
-    .toLocaleDateString('es-PE', { month: 'short' })
-    .replace('.', '')
-}
-
-function monthPointDate(reference: Date, offset: number) {
-  const date = addMonths(reference, offset)
-  date.setDate(1)
-  date.setHours(12, 0, 0, 0)
-  return date
-}
-
-function buildPortfolioTrend(account: AccountItem): PortfolioTrendPoint[] {
-  const today = new Date()
-  today.setHours(12, 0, 0, 0)
-  const currentMonth = monthPointDate(today, 0)
-  const firstMonth = monthPointDate(today, -(TREND_MONTHS - 1))
-  const initialDate = parseLocalDate(account.initial_balance_date)
-  const initialBalance = Number(account.initial_balance ?? 0)
-  const currentBalance = Number(account.balance ?? 0)
-  const rangeMs = currentMonth.getTime() - firstMonth.getTime() || 1
-  const initialRatio = initialDate
-    ? clampRatio((initialDate.getTime() - firstMonth.getTime()) / rangeMs)
-    : 0
-  const hasMeaningfulChange = Math.abs(currentBalance - initialBalance) >= 0.01
-
-  return Array.from({ length: TREND_MONTHS }, (_, index) => {
-    const date = monthPointDate(firstMonth, index)
-    const ratio = index / Math.max(TREND_MONTHS - 1, 1)
-    const progressAfterInitial = ratio <= initialRatio
-      ? 0
-      : clampRatio((ratio - initialRatio) / Math.max(1 - initialRatio, 0.0001))
-    const eased = progressAfterInitial < 0.5
-      ? 2 * progressAfterInitial * progressAfterInitial
-      : 1 - Math.pow(-2 * progressAfterInitial + 2, 2) / 2
-    const balance = hasMeaningfulChange
-      ? initialBalance + (currentBalance - initialBalance) * eased
-      : currentBalance
-
-    return {
-      date: toIsoDate(date),
-      label: formatMonthLabel(date),
-      shortLabel: formatShortMonthLabel(date),
-      balance: Number(balance.toFixed(2)),
-    }
-  })
-}
-
-function buildTrendDomain(points: PortfolioTrendPoint[]) {
-  const values = points.map(point => point.balance)
-  const min = Math.min(...values)
-  const max = Math.max(...values)
-  const span = max - min
-  const padding = span > 0 ? span * 0.18 : Math.max(Math.abs(max) * 0.08, 1)
-
-  return {
-    min: min - padding,
-    max: max + padding,
-  }
-}
-
-function trendTone(delta: number): 'success' | 'danger' | 'muted' {
-  if (delta > 0.01) return 'success'
-  if (delta < -0.01) return 'danger'
-  return 'muted'
-}
-
-function formatTrendPercent(delta: number, base: number) {
-  if (Math.abs(base) < 0.01) return delta >= 0 ? '+0.0%' : '-0.0%'
-  const value = (delta / Math.abs(base)) * 100
-  const sign = value >= 0 ? '+' : ''
-
-  return `${sign}${value.toFixed(1)}%`
-}
-
-function PortfolioTrendSparkline({ account }: { account: AccountItem }) {
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
-  const chart = useMemo(() => {
-    const points = buildPortfolioTrend(account)
-    const domain = buildTrendDomain(points)
-    const plotWidth = TREND_CHART_WIDTH - TREND_CHART_PADDING.left - TREND_CHART_PADDING.right
-    const plotHeight = TREND_CHART_HEIGHT - TREND_CHART_PADDING.top - TREND_CHART_PADDING.bottom
-    const domainSpan = domain.max - domain.min || 1
-    const x = (index: number) =>
-      TREND_CHART_PADDING.left + (index / Math.max(points.length - 1, 1)) * plotWidth
-    const y = (value: number) =>
-      TREND_CHART_PADDING.top + ((domain.max - value) / domainSpan) * plotHeight
-    const plotted = points.map((point, index) => ({
-      point,
-      x: x(index),
-      y: y(point.balance),
-    }))
-    const path = smoothPath(plotted.map(point => ({ x: point.x, y: point.y })))
-    const first = plotted[0]
-    const last = plotted.at(-1)
-    const areaPath = path && first && last
-      ? `${path} L ${last.x} ${TREND_CHART_HEIGHT - TREND_CHART_PADDING.bottom} L ${first.x} ${TREND_CHART_HEIGHT - TREND_CHART_PADDING.bottom} Z`
-      : ''
-    const delta = (last?.point.balance ?? 0) - (first?.point.balance ?? 0)
-    const tone = trendTone(delta)
-
-    return {
-      plotted,
-      path,
-      areaPath,
-      first,
-      last,
-      delta,
-      tone,
-    }
-  }, [account])
-
-  const hoveredPoint = hoveredIndex === null ? null : chart.plotted[hoveredIndex] ?? null
-  const accentColor = chart.tone === 'danger'
-    ? 'var(--c-danger)'
-    : chart.tone === 'success'
-      ? 'var(--c-primary)'
-      : 'var(--c-text-muted)'
-  const gradientId = `portfolioTrendArea-${account.id.replace(/[^a-zA-Z0-9_-]/g, '')}`
-  const strokeId = `portfolioTrendStroke-${account.id.replace(/[^a-zA-Z0-9_-]/g, '')}`
+function PortfolioPositionComparison({ account }: { account: AccountItem }) {
+  const facts = getPortfolioPositionFacts(account)
 
   return (
-    <div className="mt-5 overflow-hidden rounded-[14px] border border-[var(--c-border)] bg-[linear-gradient(180deg,var(--c-surface)_0%,var(--c-surface-2)_100%)]">
-      <div className="flex items-start justify-between gap-3 px-3.5 pt-3">
+    <section
+      aria-label={`Comparación entre saldo de apertura y saldo actual de ${account.name}`}
+      data-testid={`portfolio-position-comparison-${account.id}`}
+      className="mt-5 rounded-[14px] border border-[var(--c-border)] bg-[var(--c-surface-2)] p-3.5"
+    >
+      <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--c-text-faint)]">
-            Saldo por meses
+            {PORTFOLIO_POSITION_COMPARISON_TITLE}
           </p>
-          <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">
-            {chart.first?.point.label ?? '--'} - {chart.last?.point.label ?? '--'}
+          <p className="mt-1 text-[10px] leading-4 text-[var(--c-text-muted)]">
+            {PORTFOLIO_POSITION_COMPARISON_DISCLOSURE}
           </p>
         </div>
-        <StatusBadge tone={chart.tone} dot={false} className="shrink-0">
-          {formatTrendPercent(chart.delta, chart.first?.point.balance ?? 0)}
+        <StatusBadge tone="muted" dot={false} className="shrink-0">
+          2 valores
         </StatusBadge>
       </div>
 
-      <div
-        className="relative h-[138px]"
-        onMouseLeave={() => setHoveredIndex(null)}
-        onBlur={() => setHoveredIndex(null)}
-      >
-        <svg
-          role="img"
-          aria-label={`Saldo mensual de ${account.name} durante los ultimos 6 meses`}
-          className="absolute inset-0 h-full w-full"
-          viewBox={`0 0 ${TREND_CHART_WIDTH} ${TREND_CHART_HEIGHT}`}
-          preserveAspectRatio="none"
-        >
-          <defs>
-            <linearGradient id={strokeId} x1="0" x2="1" y1="0" y2="0">
-              <stop offset="0%" stopColor="var(--c-info)" />
-              <stop offset="62%" stopColor={accentColor} />
-              <stop offset="100%" stopColor="var(--c-primary)" />
-            </linearGradient>
-            <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor={accentColor} stopOpacity="0.18" />
-              <stop offset="100%" stopColor={accentColor} stopOpacity="0.02" />
-            </linearGradient>
-          </defs>
-
-          {[0.25, 0.5, 0.75].map(ratio => (
-            <line
-              key={ratio}
-              x1={TREND_CHART_PADDING.left}
-              x2={TREND_CHART_WIDTH - TREND_CHART_PADDING.right}
-              y1={TREND_CHART_PADDING.top + ratio * (TREND_CHART_HEIGHT - TREND_CHART_PADDING.top - TREND_CHART_PADDING.bottom)}
-              y2={TREND_CHART_PADDING.top + ratio * (TREND_CHART_HEIGHT - TREND_CHART_PADDING.top - TREND_CHART_PADDING.bottom)}
-              stroke="var(--c-border)"
-              strokeDasharray="2 7"
-              strokeOpacity={0.65}
-            />
-          ))}
-
-          {chart.areaPath ? <path d={chart.areaPath} fill={`url(#${gradientId})`} /> : null}
-          {chart.path ? (
-            <path
-              d={chart.path}
-              fill="none"
-              stroke={`url(#${strokeId})`}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2.6}
-              vectorEffect="non-scaling-stroke"
-            />
-          ) : null}
-
-          {hoveredPoint ? (
-            <line
-              x1={hoveredPoint.x}
-              x2={hoveredPoint.x}
-              y1={TREND_CHART_PADDING.top - 2}
-              y2={TREND_CHART_HEIGHT - TREND_CHART_PADDING.bottom + 2}
-              stroke={accentColor}
-              strokeDasharray="3 5"
-              strokeOpacity={0.5}
-              vectorEffect="non-scaling-stroke"
-            />
-          ) : null}
-
-          {chart.plotted.map((item, index) => {
-            const previous = chart.plotted[index - 1]
-            const next = chart.plotted[index + 1]
-            const left = previous ? (previous.x + item.x) / 2 : TREND_CHART_PADDING.left
-            const right = next ? (next.x + item.x) / 2 : TREND_CHART_WIDTH - TREND_CHART_PADDING.right
-            const active = hoveredIndex === index
-
-            return (
-              <g key={item.point.date}>
-                <circle
-                  cx={item.x}
-                  cy={item.y}
-                  r={active ? 5.4 : index === chart.plotted.length - 1 ? 4.8 : 3.6}
-                  fill={active || index === chart.plotted.length - 1 ? accentColor : 'var(--c-surface)'}
-                  stroke={accentColor}
-                  strokeWidth={2}
-                  vectorEffect="non-scaling-stroke"
-                />
-                <text
-                  x={item.x}
-                  y={TREND_CHART_HEIGHT - 9}
-                  textAnchor="middle"
-                  className={`text-[9px] font-semibold ${active ? 'fill-[var(--c-text)]' : 'fill-[var(--c-text-faint)]'}`}
-                >
-                  {item.point.shortLabel}
-                </text>
-                <rect
-                  x={left}
-                  y={0}
-                  width={Math.max(right - left, 1)}
-                  height={TREND_CHART_HEIGHT}
-                  fill="transparent"
-                  tabIndex={0}
-                  role="button"
-                  aria-label={`${item.point.label}: ${formatCurrency(item.point.balance, account.currency)}`}
-                  onMouseEnter={() => setHoveredIndex(index)}
-                  onFocus={() => setHoveredIndex(index)}
-                />
-              </g>
-            )
-          })}
-        </svg>
-
-        {hoveredPoint ? (
-          <div
-            className="pointer-events-none absolute z-10 min-w-[126px] rounded-[12px] border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-2 text-left shadow-[0_14px_30px_color-mix(in_srgb,var(--c-shadow)_16%,transparent)]"
-            style={{
-              left: `${(hoveredPoint.x / TREND_CHART_WIDTH) * 100}%`,
-              top: `${Math.max(8, hoveredPoint.y - 54)}px`,
-              transform: hoveredPoint.x > TREND_CHART_WIDTH * 0.72 ? 'translateX(-100%)' : 'translateX(-10%)',
-            }}
-          >
-            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-              {hoveredPoint.point.label}
-            </p>
-            <p className="mt-1 font-mono text-[13px] font-semibold tabular-nums text-[var(--c-text)]">
-              {formatCurrency(hoveredPoint.point.balance, account.currency)}
-            </p>
-          </div>
-        ) : null}
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-medium text-[var(--c-text-faint)]">Saldo de apertura</p>
+          <p className="mt-1 truncate font-mono text-[13px] font-semibold tabular-nums text-[var(--c-text)]">
+            {formatCurrency(facts.opening.amount, facts.currency as CurrencyCode)}
+          </p>
+          <p className="mt-1 text-[10px] text-[var(--c-text-muted)]">
+            {formatStoredPortfolioDate(facts.opening.recordedDate)}
+          </p>
+        </div>
+        <div className="min-w-0 text-right">
+          <p className="text-[10px] font-medium text-[var(--c-text-faint)]">Saldo actual</p>
+          <p className={`mt-1 truncate font-mono text-[13px] font-semibold tabular-nums ${
+            facts.current.amount < 0 ? 'text-[var(--c-danger)]' : 'text-[var(--c-text)]'
+          }`}>
+            {formatCurrency(facts.current.amount, facts.currency as CurrencyCode)}
+          </p>
+          <p className="mt-1 text-[10px] text-[var(--c-text-muted)]">Posición registrada ahora</p>
+        </div>
       </div>
-    </div>
+
+      <div aria-hidden="true" className="mt-3 flex items-center gap-2">
+        <span className="h-2 w-2 shrink-0 rounded-full border-2 border-[var(--c-primary)] bg-[var(--c-surface)]" />
+        <span className="h-px flex-1 border-t border-dashed border-[var(--c-border-hover)]" />
+        <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--c-primary)]" />
+      </div>
+    </section>
   )
 }
 
@@ -1537,7 +1300,7 @@ export function PortfolioManager({
                       </p>
                     </div>
                   ) : (
-                    <PortfolioTrendSparkline account={account} />
+                    <PortfolioPositionComparison account={account} />
                   )}
                 </div>
 
