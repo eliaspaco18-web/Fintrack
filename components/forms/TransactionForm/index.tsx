@@ -62,14 +62,10 @@ import {
   NestedCategoryCreateModal,
 } from './NestedRecordCreationModals'
 import { StatusBadge } from '@/components/finance'
-
-interface AttachmentUploadResult {
-  path: string
-  file_name: string
-  file_size: number
-  content_type: string
-  signed_url: string | null
-}
+import {
+  requestAttachmentUpload,
+  type AttachmentUploadResponse,
+} from '@/modules/attachments/attachment-client'
 
 const ATTACHMENT_ACCEPT =
   'image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt'
@@ -221,7 +217,7 @@ export function TransactionForm({
   const [attachmentUploading, setAttachmentUploading] = useState(false)
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [lastAttachmentTxId, setLastAttachmentTxId] = useState<string | null>(null)
-  const [lastUploadedAttachment, setLastUploadedAttachment] = useState<AttachmentUploadResult | null>(null)
+  const [lastUploadedAttachment, setLastUploadedAttachment] = useState<AttachmentUploadResponse | null>(null)
   const formRef = useRef<HTMLFormElement | null>(null)
   const userEditedExchangeRateRef = useRef(false)
   const lastAutoExchangeRateRef = useRef<number | null>(null)
@@ -1215,29 +1211,29 @@ export function TransactionForm({
     setAttachmentError(null)
 
     try {
-      const payload = new FormData()
-      payload.append('file', file)
-
-      const response = await fetch(`/api/transactions/${transactionId}/attachment`, {
-        method: 'POST',
-        body: payload,
-      })
-
-      const json = await response.json().catch(() => null)
-      if (!response.ok || !json?.ok) {
-        throw new Error(getApiErrorMessage(json, 'No se pudo subir el comprobante'))
-      }
-
-      const result = json.data as AttachmentUploadResult
+      const result = await requestAttachmentUpload(
+        `/api/transactions/${transactionId}/attachment`,
+        file,
+      )
       setAttachmentFile(null)
       setAttachmentError(null)
       setLastAttachmentTxId(transactionId)
       setLastUploadedAttachment(result)
-      toast.success('Comprobante subido', `${result.file_name} fue asociado a la transaccion.`)
+      if (result.availability === 'AVAILABLE') {
+        toast.success('Comprobante subido', `${result.file_name} fue asociado a la transaccion.`)
+      } else {
+        toast.warning(
+          'Comprobante asociado',
+          'El archivo quedó registrado, pero su vista previa no pudo verificarse.',
+        )
+      }
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'No se pudo subir el comprobante'
       setAttachmentError(message)
-      setLastAttachmentTxId(transactionId)
+      // A transport error cannot prove whether the server completed after the
+      // client stopped waiting. Do not offer an immediate retry that could
+      // create a second stored object; the user must review the record first.
+      setLastAttachmentTxId(null)
       toast.error('No se pudo subir el comprobante', message)
     } finally {
       setAttachmentUploading(false)
@@ -2587,7 +2583,9 @@ export function TransactionForm({
             )}
             {lastUploadedAttachment && !attachmentUploading && !attachmentError && (
               <p className="mt-2 text-[11px] text-[var(--c-primary)]/85">
-                Archivo asociado: {lastUploadedAttachment.file_name}
+                {lastUploadedAttachment.availability === 'AVAILABLE'
+                  ? `Archivo asociado: ${lastUploadedAttachment.file_name}`
+                  : `Archivo asociado sin vista verificada: ${lastUploadedAttachment.file_name}`}
                 {lastUploadedAttachment.signed_url ? (
                   <>
                     {' · '}

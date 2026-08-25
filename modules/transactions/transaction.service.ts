@@ -59,6 +59,12 @@ import {
 import { type Result, Errors, ok }      from '@/modules/shared/result.types'
 import { resolveAccountingUsdPenExchangeRate } from '@/lib/server/exchange-rate'
 import { CategoryKeys } from '@/lib/constants/category-keys'
+import {
+  ATTACHMENT_DELETE_BLOCKED_MESSAGE,
+  ATTACHMENT_UPDATE_BLOCKED_MESSAGE,
+  hasStoredAttachmentReference,
+  hasTransactionAttachmentReference,
+} from '@/modules/attachments/attachment-integrity'
 
 type DbClient = SupabaseClient<Database>
 
@@ -388,6 +394,13 @@ export class TransactionService {
     const existingResult = await this.txRepo.findByIdForUser(input.id, userId)
     if (!existingResult.ok) return existingResult
     const existingTx = existingResult.data as EditableTransactionRecord
+
+    if (
+      input.notes !== existingTx.notes
+      && hasTransactionAttachmentReference(existingTx.notes)
+    ) {
+      return Errors.businessRule(ATTACHMENT_UPDATE_BLOCKED_MESSAGE)
+    }
 
     const existingCategorySystemKey = typeof existingTx.category?.system_key === 'string'
       ? existingTx.category.system_key
@@ -831,6 +844,13 @@ export class TransactionService {
     const tx           = existing.data
     const unlinked: string[] = []
 
+    if (
+      hasStoredAttachmentReference(tx.attachment_url)
+      || hasTransactionAttachmentReference(tx.notes)
+    ) {
+      return Errors.businessRule(ATTACHMENT_DELETE_BLOCKED_MESSAGE)
+    }
+
     // Verificar si tiene cuotas pagadas (no se puede eliminar el préstamo padre)
     if (!options.force) {
       const hasLockedModules = await this.checkLockedModules(transactionId)
@@ -845,30 +865,34 @@ export class TransactionService {
     // Eliminar cuentas por cobrar / pagar creadas por esta transacción.
     // Si el usuario borra el movimiento origen desde Movimientos, el módulo
     // derivado no debe quedarse huérfano con transaction_id = null.
-    const linkedReceivableResult = await this.db
-      .from('accounts_receivable')
-      .select('id')
-      .eq('transaction_id', transactionId)
-      .maybeSingle()
+    const [linkedReceivableResult, linkedPayableResult] = await Promise.all([
+      this.db
+        .from('accounts_receivable')
+        .select('id, attachment_url')
+        .eq('transaction_id', transactionId)
+        .maybeSingle(),
+      this.db
+        .from('accounts_payable')
+        .select('id, attachment_url')
+        .eq('transaction_id', transactionId)
+        .maybeSingle(),
+    ])
 
-    if (linkedReceivableResult.error) {
-      return Errors.database(linkedReceivableResult.error.message)
+    if (linkedReceivableResult.error || linkedPayableResult.error) {
+      return Errors.database('No se pudieron verificar los adjuntos vinculados')
+    }
+
+    if (
+      hasStoredAttachmentReference(linkedReceivableResult.data?.attachment_url)
+      || hasStoredAttachmentReference(linkedPayableResult.data?.attachment_url)
+    ) {
+      return Errors.businessRule(ATTACHMENT_DELETE_BLOCKED_MESSAGE)
     }
 
     if (linkedReceivableResult.data?.id) {
       const deleteReceivableResult = await this.receivableRepo.delete(linkedReceivableResult.data.id)
       if (!deleteReceivableResult.ok) return deleteReceivableResult
       unlinked.push('accounts_receivable')
-    }
-
-    const linkedPayableResult = await this.db
-      .from('accounts_payable')
-      .select('id')
-      .eq('transaction_id', transactionId)
-      .maybeSingle()
-
-    if (linkedPayableResult.error) {
-      return Errors.database(linkedPayableResult.error.message)
     }
 
     if (linkedPayableResult.data?.id) {

@@ -13,6 +13,7 @@ import { formatNumber } from '@/lib/contracts/ui.contracts'
 import type { AccountType, CurrencyCode } from '@/types/database.types'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
+import { requestAttachmentUpload } from '@/modules/attachments/attachment-client'
 
 type CreditMode = 'CARD' | 'BANK'
 
@@ -365,17 +366,7 @@ export function CreditsManager() {
   }, [])
 
   const uploadBankAttachment = useCallback(async (creditId: string, file: File) => {
-    const formData = new FormData()
-    formData.append('file', file)
-
-    const response = await fetch(`/api/credits/${creditId}/attachment`, {
-      method: 'POST',
-      body: formData,
-    })
-    const json = await response.json().catch(() => null)
-    if (!response.ok || !json?.ok) {
-      throw new Error(getApiErrorMessage(json, 'No se pudo adjuntar el documento del crédito'))
-    }
+    await requestAttachmentUpload(`/api/credits/${creditId}/attachment`, file)
   }, [])
 
   const submitCard = useCallback(async (event: FormEvent<HTMLFormElement>) => {

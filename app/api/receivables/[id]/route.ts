@@ -8,6 +8,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient }              from '@/lib/supabase.server'
 import { apiError, apiNoContent, getSessionUserId } from '@/lib/api/response'
 import { TransactionService } from '@/modules/transactions/transaction.service'
+import {
+  ATTACHMENT_DELETE_BLOCKED_MESSAGE,
+  ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE,
+  hasStoredAttachmentReference,
+  hasUnsupportedAttachmentWrite,
+} from '@/modules/attachments/attachment-integrity'
 
 const RECEIVABLE_SELECT = `
   *,
@@ -68,6 +74,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const body = await req.json().catch(() => null)
   if (!body) return NextResponse.json({ ok: false, error: { code: 'BAD_REQUEST', message: 'Cuerpo inválido' } }, { status: 400 })
+  if (hasUnsupportedAttachmentWrite(body)) {
+    return apiError({ code: 'BUSINESS_RULE_ERROR', message: ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE })
+  }
 
   const patch: Record<string, unknown> = {}
   if ('debtor_id'   in body) patch.debtor_id   = body.debtor_id ?? null
@@ -81,7 +90,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if ('status'      in body) patch.status      = body.status
   if ('collected_amount' in body) patch.collected_amount = body.collected_amount
   if ('collected_date'   in body) patch.collected_date   = body.collected_date ?? null
-  if ('attachment_url'   in body) patch.attachment_url   = body.attachment_url ?? null
 
   const { data, error } = await supabase
     .from('accounts_receivable')
@@ -102,7 +110,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
 
   const { data: receivable, error: receivableError } = await supabase
     .from('accounts_receivable')
-    .select('id, transaction_id')
+    .select('id, transaction_id, attachment_url')
     .eq('id', params.id)
     .eq('user_id', userId)
     .maybeSingle()
@@ -113,6 +121,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
 
   if (!receivable) {
     return NextResponse.json({ ok: false, error: { code: 'NOT_FOUND', message: 'Registro no encontrado' } }, { status: 404 })
+  }
+
+  if (hasStoredAttachmentReference(receivable.attachment_url)) {
+    return apiError({ code: 'BUSINESS_RULE_ERROR', message: ATTACHMENT_DELETE_BLOCKED_MESSAGE })
   }
 
   if (receivable.transaction_id) {

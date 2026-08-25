@@ -26,6 +26,7 @@ type BillingCycleRow = {
   total_to_pay_usd?: number
   movement_summary?: BillingCycleMovementSummary | null
   can_delete?: boolean
+  statement_url?: string | null
   statement_file: File | null
 }
 
@@ -73,6 +74,8 @@ interface CreditCardScheduleEditorProps {
   onRemoveCycle: (id: string) => void
   onUpdateCycle: (id: string, patch: Partial<BillingCycleRow>) => void
   onFileChange: (id: string, file: File | null) => void
+  attachmentUploadDisabled?: boolean
+  attachmentDisabledReason?: string
   onMovementModalOpenChange?: (open: boolean) => void
 }
 
@@ -162,6 +165,8 @@ export function CreditCardScheduleEditor({
   onRemoveCycle,
   onUpdateCycle,
   onFileChange,
+  attachmentUploadDisabled = false,
+  attachmentDisabledReason,
   onMovementModalOpenChange,
 }: CreditCardScheduleEditorProps) {
   const duplicateMessage = formatDuplicateCycleMessage(duplicateCycleLabels)
@@ -204,8 +209,13 @@ export function CreditCardScheduleEditor({
             Ciclos de facturación
           </p>
           <p className="max-w-[68ch] text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-            Ajusta periodos, fechas, adjuntos y revisa los movimientos del periodo desde esta misma vista.
+            Ajusta periodos y fechas, y revisa los movimientos del periodo desde esta misma vista.
           </p>
+          {attachmentUploadDisabled && attachmentDisabledReason ? (
+            <p className="max-w-[72ch] text-[11px] leading-[1.45] text-[var(--ft-warning)]">
+              {attachmentDisabledReason}
+            </p>
+          ) : null}
         </div>
 
         <div className="flex items-center gap-2">
@@ -364,36 +374,48 @@ export function CreditCardScheduleEditor({
                         className="sr-only"
                         accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx"
                         onChange={event => onFileChange(cycle.id, event.target.files?.[0] ?? null)}
-                        disabled={disabled}
+                        disabled={disabled || attachmentUploadDisabled}
                       />
                       <div className="flex items-center gap-2">
                         <label
                           htmlFor={inputId}
                           role="button"
-                          tabIndex={disabled ? -1 : 0}
-                          title={cycle.statement_file ? cycle.statement_file.name : `Subir estado de cuenta de ${periodLabel}`}
-                          aria-label={cycle.statement_file
+                          tabIndex={disabled || attachmentUploadDisabled ? -1 : 0}
+                          title={attachmentUploadDisabled
+                            ? 'Carga de estados de cuenta no disponible'
+                            : cycle.statement_file ? cycle.statement_file.name : `Subir estado de cuenta de ${periodLabel}`}
+                          aria-label={attachmentUploadDisabled
+                            ? `Carga de estado de cuenta de ${periodLabel} no disponible`
+                            : cycle.statement_file
                             ? `Reemplazar estado de cuenta de ${periodLabel}`
                             : `Subir estado de cuenta de ${periodLabel}`}
                           onKeyDown={event => {
+                            if (attachmentUploadDisabled) return
                             if (event.key === 'Enter' || event.key === ' ') {
                               event.preventDefault()
                               document.getElementById(inputId)?.click()
                             }
                           }}
-                          className="
+                          className={`
                             inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--ft-radius-control)]
                             border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] text-[var(--ft-form-muted)]
                             transition-[background-color,border-color,color,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]
                             hover:border-[var(--ft-border-strong)] hover:text-[var(--ft-text)]
                             focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ft-primary-soft)] focus-visible:ring-offset-2
                             focus-visible:ring-offset-[var(--ft-bg)]
-                          "
+                            ${attachmentUploadDisabled ? 'cursor-not-allowed opacity-45' : ''}
+                          `}
                         >
                           <UploadDocumentIcon className="h-4 w-4" />
                         </label>
                         <span className="min-w-0 truncate text-[11px] font-medium text-[var(--ft-form-muted)]">
-                          {cycle.statement_file ? cycle.statement_file.name : 'Sin archivo'}
+                          {cycle.statement_file
+                            ? cycle.statement_file.name
+                            : cycle.statement_url
+                              ? 'Referencia guardada · no verificada'
+                              : attachmentUploadDisabled
+                                ? 'Carga no disponible'
+                                : 'Sin archivo'}
                         </span>
                       </div>
                     </td>

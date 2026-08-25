@@ -20,6 +20,10 @@ import { getApiErrorMessage }               from '@/lib/api/error-message'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 import { formatCurrency }                   from '@/lib/contracts/ui.contracts'
 import { useToast }                         from '@/lib/toast/toast'
+import {
+  ATTACHMENT_REFERENCE_UNVERIFIED_MESSAGE,
+  ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE,
+} from '@/modules/attachments/attachment-integrity'
 import type { DebtorRow }                   from './DebtorForm'
 
 // ─── Tipos locales ────────────────────────────────────────────────────────────
@@ -128,8 +132,6 @@ export function ReceivableForm({
   const [accounts, setAccounts] = useState<AccountOption[]>([])
   const [saving, setSaving]     = useState(false)
   const [error, setError]       = useState<string | null>(null)
-  const [attachment, setAttachment] = useState<File | null>(null)
-  const [existingUrl, setExistingUrl] = useState<string | null>(receivable?.attachment_url ?? null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
 
   const patch = useCallback((updates: Partial<FormState>) => {
@@ -142,8 +144,6 @@ export function ReceivableForm({
       : { ...EMPTY_FORM, debtor_id: defaultDebtorId ?? EMPTY_FORM.debtor_id }
 
     setForm(nextForm)
-    setExistingUrl(receivable?.attachment_url ?? null)
-    setAttachment(null)
     setError(null)
     setAdvancedOpen(Boolean(
       receivable?.notes?.trim() ||
@@ -185,18 +185,6 @@ export function ReceivableForm({
     ? `≈ ${formatCurrency(amount / (exchangeRate || 1), 'USD')}`
     : `≈ ${formatCurrency(amount * (exchangeRate || 1), 'PEN')}`
 
-  // ── Subir adjunto ────────────────────────────────────────────────────────────
-  async function uploadAttachment(file: File): Promise<string | null> {
-    try {
-      const fd = new FormData()
-      fd.append('file', file)
-      const res  = await fetch('/api/attachments/upload', { method: 'POST', body: fd })
-      const json = await res.json().catch(() => null)
-      if (res.ok && json?.ok) return json.url as string
-    } catch { /* silencioso */ }
-    return null
-  }
-
   // ── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
@@ -228,12 +216,6 @@ export function ReceivableForm({
 
     setSaving(true)
     try {
-      // Subir adjunto si hay uno nuevo
-      let attachmentUrl: string | null = existingUrl
-      if (attachment) {
-        attachmentUrl = await uploadAttachment(attachment)
-      }
-
       const payload: Record<string, unknown> = {
         debtor_id:      form.debtor_id,
         debtor_name:    debtorRow.name,
@@ -243,7 +225,6 @@ export function ReceivableForm({
         issue_date:     form.issue_date,
         due_date:       form.due_date || null,
         notes:          form.notes.trim() || null,
-        attachment_url: attachmentUrl,
         status:         'PENDING',
       }
 
@@ -279,7 +260,7 @@ export function ReceivableForm({
     } finally {
       setSaving(false)
     }
-  }, [attachment, debtors, existingUrl, form, isEdit, onSuccess, receivable, toast])
+  }, [debtors, form, isEdit, onSuccess, receivable, toast])
 
   const isDisabled = disabled || saving
 
@@ -298,10 +279,10 @@ export function ReceivableForm({
   const optionalSummary = useMemo(() => {
     const summary = ['Notas', 'Comprobante', 'Recurrencia']
     if (form.notes.trim()) summary[0] = 'Notas cargadas'
-    if (attachment || existingUrl) summary[1] = 'Comprobante adjunto'
+    if (receivable?.attachment_url) summary[1] = 'Referencia guardada'
     if (form.save_recurring) summary[2] = 'Recurrente'
     return summary
-  }, [attachment, existingUrl, form.notes, form.save_recurring])
+  }, [form.notes, form.save_recurring, receivable?.attachment_url])
 
   return (
     <form
@@ -458,14 +439,20 @@ export function ReceivableForm({
 
               <div>
                 <FileUpload
-                  value={attachment}
-                  existingUrl={existingUrl}
-                  onChange={setAttachment}
-                  onRemoveExisting={() => setExistingUrl(null)}
-                  disabled={isDisabled}
+                  value={null}
+                  existingUrl={receivable?.attachment_url ?? null}
+                  onChange={() => undefined}
+                  disabled
                   id="receivable-attachment"
-                  label="Comprobante opcional"
+                  label={receivable?.attachment_url
+                    ? 'Referencia de comprobante registrada'
+                    : 'Comprobante no disponible'}
                 />
+                <p className="mt-2 text-[11px] leading-[1.45] text-[var(--ft-form-muted)]">
+                  {receivable?.attachment_url
+                    ? ATTACHMENT_REFERENCE_UNVERIFIED_MESSAGE
+                    : ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE}
+                </p>
               </div>
 
               {!isEdit ? (

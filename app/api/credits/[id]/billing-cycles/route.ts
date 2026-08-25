@@ -26,6 +26,10 @@ import {
   apiZodError,
   getSessionUserId,
 } from '@/lib/api/response'
+import {
+  ATTACHMENT_UPDATE_BLOCKED_MESSAGE,
+  hasStoredAttachmentReference,
+} from '@/modules/attachments/attachment-integrity'
 
 export const dynamic = 'force-dynamic'
 
@@ -319,6 +323,27 @@ export async function PUT(
       })
     }
     seen.add(key)
+  }
+
+  const { data: existingAttachmentReferences, error: attachmentReferenceError } = await supabase
+    .from('billing_cycles')
+    .select('statement_url')
+    .eq('credit_id', params.id)
+
+  if (attachmentReferenceError) {
+    return apiError({
+      code: 'DATABASE_ERROR',
+      message: 'No se pudo verificar si los ciclos conservan archivos adjuntos.',
+    })
+  }
+
+  if ((existingAttachmentReferences ?? []).some(cycle => (
+    hasStoredAttachmentReference(cycle.statement_url)
+  ))) {
+    return apiError({
+      code: 'BUSINESS_RULE_ERROR',
+      message: ATTACHMENT_UPDATE_BLOCKED_MESSAGE,
+    })
   }
 
   const { error: deleteError } = await supabase

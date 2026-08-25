@@ -10,6 +10,11 @@ import {
   getSessionUserId,
 } from '@/lib/api/response'
 import { getLoanScheduleIntegrity } from '@/modules/credits/loan-schedule-integrity'
+import {
+  ATTACHMENT_DELETE_BLOCKED_MESSAGE,
+  ATTACHMENT_UPDATE_BLOCKED_MESSAGE,
+  hasCreditAttachmentReference,
+} from '@/modules/attachments/attachment-integrity'
 
 export const dynamic = 'force-dynamic'
 
@@ -366,6 +371,17 @@ export async function PATCH(
     return apiError({ code: 'NOT_FOUND', message: 'Crédito no encontrado' })
   }
 
+  if (
+    parsed.data.notes !== undefined
+    && parsed.data.notes !== credit.notes
+    && hasCreditAttachmentReference(credit.notes)
+  ) {
+    return apiError({
+      code: 'BUSINESS_RULE_ERROR',
+      message: ATTACHMENT_UPDATE_BLOCKED_MESSAGE,
+    })
+  }
+
   if (parsed.data.status && credit.status === parsed.data.status && Object.keys(parsed.data).length === 1) {
     return apiOk(credit)
   }
@@ -578,13 +594,40 @@ export async function DELETE(
   const creditId = context.params.id
   const { data: credit, error: creditError } = await supabase
     .from('credits')
-    .select('id, name, account_id, transaction_id, credit_type')
+    .select('id, name, account_id, transaction_id, credit_type, notes')
     .eq('id', creditId)
     .eq('user_id', userId)
     .single()
 
   if (creditError || !credit) {
     return apiError({ code: 'NOT_FOUND', message: 'Crédito no encontrado' })
+  }
+
+  if (hasCreditAttachmentReference(credit.notes)) {
+    return apiError({
+      code: 'BUSINESS_RULE_ERROR',
+      message: ATTACHMENT_DELETE_BLOCKED_MESSAGE,
+    })
+  }
+
+  const { count: billingAttachmentCount, error: billingAttachmentError } = await supabase
+    .from('billing_cycles')
+    .select('id', { count: 'exact', head: true })
+    .eq('credit_id', creditId)
+    .not('statement_url', 'is', null)
+
+  if (billingAttachmentError) {
+    return apiError({
+      code: 'DATABASE_ERROR',
+      message: 'No se pudieron verificar los adjuntos del crédito.',
+    })
+  }
+
+  if ((billingAttachmentCount ?? 0) > 0) {
+    return apiError({
+      code: 'BUSINESS_RULE_ERROR',
+      message: ATTACHMENT_DELETE_BLOCKED_MESSAGE,
+    })
   }
 
   const [
