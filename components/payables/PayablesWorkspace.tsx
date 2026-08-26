@@ -16,13 +16,18 @@ import {
   EmptyState,
   FilterBar,
   LedgerModule,
-  ProgressMetric,
   StatusBadge,
 } from '@/components/finance'
 import { getApiErrorMessage } from '@/lib/api/error-message'
-import { formatCurrency } from '@/lib/contracts/ui.contracts'
 import { fetchWithTimeout } from '@/lib/client/fetch-with-timeout'
 import { useToast } from '@/lib/toast/toast'
+import { ObligationCurrencyProgress } from '@/components/obligations/ObligationCurrencyProgress'
+import {
+  combineObligationCurrencyBreakdowns,
+  formatObligationCurrencySummaries,
+  getObligationSettlementState,
+  type ObligationSettlementState,
+} from '@/modules/obligations/obligation-currency-presentation'
 import { CreditorForm, type CreditorRow } from './CreditorForm'
 import { PayableForm } from './PayableForm'
 import { CreditorDetail, type CreditorWithStats } from './CreditorDetail'
@@ -31,15 +36,25 @@ type StatusFilter = 'all' | 'pending' | 'paid'
 type SortOrder = 'desc' | 'asc'
 type ViewMode = 'list' | 'cards'
 
-function statusTone(creditor: CreditorWithStats) {
-  if (creditor.all_paid) return 'success' as const
+function creditorSettlementState(creditor: CreditorWithStats) {
+  return getObligationSettlementState({
+    summaries: creditor.currency_summaries,
+    unverifiedRecordCount: creditor.unverified_currency_records,
+    hasUnverifiedInitialBalance: creditor.has_unverified_initial_debt,
+  })
+}
+
+function statusTone(state: ObligationSettlementState) {
+  if (state === 'SETTLED') return 'success' as const
+  if (state === 'UNVERIFIED' || state === 'EMPTY') return 'muted' as const
   return 'danger' as const
 }
 
-function progressTone(creditor: CreditorWithStats) {
-  if (creditor.all_paid) return 'success' as const
-  if (creditor.progress_pct >= 65) return 'info' as const
-  return 'danger' as const
+function statusLabel(state: ObligationSettlementState) {
+  if (state === 'SETTLED') return 'Pagado'
+  if (state === 'UNVERIFIED') return 'No verificable'
+  if (state === 'EMPTY') return 'Sin cuentas'
+  return 'Pendiente'
 }
 
 export function PayablesWorkspace({ exchangeRate = 3.7 }: { exchangeRate?: number }) {
@@ -110,13 +125,43 @@ export function PayablesWorkspace({ exchangeRate = 3.7 }: { exchangeRate?: numbe
     [creditors, selectedCreditorId],
   )
 
+  const currencyBreakdown = useMemo(
+    () => combineObligationCurrencyBreakdowns(creditors.map(creditor => ({
+      summaries: creditor.currency_summaries,
+      unverifiedRecordCount: creditor.unverified_currency_records,
+      unverifiedOpenRecordCount: creditor.unverified_open_currency_records,
+    }))),
+    [creditors],
+  )
+
+  const creditorsWithUnverifiedInitialDebt = useMemo(
+    () => creditors.filter(creditor => creditor.has_unverified_initial_debt).length,
+    [creditors],
+  )
+
+  const hasPendingDocumentedAmount = currencyBreakdown.summaries.some(summary => summary.pending > 0)
+  const hasCurrencyLimitations = creditorsWithUnverifiedInitialDebt > 0
+    || currencyBreakdown.unverifiedRecordCount > 0
+  const canSortByPendingAmount = currencyBreakdown.summaries.length <= 1 && !hasCurrencyLimitations
+  const currencyLimitationDetail = hasCurrencyLimitations
+    ? [
+        creditorsWithUnverifiedInitialDebt > 0
+          ? `${creditorsWithUnverifiedInitialDebt} saldo${creditorsWithUnverifiedInitialDebt === 1 ? '' : 's'} inicial${creditorsWithUnverifiedInitialDebt === 1 ? '' : 'es'} sin moneda`
+          : null,
+        currencyBreakdown.unverifiedRecordCount > 0
+          ? `${currencyBreakdown.unverifiedRecordCount} registro${currencyBreakdown.unverifiedRecordCount === 1 ? '' : 's'} no verificable${currencyBreakdown.unverifiedRecordCount === 1 ? '' : 's'}`
+          : null,
+      ].filter(Boolean).join(' · ')
+    : null
+
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
 
     return creditors
       .filter(creditor => {
-        if (statusFilter === 'pending' && creditor.all_paid) return false
-        if (statusFilter === 'paid' && !creditor.all_paid) return false
+        const settlementState = creditorSettlementState(creditor)
+        if (statusFilter === 'pending' && !['OPEN', 'UNVERIFIED'].includes(settlementState)) return false
+        if (statusFilter === 'paid' && settlementState !== 'SETTLED') return false
 
         if (
           normalizedQuery &&
@@ -128,25 +173,16 @@ export function PayablesWorkspace({ exchangeRate = 3.7 }: { exchangeRate?: numbe
 
         return true
       })
-      .sort((left, right) =>
-        sortOrder === 'desc'
+      .sort((left, right) => {
+        if (!canSortByPendingAmount) return left.name.localeCompare(right.name, 'es')
+        return sortOrder === 'desc'
           ? right.pending_amount - left.pending_amount
-          : left.pending_amount - right.pending_amount,
-      )
-  }, [creditors, query, sortOrder, statusFilter])
-
-  const totalPendingAmount = useMemo(
-    () => creditors.reduce((sum, creditor) => sum + creditor.pending_amount, 0),
-    [creditors],
-  )
-
-  const totalPaidAmount = useMemo(
-    () => creditors.reduce((sum, creditor) => sum + creditor.total_paid, 0),
-    [creditors],
-  )
+          : left.pending_amount - right.pending_amount
+      })
+  }, [canSortByPendingAmount, creditors, query, sortOrder, statusFilter])
 
   const pendingCreditors = useMemo(
-    () => creditors.filter(creditor => !creditor.all_paid).length,
+    () => creditors.filter(creditor => ['OPEN', 'UNVERIFIED'].includes(creditorSettlementState(creditor))).length,
     [creditors],
   )
 
@@ -156,7 +192,11 @@ export function PayablesWorkspace({ exchangeRate = 3.7 }: { exchangeRate?: numbe
   )
 
   const pendingAccounts = useMemo(
-    () => creditors.reduce((sum, creditor) => sum + creditor.count_pending, 0),
+    () => creditors.reduce((sum, creditor) => (
+      sum
+      + creditor.currency_summaries.reduce((count, summary) => count + summary.openRecordCount, 0)
+      + creditor.unverified_open_currency_records
+    ), 0),
     [creditors],
   )
 
@@ -264,24 +304,27 @@ export function PayablesWorkspace({ exchangeRate = 3.7 }: { exchangeRate?: numbe
         )}
         stats={[
           {
-            label: 'Pendiente total',
-            value: formatCurrency(totalPendingAmount, 'PEN'),
-            detail: pendingCreditors > 0 ? `${pendingCreditors} acreedor${pendingCreditors === 1 ? '' : 'es'}` : 'Sin deuda activa',
-            caption: 'Salida de caja comprometida que aun no fue resuelta.',
-            tone: totalPendingAmount > 0 ? 'danger' : 'neutral',
+            label: 'Pendiente documentado',
+            value: formatObligationCurrencySummaries(currencyBreakdown.summaries, 'pending'),
+            detail: currencyLimitationDetail
+              ?? (pendingCreditors > 0 ? `${pendingCreditors} acreedor${pendingCreditors === 1 ? '' : 'es'}` : 'Sin deuda activa'),
+            caption: hasCurrencyLimitations
+              ? 'Los importes sin moneda confirmada estan excluidos.'
+              : 'Importes abiertos separados por moneda, sin conversion.',
+            tone: hasPendingDocumentedAmount || hasCurrencyLimitations ? 'danger' : 'neutral',
           },
           {
-            label: 'Pagado acumulado',
-            value: formatCurrency(totalPaidAmount, 'PEN'),
-            detail: creditors.length > 0 ? 'Historico pagado' : 'Sin movimientos',
-            caption: 'Desembolso consolidado de todas las obligaciones registradas.',
+            label: 'Pagado documentado',
+            value: formatObligationCurrencySummaries(currencyBreakdown.summaries, 'settled'),
+            detail: creditors.length > 0 ? 'Separado por moneda original' : 'Sin movimientos',
+            caption: 'Pagos registrados sin mezclar PEN y USD.',
             tone: 'success',
           },
           {
             label: 'Cuentas abiertas',
             value: String(pendingAccounts),
             detail: pendingAccounts > 0 ? 'Seguimiento activo' : 'Sin alertas',
-            caption: 'Compromisos individuales todavia pendientes de pago.',
+            caption: 'Compromisos documentados todavia pendientes de pago.',
             tone: pendingAccounts > 0 ? 'danger' : 'neutral',
           },
           {
@@ -304,7 +347,7 @@ export function PayablesWorkspace({ exchangeRate = 3.7 }: { exchangeRate?: numbe
             <DataFilterPreset
               label="Pagados"
               active={statusFilter === 'paid'}
-              count={creditors.filter(creditor => creditor.all_paid && creditor.payables_count > 0).length}
+              count={creditors.filter(creditor => creditorSettlementState(creditor) === 'SETTLED').length}
               onClick={() => setStatusFilter('paid')}
             />
             <DataFilterPreset
@@ -324,17 +367,23 @@ export function PayablesWorkspace({ exchangeRate = 3.7 }: { exchangeRate?: numbe
         )}
         filters={(
           <FilterBar>
-            <AppSelect
-              value={sortOrder}
-              onChange={value => setSortOrder(value as SortOrder)}
-              compact
-              searchable={false}
-              className="w-[220px]"
-              options={[
-                { value: 'desc', label: 'Mayor a menor saldo' },
-                { value: 'asc', label: 'Menor a mayor saldo' },
-              ]}
-            />
+            {canSortByPendingAmount ? (
+              <AppSelect
+                value={sortOrder}
+                onChange={value => setSortOrder(value as SortOrder)}
+                compact
+                searchable={false}
+                className="w-[220px]"
+                options={[
+                  { value: 'desc', label: 'Mayor a menor saldo' },
+                  { value: 'asc', label: 'Menor a mayor saldo' },
+                ]}
+              />
+            ) : (
+              <StatusBadge tone="muted" dot={false}>
+                Orden alfabetico · saldos no comparables
+              </StatusBadge>
+            )}
           </FilterBar>
         )}
         viewToggle={<ViewToggle value={viewMode} onChange={setViewMode} id="payables-view-toggle" />}
@@ -349,8 +398,8 @@ export function PayablesWorkspace({ exchangeRate = 3.7 }: { exchangeRate?: numbe
           open: true,
           title: selectedCreditor.name,
           description: selectedCreditor.relationship?.trim()
-            ? `${selectedCreditor.relationship} · ${formatCurrency(selectedCreditor.pending_amount, 'PEN')} pendiente`
-            : `${formatCurrency(selectedCreditor.pending_amount, 'PEN')} pendiente`,
+            ? `${selectedCreditor.relationship} · ${formatObligationCurrencySummaries(selectedCreditor.currency_summaries, 'pending')} pendiente`
+            : `${formatObligationCurrencySummaries(selectedCreditor.currency_summaries, 'pending')} pendiente`,
           onClose: () => {
             setSelectedCreditorId(null)
             clearDrawerQuery()
@@ -421,15 +470,19 @@ export function PayablesWorkspace({ exchangeRate = 3.7 }: { exchangeRate?: numbe
                     >
                       <div className="flex min-w-0 items-start gap-3">
                         <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-                          creditor.all_paid ? 'bg-[var(--c-success)]' : 'bg-[var(--c-danger)]'
+                          creditorSettlementState(creditor) === 'SETTLED'
+                            ? 'bg-[var(--c-success)]'
+                            : creditorSettlementState(creditor) === 'UNVERIFIED'
+                              ? 'bg-[var(--c-text-faint)]'
+                              : 'bg-[var(--c-danger)]'
                         }`} />
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="truncate text-sm font-semibold text-[var(--c-text)]">
                               {creditor.name}
                             </p>
-                            <StatusBadge tone={statusTone(creditor)}>
-                              {creditor.all_paid ? 'Pagado' : 'Pendiente'}
+                            <StatusBadge tone={statusTone(creditorSettlementState(creditor))}>
+                              {statusLabel(creditorSettlementState(creditor))}
                             </StatusBadge>
                             {!creditor.is_active ? (
                               <StatusBadge tone="muted" dot={false}>
@@ -454,24 +507,24 @@ export function PayablesWorkspace({ exchangeRate = 3.7 }: { exchangeRate?: numbe
                     <div className="grid gap-3 sm:grid-cols-3">
                       <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-3">
                         <AmountCell
-                          label="Total"
-                          value={formatCurrency(creditor.total_owed, 'PEN')}
+                          label="Total documentado"
+                          value={formatObligationCurrencySummaries(creditor.currency_summaries, 'total')}
                           align="left"
                         />
                       </div>
                       <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-3">
                         <AmountCell
-                          label="Pagado"
-                          value={formatCurrency(creditor.total_paid, 'PEN')}
+                          label="Pagado documentado"
+                          value={formatObligationCurrencySummaries(creditor.currency_summaries, 'settled')}
                           tone="success"
                           align="left"
                         />
                       </div>
                       <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-3">
                         <AmountCell
-                          label="Pendiente"
-                          value={formatCurrency(creditor.pending_amount, 'PEN')}
-                          tone={creditor.pending_amount > 0 ? 'danger' : 'neutral'}
+                          label="Pendiente documentado"
+                          value={formatObligationCurrencySummaries(creditor.currency_summaries, 'pending')}
+                          tone={creditor.currency_summaries.some(summary => summary.pending > 0) ? 'danger' : 'neutral'}
                           align="left"
                         />
                       </div>
@@ -521,16 +574,12 @@ export function PayablesWorkspace({ exchangeRate = 3.7 }: { exchangeRate?: numbe
                     </div>
                   </div>
 
-                  <ProgressMetric
-                    value={creditor.progress_pct}
-                    label="Progreso de pago"
-                    valueLabel={`${creditor.progress_pct.toFixed(1)}%`}
-                    tone={progressTone(creditor)}
-                    description={
-                      creditor.all_paid
-                        ? 'Todas las obligaciones asociadas quedaron cubiertas.'
-                        : `${formatCurrency(creditor.pending_amount, 'PEN')} aun pendiente de salida.`
-                    }
+                  <ObligationCurrencyProgress
+                    summaries={creditor.currency_summaries}
+                    kind="payable"
+                    hasUnverifiedInitialBalance={creditor.has_unverified_initial_debt}
+                    unverifiedRecordCount={creditor.unverified_currency_records}
+                    compact
                   />
                 </div>
               </article>
@@ -554,8 +603,8 @@ export function PayablesWorkspace({ exchangeRate = 3.7 }: { exchangeRate?: numbe
                         <p className="truncate text-sm font-semibold text-[var(--c-text)]">
                           {creditor.name}
                         </p>
-                        <StatusBadge tone={statusTone(creditor)}>
-                          {creditor.all_paid ? 'Pagado' : 'Pendiente'}
+                        <StatusBadge tone={statusTone(creditorSettlementState(creditor))}>
+                          {statusLabel(creditorSettlementState(creditor))}
                         </StatusBadge>
                       </div>
                       <p className="mt-1 text-[12px] leading-5 text-[var(--c-text-muted)]">
@@ -611,35 +660,35 @@ export function PayablesWorkspace({ exchangeRate = 3.7 }: { exchangeRate?: numbe
                   <div className="grid grid-cols-3 gap-3">
                     <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-3">
                       <AmountCell
-                        label="Total"
-                        value={formatCurrency(creditor.total_owed, 'PEN')}
+                        label="Total documentado"
+                        value={formatObligationCurrencySummaries(creditor.currency_summaries, 'total')}
                         align="left"
                       />
                     </div>
                     <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-3">
                       <AmountCell
-                        label="Pagado"
-                        value={formatCurrency(creditor.total_paid, 'PEN')}
+                        label="Pagado documentado"
+                        value={formatObligationCurrencySummaries(creditor.currency_summaries, 'settled')}
                         tone="success"
                         align="left"
                       />
                     </div>
                     <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-3">
                       <AmountCell
-                        label="Pendiente"
-                        value={formatCurrency(creditor.pending_amount, 'PEN')}
-                        tone={creditor.pending_amount > 0 ? 'danger' : 'neutral'}
+                        label="Pendiente documentado"
+                        value={formatObligationCurrencySummaries(creditor.currency_summaries, 'pending')}
+                        tone={creditor.currency_summaries.some(summary => summary.pending > 0) ? 'danger' : 'neutral'}
                         align="left"
                       />
                     </div>
                   </div>
 
-                  <ProgressMetric
-                    value={creditor.progress_pct}
-                    label="Progreso"
-                    valueLabel={`${creditor.progress_pct.toFixed(1)}%`}
-                    tone={progressTone(creditor)}
-                    description={`${creditor.count_pending} cuenta${creditor.count_pending === 1 ? '' : 's'} pendiente${creditor.count_pending === 1 ? '' : 's'}.`}
+                  <ObligationCurrencyProgress
+                    summaries={creditor.currency_summaries}
+                    kind="payable"
+                    hasUnverifiedInitialBalance={creditor.has_unverified_initial_debt}
+                    unverifiedRecordCount={creditor.unverified_currency_records}
+                    compact
                   />
                 </div>
               </article>

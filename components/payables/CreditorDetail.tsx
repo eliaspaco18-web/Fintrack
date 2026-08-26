@@ -13,6 +13,15 @@ import {
 } from '@/components/finance'
 import { formatCurrency } from '@/lib/contracts/ui.contracts'
 import { getApiErrorMessage } from '@/lib/api/error-message'
+import { ObligationCurrencyProgress } from '@/components/obligations/ObligationCurrencyProgress'
+import {
+  formatObligationLedgerSummaries,
+  formatVerifiedObligationAmount,
+  getObligationSettlementState,
+  resolveVerifiedObligationCurrency,
+  summarizeObligationLedgerCurrencies,
+  type ObligationCurrencySummary,
+} from '@/modules/obligations/obligation-currency-presentation'
 import type { CreditorRow } from './CreditorForm'
 import { PayableForm, type PayableRow } from './PayableForm'
 
@@ -24,13 +33,17 @@ export type CreditorWithStats = CreditorRow & {
   all_paid: boolean
   count_pending: number
   payables_count: number
+  currency_summaries: ObligationCurrencySummary[]
+  unverified_currency_records: number
+  unverified_open_currency_records: number
+  has_unverified_initial_debt: boolean
 }
 
 type LedgerRow = {
   id: string
   type: 'INCOME' | 'EXPENSE'
   amount: number
-  currency: 'PEN' | 'USD'
+  currency: string
   description: string | null
   notes: string | null
   transaction_date: string
@@ -65,20 +78,16 @@ function matchesText(value: string | null | undefined, query: string) {
   return (value ?? '').toLowerCase().includes(query)
 }
 
-function formatSignedCurrency(value: number, currency: 'PEN' | 'USD') {
-  const absolute = formatCurrency(Math.abs(value), currency)
-  if (value > 0) return absolute
-  if (value < 0) return `-${absolute}`
-  return absolute
-}
-
 function resolveLedgerMeta(row: LedgerRow) {
+  const currency = resolveVerifiedObligationCurrency(row.currency)
+  const verifiedAmount = currency ? formatCurrency(row.amount, currency) : 'Importe no verificable'
+
   if (row.type === 'INCOME') {
     return {
       label: 'Ingreso',
       tone: 'info' as const,
       detail: 'Prestamo recibido',
-      signedAmount: `+${formatCurrency(row.amount, row.currency)}`,
+      signedAmount: currency ? `+${verifiedAmount}` : verifiedAmount,
     }
   }
 
@@ -86,30 +95,22 @@ function resolveLedgerMeta(row: LedgerRow) {
     label: 'Egreso',
     tone: 'warning' as const,
     detail: 'Pago registrado',
-    signedAmount: `-${formatCurrency(row.amount, row.currency)}`,
+    signedAmount: currency ? `-${verifiedAmount}` : verifiedAmount,
   }
 }
 
 function RecoveryVisual({
-  total,
-  paid,
-  pending,
+  summaries,
+  hasUnverifiedInitialBalance,
+  unverifiedRecordCount,
   className = '',
 }: {
-  total: number
-  paid: number
-  pending: number
+  summaries: readonly ObligationCurrencySummary[]
+  hasUnverifiedInitialBalance: boolean
+  unverifiedRecordCount: number
   className?: string
 }) {
-  const safeTotal = Math.max(total, 0)
-  const safePaid = Math.max(paid, 0)
-  const safePending = Math.max(pending, 0)
-  const progress = safeTotal > 0 ? Math.min(100, (safePaid / safeTotal) * 100) : 0
-  const circumference = 2 * Math.PI * 54
-  const progressOffset = circumference - (progress / 100) * circumference
-  const summaryLabel = safePending > 0
-    ? `Faltan ${formatCurrency(safePending, 'PEN')} para liquidar`
-    : 'Cuenta liquidada'
+  const hasUnverifiedAmount = hasUnverifiedInitialBalance || unverifiedRecordCount > 0
 
   return (
     <section
@@ -118,82 +119,52 @@ function RecoveryVisual({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-            Avance de pago
+            Pago documentado
           </p>
-          <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">{summaryLabel}</p>
+          <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">
+            Totales separados por moneda original.
+          </p>
         </div>
-        <StatusBadge tone={safePending > 0 ? 'warning' : 'success'} dot={false}>
-          {safePending > 0 ? 'Saldo abierto' : 'Liquidado'}
+        <StatusBadge tone={summaries.some(summary => summary.pending > 0) || hasUnverifiedAmount ? 'warning' : 'success'} dot={false}>
+          {summaries.some(summary => summary.pending > 0)
+            ? 'Saldo abierto'
+            : hasUnverifiedAmount
+              ? 'Importe no verificable'
+              : 'Sin saldo documentado'}
         </StatusBadge>
       </div>
 
-      <div className="mt-3.5 flex flex-col items-center gap-3">
-        <div className="relative h-[156px] w-[156px]">
-          <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_center,color-mix(in_srgb,var(--c-info)_10%,transparent)_0%,transparent_64%)]" />
-          <svg viewBox="0 0 140 140" className="relative z-[1] h-full w-full -rotate-90">
-            <circle
-              cx="70"
-              cy="70"
-              r="54"
-              fill="none"
-              stroke="color-mix(in_srgb,var(--c-border)_78%,transparent)"
-              strokeWidth="12"
-            />
-            <circle
-              cx="70"
-              cy="70"
-              r="54"
-              fill="none"
-              stroke="var(--c-info)"
-              strokeWidth="12"
-              strokeLinecap="round"
-              strokeDasharray={circumference}
-              strokeDashoffset={progressOffset}
-              style={{ transition: 'stroke-dashoffset 220ms cubic-bezier(0.22, 1, 0.36, 1)' }}
-            />
-          </svg>
-          <div className="absolute inset-0 z-[2] flex flex-col items-center justify-center text-center">
-            <p className="font-mono text-[29px] font-semibold tracking-[-0.05em] text-[var(--c-text)]">
-              {progress.toFixed(1)}%
-            </p>
-            <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-              Pagado
-            </p>
+      <div className="mt-3.5 space-y-3">
+        {summaries.map(summary => (
+          <div key={summary.currency} className="grid grid-cols-3 gap-2.5 rounded-[18px] border border-[var(--c-border)] bg-[var(--c-surface-2)] p-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Total · {summary.currency}</p>
+              <p className="mt-1.5 truncate font-mono text-[13px] font-semibold tabular-nums text-[var(--c-text)]">
+                {formatVerifiedObligationAmount(summary.total, summary.currency)}
+              </p>
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Pagado</p>
+              <p className="mt-1.5 truncate font-mono text-[13px] font-semibold tabular-nums text-[var(--c-success)]">
+                {formatVerifiedObligationAmount(summary.settled, summary.currency)}
+              </p>
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Pendiente</p>
+              <p className="mt-1.5 truncate font-mono text-[13px] font-semibold tabular-nums text-[var(--c-warning)]">
+                {formatVerifiedObligationAmount(summary.pending, summary.currency)}
+              </p>
+            </div>
           </div>
-        </div>
+        ))}
 
-        <div className="w-full rounded-[18px] border border-[var(--c-border)] bg-[color-mix(in_srgb,var(--c-warning-soft)_45%,var(--c-surface))] px-3 py-2">
-          <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-            Pendiente
-          </p>
-          <div className="mt-1.5 flex items-end justify-between gap-3">
-            <p className="min-w-0 whitespace-nowrap font-mono text-[22px] font-semibold tracking-[-0.04em] text-[var(--c-warning)]">
-              {formatCurrency(safePending, 'PEN')}
-            </p>
-            <p className="shrink-0 text-[10px] font-medium text-[var(--c-text-muted)]">
-              {progress.toFixed(1)}% pagado
-            </p>
-          </div>
-        </div>
-
-        <div className="grid w-full grid-cols-2 gap-2.5">
-          <div className="min-w-0 rounded-[18px] border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
-            <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-              Adeudado
-            </p>
-            <p className="mt-1.5 truncate whitespace-nowrap font-mono text-[15px] font-semibold tabular-nums text-[var(--c-text)]">
-              {formatCurrency(safeTotal, 'PEN')}
-            </p>
-          </div>
-          <div className="min-w-0 rounded-[18px] border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
-            <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-              Pagado
-            </p>
-            <p className="mt-1.5 truncate whitespace-nowrap font-mono text-[15px] font-semibold tabular-nums text-[var(--c-success)]">
-              {formatCurrency(safePaid, 'PEN')}
-            </p>
-          </div>
-        </div>
+        <ObligationCurrencyProgress
+          summaries={summaries}
+          kind="payable"
+          hasUnverifiedInitialBalance={hasUnverifiedInitialBalance}
+          unverifiedRecordCount={unverifiedRecordCount}
+          compact
+        />
       </div>
     </section>
   )
@@ -213,6 +184,11 @@ export function CreditorDetail({ creditor, exchangeRate, onChanged }: Props) {
   const [dateTo, setDateTo] = useState('')
 
   const [createOpen, setCreateOpen] = useState(false)
+  const settlementState = getObligationSettlementState({
+    summaries: creditor.currency_summaries,
+    unverifiedRecordCount: creditor.unverified_currency_records,
+    hasUnverifiedInitialBalance: creditor.has_unverified_initial_debt,
+  })
 
   const loadRows = useCallback(async () => {
     setLoading(true)
@@ -290,17 +266,13 @@ export function CreditorDetail({ creditor, exchangeRate, onChanged }: Props) {
     })
   }, [accountFilter, dateFrom, dateTo, ledgerRows, movementFilter, normalizedQuery])
 
-  const filteredLedgerIncome = useMemo(
-    () => filteredLedger.filter(row => row.type === 'INCOME').reduce((sum, row) => sum + Number(row.amount), 0),
-    [filteredLedger],
-  )
-  const filteredLedgerExpense = useMemo(
-    () => filteredLedger.filter(row => row.type === 'EXPENSE').reduce((sum, row) => sum + Number(row.amount), 0),
+  const filteredLedgerBreakdown = useMemo(
+    () => summarizeObligationLedgerCurrencies(filteredLedger),
     [filteredLedger],
   )
   const overdueCount = useMemo(() => rows.filter(isOverdue).length, [rows])
   const openAccountsCount = rows.filter(row => row.status !== 'PAID').length
-  const filteredLedgerBalance = filteredLedgerIncome - filteredLedgerExpense
+  const hasPositiveLedgerBalance = filteredLedgerBreakdown.summaries.some(summary => summary.balance > 0)
 
   const syncParent = useCallback(async () => {
     if (!onChanged) return
@@ -353,8 +325,14 @@ export function CreditorDetail({ creditor, exchangeRate, onChanged }: Props) {
           </div>
 
           <div className="mt-3.5 flex flex-wrap items-center gap-2">
-            <StatusBadge tone={creditor.all_paid ? 'success' : 'danger'}>
-              {creditor.all_paid ? 'Pago cerrado' : 'Pago abierto'}
+            <StatusBadge tone={settlementState === 'SETTLED' ? 'success' : settlementState === 'UNVERIFIED' ? 'muted' : 'danger'}>
+              {settlementState === 'SETTLED'
+                ? 'Pago cerrado'
+                : settlementState === 'UNVERIFIED'
+                  ? 'Estado no verificable'
+                  : settlementState === 'EMPTY'
+                    ? 'Sin cuentas documentadas'
+                    : 'Pago abierto'}
             </StatusBadge>
             <StatusBadge tone={creditor.is_active ? 'primary' : 'muted'} dot={false}>
               {creditor.is_active ? 'Acreedor activo' : 'Acreedor inactivo'}
@@ -367,9 +345,9 @@ export function CreditorDetail({ creditor, exchangeRate, onChanged }: Props) {
           </div>
 
           <RecoveryVisual
-            total={creditor.total_owed}
-            paid={creditor.total_paid}
-            pending={creditor.pending_amount}
+            summaries={creditor.currency_summaries}
+            hasUnverifiedInitialBalance={creditor.has_unverified_initial_debt}
+            unverifiedRecordCount={creditor.unverified_currency_records}
             className="mt-3.5"
           />
         </section>
@@ -384,9 +362,14 @@ export function CreditorDetail({ creditor, exchangeRate, onChanged }: Props) {
                 <StatusBadge tone="muted" dot={false}>
                   Ledger {filteredLedger.length}
                 </StatusBadge>
-                <StatusBadge tone={filteredLedgerBalance > 0 ? 'warning' : 'success'} dot={false}>
-                  Saldo {formatSignedCurrency(filteredLedgerBalance, 'PEN')}
+                <StatusBadge tone={hasPositiveLedgerBalance ? 'warning' : 'success'} dot={false}>
+                  Saldos {formatObligationLedgerSummaries(filteredLedgerBreakdown.summaries, 'balance')}
                 </StatusBadge>
+                {filteredLedgerBreakdown.unverifiedRecordCount > 0 ? (
+                  <StatusBadge tone="warning" dot={false}>
+                    {filteredLedgerBreakdown.unverifiedRecordCount} sin moneda verificable
+                  </StatusBadge>
+                ) : null}
               </>
             )}
             search={(
@@ -462,19 +445,24 @@ export function CreditorDetail({ creditor, exchangeRate, onChanged }: Props) {
                   Movimientos del acreedor
                 </p>
                 <p className="mt-1 text-[12px] leading-5 text-[var(--c-text-muted)]">
-                  Una sola vista para leer prestamos recibidos y pagos registrados, con saldo consolidado al cierre.
+                  Prestamos y pagos con saldos separados por moneda original, sin conversion.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge tone="info" dot={false}>
-                  Ingresos {formatCurrency(filteredLedgerIncome, 'PEN')}
+                  Ingresos {formatObligationLedgerSummaries(filteredLedgerBreakdown.summaries, 'income')}
                 </StatusBadge>
                 <StatusBadge tone="warning" dot={false}>
-                  Egresos {formatCurrency(filteredLedgerExpense, 'PEN')}
+                  Egresos {formatObligationLedgerSummaries(filteredLedgerBreakdown.summaries, 'expense')}
                 </StatusBadge>
-                <StatusBadge tone={filteredLedgerBalance > 0 ? 'warning' : 'success'} dot={false}>
-                  Saldo {formatSignedCurrency(filteredLedgerBalance, 'PEN')}
+                <StatusBadge tone={hasPositiveLedgerBalance ? 'warning' : 'success'} dot={false}>
+                  Saldos {formatObligationLedgerSummaries(filteredLedgerBreakdown.summaries, 'balance')}
                 </StatusBadge>
+                {filteredLedgerBreakdown.unverifiedRecordCount > 0 ? (
+                  <StatusBadge tone="warning" dot={false}>
+                    {filteredLedgerBreakdown.unverifiedRecordCount} sin moneda verificable
+                  </StatusBadge>
+                ) : null}
               </div>
             </div>
 

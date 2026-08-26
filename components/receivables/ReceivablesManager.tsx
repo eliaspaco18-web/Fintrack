@@ -16,13 +16,19 @@ import {
   EmptyState,
   FilterBar,
   LedgerModule,
-  ProgressMetric,
   StatusBadge,
 } from '@/components/finance'
 import { getApiErrorMessage } from '@/lib/api/error-message'
-import { formatCurrency } from '@/lib/contracts/ui.contracts'
 import { fetchWithTimeout } from '@/lib/client/fetch-with-timeout'
 import { useToast } from '@/lib/toast/toast'
+import { ObligationCurrencyProgress } from '@/components/obligations/ObligationCurrencyProgress'
+import {
+  combineObligationCurrencyBreakdowns,
+  formatObligationCurrencySummaries,
+  getObligationSettlementState,
+  type ObligationCurrencySummary,
+  type ObligationSettlementState,
+} from '@/modules/obligations/obligation-currency-presentation'
 import { DebtorForm, type DebtorRow } from './DebtorForm'
 import { ReceivableForm } from './ReceivableForm'
 import { DebtorDetail } from './DebtorDetail'
@@ -35,21 +41,35 @@ type DebtorWithStats = DebtorRow & {
   all_collected: boolean
   count_pending: number
   receivables_count: number
+  currency_summaries: ObligationCurrencySummary[]
+  unverified_currency_records: number
+  unverified_open_currency_records: number
+  has_unverified_initial_debt: boolean
 }
 
 type StatusFilter = 'all' | 'pending' | 'collected'
 type SortOrder = 'desc' | 'asc'
 type ViewMode = 'list' | 'cards'
 
-function statusTone(debtor: DebtorWithStats) {
-  if (debtor.all_collected) return 'success' as const
+function debtorSettlementState(debtor: DebtorWithStats) {
+  return getObligationSettlementState({
+    summaries: debtor.currency_summaries,
+    unverifiedRecordCount: debtor.unverified_currency_records,
+    hasUnverifiedInitialBalance: debtor.has_unverified_initial_debt,
+  })
+}
+
+function statusTone(state: ObligationSettlementState) {
+  if (state === 'SETTLED') return 'success' as const
+  if (state === 'UNVERIFIED' || state === 'EMPTY') return 'muted' as const
   return 'warning' as const
 }
 
-function progressTone(debtor: DebtorWithStats) {
-  if (debtor.all_collected) return 'success' as const
-  if (debtor.progress_pct >= 65) return 'info' as const
-  return 'warning' as const
+function statusLabel(state: ObligationSettlementState) {
+  if (state === 'SETTLED') return 'Cobrado'
+  if (state === 'UNVERIFIED') return 'No verificable'
+  if (state === 'EMPTY') return 'Sin cuentas'
+  return 'Pendiente'
 }
 
 export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: number }) {
@@ -120,13 +140,43 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
     [debtors, selectedDebtorId],
   )
 
+  const currencyBreakdown = useMemo(
+    () => combineObligationCurrencyBreakdowns(debtors.map(debtor => ({
+      summaries: debtor.currency_summaries,
+      unverifiedRecordCount: debtor.unverified_currency_records,
+      unverifiedOpenRecordCount: debtor.unverified_open_currency_records,
+    }))),
+    [debtors],
+  )
+
+  const debtorsWithUnverifiedInitialDebt = useMemo(
+    () => debtors.filter(debtor => debtor.has_unverified_initial_debt).length,
+    [debtors],
+  )
+
+  const hasPendingDocumentedAmount = currencyBreakdown.summaries.some(summary => summary.pending > 0)
+  const hasCurrencyLimitations = debtorsWithUnverifiedInitialDebt > 0
+    || currencyBreakdown.unverifiedRecordCount > 0
+  const canSortByPendingAmount = currencyBreakdown.summaries.length <= 1 && !hasCurrencyLimitations
+  const currencyLimitationDetail = hasCurrencyLimitations
+    ? [
+        debtorsWithUnverifiedInitialDebt > 0
+          ? `${debtorsWithUnverifiedInitialDebt} saldo${debtorsWithUnverifiedInitialDebt === 1 ? '' : 's'} inicial${debtorsWithUnverifiedInitialDebt === 1 ? '' : 'es'} sin moneda`
+          : null,
+        currencyBreakdown.unverifiedRecordCount > 0
+          ? `${currencyBreakdown.unverifiedRecordCount} registro${currencyBreakdown.unverifiedRecordCount === 1 ? '' : 's'} no verificable${currencyBreakdown.unverifiedRecordCount === 1 ? '' : 's'}`
+          : null,
+      ].filter(Boolean).join(' · ')
+    : null
+
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
 
     return debtors
       .filter(debtor => {
-        if (statusFilter === 'pending' && debtor.all_collected) return false
-        if (statusFilter === 'collected' && !debtor.all_collected) return false
+        const settlementState = debtorSettlementState(debtor)
+        if (statusFilter === 'pending' && !['OPEN', 'UNVERIFIED'].includes(settlementState)) return false
+        if (statusFilter === 'collected' && settlementState !== 'SETTLED') return false
 
         if (
           normalizedQuery &&
@@ -138,25 +188,16 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
 
         return true
       })
-      .sort((left, right) =>
-        sortOrder === 'desc'
+      .sort((left, right) => {
+        if (!canSortByPendingAmount) return left.name.localeCompare(right.name, 'es')
+        return sortOrder === 'desc'
           ? right.pending_amount - left.pending_amount
-          : left.pending_amount - right.pending_amount,
-      )
-  }, [debtors, query, sortOrder, statusFilter])
-
-  const totalPendingAmount = useMemo(
-    () => debtors.reduce((sum, debtor) => sum + debtor.pending_amount, 0),
-    [debtors],
-  )
-
-  const totalCollectedAmount = useMemo(
-    () => debtors.reduce((sum, debtor) => sum + debtor.total_collected, 0),
-    [debtors],
-  )
+          : left.pending_amount - right.pending_amount
+      })
+  }, [canSortByPendingAmount, debtors, query, sortOrder, statusFilter])
 
   const pendingDebtors = useMemo(
-    () => debtors.filter(debtor => !debtor.all_collected).length,
+    () => debtors.filter(debtor => ['OPEN', 'UNVERIFIED'].includes(debtorSettlementState(debtor))).length,
     [debtors],
   )
 
@@ -166,7 +207,11 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
   )
 
   const pendingAccounts = useMemo(
-    () => debtors.reduce((sum, debtor) => sum + debtor.count_pending, 0),
+    () => debtors.reduce((sum, debtor) => (
+      sum
+      + debtor.currency_summaries.reduce((count, summary) => count + summary.openRecordCount, 0)
+      + debtor.unverified_open_currency_records
+    ), 0),
     [debtors],
   )
 
@@ -274,24 +319,27 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
         )}
         stats={[
           {
-            label: 'Pendiente total',
-            value: formatCurrency(totalPendingAmount, 'PEN'),
-            detail: pendingDebtors > 0 ? `${pendingDebtors} deudor${pendingDebtors === 1 ? '' : 'es'}` : 'Sin deuda activa',
-            caption: 'Monto abierto que aun no ingreso a caja.',
-            tone: totalPendingAmount > 0 ? 'warning' : 'neutral',
+            label: 'Pendiente documentado',
+            value: formatObligationCurrencySummaries(currencyBreakdown.summaries, 'pending'),
+            detail: currencyLimitationDetail
+              ?? (pendingDebtors > 0 ? `${pendingDebtors} deudor${pendingDebtors === 1 ? '' : 'es'}` : 'Sin deuda activa'),
+            caption: hasCurrencyLimitations
+              ? 'Los importes sin moneda confirmada estan excluidos.'
+              : 'Importes abiertos separados por moneda, sin conversion.',
+            tone: hasPendingDocumentedAmount || hasCurrencyLimitations ? 'warning' : 'neutral',
           },
           {
-            label: 'Cobrado acumulado',
-            value: formatCurrency(totalCollectedAmount, 'PEN'),
-            detail: debtors.length > 0 ? 'Historico recuperado' : 'Sin movimientos',
-            caption: 'Recuperacion consolidada de todas las cuentas.',
+            label: 'Cobrado documentado',
+            value: formatObligationCurrencySummaries(currencyBreakdown.summaries, 'settled'),
+            detail: debtors.length > 0 ? 'Separado por moneda original' : 'Sin movimientos',
+            caption: 'Cobros registrados sin mezclar PEN y USD.',
             tone: 'success',
           },
           {
             label: 'Cuentas abiertas',
             value: String(pendingAccounts),
             detail: pendingAccounts > 0 ? 'Seguimiento activo' : 'Sin alertas',
-            caption: 'Compromisos individuales todavia pendientes de cobro.',
+            caption: 'Compromisos documentados todavia pendientes de cobro.',
             tone: pendingAccounts > 0 ? 'warning' : 'neutral',
           },
           {
@@ -313,7 +361,7 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
             <DataFilterPreset
               label="Cobrados"
               active={statusFilter === 'collected'}
-              count={debtors.filter(debtor => debtor.all_collected && debtor.receivables_count > 0).length}
+              count={debtors.filter(debtor => debtorSettlementState(debtor) === 'SETTLED').length}
               onClick={() => setStatusFilter('collected')}
             />
             <DataFilterPreset
@@ -333,17 +381,23 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
         )}
         filters={(
           <FilterBar>
-            <AppSelect
-              value={sortOrder}
-              onChange={value => setSortOrder(value as SortOrder)}
-              compact
-              searchable={false}
-              className="w-[220px]"
-              options={[
-                { value: 'desc', label: 'Mayor a menor saldo' },
-                { value: 'asc', label: 'Menor a mayor saldo' },
-              ]}
-            />
+            {canSortByPendingAmount ? (
+              <AppSelect
+                value={sortOrder}
+                onChange={value => setSortOrder(value as SortOrder)}
+                compact
+                searchable={false}
+                className="w-[220px]"
+                options={[
+                  { value: 'desc', label: 'Mayor a menor saldo' },
+                  { value: 'asc', label: 'Menor a mayor saldo' },
+                ]}
+              />
+            ) : (
+              <StatusBadge tone="muted" dot={false}>
+                Orden alfabetico · saldos no comparables
+              </StatusBadge>
+            )}
           </FilterBar>
         )}
         viewToggle={<ViewToggle value={viewMode} onChange={setViewMode} id="receivables-view-toggle" />}
@@ -358,8 +412,8 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
           open: true,
           title: selectedDebtor.name,
           description: selectedDebtor.relationship?.trim()
-            ? `${selectedDebtor.relationship} · ${formatCurrency(selectedDebtor.pending_amount, 'PEN')} pendiente`
-            : `${formatCurrency(selectedDebtor.pending_amount, 'PEN')} pendiente`,
+            ? `${selectedDebtor.relationship} · ${formatObligationCurrencySummaries(selectedDebtor.currency_summaries, 'pending')} pendiente`
+            : `${formatObligationCurrencySummaries(selectedDebtor.currency_summaries, 'pending')} pendiente`,
           onClose: () => {
             setSelectedDebtorId(null)
             clearDrawerQuery()
@@ -430,15 +484,19 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
                     >
                       <div className="flex min-w-0 items-start gap-3">
                         <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-                          debtor.all_collected ? 'bg-[var(--c-success)]' : 'bg-[var(--c-warning)]'
+                          debtorSettlementState(debtor) === 'SETTLED'
+                            ? 'bg-[var(--c-success)]'
+                            : debtorSettlementState(debtor) === 'UNVERIFIED'
+                              ? 'bg-[var(--c-text-faint)]'
+                              : 'bg-[var(--c-warning)]'
                         }`} />
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="truncate text-sm font-semibold text-[var(--c-text)]">
                               {debtor.name}
                             </p>
-                            <StatusBadge tone={statusTone(debtor)}>
-                              {debtor.all_collected ? 'Cobrado' : 'Pendiente'}
+                            <StatusBadge tone={statusTone(debtorSettlementState(debtor))}>
+                              {statusLabel(debtorSettlementState(debtor))}
                             </StatusBadge>
                             {!debtor.is_active ? (
                               <StatusBadge tone="muted" dot={false}>
@@ -463,24 +521,24 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
                     <div className="grid gap-3 sm:grid-cols-3">
                       <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-3">
                         <AmountCell
-                          label="Total"
-                          value={formatCurrency(debtor.total_lent, 'PEN')}
+                          label="Total documentado"
+                          value={formatObligationCurrencySummaries(debtor.currency_summaries, 'total')}
                           align="left"
                         />
                       </div>
                       <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-3">
                         <AmountCell
-                          label="Cobrado"
-                          value={formatCurrency(debtor.total_collected, 'PEN')}
+                          label="Cobrado documentado"
+                          value={formatObligationCurrencySummaries(debtor.currency_summaries, 'settled')}
                           tone="success"
                           align="left"
                         />
                       </div>
                       <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-3">
                         <AmountCell
-                          label="Pendiente"
-                          value={formatCurrency(debtor.pending_amount, 'PEN')}
-                          tone={debtor.pending_amount > 0 ? 'warning' : 'neutral'}
+                          label="Pendiente documentado"
+                          value={formatObligationCurrencySummaries(debtor.currency_summaries, 'pending')}
+                          tone={debtor.currency_summaries.some(summary => summary.pending > 0) ? 'warning' : 'neutral'}
                           align="left"
                         />
                       </div>
@@ -530,16 +588,12 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
                     </div>
                   </div>
 
-                  <ProgressMetric
-                    value={debtor.progress_pct}
-                    label="Progreso de cobro"
-                    valueLabel={`${debtor.progress_pct.toFixed(1)}%`}
-                    tone={progressTone(debtor)}
-                    description={
-                      debtor.all_collected
-                        ? 'Todo el capital registrado fue recuperado.'
-                        : `${formatCurrency(debtor.pending_amount, 'PEN')} aun por ingresar.`
-                    }
+                  <ObligationCurrencyProgress
+                    summaries={debtor.currency_summaries}
+                    kind="receivable"
+                    hasUnverifiedInitialBalance={debtor.has_unverified_initial_debt}
+                    unverifiedRecordCount={debtor.unverified_currency_records}
+                    compact
                   />
                 </div>
               </article>
@@ -563,8 +617,8 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
                         <p className="truncate text-sm font-semibold text-[var(--c-text)]">
                           {debtor.name}
                         </p>
-                        <StatusBadge tone={statusTone(debtor)}>
-                          {debtor.all_collected ? 'Cobrado' : 'Pendiente'}
+                        <StatusBadge tone={statusTone(debtorSettlementState(debtor))}>
+                          {statusLabel(debtorSettlementState(debtor))}
                         </StatusBadge>
                       </div>
                       <p className="mt-1 text-[12px] leading-5 text-[var(--c-text-muted)]">
@@ -620,35 +674,35 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
                   <div className="grid grid-cols-3 gap-3">
                     <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-3">
                       <AmountCell
-                        label="Total"
-                        value={formatCurrency(debtor.total_lent, 'PEN')}
+                        label="Total documentado"
+                        value={formatObligationCurrencySummaries(debtor.currency_summaries, 'total')}
                         align="left"
                       />
                     </div>
                     <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-3">
                       <AmountCell
-                        label="Cobrado"
-                        value={formatCurrency(debtor.total_collected, 'PEN')}
+                        label="Cobrado documentado"
+                        value={formatObligationCurrencySummaries(debtor.currency_summaries, 'settled')}
                         tone="success"
                         align="left"
                       />
                     </div>
                     <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-3">
                       <AmountCell
-                        label="Pendiente"
-                        value={formatCurrency(debtor.pending_amount, 'PEN')}
-                        tone={debtor.pending_amount > 0 ? 'warning' : 'neutral'}
+                        label="Pendiente documentado"
+                        value={formatObligationCurrencySummaries(debtor.currency_summaries, 'pending')}
+                        tone={debtor.currency_summaries.some(summary => summary.pending > 0) ? 'warning' : 'neutral'}
                         align="left"
                       />
                     </div>
                   </div>
 
-                  <ProgressMetric
-                    value={debtor.progress_pct}
-                    label="Progreso"
-                    valueLabel={`${debtor.progress_pct.toFixed(1)}%`}
-                    tone={progressTone(debtor)}
-                    description={`${debtor.count_pending} cuenta${debtor.count_pending === 1 ? '' : 's'} pendiente${debtor.count_pending === 1 ? '' : 's'}.`}
+                  <ObligationCurrencyProgress
+                    summaries={debtor.currency_summaries}
+                    kind="receivable"
+                    hasUnverifiedInitialBalance={debtor.has_unverified_initial_debt}
+                    unverifiedRecordCount={debtor.unverified_currency_records}
+                    compact
                   />
                 </div>
               </article>
