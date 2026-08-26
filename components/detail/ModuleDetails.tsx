@@ -42,6 +42,10 @@ import {
   getAssetTypePresentation,
   type AssetWithTypeInfo,
 } from '@/modules/assets/asset-presentation'
+import {
+  formatVerifiedObligationAmount,
+  resolveVerifiedObligationCurrency,
+} from '@/modules/obligations/obligation-currency-presentation'
 
 // ─── INSTALLMENT LIST ─────────────────────────────────────────────────────────
 
@@ -408,10 +412,17 @@ interface ReceivableDetailProps {
 }
 
 export function ReceivableDetail({ receivable: rec, transaction }: ReceivableDetailProps) {
-  const { preferred, format, exchangeRate } = useCurrency()
   const pending   = rec.amount - rec.collected_amount
-  const amountPen = toPenAmount(rec.amount, rec.currency, exchangeRate)
-  const pendingPen = toPenAmount(pending, rec.currency, exchangeRate)
+  const currency = resolveVerifiedObligationCurrency(rec.currency)
+  const totalDisplay = currency
+    ? formatVerifiedObligationAmount(rec.amount, currency)
+    : 'Importe no verificable'
+  const collectedDisplay = currency
+    ? formatVerifiedObligationAmount(rec.collected_amount, currency)
+    : 'Importe no verificable'
+  const pendingDisplay = currency
+    ? formatVerifiedObligationAmount(pending, currency)
+    : 'Importe no verificable'
   const collectedPct = rec.amount > 0 ? (rec.collected_amount / rec.amount) * 100 : 0
 
   const isOverdue = rec.due_date && new Date(rec.due_date) < new Date() && rec.status !== 'COLLECTED'
@@ -431,17 +442,19 @@ export function ReceivableDetail({ receivable: rec, transaction }: ReceivableDet
           badges={<CanonicalDetailBadge>Por cobrar</CanonicalDetailBadge>}
           title={rec.debtor_name}
           subtitle={rec.concept || undefined}
-          amount={formatCurrency(format(pendingPen), preferred)}
+          amount={pendingDisplay}
           amountMeta={
-            <span className="text-xs font-medium text-[var(--ft-text-muted)]">pendiente</span>
+            <span className="text-xs font-medium text-[var(--ft-text-muted)]">
+              {currency ? `pendiente · ${currency}` : 'moneda no verificable'}
+            </span>
           }
           supporting={rec.status === 'PARTIAL' ? (
             <div>
               <div className="flex flex-col gap-1 text-xs leading-4 text-[var(--ft-text-muted)] sm:flex-row sm:items-center sm:justify-between">
                 <span>Cobrado: {formatPercent(collectedPct, { fractionDigits: 0 })}</span>
                 <span className="tabular-nums">
-                  {formatCurrency(format(toPenAmount(rec.collected_amount, rec.currency, exchangeRate)), preferred)}
-                  {' / '}{formatCurrency(format(amountPen), preferred)}
+                  {collectedDisplay}
+                  {' / '}{totalDisplay}
                 </span>
               </div>
               <div className="mt-2.5">
@@ -475,9 +488,11 @@ export function ReceivableDetail({ receivable: rec, transaction }: ReceivableDet
     >
       <CanonicalDetailFacts>
         <CanonicalDetailFact label="Monto total" mono>
-          {formatCurrency(format(amountPen), preferred)}
+          {totalDisplay}
         </CanonicalDetailFact>
-        <CanonicalDetailFact label="Moneda" mono>{rec.currency}</CanonicalDetailFact>
+        <CanonicalDetailFact label="Moneda" mono>
+          {currency ?? 'No verificable'}
+        </CanonicalDetailFact>
         <CanonicalDetailFact label="Fecha de emisión">
           {new Date(rec.issue_date + 'T12:00:00').toLocaleDateString('es-PE', {
             day: 'numeric', month: 'long', year: 'numeric',
@@ -512,10 +527,17 @@ interface PayableDetailProps {
 }
 
 export function PayableDetail({ payable: pay, transaction }: PayableDetailProps) {
-  const { preferred, format, exchangeRate } = useCurrency()
   const pending    = pay.amount - pay.paid_amount
-  const amountPen  = toPenAmount(pay.amount, pay.currency, exchangeRate)
-  const pendingPen = toPenAmount(pending, pay.currency, exchangeRate)
+  const currency = resolveVerifiedObligationCurrency(pay.currency)
+  const totalDisplay = currency
+    ? formatVerifiedObligationAmount(pay.amount, currency)
+    : 'Importe no verificable'
+  const paidDisplay = currency
+    ? formatVerifiedObligationAmount(pay.paid_amount, currency)
+    : 'Importe no verificable'
+  const pendingDisplay = currency
+    ? formatVerifiedObligationAmount(pending, currency)
+    : 'Importe no verificable'
   const paidPct    = pay.amount > 0 ? (pay.paid_amount / pay.amount) * 100 : 0
 
   const isOverdue = pay.due_date && new Date(pay.due_date) < new Date() && pay.status !== 'PAID'
@@ -534,17 +556,19 @@ export function PayableDetail({ payable: pay, transaction }: PayableDetailProps)
           badges={<CanonicalDetailBadge>Por pagar</CanonicalDetailBadge>}
           title={pay.creditor_name}
           subtitle={pay.concept || undefined}
-          amount={formatCurrency(format(pendingPen), preferred)}
+          amount={pendingDisplay}
           amountMeta={
-            <span className="text-xs font-medium text-[var(--ft-text-muted)]">pendiente</span>
+            <span className="text-xs font-medium text-[var(--ft-text-muted)]">
+              {currency ? `pendiente · ${currency}` : 'moneda no verificable'}
+            </span>
           }
           supporting={pay.status === 'PARTIAL' ? (
             <div>
               <div className="flex flex-col gap-1 text-xs leading-4 text-[var(--ft-text-muted)] sm:flex-row sm:items-center sm:justify-between">
                 <span>Pagado: {formatPercent(paidPct, { fractionDigits: 0 })}</span>
                 <span className="tabular-nums">
-                  {formatCurrency(format(toPenAmount(pay.paid_amount, pay.currency, exchangeRate)), preferred)}
-                  {' / '}{formatCurrency(format(amountPen), preferred)}
+                  {paidDisplay}
+                  {' / '}{totalDisplay}
                 </span>
               </div>
               <div className="mt-2.5">
@@ -578,9 +602,11 @@ export function PayableDetail({ payable: pay, transaction }: PayableDetailProps)
     >
       <CanonicalDetailFacts>
         <CanonicalDetailFact label="Monto total" mono>
-          {formatCurrency(format(amountPen), preferred)}
+          {totalDisplay}
         </CanonicalDetailFact>
-        <CanonicalDetailFact label="Moneda" mono>{pay.currency}</CanonicalDetailFact>
+        <CanonicalDetailFact label="Moneda" mono>
+          {currency ?? 'No verificable'}
+        </CanonicalDetailFact>
         <CanonicalDetailFact label="Fecha de emisión">
           {new Date(pay.issue_date + 'T12:00:00').toLocaleDateString('es-PE', {
             day: 'numeric', month: 'long', year: 'numeric',

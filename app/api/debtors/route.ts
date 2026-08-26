@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient }              from '@/lib/supabase.server'
 import { getSessionUserId }          from '@/lib/api/response'
 import { repairLegacyReceivableLinks } from '@/lib/server/receivable-link-repair'
+import { summarizeObligationCurrencies } from '@/modules/obligations/obligation-currency-presentation'
 
 export async function GET(_req: NextRequest) {
   const supabase = createClient()
@@ -32,7 +33,7 @@ export async function GET(_req: NextRequest) {
   // Traer cuentas por cobrar para agregar por deudor
   const { data: receivables, error: arError } = await supabase
     .from('accounts_receivable')
-    .select('debtor_id, amount, collected_amount, status')
+    .select('debtor_id, amount, collected_amount, currency, status')
     .eq('user_id', userId)
 
   if (arError) return NextResponse.json({ ok: false, error: { code: 'DATABASE_ERROR', message: arError.message } }, { status: 500 })
@@ -49,6 +50,12 @@ export async function GET(_req: NextRequest) {
     const progress_pct    = total_lent > 0 ? Math.min(100, (total_collected / total_lent) * 100) : 0
     const all_collected   = total_lent > 0 && pending_amount <= 0
     const count_pending   = pending_amount > 0 ? (related.filter(r => r.status !== 'COLLECTED').length || (initial_debt > 0 ? 1 : 0)) : 0
+    const currencyBreakdown = summarizeObligationCurrencies(related.map(receivable => ({
+      amount: receivable.amount,
+      settledAmount: receivable.collected_amount,
+      currency: receivable.currency,
+      isOpen: receivable.status !== 'COLLECTED',
+    })))
 
     return {
       ...debtor,
@@ -59,6 +66,10 @@ export async function GET(_req: NextRequest) {
       all_collected,
       count_pending,
       receivables_count: related.length,
+      currency_summaries: currencyBreakdown.summaries,
+      unverified_currency_records: currencyBreakdown.unverifiedRecordCount,
+      unverified_open_currency_records: currencyBreakdown.unverifiedOpenRecordCount,
+      has_unverified_initial_debt: initial_debt > 0,
     }
   })
 

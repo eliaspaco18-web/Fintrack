@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient }              from '@/lib/supabase.server'
 import { getSessionUserId }          from '@/lib/api/response'
+import { summarizeObligationCurrencies } from '@/modules/obligations/obligation-currency-presentation'
 
 export async function GET(_req: NextRequest) {
   const supabase = createClient()
@@ -25,7 +26,7 @@ export async function GET(_req: NextRequest) {
   // Traer cuentas por pagar para agregar por acreedor
   const { data: payables, error: apError } = await supabase
     .from('accounts_payable')
-    .select('creditor_id, amount, paid_amount, status')
+    .select('creditor_id, amount, paid_amount, currency, status')
     .eq('user_id', userId)
 
   if (apError) return NextResponse.json({ ok: false, error: { code: 'DATABASE_ERROR', message: apError.message } }, { status: 500 })
@@ -42,6 +43,12 @@ export async function GET(_req: NextRequest) {
     const progress_pct   = total_owed > 0 ? Math.min(100, (total_paid / total_owed) * 100) : 0
     const all_paid       = total_owed > 0 && pending_amount <= 0
     const count_pending  = pending_amount > 0 ? (related.filter(p => p.status !== 'PAID').length || (initial_debt > 0 ? 1 : 0)) : 0
+    const currencyBreakdown = summarizeObligationCurrencies(related.map(payable => ({
+      amount: payable.amount,
+      settledAmount: payable.paid_amount,
+      currency: payable.currency,
+      isOpen: payable.status !== 'PAID',
+    })))
 
     return {
       ...creditor,
@@ -52,6 +59,10 @@ export async function GET(_req: NextRequest) {
       all_paid,
       count_pending,
       payables_count:  related.length,
+      currency_summaries: currencyBreakdown.summaries,
+      unverified_currency_records: currencyBreakdown.unverifiedRecordCount,
+      unverified_open_currency_records: currencyBreakdown.unverifiedOpenRecordCount,
+      has_unverified_initial_debt: initial_debt > 0,
     }
   })
 
