@@ -32,7 +32,7 @@ async function createPortfolioAccount(page: Page, accountName: string) {
   await expect(page.getByTestId('portfolio-form')).toBeVisible()
 
   await page.getByTestId('portfolio-name-input').fill(accountName)
-  await page.getByTestId('portfolio-institution-input').fill('E2E Bank')
+  await expect(page.getByTestId('portfolio-bank-entity-select')).toBeVisible()
   await page.getByTestId('portfolio-initial-balance-input').fill('250')
   await page.getByTestId('portfolio-submit-button').click()
 
