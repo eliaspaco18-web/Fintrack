@@ -508,6 +508,8 @@ export async function PATCH(
       })
     }
 
+    const loanId = loanResult.data.id
+
     if (!bankEntityResult.data.is_active) {
       return apiError({ code: 'BUSINESS_RULE_ERROR', message: 'La entidad bancaria seleccionada está inactiva.' })
     }
@@ -574,7 +576,7 @@ export async function PATCH(
     }
 
     const restoreSchedule = async () => {
-      await supabase.from('installments').delete().eq('loan_id', loanResult.data.id)
+      await supabase.from('installments').delete().eq('loan_id', loanId)
       if (existingInstallments.length === 0) return
       await supabase.from('installments').insert(existingInstallments.map(item => ({
         id: item.id,
