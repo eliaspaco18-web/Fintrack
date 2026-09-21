@@ -59,6 +59,7 @@ import {
 import { type Result, Errors, ok }      from '@/modules/shared/result.types'
 import { resolveAccountingUsdPenExchangeRate } from '@/lib/server/exchange-rate'
 import { CategoryKeys } from '@/lib/constants/category-keys'
+import { getCreditCardTransferPolicy } from './credit-card-transfer-policy'
 import {
   ATTACHMENT_DELETE_BLOCKED_MESSAGE,
   ATTACHMENT_UPDATE_BLOCKED_MESSAGE,
@@ -1100,17 +1101,28 @@ export class TransactionService {
     sourceAccount: Account,
     destinationAccount: Account | null,
   ): Promise<Result<TransferCreditContext | null>> {
-    const sourceIsCreditCard = sourceAccount.type === 'CREDIT_CARD'
-    const destinationIsCreditCard = destinationAccount?.type === 'CREDIT_CARD'
+    const policy = getCreditCardTransferPolicy(
+      sourceAccount.type,
+      destinationAccount?.type,
+    )
 
-    if (!sourceIsCreditCard && !destinationIsCreditCard) return ok(null)
-
-    if (sourceIsCreditCard && destinationIsCreditCard) {
+    if (policy.violation === 'CARD_TO_CARD') {
       return Errors.businessRule(
         'No se puede transferir entre dos tarjetas de crédito',
-        'Usa una cuenta de débito como destino para disposición o como origen para pago.'
+        'Usa una cuenta de ahorros, corriente o efectivo como origen para pago o destino para disposición.',
       )
     }
+
+    if (policy.violation === 'INVALID_COUNTERPARTY') {
+      return Errors.businessRule(
+        'La tarjeta solo admite pagos o disposiciones con una cuenta líquida propia',
+        'Usa una cuenta de ahorros, corriente o efectivo; las inversiones no aplican para esta operación.',
+      )
+    }
+
+    if (!policy.kind) return ok(null)
+
+    const sourceIsCreditCard = policy.kind === 'DISPOSITION'
 
     const creditAccountId = sourceIsCreditCard
       ? sourceAccount.id
@@ -1148,11 +1160,11 @@ export class TransactionService {
     return ok({
       adjustment: {
         id: creditCard.id,
-        op: sourceIsCreditCard ? 'CONSUMPTION' : 'PAYMENT',
+        op: policy.kind === 'DISPOSITION' ? 'CONSUMPTION' : 'PAYMENT',
         amount: adjustmentAmount,
         currency: adjustmentCurrency,
       },
-      categorySystemKey: sourceIsCreditCard
+      categorySystemKey: policy.kind === 'DISPOSITION'
         ? CategoryKeys.EXPENSE_CREDIT_CARD_DISPOSITION
         : CategoryKeys.INCOME_CREDIT_CARD_PAYMENT,
     })
@@ -1657,14 +1669,16 @@ export class TransactionService {
     if (manual) return manual
 
     const destinationName = destinationAccount?.name ?? 'Cuenta destino'
-    const sourceIsCreditCard = sourceAccount.type === 'CREDIT_CARD'
-    const destinationIsCreditCard = destinationAccount?.type === 'CREDIT_CARD'
+    const transferPolicy = getCreditCardTransferPolicy(
+      sourceAccount.type,
+      destinationAccount?.type,
+    )
 
-    if (sourceIsCreditCard && !destinationIsCreditCard) {
+    if (transferPolicy.kind === 'DISPOSITION') {
       return `Disposición de TC ${sourceAccount.name} transferido a ${destinationName}`.slice(0, 255)
     }
 
-    if (!sourceIsCreditCard && destinationIsCreditCard) {
+    if (transferPolicy.kind === 'PAYMENT') {
       return `Pago de TC ${destinationName} con ${sourceAccount.name}`.slice(0, 255)
     }
 

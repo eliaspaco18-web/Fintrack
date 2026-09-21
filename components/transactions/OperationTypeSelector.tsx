@@ -123,7 +123,7 @@ const MODULE_CARDS: ModuleCardConfig[] = [
       {
         type: 'receivable_issue',
         label: 'Egreso',
-        description: 'Crear cuenta por cobrar',
+        description: 'Crear cuenta por cobrar al entregar dinero',
       },
       {
         type: 'receivable_collect',
@@ -150,7 +150,7 @@ const MODULE_CARDS: ModuleCardConfig[] = [
       {
         type: 'payable_issue',
         label: 'Ingreso',
-        description: 'Crear cuenta por pagar',
+        description: 'Crear cuenta por pagar al recibir dinero',
       },
       {
         type: 'payable_pay',

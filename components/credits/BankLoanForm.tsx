@@ -9,10 +9,12 @@ import { RecordModalFooter } from '@/components/ui/RecordModal'
 import { BankLoanScheduleModal } from '@/components/credits/BankLoanScheduleModal'
 import { formatScheduleDateLabel } from '@/components/credits/credits-schedule.constants'
 import { getApiErrorMessage } from '@/lib/api/error-message'
+import { requestAttachmentUpload } from '@/modules/attachments/attachment-client'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 import { formatNumber } from '@/lib/contracts/ui.contracts'
 import { resolveCreditExchangeRateInput } from '@/modules/credits/exchange-rate-integrity'
 import { resizeScheduleRows } from '@/modules/credits/loan-schedule-integrity'
+import { LOAN_TYPE_VALUES, type LoanType, getLoanTypeLabel } from '@/modules/loans/loan-type'
 
 type BankEntityOption = {
   id: string
@@ -42,21 +44,48 @@ type InstallmentRow = {
 
 type LoanFormState = {
   name: string
+  loan_type: LoanType
   bank_entity_id: string
   account_id: string
   disbursement_date: string
   start_date: string
   total_installments: string
-  principal_amount: string
   exchange_rate: string
   description: string
 }
 
 interface BankLoanFormProps {
-  onSuccess: (creditName: string) => void
+  onSuccess: (creditName: string, attachmentIssue?: string, creditId?: string) => void
   onCancel: () => void
   onLayoutPreferenceChange?: (nextSize: 'lg' | 'xl' | 'full-form') => void
   onNestedModalOpenChange?: (open: boolean) => void
+  mode?: 'create' | 'edit'
+  creditId?: string
+}
+
+type LoanEditDetails = {
+  credit: { account_id: string | null; name: string }
+  loan: {
+    bank_entity_id: string | null
+    loan_type: string
+    name: string | null
+    start_date: string
+    total_installments: number
+  } | null
+  disbursement: {
+    transaction_date: string
+    description: string
+    exchange_rate: number | null
+  } | null
+  installments: Array<{
+    id: string
+    due_date: string
+    principal_amount: number
+    interest_amount: number
+    insurance_amount: number
+    other_charges: number
+  }>
+  permissions?: { can_edit_loan_finances?: boolean }
 }
 
 function todayIso(): string {
@@ -125,6 +154,8 @@ export function BankLoanForm({
   onCancel,
   onLayoutPreferenceChange,
   onNestedModalOpenChange,
+  mode = 'create',
+  creditId,
 }: BankLoanFormProps) {
   const today = todayIso()
 
@@ -136,18 +167,19 @@ export function BankLoanForm({
 
   const [form, setForm] = useState<LoanFormState>({
     name: '',
+    loan_type: 'CONSUMPTION',
     bank_entity_id: '',
     account_id: '',
     disbursement_date: today,
-    start_date: today,
+    start_date: addMonths(today, 1),
     total_installments: '12',
-    principal_amount: '',
     exchange_rate: '',
     description: '',
   })
 
-  const [installments, setInstallments] = useState<InstallmentRow[]>(() => buildSchedule(12, today))
+  const [installments, setInstallments] = useState<InstallmentRow[]>(() => buildSchedule(12, addMonths(today, 1)))
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
+  const [officialScheduleFile, setOfficialScheduleFile] = useState<File | null>(null)
 
   const destAccounts = useMemo(
     () => accounts.filter(account => account.is_active && ALLOWED_DEST_TYPES.includes(account.type)),
@@ -195,13 +227,19 @@ export function BankLoanForm({
     const loadOptions = async () => {
       setLoading(true)
       try {
-        const [bankEntitiesResponse, accountsResponse] = await Promise.all([
+        const [bankEntitiesResponse, accountsResponse, loanDetailsResponse] = await Promise.all([
           fetch('/api/bank-entities', { cache: 'no-store' }),
           fetch('/api/accounts', { cache: 'no-store' }),
+          mode === 'edit' && creditId
+            ? fetch(`/api/credits/${creditId}`, { cache: 'no-store' })
+            : Promise.resolve(null),
         ])
 
         const bankEntitiesJson = await bankEntitiesResponse.json().catch(() => null)
         const accountsJson = await accountsResponse.json().catch(() => null)
+        const loanDetailsJson = loanDetailsResponse
+          ? await loanDetailsResponse.json().catch(() => null)
+          : null
 
         if (!bankEntitiesResponse.ok || !bankEntitiesJson?.ok) {
           throw new Error(getApiErrorMessage(bankEntitiesJson, 'Error cargando entidades'))
@@ -211,22 +249,61 @@ export function BankLoanForm({
           throw new Error(getApiErrorMessage(accountsJson, 'Error cargando cuentas'))
         }
 
+        if (loanDetailsResponse && (!loanDetailsResponse.ok || !loanDetailsJson?.ok)) {
+          throw new Error(getApiErrorMessage(loanDetailsJson, 'No se pudo cargar el préstamo'))
+        }
+
         const loadedEntities = ((bankEntitiesJson.data as BankEntityOption[]) ?? []).filter(entity => entity.is_active)
         const loadedAccounts = (accountsJson.data as AccountOption[]) ?? []
 
         setBankEntities(loadedEntities)
         setAccounts(loadedAccounts)
 
-        const firstEntity = loadedEntities[0]
-        if (firstEntity) {
-          setForm(prev => ({ ...prev, bank_entity_id: firstEntity.id }))
-        }
+        if (mode === 'edit') {
+          const details = loanDetailsJson?.data as LoanEditDetails | undefined
+          if (!details?.loan || !details.credit.account_id) {
+            throw new Error('No se encontró la información financiera del préstamo.')
+          }
+          if (!details.permissions?.can_edit_loan_finances) {
+            throw new Error('Este préstamo ya tiene cuotas con pagos registrados. Solo se puede editar su referencia y notas.')
+          }
 
-        const firstDestination = loadedAccounts.find(
-          account => account.is_active && ALLOWED_DEST_TYPES.includes(account.type),
-        )
-        if (firstDestination) {
-          setForm(prev => ({ ...prev, account_id: firstDestination.id }))
+          const loanType = LOAN_TYPE_VALUES.includes(details.loan.loan_type as LoanType)
+            ? details.loan.loan_type as LoanType
+            : 'CONSUMPTION'
+          setForm({
+            name: details.loan.name ?? details.credit.name,
+            loan_type: loanType,
+            bank_entity_id: details.loan.bank_entity_id ?? '',
+            account_id: details.credit.account_id,
+            disbursement_date: details.disbursement?.transaction_date ?? today,
+            start_date: details.loan.start_date,
+            total_installments: String(details.loan.total_installments),
+            exchange_rate: details.disbursement?.exchange_rate
+              ? String(details.disbursement.exchange_rate)
+              : '',
+            description: details.disbursement?.description ?? '',
+          })
+          setInstallments(details.installments.map(row => ({
+            id: row.id,
+            due_date: row.due_date,
+            principal_amount: Number(row.principal_amount).toFixed(2),
+            interest_amount: Number(row.interest_amount).toFixed(2),
+            insurance_amount: Number(row.insurance_amount).toFixed(2),
+            other_charges: Number(row.other_charges).toFixed(2),
+          })))
+        } else {
+          const firstEntity = loadedEntities[0]
+          if (firstEntity) {
+            setForm(prev => ({ ...prev, bank_entity_id: firstEntity.id }))
+          }
+
+          const firstDestination = loadedAccounts.find(
+            account => account.is_active && ALLOWED_DEST_TYPES.includes(account.type),
+          )
+          if (firstDestination) {
+            setForm(prev => ({ ...prev, account_id: firstDestination.id }))
+          }
         }
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : 'Error cargando opciones')
@@ -236,7 +313,7 @@ export function BankLoanForm({
     }
 
     void loadOptions()
-  }, [])
+  }, [creditId, mode, today])
 
   const updateInstallment = useCallback((id: string, patch: Partial<InstallmentRow>) => {
     setInstallments(prev => prev.map(row => (row.id === id ? { ...row, ...patch } : row)))
@@ -295,14 +372,19 @@ export function BankLoanForm({
       return null
     }
 
+    if (installments.some(row => row.due_date <= form.disbursement_date)) {
+      setError('Cada cuota debe vencer después de la fecha de desembolso.')
+      return null
+    }
+
     if (totalInstallmentsNum < 1) {
       setError('El número de cuotas debe ser al menos 1.')
       return null
     }
 
-    const principalAmount = roundToDecimals(parseNumericInput(form.principal_amount, Number.NaN), 2)
+    const principalAmount = roundToDecimals(scheduleTotal.principal, 2)
     if (!Number.isFinite(principalAmount) || principalAmount <= 0) {
-      setError('El capital prestado debe ser mayor a 0.')
+      setError('Registra un capital mayor a 0 en el cronograma de cuotas.')
       return null
     }
 
@@ -319,7 +401,7 @@ export function BankLoanForm({
       principalAmount,
       exchangeRate: exchangeRateResult.exchangeRate,
     }
-  }, [currency, form, totalInstallmentsNum])
+  }, [currency, form, installments, scheduleTotal.principal, totalInstallmentsNum])
 
   const handleSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -341,31 +423,46 @@ export function BankLoanForm({
         other_charges: roundToDecimals(parseNumericInput(row.other_charges, 0) ?? 0, 2),
       }))
 
-      const endDate = addMonths(form.start_date, totalInstallmentsNum)
+      const scheduleStartDate = parsedInstallments[0]?.due_date ?? form.start_date
+      const endDate = parsedInstallments[parsedInstallments.length - 1]?.due_date ?? form.start_date
 
-      const res = await fetch('/api/credits', {
-        method: 'POST',
+      const endpoint = mode === 'edit' && creditId ? `/api/credits/${creditId}` : '/api/credits'
+      const payload = {
+        name: valid.trimmedName,
+        loan_type: form.loan_type,
+        creditor_name: bankEntities.find(entity => entity.id === form.bank_entity_id)?.name
+          ?? 'Banco',
+        bank_entity_id: form.bank_entity_id,
+        account_id: form.account_id,
+        currency: selectedAccount?.currency ?? 'PEN',
+        exchange_rate: valid.exchangeRate,
+        principal_amount: valid.principalAmount,
+        interest_rate: 0,
+        total_installments: totalInstallmentsNum,
+        start_date: scheduleStartDate,
+        end_date: endDate,
+        transaction_date: form.disbursement_date,
+        description: form.description.trim() || `Desembolso de crédito: ${valid.trimmedName}`,
+        generate_schedule: false,
+        installments: parsedInstallments,
+        notes: null,
+      }
+      const res = await fetch(endpoint, {
+        method: mode === 'edit' ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          kind: 'BANK',
-          name: valid.trimmedName,
-          creditor_name: bankEntities.find(entity => entity.id === form.bank_entity_id)?.name
-            ?? 'Banco',
-          bank_entity_id: form.bank_entity_id,
-          account_id: form.account_id,
-          currency: selectedAccount?.currency ?? 'PEN',
-          exchange_rate: valid.exchangeRate,
-          principal_amount: valid.principalAmount,
-          interest_rate: 0,
-          total_installments: totalInstallmentsNum,
-          start_date: form.start_date,
-          end_date: endDate,
-          transaction_date: form.disbursement_date,
-          description: form.description.trim() || `Desembolso de crédito: ${valid.trimmedName}`,
-          generate_schedule: false,
-          installments: parsedInstallments,
-          notes: null,
-        }),
+        body: JSON.stringify(mode === 'edit' ? { loan: {
+          name: payload.name,
+          loan_type: payload.loan_type,
+          bank_entity_id: payload.bank_entity_id,
+          account_id: payload.account_id,
+          currency: payload.currency,
+          exchange_rate: payload.exchange_rate,
+          disbursement_date: payload.transaction_date,
+          start_date: payload.start_date,
+          total_installments: payload.total_installments,
+          description: payload.description,
+          installments: payload.installments,
+        } } : { kind: 'BANK', ...payload }),
       })
 
       const json = await res.json().catch(() => null)
@@ -373,13 +470,25 @@ export function BankLoanForm({
         throw new Error(getApiErrorMessage(json, 'No se pudo crear el crédito bancario'))
       }
 
-      onSuccess(valid.trimmedName)
+      const createdCreditId = json.data?.credit?.id as string | undefined
+      let attachmentIssue: string | undefined
+      if (mode === 'create' && officialScheduleFile && createdCreditId) {
+        try {
+          await requestAttachmentUpload(`/api/credits/${createdCreditId}/documents`, officialScheduleFile)
+        } catch (attachmentError) {
+          attachmentIssue = attachmentError instanceof Error
+            ? attachmentError.message
+            : 'No se pudo adjuntar el cronograma oficial.'
+        }
+      }
+
+      onSuccess(valid.trimmedName, attachmentIssue, createdCreditId)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No se pudo crear el crédito bancario')
     } finally {
       setSaving(false)
     }
-  }, [bankEntities, form, installments, onSuccess, saving, selectedAccount, totalInstallmentsNum, validateDetailsStep])
+  }, [bankEntities, creditId, form, installments, mode, officialScheduleFile, onSuccess, saving, selectedAccount, totalInstallmentsNum, validateDetailsStep])
 
   const isDisabled = saving
   const closeScheduleModal = useCallback(() => {
@@ -464,6 +573,21 @@ export function BankLoanForm({
             />
           </FormField>
 
+          <FormField
+            label="Tipo de préstamo"
+            description="Se usará para compararlo con la tasa de mercado correspondiente."
+            className="md:col-span-2"
+          >
+            <AppSelect
+              value={form.loan_type}
+              onChange={value => setForm(prev => ({ ...prev, loan_type: value as LoanType }))}
+              disabled={isDisabled}
+              testId="bank-loan-type-select"
+              searchable={false}
+              options={LOAN_TYPE_VALUES.map(value => ({ value, label: getLoanTypeLabel(value) }))}
+            />
+          </FormField>
+
           <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3 md:col-span-2">
             <p className="text-[11px] font-medium text-[var(--ft-form-muted)]">Moneda del desembolso</p>
             <p className="mt-1 text-sm font-semibold text-[var(--ft-text)]">{currency}</p>
@@ -472,24 +596,19 @@ export function BankLoanForm({
 
         <FormSection
           title="Condiciones iniciales"
-          description="Separa el monto principal, el número de cuotas y las fechas clave antes de revisar el cronograma."
+          description="Define las fechas y el número de cuotas; el capital se obtiene del cronograma registrado."
           columns="2"
           className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
         >
-          <FormField label="Capital prestado">
-            <NumericInput
-              step="0.01"
-              decimals={2}
-              min={0}
-              value={form.principal_amount}
-              onValueChange={value => setForm(prev => ({ ...prev, principal_amount: value }))}
-              disabled={isDisabled}
-              data-testid="bank-loan-principal-input"
-              className="field-base ft-form-input w-full"
-              placeholder="Ej: 45000"
-              required
-            />
-          </FormField>
+          <div className="rounded-[var(--ft-form-radius-sm)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
+            <p className="text-[11px] font-medium text-[var(--ft-form-muted)]">Capital según cronograma</p>
+            <p className="mt-2 text-[16px] font-semibold tabular-nums text-[var(--ft-text)]">
+              {formatNumber(scheduleTotal.principal)}
+            </p>
+            <p className="mt-1 text-[11px] leading-[1.4] text-[var(--ft-form-muted)]">
+              Edita las cuotas para definir el capital desembolsado.
+            </p>
+          </div>
 
           {currency === 'USD' ? (
             <FormField label="Tipo de cambio USD → PEN">
@@ -558,6 +677,23 @@ export function BankLoanForm({
               maxLength={300}
             />
           </FormField>
+
+          {mode === 'create' ? (
+            <FormField
+              label="Cronograma oficial"
+              optional
+              description="Puedes adjuntar un solo documento emitido por la entidad financiera."
+              className="md:col-span-2"
+            >
+              <input
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx,.csv,.txt"
+                disabled={isDisabled}
+                onChange={event => setOfficialScheduleFile(event.target.files?.[0] ?? null)}
+                className="field-base ft-form-input w-full cursor-pointer file:mr-3 file:border-0 file:bg-transparent file:text-[12px] file:font-semibold file:text-[var(--ft-primary)]"
+              />
+            </FormField>
+          ) : null}
         </FormSection>
 
         <FormSection
@@ -586,7 +722,7 @@ export function BankLoanForm({
           </div>
 
           <p className="text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-            Los comprobantes se adjuntan al registrar pagos de cuotas.
+            El capital se calcula desde el cronograma. Los comprobantes de pago se adjuntan al registrar cada cuota.
           </p>
         </FormSection>
       </div>
@@ -617,7 +753,7 @@ export function BankLoanForm({
               loading={saving}
               testId="bank-loan-submit-button"
             >
-              Crear prestamo
+              {mode === 'edit' ? 'Guardar préstamo' : 'Crear préstamo'}
             </Button>
           )}
         />

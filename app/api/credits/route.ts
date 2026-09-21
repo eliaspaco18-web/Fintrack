@@ -28,12 +28,15 @@ import {
 } from '@/modules/credits/exchange-rate-integrity'
 import {
   buildManualLoanSchedule,
+  getManualSchedulePrincipalAmount,
   getLoanScheduleIntegrity,
+  LOAN_SCHEDULE_PRINCIPAL_ERROR,
   getManualScheduleSubmissionIssue,
   type LoanScheduleIntegrity,
   zManualLoanInstallmentInput,
 } from '@/modules/credits/loan-schedule-integrity'
 import type { TablesInsert } from '@/types/database.types'
+import { LOAN_TYPE_VALUES } from '@/modules/loans/loan-type'
 
 const zDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)')
 
@@ -58,6 +61,7 @@ const zCreateCreditCardSchema = z.object({
 const zCreateBankCreditSchema = z.object({
   kind: z.literal('BANK'),
   name: z.string().trim().min(2).max(100),
+  loan_type: z.enum(LOAN_TYPE_VALUES).default('CONSUMPTION'),
   creditor_name: z.string().trim().min(2).max(150),
   bank_entity_id: z.string().uuid(),
   account_id: z.string().uuid(),
@@ -137,6 +141,17 @@ const zCreateCreditSchema = z.discriminatedUnion('kind', [
       path: ['installments'],
       message: scheduleIssue,
     })
+  }
+
+  if (!data.generate_schedule && data.installments) {
+    const schedulePrincipal = getManualSchedulePrincipalAmount(data.installments)
+    if (schedulePrincipal <= 0 || Math.abs(schedulePrincipal - data.principal_amount) > 0.01) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['principal_amount'],
+        message: LOAN_SCHEDULE_PRINCIPAL_ERROR,
+      })
+    }
   }
 })
 
@@ -416,11 +431,15 @@ async function createBankCredit(userId: string, payload: Extract<CreditCreateReq
 
   const transactionDate = payload.transaction_date ?? payload.start_date
   const txDescription = payload.description?.trim() || `Desembolso de crédito: ${payload.name}`
+  const manualPrincipalAmount = payload.installments && payload.installments.length > 0
+    ? getManualSchedulePrincipalAmount(payload.installments)
+    : null
+  const principalAmount = manualPrincipalAmount ?? payload.principal_amount
 
   const txResult = await txService.createTransaction(userId, {
     type: 'INCOME',
     source_account_id: payload.account_id,
-    amount: payload.principal_amount,
+    amount: principalAmount,
     currency: payload.currency,
     exchange_rate: payload.exchange_rate,
     description: txDescription,
@@ -443,8 +462,8 @@ async function createBankCredit(userId: string, payload: Extract<CreditCreateReq
     transaction_id: transaction.id,
     credit_type: 'LINE_OF_CREDIT',
     name: payload.name,
-    credit_limit: payload.principal_amount,
-    used_amount: payload.principal_amount,
+    credit_limit: principalAmount,
+    used_amount: principalAmount,
     interest_rate: payload.interest_rate,
     closing_day: null,
     payment_day: null,
@@ -471,7 +490,8 @@ async function createBankCredit(userId: string, payload: Extract<CreditCreateReq
     bank_entity_id: payload.bank_entity_id,
     transaction_id: transaction.id,
     creditor_name: payload.creditor_name,
-    principal_amount: payload.principal_amount,
+    loan_type: payload.loan_type,
+    principal_amount: principalAmount,
     interest_rate: payload.interest_rate,
     total_installments: payload.total_installments,
     paid_installments: 0,
@@ -507,7 +527,7 @@ async function createBankCredit(userId: string, payload: Extract<CreditCreateReq
   if (manualSchedule || payload.generate_schedule) {
     const schedule: TablesInsert<'installments'>[] = manualSchedule ?? LoanRepository.buildInstallmentSchedule({
       loanId: loan.id,
-      principalAmount: payload.principal_amount,
+      principalAmount,
       interestRate: payload.interest_rate,
       totalInstallments: payload.total_installments,
       startDate: payload.start_date,

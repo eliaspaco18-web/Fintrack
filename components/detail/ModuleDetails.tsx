@@ -28,6 +28,8 @@ import {
   type CanonicalDetailTone,
 }                                  from './primitives'
 import { ProgressBar } from '@/components/tables/primitives'
+import { LoanMarketRateComparison } from '@/components/credits/LoanMarketRateComparison'
+import { calculateScheduleTceaPercent } from '@/modules/loans/loan-rate-analysis'
 import type { Credit,
   AccountReceivable, AccountPayable,
   Installment }                    from '@/types/database.types'
@@ -37,6 +39,7 @@ import {
   type CreditDetailLoanEvidence,
   type CreditNativeCurrency,
 } from '@/modules/credits/credit-detail-presentation'
+import { getLoanTypeLabel } from '@/modules/loans/loan-type'
 import {
   getAssetStatusPresentation,
   getAssetTypePresentation,
@@ -124,7 +127,7 @@ interface CreditDetailProps {
   installments?: Installment[]
   scheduleIntegrity?: LoanScheduleIntegrity
   loanEvidence?: CreditDetailLoanEvidence
-  transaction?: { id: string; description: string } | null
+  transaction?: { id: string; description: string; transaction_date?: string } | null
 }
 
 export function CreditDetail({
@@ -151,6 +154,16 @@ export function CreditDetail({
     ? scheduleIntegrity.status !== 'NOT_APPLICABLE'
     : installments.length > 0
   const scheduleIsLimited = requiresSchedule && scheduleIntegrity && !scheduleIntegrity.isComplete
+  const loanTceaPercent = loanEvidence.status === 'VERIFIED' && transaction?.transaction_date
+    ? calculateScheduleTceaPercent({
+        principalAmount: loanEvidence.principalAmount,
+        disbursementDate: transaction.transaction_date,
+        payments: installments.map(installment => ({
+          dueDate: installment.due_date,
+          totalAmount: installment.total_amount,
+        })),
+      })
+    : null
 
   return (
     <CanonicalDetailLayout
@@ -235,9 +248,16 @@ export function CreditDetail({
       <div className="space-y-4 sm:space-y-5">
         <CanonicalDetailFacts>
           {presentation.product === 'LOAN' ? (
-            <CanonicalDetailFact label="Capital original" mono>
-              {primaryAmount}
-            </CanonicalDetailFact>
+            <>
+              <CanonicalDetailFact label="Capital original" mono>
+                {primaryAmount}
+              </CanonicalDetailFact>
+              <CanonicalDetailFact label="Tipo de préstamo">
+                {loanEvidence.status === 'VERIFIED'
+                  ? getLoanTypeLabel(loanEvidence.loanType)
+                  : 'No verificable'}
+              </CanonicalDetailFact>
+            </>
           ) : (
             <>
               <CanonicalDetailFact label="Límite de crédito" mono>
@@ -252,9 +272,11 @@ export function CreditDetail({
               </CanonicalDetailFact>
             </>
           )}
-          <CanonicalDetailFact label="Tasa de interés" mono>
-            {formatPercent(credit.interest_rate, { fractionDigits: 2 })} mensual
-          </CanonicalDetailFact>
+          {presentation.product !== 'LOAN' ? (
+            <CanonicalDetailFact label="Tasa de interés" mono>
+              {formatPercent(credit.interest_rate, { fractionDigits: 2 })} mensual
+            </CanonicalDetailFact>
+          ) : null}
           <CanonicalDetailFact label="Moneda" mono>{presentation.currencyLabel}</CanonicalDetailFact>
           {credit.closing_day && (
             <CanonicalDetailFact label="Día de corte">Día {credit.closing_day}</CanonicalDetailFact>
@@ -263,6 +285,18 @@ export function CreditDetail({
             <CanonicalDetailFact label="Día de pago">Día {credit.payment_day}</CanonicalDetailFact>
           )}
         </CanonicalDetailFacts>
+
+        {presentation.product === 'LOAN' && loanEvidence.status === 'VERIFIED' && presentation.currency ? (
+          <CanonicalDetailSection title="Comparación de tasa">
+            <div className="p-4 sm:p-5">
+              <LoanMarketRateComparison
+                loanType={loanEvidence.loanType}
+                currency={presentation.currency}
+                tceaPercent={loanTceaPercent}
+              />
+            </div>
+          </CanonicalDetailSection>
+        ) : null}
 
         {requiresSchedule && (scheduleIntegrity || installments.length > 0) && (
           <CanonicalDetailSection

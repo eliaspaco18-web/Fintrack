@@ -9,7 +9,15 @@ import {
   apiZodError,
   getSessionUserId,
 } from '@/lib/api/response'
-import { getLoanScheduleIntegrity } from '@/modules/credits/loan-schedule-integrity'
+import {
+  buildManualLoanSchedule,
+  getLoanScheduleIntegrity,
+  getManualSchedulePrincipalAmount,
+  getManualScheduleSubmissionIssue,
+} from '@/modules/credits/loan-schedule-integrity'
+import { LOAN_TYPE_VALUES } from '@/modules/loans/loan-type'
+import { TransactionService } from '@/modules/transactions/transaction.service'
+import type { CreateIncomeInput } from '@/modules/transactions/transaction.service.types'
 import {
   ATTACHMENT_DELETE_BLOCKED_MESSAGE,
   ATTACHMENT_UPDATE_BLOCKED_MESSAGE,
@@ -54,6 +62,31 @@ const zUpdateCreditSchema = z.object({
   used_amount_pen: z.number().min(0).optional(),
   used_amount_usd: z.number().min(0).optional(),
   notes: z.string().trim().max(500).nullable().optional(),
+  /**
+   * Private app contract for editing an unstarted bank loan. Financial fields
+   * are intentionally grouped so card and reference-only credit edits remain
+   * backward compatible.
+   */
+  loan: z.object({
+    name: z.string().trim().min(2).max(100),
+    loan_type: z.enum(LOAN_TYPE_VALUES),
+    bank_entity_id: z.string().uuid(),
+    account_id: z.string().uuid(),
+    currency: z.enum(['PEN', 'USD']),
+    exchange_rate: z.number().positive().optional(),
+    disbursement_date: z.string().date(),
+    start_date: z.string().date(),
+    total_installments: z.number().int().min(1).max(600),
+    description: z.string().trim().max(300).optional(),
+    installments: z.array(z.object({
+      installment_number: z.number().int().min(1),
+      due_date: z.string().date(),
+      principal_amount: z.number().min(0),
+      interest_amount: z.number().min(0),
+      insurance_amount: z.number().min(0),
+      other_charges: z.number().min(0),
+    })).min(1).max(600),
+  }).optional(),
 }).refine(
   data => Object.keys(data).length > 0,
   { message: 'No hay campos para actualizar' },
@@ -237,7 +270,7 @@ export async function GET(
     ? Promise.resolve({ data: null, error: null })
     : supabase
       .from('loans')
-      .select('id, total_installments')
+      .select('id, bank_entity_id, creditor_name, currency, end_date, interest_rate, loan_type, name, notes, principal_amount, start_date, total_installments, transaction_id')
       .eq('credit_id', creditId)
       .eq('user_id', userId)
       .maybeSingle()
@@ -273,16 +306,27 @@ export async function GET(
       .limit(20)
     : Promise.resolve({ data: [] as MovementRow[], error: null })
 
+  const disbursementPromise = !isCreditCard && credit.transaction_id
+    ? supabase
+      .from('transactions')
+      .select('id, transaction_date, description, exchange_rate')
+      .eq('id', credit.transaction_id)
+      .eq('user_id', userId)
+      .maybeSingle()
+    : Promise.resolve({ data: null, error: null })
+
   const [
     { data: loan, error: loanError },
     { data: installments, error: installmentsError },
     { data: consumptions, error: consumptionsError },
     { data: payments, error: paymentsError },
+    { data: disbursement, error: disbursementError },
   ] = await Promise.all([
     loanPromise,
     installmentsPromise,
     consumptionPromise,
     paymentPromise,
+    disbursementPromise,
   ])
 
   if (consumptionsError) {
@@ -291,6 +335,10 @@ export async function GET(
 
   if (paymentsError) {
     return apiError({ code: 'DATABASE_ERROR', message: paymentsError.message })
+  }
+
+  if (disbursementError) {
+    return apiError({ code: 'DATABASE_ERROR', message: disbursementError.message })
   }
 
   const safeConsumptions = (consumptions ?? []) as MovementRow[]
@@ -307,6 +355,9 @@ export async function GET(
   const consumptionTotal = safeConsumptions.reduce((sum, item) => sum + Number(item.amount ?? 0), 0)
   const paymentTotal = safePayments.reduce((sum, item) => sum + Number(item.amount ?? 0), 0)
   const paidInstallments = safeInstallments.filter(item => item.status === 'PAID').length
+  const hasInstallmentPayment = safeInstallments.some(item => (
+    item.status !== 'PENDING' || Number(item.paid_amount ?? 0) > 0 || item.paid_date !== null
+  ))
   const billingCycles = isCreditCard
     ? buildBillingCycles(
       safeConsumptions,
@@ -318,6 +369,11 @@ export async function GET(
 
   return apiOk({
     credit,
+    loan,
+    disbursement,
+    permissions: {
+      can_edit_loan_finances: !isCreditCard && Boolean(loan) && !hasInstallmentPayment,
+    },
     installments: safeInstallments,
     schedule_integrity: {
       status: scheduleIntegrity.status,
@@ -381,6 +437,299 @@ export async function PATCH(
     return apiError({
       code: 'BUSINESS_RULE_ERROR',
       message: ATTACHMENT_UPDATE_BLOCKED_MESSAGE,
+    })
+  }
+
+  if (parsed.data.loan) {
+    if (credit.credit_type === 'CREDIT_CARD') {
+      return apiError({
+        code: 'BUSINESS_RULE_ERROR',
+        message: 'La edición financiera solo está disponible para préstamos bancarios.',
+      })
+    }
+
+    const loanInput = parsed.data.loan
+    const sequenceIssue = getManualScheduleSubmissionIssue({
+      generateSchedule: false,
+      totalInstallments: loanInput.total_installments,
+      installments: loanInput.installments,
+    })
+    if (sequenceIssue) {
+      return apiError({ code: 'VALIDATION_ERROR', message: sequenceIssue })
+    }
+
+    if (loanInput.installments.some(item => item.due_date <= loanInput.disbursement_date)) {
+      return apiError({
+        code: 'VALIDATION_ERROR',
+        message: 'Cada cuota debe vencer después de la fecha de desembolso.',
+      })
+    }
+
+    if (loanInput.currency === 'USD' && !loanInput.exchange_rate) {
+      return apiError({
+        code: 'VALIDATION_ERROR',
+        message: 'Indica el tipo de cambio para un desembolso en USD.',
+      })
+    }
+
+    const principalAmount = getManualSchedulePrincipalAmount(loanInput.installments)
+    if (principalAmount <= 0) {
+      return apiError({
+        code: 'VALIDATION_ERROR',
+        message: 'Registra un capital mayor a 0 en el cronograma de cuotas.',
+      })
+    }
+
+    const [loanResult, installmentsResult, bankEntityResult] = await Promise.all([
+      supabase
+        .from('loans')
+        .select('*')
+        .eq('credit_id', creditId)
+        .eq('user_id', userId)
+        .maybeSingle(),
+      supabase
+        .from('installments')
+        .select('*, loan:loans!inner(user_id, credit_id)')
+        .eq('loan.user_id', userId)
+        .eq('loan.credit_id', creditId)
+        .order('installment_number'),
+      supabase
+        .from('bank_entities')
+        .select('id, is_active, name')
+        .eq('id', loanInput.bank_entity_id)
+        .eq('user_id', userId)
+        .maybeSingle(),
+    ])
+
+    if (loanResult.error || !loanResult.data || installmentsResult.error || bankEntityResult.error || !bankEntityResult.data) {
+      return apiError({
+        code: 'BUSINESS_RULE_ERROR',
+        message: 'No se pudo verificar el préstamo antes de actualizarlo. No se realizaron cambios.',
+      })
+    }
+
+    if (!bankEntityResult.data.is_active) {
+      return apiError({ code: 'BUSINESS_RULE_ERROR', message: 'La entidad bancaria seleccionada está inactiva.' })
+    }
+
+    const existingInstallments = installmentsResult.data
+    const hasInstallmentPayment = existingInstallments.some(item => (
+      item.status !== 'PENDING' || Number(item.paid_amount ?? 0) > 0 || item.paid_date !== null || item.transaction_id !== null
+    ))
+    if (hasInstallmentPayment) {
+      return apiError({
+        code: 'BUSINESS_RULE_ERROR',
+        message: 'No puedes modificar las condiciones ni el cronograma porque este préstamo ya tiene cuotas con pagos registrados.',
+        detail: 'Solo puedes mantener la referencia y las notas del crédito para preservar el historial financiero.',
+      })
+    }
+
+    const { data: account, error: accountError } = await supabase
+      .from('accounts')
+      .select('id, currency, is_active')
+      .eq('id', loanInput.account_id)
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (accountError || !account || !account.is_active) {
+      return apiError({
+        code: 'BUSINESS_RULE_ERROR',
+        message: 'La cuenta destino debe existir y estar activa.',
+      })
+    }
+
+    if (account.currency !== loanInput.currency) {
+      return apiError({
+        code: 'VALIDATION_ERROR',
+        message: 'La moneda del préstamo debe coincidir con la cuenta destino del desembolso.',
+      })
+    }
+
+    const { data: originalTransaction, error: originalTransactionError } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('id', loanResult.data.transaction_id ?? credit.transaction_id ?? '')
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (originalTransactionError || !originalTransaction || originalTransaction.type !== 'INCOME') {
+      return apiError({
+        code: 'BUSINESS_RULE_ERROR',
+        message: 'No se encontró el desembolso original del préstamo. No se realizaron cambios.',
+      })
+    }
+
+    const nextSchedule = buildManualLoanSchedule(loanResult.data.id, loanInput.installments)
+    const scheduleIntegrity = getLoanScheduleIntegrity({
+      requiresSchedule: true,
+      expectedInstallments: loanInput.total_installments,
+      installments: nextSchedule,
+    })
+    if (!scheduleIntegrity.isComplete) {
+      return apiError({
+        code: 'VALIDATION_ERROR',
+        message: 'El cronograma nuevo no es válido ni completo.',
+        detail: scheduleIntegrity.message ?? undefined,
+      })
+    }
+
+    const restoreSchedule = async () => {
+      await supabase.from('installments').delete().eq('loan_id', loanResult.data.id)
+      if (existingInstallments.length === 0) return
+      await supabase.from('installments').insert(existingInstallments.map(item => ({
+        id: item.id,
+        loan_id: item.loan_id,
+        transaction_id: item.transaction_id,
+        installment_number: item.installment_number,
+        principal_amount: item.principal_amount,
+        interest_amount: item.interest_amount,
+        insurance_amount: item.insurance_amount,
+        other_charges: item.other_charges,
+        total_amount: item.total_amount,
+        due_date: item.due_date,
+        paid_date: item.paid_date,
+        paid_amount: item.paid_amount,
+        status: item.status,
+        payment_proof_url: item.payment_proof_url,
+      })))
+    }
+
+    const { error: creditUpdateError } = await supabase
+      .from('credits')
+      .update({
+        name: loanInput.name,
+        account_id: loanInput.account_id,
+        bank_entity_id: loanInput.bank_entity_id,
+        currency: loanInput.currency,
+        credit_limit: principalAmount,
+        used_amount: principalAmount,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', creditId)
+      .eq('user_id', userId)
+
+    if (creditUpdateError) {
+      return apiError({ code: 'DATABASE_ERROR', message: 'No se pudo actualizar el crédito.' })
+    }
+
+    const lastInstallment = nextSchedule[nextSchedule.length - 1]
+    const { error: loanUpdateError } = await supabase
+      .from('loans')
+      .update({
+        name: loanInput.name,
+        creditor_name: bankEntityResult.data.name,
+        bank_entity_id: loanInput.bank_entity_id,
+        disbursement_account_id: loanInput.account_id,
+        loan_type: loanInput.loan_type,
+        currency: loanInput.currency,
+        principal_amount: principalAmount,
+        total_installments: loanInput.total_installments,
+        start_date: loanInput.start_date,
+        end_date: lastInstallment?.due_date ?? loanInput.start_date,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', loanResult.data.id)
+      .eq('user_id', userId)
+
+    if (loanUpdateError) {
+      await supabase.from('credits').update({
+        name: credit.name,
+        account_id: credit.account_id,
+        bank_entity_id: credit.bank_entity_id,
+        currency: credit.currency,
+        credit_limit: credit.credit_limit,
+        used_amount: credit.used_amount,
+      }).eq('id', creditId).eq('user_id', userId)
+      return apiError({ code: 'DATABASE_ERROR', message: 'No se pudo actualizar el préstamo.' })
+    }
+
+    const { error: deleteScheduleError } = await supabase
+      .from('installments')
+      .delete()
+      .eq('loan_id', loanResult.data.id)
+    const { error: insertScheduleError } = deleteScheduleError
+      ? { error: null }
+      : await supabase.from('installments').insert(nextSchedule)
+
+    if (deleteScheduleError || insertScheduleError) {
+      await restoreSchedule()
+      await supabase.from('loans').update({
+        name: loanResult.data.name,
+        creditor_name: loanResult.data.creditor_name,
+        bank_entity_id: loanResult.data.bank_entity_id,
+        disbursement_account_id: loanResult.data.disbursement_account_id,
+        loan_type: loanResult.data.loan_type,
+        currency: loanResult.data.currency,
+        principal_amount: loanResult.data.principal_amount,
+        total_installments: loanResult.data.total_installments,
+        start_date: loanResult.data.start_date,
+        end_date: loanResult.data.end_date,
+      }).eq('id', loanResult.data.id).eq('user_id', userId)
+      await supabase.from('credits').update({
+        name: credit.name,
+        account_id: credit.account_id,
+        bank_entity_id: credit.bank_entity_id,
+        currency: credit.currency,
+        credit_limit: credit.credit_limit,
+        used_amount: credit.used_amount,
+      }).eq('id', creditId).eq('user_id', userId)
+      return apiError({
+        code: 'ATOMICITY_FAILURE',
+        message: 'No se pudo guardar el cronograma nuevo. Se restauró el préstamo anterior.',
+      })
+    }
+
+    const transactionService = new TransactionService(supabase)
+    const transactionUpdate: CreateIncomeInput & { id: string } = {
+      id: originalTransaction.id,
+      type: 'INCOME',
+      source_account_id: loanInput.account_id,
+      amount: principalAmount,
+      currency: loanInput.currency,
+      exchange_rate: loanInput.currency === 'USD' ? loanInput.exchange_rate : 1,
+      description: loanInput.description || originalTransaction.description,
+      transaction_date: loanInput.disbursement_date,
+      category_id: originalTransaction.category_id ?? undefined,
+      notes: originalTransaction.notes ?? undefined,
+      is_recurring: originalTransaction.is_recurring,
+      sender: originalTransaction.sender ?? undefined,
+      recipient: originalTransaction.recipient ?? undefined,
+    }
+    const transactionUpdateResult = await transactionService.updateTransaction(userId, transactionUpdate)
+
+    if (!transactionUpdateResult.ok) {
+      await restoreSchedule()
+      await supabase.from('loans').update({
+        name: loanResult.data.name,
+        creditor_name: loanResult.data.creditor_name,
+        bank_entity_id: loanResult.data.bank_entity_id,
+        disbursement_account_id: loanResult.data.disbursement_account_id,
+        loan_type: loanResult.data.loan_type,
+        currency: loanResult.data.currency,
+        principal_amount: loanResult.data.principal_amount,
+        total_installments: loanResult.data.total_installments,
+        start_date: loanResult.data.start_date,
+        end_date: loanResult.data.end_date,
+      }).eq('id', loanResult.data.id).eq('user_id', userId)
+      await supabase.from('credits').update({
+        name: credit.name,
+        account_id: credit.account_id,
+        bank_entity_id: credit.bank_entity_id,
+        currency: credit.currency,
+        credit_limit: credit.credit_limit,
+        used_amount: credit.used_amount,
+      }).eq('id', creditId).eq('user_id', userId)
+      return apiError({
+        code: 'ATOMICITY_FAILURE',
+        message: 'No se pudo actualizar el desembolso. Se restauró el préstamo anterior.',
+      })
+    }
+
+    return apiOk({
+      credit_id: creditId,
+      loan_id: loanResult.data.id,
+      principal_amount: principalAmount,
+      schedule_integrity: scheduleIntegrity,
     })
   }
 

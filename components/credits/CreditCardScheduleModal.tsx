@@ -13,12 +13,9 @@ import {
   formatDuplicateCycleMessage,
 } from '@/components/credits/credits-schedule.constants'
 import { formatNumber } from '@/lib/contracts/ui.contracts'
-import {
-  ATTACHMENT_LEGACY_REFERENCE_NOTICE,
-  ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE,
-} from '@/modules/attachments/attachment-integrity'
+import { getBillingCycleDateIssue } from '@/modules/credits/billing-cycle-integrity'
 
-type BillingCycleRow = {
+export type BillingCycleRow = {
   id: string
   billing_month: string
   billing_year: string
@@ -76,6 +73,9 @@ interface CreditCardScheduleEditorProps {
   onAddCycle: () => void
   onRemoveCycle: (id: string) => void
   onUpdateCycle: (id: string, patch: Partial<BillingCycleRow>) => void
+  onStatementUpload?: (cycleId: string, file: File) => void
+  onStatementOpen?: (cycleId: string) => void
+  statementUploadCycleId?: string | null
   onMovementModalOpenChange?: (open: boolean) => void
 }
 
@@ -164,6 +164,9 @@ export function CreditCardScheduleEditor({
   onAddCycle,
   onRemoveCycle,
   onUpdateCycle,
+  onStatementUpload,
+  onStatementOpen,
+  statementUploadCycleId = null,
   onMovementModalOpenChange,
 }: CreditCardScheduleEditorProps) {
   const duplicateMessage = formatDuplicateCycleMessage(duplicateCycleLabels)
@@ -264,6 +267,13 @@ export function CreditCardScheduleEditor({
                 const cycleKey = `${cycle.billing_year}-${cycle.billing_month}`
                 const isDuplicate = duplicateCycleKeys.has(cycleKey)
                 const periodLabel = formatBillingCycleLabel(cycle.billing_month, cycle.billing_year)
+                const dateIssue = getBillingCycleDateIssue({
+                  billing_month: Number(cycle.billing_month),
+                  billing_year: Number(cycle.billing_year),
+                  consumption_from: cycle.consumption_from,
+                  consumption_to: cycle.consumption_to,
+                  payment_date: cycle.payment_date,
+                })
 
                 return (
                   <tr key={cycle.id} className="h-14 border-t border-[var(--ft-form-border)] align-top">
@@ -310,6 +320,10 @@ export function CreditCardScheduleEditor({
                           <p className="mt-2 text-[11px] font-medium text-[var(--ft-form-error)]">
                             Periodo duplicado.
                           </p>
+                        ) : dateIssue ? (
+                          <p className="mt-2 text-[11px] font-medium leading-[1.35] text-[var(--ft-form-error)]">
+                            {dateIssue}
+                          </p>
                         ) : null}
                       </div>
                     </td>
@@ -331,6 +345,7 @@ export function CreditCardScheduleEditor({
                         type="date"
                         value={cycle.consumption_to}
                         onChange={event => onUpdateCycle(cycle.id, { consumption_to: event.target.value })}
+                        min={cycle.consumption_from || undefined}
                         className="field-base ft-form-input credits-date-input h-10 w-full min-w-[136px] px-2 py-2 text-[12px]"
                         style={{ minWidth: `${CREDIT_CARD_DATE_INPUT_MIN_WIDTH}px` }}
                         required
@@ -343,6 +358,7 @@ export function CreditCardScheduleEditor({
                         type="date"
                         value={cycle.payment_date}
                         onChange={event => onUpdateCycle(cycle.id, { payment_date: event.target.value })}
+                        min={cycle.consumption_to || undefined}
                         className="field-base ft-form-input credits-date-input h-10 w-full min-w-[136px] px-2 py-2 text-[12px]"
                         style={{ minWidth: `${CREDIT_CARD_DATE_INPUT_MIN_WIDTH}px` }}
                         required
@@ -360,22 +376,53 @@ export function CreditCardScheduleEditor({
 
                     <td className="px-3 py-3 align-middle">
                       <div className="flex items-center gap-2">
-                        <span
-                          title={cycle.statement_url
-                            ? ATTACHMENT_LEGACY_REFERENCE_NOTICE
-                            : ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE}
-                          aria-label={`Carga de estado de cuenta no disponible para ${periodLabel}`}
-                          className="
-                            inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--ft-radius-control)]
-                            border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] text-[var(--ft-form-muted)]
-                            cursor-not-allowed opacity-60
-                          "
-                          data-testid={`billing-cycle-attachment-unavailable-${cycle.id}`}
-                        >
-                          <UploadDocumentIcon className="h-4 w-4" />
-                        </span>
+                        {cycle.statement_url && onStatementOpen ? (
+                          <button
+                            type="button"
+                            onClick={() => onStatementOpen(cycle.id)}
+                            className="
+                              inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[var(--ft-radius-control)]
+                              border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] px-2.5 text-[11px] font-semibold text-[var(--ft-form-muted)]
+                              transition-colors hover:border-[var(--ft-border-strong)] hover:text-[var(--ft-text)]
+                            "
+                            data-testid={`billing-cycle-statement-open-${cycle.id}`}
+                          >
+                            Ver
+                          </button>
+                        ) : onStatementUpload ? (
+                          <label
+                            className={`
+                              inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-[var(--ft-radius-control)]
+                              border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] px-2.5 text-[11px] font-semibold text-[var(--ft-form-muted)]
+                              transition-colors hover:border-[var(--ft-border-strong)] hover:text-[var(--ft-text)]
+                              ${disabled || statementUploadCycleId === cycle.id ? 'pointer-events-none opacity-60' : ''}
+                            `}
+                            title={`Adjuntar estado de cuenta de ${periodLabel}`}
+                          >
+                            <input
+                              type="file"
+                              className="sr-only"
+                              accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"
+                              disabled={disabled || statementUploadCycleId === cycle.id}
+                              onChange={event => {
+                                const file = event.target.files?.[0]
+                                if (file) onStatementUpload(cycle.id, file)
+                                event.currentTarget.value = ''
+                              }}
+                            />
+                            <UploadDocumentIcon className="h-4 w-4" />
+                            {statementUploadCycleId === cycle.id ? 'Cargando' : 'Adjuntar'}
+                          </label>
+                        ) : (
+                          <span
+                            title="Guarda primero la tarjeta para adjuntar el estado de cuenta."
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--ft-radius-control)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] text-[var(--ft-form-muted)] opacity-60"
+                          >
+                            <UploadDocumentIcon className="h-4 w-4" />
+                          </span>
+                        )}
                         <span className="min-w-0 text-[11px] font-medium leading-[1.35] text-[var(--ft-form-muted)]">
-                          {cycle.statement_url ? 'Referencia anterior · no verificada' : 'Carga no disponible'}
+                          {cycle.statement_url ? 'Estado adjunto' : onStatementUpload ? 'Un archivo por ciclo' : 'Guarda para adjuntar'}
                         </span>
                       </div>
                     </td>

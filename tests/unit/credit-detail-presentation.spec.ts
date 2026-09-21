@@ -116,6 +116,7 @@ test.describe('Credit detail currency and available amount correctness', () => {
       status: 'VERIFIED',
       currency: 'USD',
       principalAmount: 12_000,
+      loanType: 'VEHICLE',
     })
 
     expect(result).toMatchObject({
@@ -180,6 +181,7 @@ test.describe('Credit detail currency and available amount correctness', () => {
       status: 'VERIFIED',
       currency: 'USD',
       principalAmount: 10_000,
+      loanType: 'CONSUMPTION',
     })
 
     expect(result).toMatchObject({
@@ -200,6 +202,7 @@ test.describe('Credit detail currency and available amount correctness', () => {
         status: 'VERIFIED',
         currency: 'PEN',
         principalAmount: invalidPrincipal,
+        loanType: 'CONSUMPTION',
       })
 
       expect(result).toMatchObject({
