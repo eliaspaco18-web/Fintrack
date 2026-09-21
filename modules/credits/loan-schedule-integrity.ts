@@ -7,6 +7,9 @@ export const LOAN_SCHEDULE_REQUIRED_ERROR =
 export const LOAN_SCHEDULE_SEQUENCE_ERROR =
   'Las cuotas deben estar numeradas de forma consecutiva y sin duplicados.'
 
+export const LOAN_SCHEDULE_PRINCIPAL_ERROR =
+  'El capital del préstamo debe ser igual a la suma del capital registrado en el cronograma.'
+
 export const LOAN_SCHEDULE_UNAVAILABLE_MESSAGE =
   'No se pudo verificar el cronograma de cuotas. Los datos del crédito siguen visibles, pero el cronograma no debe considerarse completo.'
 
@@ -121,6 +124,14 @@ export function getManualScheduleSubmissionIssue(
   return hasConsecutiveInstallmentNumbers(installments, input.totalInstallments)
     ? null
     : LOAN_SCHEDULE_SEQUENCE_ERROR
+}
+
+export function getManualSchedulePrincipalAmount(
+  installments: readonly Pick<ManualLoanInstallmentInput, 'principal_amount'>[],
+): number {
+  return roundMoney(installments.reduce((total, installment) => (
+    total + installment.principal_amount
+  ), 0))
 }
 
 export function buildManualLoanSchedule(

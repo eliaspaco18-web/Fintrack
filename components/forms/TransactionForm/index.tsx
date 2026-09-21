@@ -51,6 +51,7 @@ import {
 import { SubmitButton, SuccessSummary } from './SubmitButton'
 import { useToast } from '@/lib/toast/toast'
 import { CategoryKeys, getModuleTrigger } from '@/lib/constants/category-keys'
+import { getCreditCardTransferPolicy } from '@/modules/transactions/credit-card-transfer-policy'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { hasAtMostDecimals, parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 import { Button } from '@/components/ui/Button'
@@ -381,11 +382,13 @@ export function TransactionForm({
     const sourceType = typeof sourceAccountOption.meta?.type === 'string' ? sourceAccountOption.meta.type : ''
     const destinationType = typeof destinationAccountOption.meta?.type === 'string' ? destinationAccountOption.meta.type : ''
 
-    if (sourceType === 'CREDIT_CARD' && destinationType !== 'CREDIT_CARD') {
+    const transferPolicy = getCreditCardTransferPolicy(sourceType, destinationType)
+
+    if (transferPolicy.kind === 'DISPOSITION') {
       return `Disposición de TC ${sourceAccountOption.label} transferido a ${destinationAccountOption.label}`.slice(0, 255)
     }
 
-    if (sourceType !== 'CREDIT_CARD' && destinationType === 'CREDIT_CARD') {
+    if (transferPolicy.kind === 'PAYMENT') {
       return `Pago de TC ${destinationAccountOption.label} con ${sourceAccountOption.label}`.slice(0, 255)
     }
 
@@ -611,7 +614,21 @@ export function TransactionForm({
 
   // ── Filtrar cuentas destino (excluir cuenta origen) ──────────────────────
 
-  const destinationAccounts = formOptions.accounts.filter(a => a.value !== sourceAccountId)
+  const destinationAccounts = useMemo(() => {
+    const sourceType = typeof sourceAccountOption?.meta?.type === 'string'
+      ? sourceAccountOption.meta.type
+      : null
+
+    return formOptions.accounts.filter(account => {
+      if (account.value === sourceAccountId) return false
+
+      const destinationType = typeof account.meta?.type === 'string'
+        ? account.meta.type
+        : null
+
+      return !getCreditCardTransferPolicy(sourceType, destinationType).violation
+    })
+  }, [formOptions.accounts, sourceAccountId, sourceAccountOption])
   const creditCardOptions = useMemo(
     () => formOptions.creditCards ?? [],
     [formOptions.creditCards]

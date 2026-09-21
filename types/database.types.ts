@@ -1188,6 +1188,7 @@ export type Database = {
           end_date: string
           id: string
           interest_rate: number
+          loan_type: string
           name: string | null
           notes: string | null
           paid_installments: number
@@ -1209,6 +1210,7 @@ export type Database = {
           end_date: string
           id?: string
           interest_rate?: number
+          loan_type?: string
           name?: string | null
           notes?: string | null
           paid_installments?: number
@@ -1230,6 +1232,7 @@ export type Database = {
           end_date?: string
           id?: string
           interest_rate?: number
+          loan_type?: string
           name?: string | null
           notes?: string | null
           paid_installments?: number

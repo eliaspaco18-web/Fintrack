@@ -8,6 +8,7 @@ export type CreditDetailLoanEvidence =
       status: 'VERIFIED'
       currency: string
       principalAmount: number
+      loanType: string
     }>
   | Readonly<{ status: 'UNAVAILABLE' }>
 

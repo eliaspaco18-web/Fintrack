@@ -20,7 +20,7 @@ export default async function CreditDetailPage({ params }: { params: { id: strin
     ),
     withTimeout(
       supabase.from('loans')
-        .select('id,total_installments,currency,principal_amount')
+        .select('id,total_installments,currency,principal_amount,loan_type')
         .eq('credit_id', params.id)
         .eq('user_id', user.id)
         .maybeSingle(),
@@ -72,13 +72,14 @@ export default async function CreditDetailPage({ params }: { params: { id: strin
           status: 'VERIFIED',
           currency: loan.currency,
           principalAmount: loan.principal_amount,
+          loanType: loan.loan_type,
         }
       : { status: 'NOT_APPLICABLE' }
 
   const txId = credit.transaction_id
   const transaction = txId
     ? await withTimeout(
-        supabase.from('transactions').select('id,description').eq('id', txId).single(),
+        supabase.from('transactions').select('id,description,transaction_date').eq('id', txId).single(),
         SERVER_QUERY_TIMEOUT_MS,
       ).then(result => (!result.error ? result.data : null)).catch(() => null)
     : null

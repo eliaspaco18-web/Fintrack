@@ -33,6 +33,7 @@ import {
   getLegacyAttachmentReferenceState,
   hasUnsupportedAttachmentWrite,
 } from '@/modules/attachments/attachment-integrity'
+import { getBillingCyclesSubmissionIssue } from '@/modules/credits/billing-cycle-integrity'
 
 export const dynamic = 'force-dynamic'
 
@@ -235,6 +236,11 @@ export async function POST(
   if (!parsed.success) return apiZodError(parsed.error)
 
   const { billing_month, billing_year, consumption_from, consumption_to, payment_date, total_to_pay, notes } = parsed.data
+  const cycleIssue = getBillingCyclesSubmissionIssue([parsed.data])
+  if (cycleIssue) {
+    return apiError({ code: 'VALIDATION_ERROR', message: cycleIssue })
+  }
+
   if (!isBillingCycleYearInRange(billing_year)) {
     return apiError({
       code: 'VALIDATION_ERROR',
@@ -322,6 +328,11 @@ export async function PUT(
 
   const parsed = zBillingCyclesReplaceSchema.safeParse(body)
   if (!parsed.success) return apiZodError(parsed.error)
+
+  const cycleIssue = getBillingCyclesSubmissionIssue(parsed.data.cycles)
+  if (cycleIssue) {
+    return apiError({ code: 'VALIDATION_ERROR', message: cycleIssue })
+  }
 
   const seen = new Set<string>()
   for (const cycle of parsed.data.cycles) {

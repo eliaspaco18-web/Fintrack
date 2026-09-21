@@ -6,7 +6,7 @@ import { AppSelect } from '@/components/ui/AppSelect'
 import { NumericInput } from '@/components/ui/NumericInput'
 import { FormActions, FormField, FormSection } from '@/components/forms/primitives'
 import { RecordModalFooter } from '@/components/ui/RecordModal'
-import { CreditCardScheduleEditor } from '@/components/credits/CreditCardScheduleModal'
+import { CreditCardScheduleEditor, type BillingCycleRow } from '@/components/credits/CreditCardScheduleModal'
 import {
   formatBillingCycleLabel,
 } from '@/components/credits/credits-schedule.constants'
@@ -16,27 +16,14 @@ import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 import { formatNumber } from '@/lib/contracts/ui.contracts'
 import type { CreditListItem } from '@/lib/credits/display-type'
 import { ATTACHMENT_UPDATE_BLOCKED_MESSAGE } from '@/modules/attachments/attachment-integrity'
+import { getBillingCyclesSubmissionIssue } from '@/modules/credits/billing-cycle-integrity'
+import { requestAttachmentUpload } from '@/modules/attachments/attachment-client'
 
 type BankEntityOption = {
   id: string
   name: string
   short_name: string | null
   is_active: boolean
-}
-
-type BillingCycleRow = {
-  id: string
-  billing_month: string
-  billing_year: string
-  consumption_from: string
-  consumption_to: string
-  payment_date: string
-  total_to_pay: string
-  total_to_pay_pen?: number
-  total_to_pay_usd?: number
-  movement_summary?: BillingCycleMovementSummary | null
-  can_delete?: boolean
-  statement_url: string | null
 }
 
 type BillingCycleMovement = {
@@ -138,6 +125,7 @@ export function CreditCardForm({
 
   const [cycles, setCycles] = useState<BillingCycleRow[]>([newCycleRow()])
   const [cyclesDirty, setCyclesDirty] = useState(false)
+  const [statementUploadCycleId, setStatementUploadCycleId] = useState<string | null>(null)
 
   const selectedBankEntity = useMemo(
     () => bankEntities.find(entity => entity.id === form.bank_entity_id) ?? null,
@@ -289,6 +277,47 @@ export function CreditCardForm({
     setCycles(prev => prev.map(cycle => (cycle.id === id ? { ...cycle, ...patch } : cycle)))
   }, [])
 
+  const uploadStatement = useCallback(async (cycleId: string, file: File) => {
+    if (mode !== 'edit' || !credit?.id) {
+      setError('Guarda primero la tarjeta antes de adjuntar un estado de cuenta.')
+      return
+    }
+
+    setStatementUploadCycleId(cycleId)
+    setError(null)
+    try {
+      const result = await requestAttachmentUpload(
+        `/api/credits/${credit.id}/billing-cycles/${cycleId}/statement`,
+        file,
+      )
+      setCycles(current => current.map(cycle => (
+        cycle.id === cycleId ? { ...cycle, statement_url: result.path } : cycle
+      )))
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'No se pudo adjuntar el estado de cuenta.')
+    } finally {
+      setStatementUploadCycleId(null)
+    }
+  }, [credit?.id, mode])
+
+  const openStatement = useCallback(async (cycleId: string) => {
+    if (!credit?.id) return
+
+    setError(null)
+    try {
+      const response = await fetch(`/api/credits/${credit.id}/billing-cycles/${cycleId}/statement`, {
+        cache: 'no-store',
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || !payload?.ok || typeof payload.data?.signed_url !== 'string') {
+        throw new Error(getApiErrorMessage(payload, 'No se pudo abrir el estado de cuenta.'))
+      }
+      window.open(payload.data.signed_url, '_blank', 'noopener,noreferrer')
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'No se pudo abrir el estado de cuenta.')
+    }
+  }, [credit?.id])
+
   const handleSubmit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (saving) return
@@ -329,6 +358,7 @@ export function CreditCardForm({
     for (const cycle of cycles) {
       const key = `${cycle.billing_year}-${cycle.billing_month}`
       if (usedKeys.has(key)) {
+        setError('No puede haber dos ciclos para el mismo mes y año.')
         return
       }
 
@@ -338,6 +368,18 @@ export function CreditCardForm({
         setError('Completa todas las fechas en los ciclos de facturación.')
         return
       }
+    }
+
+    const cycleIssue = getBillingCyclesSubmissionIssue(cycles.map(cycle => ({
+      billing_month: Number(cycle.billing_month),
+      billing_year: Number(cycle.billing_year),
+      consumption_from: cycle.consumption_from,
+      consumption_to: cycle.consumption_to,
+      payment_date: cycle.payment_date,
+    })))
+    if (cycleIssue) {
+      setError(cycleIssue)
+      return
     }
 
     setSaving(true)
@@ -611,6 +653,9 @@ export function CreditCardForm({
             onAddCycle={addCycle}
             onRemoveCycle={removeCycle}
             onUpdateCycle={updateCycle}
+            onStatementUpload={mode === 'edit' ? uploadStatement : undefined}
+            onStatementOpen={mode === 'edit' ? openStatement : undefined}
+            statementUploadCycleId={statementUploadCycleId}
             onMovementModalOpenChange={onNestedModalOpenChange}
           />
         </div>

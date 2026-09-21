@@ -7,6 +7,7 @@ import {
   LOAN_SCHEDULE_UNAVAILABLE_MESSAGE,
   buildManualLoanSchedule,
   getLoanScheduleIntegrity,
+  getManualSchedulePrincipalAmount,
   getManualScheduleSubmissionIssue,
   resizeScheduleRows,
   zManualLoanInstallmentInput,
@@ -48,6 +49,10 @@ function asStoredSchedule(
 }
 
 test.describe('Credits loan schedule preservation', () => {
+  test('derives the loan principal from the capital recorded in every installment', () => {
+    expect(getManualSchedulePrincipalAmount(MANUAL_SCHEDULE)).toBe(2_000)
+  })
+
   test('persists principal, interest, insurance and other charges as separate components', () => {
     const before = structuredClone(MANUAL_SCHEDULE)
     const schedule = buildManualLoanSchedule('loan-1', MANUAL_SCHEDULE)

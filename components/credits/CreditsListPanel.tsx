@@ -21,6 +21,8 @@ import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
 import { ViewToggle } from '@/components/ui/ViewToggle'
 import { FormActions, FormField, FormSection } from '@/components/forms/primitives'
 import { CreditCardForm } from '@/components/credits/CreditCardForm'
+import { BankLoanForm } from '@/components/credits/BankLoanForm'
+import { LoanDetailsModal } from '@/components/credits/LoanDetailsModal'
 import {
   AmountCell,
   ConfirmDialog,
@@ -231,6 +233,8 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
   const [bankFilter, setBankFilter] = useState('')
   const [bankEntities, setBankEntities] = useState<BankEntityOption[]>([])
   const [editingCredit, setEditingCredit] = useState<CreditListItem | null>(null)
+  const [isLoanFinancialEdit, setIsLoanFinancialEdit] = useState(false)
+  const [viewingLoan, setViewingLoan] = useState<CreditListItem | null>(null)
   const [editForm, setEditForm] = useState<CreditEditForm>({
     name: '',
     credit_limit: '',
@@ -246,7 +250,7 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
     isLoading,
     error: hookError,
     refetch,
-  } = useCredits({})
+  } = useCredits({ status: undefined })
 
   useEffect(() => {
     fetch('/api/bank-entities', { cache: 'no-store' })
@@ -371,9 +375,28 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
   const weightedUtilization = activeExposure > 0 ? (activeUsed / activeExposure) * 100 : 0
   const surfaceError = actionError ?? resolveErrorMessage(hookError)
   const editIsCard = editingCredit?.credit_type === 'CREDIT_CARD'
+  const editIsLoan = editingCredit?.display_type === 'LOAN'
+  const editIsLoanFinancial = Boolean(editIsLoan && isLoanFinancialEdit)
 
-  const openEditModal = useCallback((credit: CreditListItem) => {
+  const openEditModal = useCallback(async (credit: CreditListItem) => {
     setActionError(null)
+    let canEditLoanFinances = false
+
+    if (credit.display_type === 'LOAN') {
+      try {
+        const response = await fetch(`/api/credits/${credit.id}`, { cache: 'no-store' })
+        const json = await response.json().catch(() => null)
+        if (!response.ok || !json?.ok) {
+          throw new Error(getApiErrorMessage(json, 'No se pudo verificar el préstamo'))
+        }
+        canEditLoanFinances = Boolean(json.data?.permissions?.can_edit_loan_finances)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'No se pudo verificar el préstamo'
+        setActionError(message)
+      }
+    }
+
+    setIsLoanFinancialEdit(canEditLoanFinances)
     setEditingCredit(credit)
     setEditForm({
       name: credit.name,
@@ -383,9 +406,14 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
     })
   }, [])
 
+  const openLoanPreview = useCallback((credit: CreditListItem) => {
+    setViewingLoan(credit)
+  }, [])
+
   const closeEditModal = useCallback(() => {
     if (actionLoadingId) return
     setEditingCredit(null)
+    setIsLoanFinancialEdit(false)
     setEditForm({
       name: '',
       credit_limit: '',
@@ -479,6 +507,14 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
     await mutate((key: unknown) => typeof key === 'string' && key.startsWith('/api/credits'))
     router.refresh()
     toast.success('Tarjeta actualizada', creditName, { persist: false })
+    closeEditModal()
+  }, [closeEditModal, refetch, router, toast])
+
+  const handleLoanEditSuccess = useCallback(async (creditName: string) => {
+    await refetch()
+    await mutate((key: unknown) => typeof key === 'string' && key.startsWith('/api/credits'))
+    router.refresh()
+    toast.success('Préstamo actualizado', creditName, { persist: false })
     closeEditModal()
   }, [closeEditModal, refetch, router, toast])
 
@@ -611,12 +647,30 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
                 </div>
 
                 <div className="flex shrink-0 items-center gap-1.5 md:justify-self-end">
+                  {isCard ? (
+                    <ActionIconButton
+                      icon="view"
+                      label="Ver tarjeta"
+                      href={`/credits/${credit.id}`}
+                      testId={`credit-view-${credit.id}`}
+                    />
+                  ) : (
+                    <ActionIconButton
+                      icon="view"
+                      label="Ver préstamo"
+                      description="Abre el detalle del préstamo en una ventana emergente."
+                      testId={`credit-view-${credit.id}`}
+                      onClick={() => openLoanPreview(credit)}
+                    />
+                  )}
                   <ActionIconButton
                     icon="edit"
-                    label="Editar"
+                    label={isCard ? 'Editar' : 'Editar préstamo'}
+                    title={isCard ? 'Editar' : 'Editar préstamo'}
+                    description={isCard ? undefined : 'Permite editar condiciones y cronograma mientras no existan cuotas pagadas.'}
                     disabled={Boolean(actionLoadingId)}
                     testId={`credit-edit-${credit.id}`}
-                    onClick={() => openEditModal(credit)}
+                    onClick={() => void openEditModal(credit)}
                   />
                   <ActionIconButton
                     icon={isActive ? 'deactivate' : 'reactivate'}
@@ -644,7 +698,7 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
         })}
       </div>
     </section>
-  ), [actionLoadingId, handleToggleStatus, openEditModal])
+  ), [actionLoadingId, handleToggleStatus, openEditModal, openLoanPreview])
 
   const renderCardSection = useCallback((group: GroupedCredits) => (
     <section key={group.displayType} className="space-y-3">
@@ -739,12 +793,30 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
 
                 <div className="mt-4 border-t border-[var(--c-border)] pt-4">
                   <div className="flex items-center justify-end gap-1.5">
+                    {isCard ? (
+                      <ActionIconButton
+                        icon="view"
+                        label="Ver tarjeta"
+                        href={`/credits/${credit.id}`}
+                        testId={`credit-view-card-${credit.id}`}
+                      />
+                    ) : (
+                      <ActionIconButton
+                        icon="view"
+                        label="Ver préstamo"
+                        description="Abre el detalle del préstamo en una ventana emergente."
+                        testId={`credit-view-card-${credit.id}`}
+                        onClick={() => openLoanPreview(credit)}
+                      />
+                    )}
                     <ActionIconButton
                       icon="edit"
-                      label="Editar"
+                    label={isCard ? 'Editar' : 'Editar préstamo'}
+                    title={isCard ? 'Editar' : 'Editar préstamo'}
+                    description={isCard ? undefined : 'Permite editar condiciones y cronograma mientras no existan cuotas pagadas.'}
                       disabled={Boolean(actionLoadingId)}
                       testId={`credit-edit-card-${credit.id}`}
-                      onClick={() => openEditModal(credit)}
+                    onClick={() => void openEditModal(credit)}
                     />
                     <ActionIconButton
                       icon={isActive ? 'deactivate' : 'reactivate'}
@@ -773,7 +845,7 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
         })}
       </div>
     </section>
-  ), [actionLoadingId, handleToggleStatus, openEditModal])
+  ), [actionLoadingId, handleToggleStatus, openEditModal, openLoanPreview])
 
   return (
     <>
@@ -1009,11 +1081,15 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
         open={Boolean(editingCredit)}
         onClose={closeEditModal}
         eyebrow="Creditos"
-        title={editingCredit?.credit_type === 'CREDIT_CARD' ? 'Editar tarjeta de credito' : 'Editar credito'}
-        subtitle={editingCredit?.credit_type === 'CREDIT_CARD'
+        title={editIsCard ? 'Editar tarjeta de crédito' : editIsLoanFinancial ? 'Editar préstamo bancario' : 'Editar crédito'}
+        subtitle={editIsCard
           ? 'Ajusta emisor, línea, consumo por moneda y ciclos de facturación.'
-          : 'Actualiza la referencia visible del crédito sin tocar su cronograma existente.'}
-        widthClassName={editIsCard ? 'w-[calc(100vw-32px)] max-w-[1120px]' : 'w-[calc(100vw-32px)] max-w-[720px]'}
+          : editIsLoanFinancial
+            ? 'Actualiza el desembolso y el cronograma solo si no existen cuotas con pagos registrados.'
+            : 'Actualiza la referencia visible del crédito sin tocar su cronograma existente.'}
+        size={editIsLoanFinancial ? 'xl' : undefined}
+        widthClassName={editIsCard || editIsLoanFinancial ? 'w-[calc(100vw-32px)] max-w-[1120px]' : 'w-[calc(100vw-32px)] max-w-[720px]'}
+        bodyClassName={editIsLoanFinancial ? 'credits-modal-body !overflow-hidden py-4' : undefined}
         testId="credits-edit-modal"
       >
         {editIsCard && editingCredit ? (
@@ -1022,6 +1098,14 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
             credit={editingCredit}
             onCancel={closeEditModal}
             onSuccess={creditName => void handleCardEditSuccess(creditName)}
+          />
+        ) : editIsLoanFinancial && editingCredit ? (
+          <BankLoanForm
+            key={editingCredit.id}
+            mode="edit"
+            creditId={editingCredit.id}
+            onCancel={closeEditModal}
+            onSuccess={creditName => void handleLoanEditSuccess(creditName)}
           />
         ) : (
           <>
@@ -1093,6 +1177,13 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
           </>
         )}
       </RecordModal>
+
+      <LoanDetailsModal
+        credit={viewingLoan}
+        open={Boolean(viewingLoan)}
+        onClose={() => setViewingLoan(null)}
+        onEdit={credit => void openEditModal(credit)}
+      />
 
       <ConfirmDialog
         open={Boolean(pendingDelete)}
