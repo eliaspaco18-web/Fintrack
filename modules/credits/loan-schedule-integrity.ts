@@ -45,6 +45,13 @@ export type LoanScheduleRow = Readonly<{
   total_amount: number
 }>
 
+/**
+ * A newly built installment is ready both for persistence and for schedule
+ * validation. The database insert type makes some monetary fields optional
+ * because the database has defaults, but this builder always supplies them.
+ */
+export type BuiltManualLoanScheduleRow = TablesInsert<'installments'> & LoanScheduleRow
+
 export type LoanScheduleIntegrityStatus =
   | 'NOT_APPLICABLE'
   | 'VERIFIED'
@@ -137,7 +144,7 @@ export function getManualSchedulePrincipalAmount(
 export function buildManualLoanSchedule(
   loanId: string,
   installments: readonly ManualLoanInstallmentInput[],
-): TablesInsert<'installments'>[] {
+): BuiltManualLoanScheduleRow[] {
   return installments.map(item => ({
     loan_id: loanId,
     transaction_id: null,

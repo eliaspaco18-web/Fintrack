@@ -41,9 +41,9 @@ function asStoredSchedule(
     installment_number: item.installment_number,
     due_date: item.due_date,
     principal_amount: item.principal_amount,
-    interest_amount: item.interest_amount ?? 0,
-    insurance_amount: item.insurance_amount ?? 0,
-    other_charges: item.other_charges ?? 0,
+    interest_amount: item.interest_amount,
+    insurance_amount: item.insurance_amount,
+    other_charges: item.other_charges,
     total_amount: item.total_amount,
   }))
 }
