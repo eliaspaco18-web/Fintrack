@@ -21,6 +21,8 @@ interface NavItemProps {
   mode:     SidebarMode | 'drawer'
   badge?:   number
   onClick?: () => void
+  onRailTooltipEnter?: (element: HTMLElement, label: string, immediate: boolean) => void
+  onRailTooltipLeave?: () => void
 }
 
 function SidebarBadge({ value, active }: { value: number; active: boolean }) {
@@ -42,11 +44,15 @@ function CollapsedNavItem({
   badge,
   isActive,
   onClick,
+  onRailTooltipEnter,
+  onRailTooltipLeave,
 }: {
   item: NavItemType
   badge: number
   isActive: boolean
   onClick: () => void
+  onRailTooltipEnter?: (element: HTMLElement, label: string, immediate: boolean) => void
+  onRailTooltipLeave?: () => void
 }) {
   const tooltipLabel = item.description
     ? `${item.label}: ${item.description}`
@@ -62,7 +68,11 @@ function CollapsedNavItem({
         onClick={onClick}
         aria-label={tooltipLabel}
         aria-current={isActive ? 'page' : undefined}
-        title={item.label}
+        onPointerEnter={event => onRailTooltipEnter?.(event.currentTarget, item.label, false)}
+        onPointerLeave={event => { if (document.activeElement !== event.currentTarget) onRailTooltipLeave?.() }}
+        onFocus={event => onRailTooltipEnter?.(event.currentTarget, item.label, true)}
+        onBlur={onRailTooltipLeave}
+        onKeyDown={event => { if (event.key === 'Escape') onRailTooltipLeave?.() }}
         className="group sidebar-nav-link sidebar-nav-link-collapsed"
         data-active={isActive ? 'true' : 'false'}
         data-developer={item.key === 'developer' ? 'true' : undefined}
@@ -74,13 +84,12 @@ function CollapsedNavItem({
             {badge > 9 ? '9+' : badge}
           </span>
         )}
-        <span className="sidebar-tooltip">{item.label}</span>
       </Link>
     </li>
   )
 }
 
-export function NavItem({ item, mode, badge = 0, onClick }: NavItemProps) {
+export function NavItem({ item, mode, badge = 0, onClick, onRailTooltipEnter, onRailTooltipLeave }: NavItemProps) {
   const pathname = usePathname()
   const activeItem = getActiveNavItem(pathname)
   const isActive = activeItem?.key === item.key
@@ -97,6 +106,8 @@ export function NavItem({ item, mode, badge = 0, onClick }: NavItemProps) {
         badge={badge}
         isActive={isActive}
         onClick={handleClick}
+        onRailTooltipEnter={onRailTooltipEnter}
+        onRailTooltipLeave={onRailTooltipLeave}
       />
     )
   }

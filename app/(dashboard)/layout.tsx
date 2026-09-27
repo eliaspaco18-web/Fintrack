@@ -16,7 +16,9 @@
 import { redirect }              from 'next/navigation'
 import { Suspense }              from 'react'
 import { createClient }          from '@/lib/supabase.server'
-import { AppShell }              from '@/components/layout/AppShell'
+import { AppShell as V3AppShell } from '@/components/layout/AppShell'
+import { AppShell as LegacyAppShell } from '@/components/layout/legacy/AppShell'
+import { isV3ShellEnabled } from '@/lib/flags/v3-shell'
 import {
   ensureAccountingUsdPenExchangeRate,
   resolveLiveUsdPenExchangeRate,
@@ -91,6 +93,8 @@ export default async function DashboardLayout({
     ? user.user_metadata.full_name
     : null
   const fallbackName = 'Usuario'
+
+  const AppShell = isV3ShellEnabled() ? V3AppShell : LegacyAppShell
 
   return (
     <AppShell

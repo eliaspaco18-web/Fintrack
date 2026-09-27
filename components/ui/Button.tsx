@@ -17,6 +17,8 @@ interface BaseButtonProps extends ButtonClassNameOptions {
   leadingIcon?: ReactNode
   trailingIcon?: ReactNode
   loading?: boolean
+  loadingText?: string
+  stableLoading?: boolean
   fullWidth?: boolean
   testId?: string
   ariaLabel?: string
@@ -87,11 +89,11 @@ const SIZE_CLASS_NAMES: Record<ButtonSize, string> = {
   'icon-md': 'h-10 w-10 p-0 text-sm',
 }
 
-function Spinner() {
+function Spinner({ active = true }: { active?: boolean }) {
   return (
     <svg
       aria-hidden="true"
-      className="h-4 w-4 animate-spin motion-reduce:animate-none"
+      className={`h-4 w-4 ${active ? 'animate-spin motion-reduce:animate-none' : ''}`.trim()}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -122,6 +124,8 @@ export function Button(props: ButtonProps) {
     leadingIcon,
     trailingIcon,
     loading = false,
+    loadingText,
+    stableLoading = false,
     fullWidth = false,
     testId,
     ariaLabel,
@@ -137,7 +141,7 @@ export function Button(props: ButtonProps) {
     className: joinClasses(fullWidth && 'w-full', className),
   })
 
-  const content = (
+  const ordinaryContent = (
     <>
       {loading ? <Spinner /> : leadingIcon}
       <span>{children}</span>
@@ -145,17 +149,38 @@ export function Button(props: ButtonProps) {
     </>
   )
 
+  const canLockLoadingWidth = stableLoading && (typeof children === 'string' || typeof children === 'number')
+  const content = canLockLoadingWidth ? (
+    <span className="ft-v3-button-lock">
+      <span aria-hidden={loading || undefined} className={loading ? 'ft-v3-button-lock-hidden' : ''}>
+        {leadingIcon}
+        <span>{children}</span>
+        {trailingIcon}
+      </span>
+      <span aria-hidden={!loading || undefined} className={!loading ? 'ft-v3-button-lock-hidden' : ''}>
+        <Spinner active={loading} />
+        <span>{loadingText ?? children}</span>
+      </span>
+    </span>
+  ) : ordinaryContent
+
   if ('href' in props && props.href) {
     return (
       <Link
         href={props.href}
         prefetch={props.prefetch}
         scroll={props.scroll}
+        onClick={event => {
+          if (props.disabled || loading) event.preventDefault()
+        }}
         aria-label={ariaLabel}
         title={title}
-        aria-disabled={props.disabled ? true : undefined}
+        aria-disabled={props.disabled || loading ? true : undefined}
+        aria-busy={loading || undefined}
         data-testid={testId}
-        className={joinClasses(props.disabled && 'pointer-events-none', classes)}
+        data-ft-button=""
+        data-size={size}
+        className={classes}
       >
         {content}
       </Link>
@@ -167,6 +192,8 @@ export function Button(props: ButtonProps) {
     type = 'button',
     disabled,
     loading: _loading,
+    loadingText: _loadingText,
+    stableLoading: _stableLoading,
     fullWidth: _fullWidth,
     testId: _testId,
     ariaLabel: _ariaLabel,
@@ -182,10 +209,13 @@ export function Button(props: ButtonProps) {
       {...buttonProps}
       type={type}
       disabled={disabled || loading}
+      aria-busy={loading || undefined}
       aria-label={ariaLabel}
       title={title}
       data-testid={testId}
       data-variant={variant}
+      data-ft-button=""
+      data-size={size}
       className={classes}
     >
       {content}

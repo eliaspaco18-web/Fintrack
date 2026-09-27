@@ -13,12 +13,15 @@ function joinClasses(...values: Array<string | false | null | undefined>) {
 export function DataTable({
   children,
   className = '',
+  density,
 }: {
   children: ReactNode
   className?: string
+  density?: 'movement' | 'standard' | 'credit' | 'catalog'
 }) {
   return (
     <section
+      data-ft-density={density}
       className={joinClasses(
         'relative overflow-hidden rounded-panel border border-[var(--ft-border)]',
         'bg-[var(--ft-surface)] shadow-elevation-sm',

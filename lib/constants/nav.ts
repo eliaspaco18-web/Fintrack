@@ -37,7 +37,7 @@ export type NavIconKey =
 const BASE_NAV_ITEMS: NavItem[] = [
   {
     key:         'dashboard',
-    label:       'Dashboard',
+    label:       'Inicio',
     href:        '/dashboard',
     icon:        'dashboard',
     exact:       true,
@@ -46,7 +46,7 @@ const BASE_NAV_ITEMS: NavItem[] = [
   },
   {
     key:         'portfolio',
-    label:       'Portafolio',
+    label:       'Cuentas',
     href:        '/portfolio',
     icon:        'portfolio',
     description: 'Cuentas bancarias, tarjetas y productos financieros',
@@ -102,7 +102,7 @@ const BASE_NAV_ITEMS: NavItem[] = [
   },
   {
     key:         'recurring',
-    label:       'Recurrentes',
+    label:       'Plantillas',
     href:        '/recurring',
     icon:        'recurring',
     description: 'Plantillas para movimientos automáticos',
@@ -110,11 +110,11 @@ const BASE_NAV_ITEMS: NavItem[] = [
   },
   {
     key:         'alerts',
-    label:       'Alertas',
+    label:       'Avisos',
     href:        '/alerts',
     icon:        'alerts',
     description: 'Riesgos, vencimientos y recomendaciones',
-    section:     'main',
+    section:     'secondary',
   },
   {
     key:         'developer',
@@ -126,7 +126,7 @@ const BASE_NAV_ITEMS: NavItem[] = [
   },
   {
     key:         'admin',
-    label:       'Administración',
+    label:       'Catálogos',
     href:        '/admin',
     icon:        'admin',
     description: 'Catálogos base y parámetros del sistema',
@@ -174,3 +174,10 @@ export function getActiveNavItem(pathname: string): NavItem | null {
 /** Items por sección, para renderizar grupos en el sidebar */
 export const NAV_MAIN      = NAV_ITEMS.filter(i => i.section === 'main')
 export const NAV_SECONDARY = NAV_ITEMS.filter(i => i.section === 'secondary')
+
+/** Presentation order only; the existing hrefs, gates and IDs remain unchanged. */
+export const NAV_GROUPS = [
+  { label: 'Tu día a día', keys: ['dashboard', 'transactions', 'portfolio'] },
+  { label: 'Planificación', keys: ['budgets', 'credits', 'receivables', 'payables'] },
+  { label: 'Registro y activos', keys: ['assets', 'recurring'] },
+] as const

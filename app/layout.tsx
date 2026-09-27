@@ -3,8 +3,22 @@
 // =============================================================================
 
 import type { Metadata, Viewport } from 'next'
+import localFont from 'next/font/local'
 import { Providers } from './providers'
 import './globals.css'
+
+// Next serves these local files under /_next/static, which is already exempt
+// from the auth middleware. The variable alone does not restyle legacy routes.
+const fintrackV3Font = localFont({
+  src: [
+    { path: '../public/fonts/v3/manrope-regular.ttf', weight: '400', style: 'normal' },
+    { path: '../public/fonts/v3/manrope-semibold.ttf', weight: '600', style: 'normal' },
+    { path: '../public/fonts/v3/manrope-bold.ttf', weight: '700', style: 'normal' },
+  ],
+  variable: '--font-fintrack-v3',
+  display: 'swap',
+  preload: false,
+})
 
 export const metadata: Metadata = {
   title: {
@@ -51,7 +65,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="es"
       suppressHydrationWarning
     >
-      <body className="font-body antialiased">
+      <body className={`font-body antialiased ${fintrackV3Font.variable}`}>
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
         <Providers>
           {children}

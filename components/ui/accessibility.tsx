@@ -13,6 +13,7 @@ import {
   useCallback,
   type ReactNode,
   type KeyboardEvent,
+  type RefObject,
 }              from 'react'
 import { useRouter } from 'next/navigation'
 
@@ -59,10 +60,18 @@ interface FocusTrapProps {
   active:    boolean
   children:  ReactNode
   onEscape?: () => void
+  className?: string
+  initialFocusRef?: RefObject<HTMLElement | null>
+  deferRestoreFocus?: boolean
 }
 
-export function FocusTrap({ active, children, onEscape }: FocusTrapProps) {
+export function FocusTrap({ active, children, onEscape, className, initialFocusRef, deferRestoreFocus = false }: FocusTrapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const onEscapeRef = useRef(onEscape)
+
+  useEffect(() => {
+    onEscapeRef.current = onEscape
+  }, [onEscape])
 
   useEffect(() => {
     if (!active) return
@@ -75,11 +84,15 @@ export function FocusTrap({ active, children, onEscape }: FocusTrapProps) {
 
     // Enfocar el primer elemento focusable
     const firstFocusable = container.querySelector<HTMLElement>(FOCUSABLE)
-    firstFocusable?.focus()
+    if (initialFocusRef?.current && container.contains(initialFocusRef.current)) {
+      initialFocusRef.current.focus()
+    } else {
+      firstFocusable?.focus()
+    }
 
     const handleKeyDown = (e: globalThis.KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onEscape?.()
+        onEscapeRef.current?.()
         return
       }
 
@@ -93,7 +106,7 @@ export function FocusTrap({ active, children, onEscape }: FocusTrapProps) {
       if (!first || !last) return
 
       if (e.shiftKey) {
-        if (document.activeElement === first) {
+        if (document.activeElement === first || document.activeElement === initialFocusRef?.current) {
           e.preventDefault()
           last.focus()
         }
@@ -110,11 +123,17 @@ export function FocusTrap({ active, children, onEscape }: FocusTrapProps) {
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
       // Restaurar foco al cerrar
-      previouslyFocused?.focus?.()
+      if (deferRestoreFocus) {
+        queueMicrotask(() => {
+          if (previouslyFocused?.isConnected && !previouslyFocused.closest('[inert]')) previouslyFocused.focus()
+        })
+      } else {
+        previouslyFocused?.focus?.()
+      }
     }
-  }, [active, onEscape])
+  }, [active, initialFocusRef, deferRestoreFocus])
 
-  return <div ref={containerRef}>{children}</div>
+  return <div ref={containerRef} className={className}>{children}</div>
 }
 
 // ─── KEYBOARD SHORTCUTS ───────────────────────────────────────────────────────

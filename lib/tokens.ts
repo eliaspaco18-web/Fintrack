@@ -153,6 +153,49 @@ export const Spacing = {
   pagePad:    'px-4 md:px-6 lg:px-8 py-6 md:py-8',
 } as const
 
+// Round 07 presentation tokens resolve from the scoped CSS source of truth.
+// Keep the legacy exports above unchanged until their consumers are migrated.
+export const V3Tokens = {
+  scopeAttribute: 'data-ft-v3',
+  fontFamily: 'var(--ft-font-body)',
+  color: {
+    canvas: 'var(--ft-canvas)',
+    surface: 'var(--ft-surface)',
+    mutedSurface: 'var(--ft-surface-muted)',
+    hoverSurface: 'var(--ft-surface-hover)',
+    inset: 'var(--ft-inset)',
+    text: 'var(--ft-text-strong)',
+    mutedText: 'var(--ft-text-muted)',
+    subtleText: 'var(--ft-text-subtle)',
+    border: 'var(--ft-border)',
+    controlBorder: 'var(--ft-control-border)',
+    primary: 'var(--ft-primary)',
+    income: 'var(--ft-success)',
+    expense: 'var(--ft-danger)',
+    transfer: 'var(--ft-text-strong)',
+    chartExpense: 'var(--ft-chart-expense)',
+  },
+  radius: {
+    badge: 'var(--ft-radius-badge)',
+    inset: 'var(--ft-radius-inset)',
+    control: 'var(--ft-radius-control)',
+    menu: 'var(--ft-radius-menu)',
+    surface: 'var(--ft-radius-surface)',
+    workspace: 'var(--ft-radius-workspace)',
+  },
+  motion: {
+    dock: 'var(--ft-ease-dock)',
+    out: 'var(--ft-ease-out)',
+    shift: 'var(--ft-ease-shift)',
+    workbenchEnter: 'var(--ft-duration-workbench-enter)',
+    workbenchExit: 'var(--ft-duration-workbench-exit)',
+    popoverEnter: 'var(--ft-duration-popover-enter)',
+    popoverExit: 'var(--ft-duration-popover-exit)',
+    feedbackEnter: 'var(--ft-duration-feedback-enter)',
+    feedbackExit: 'var(--ft-duration-feedback-exit)',
+  },
+} as const
+
 // ─── REGLAS DE USO: CUÁNDO NO AÑADIR MÁS ELEMENTOS ───────────────────────────
 // (comentarios de arquitectura — no código ejecutable)
 

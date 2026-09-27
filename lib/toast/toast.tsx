@@ -17,136 +17,121 @@ import {
   useContext,
   useState,
   useCallback,
-  useRef,
   useEffect,
+  useMemo,
+  useRef,
   type ReactNode,
 }              from 'react'
+import {
+  createAcknowledgementClock,
+  dismissAcknowledgement,
+  enqueueAcknowledgement,
+  resizeAcknowledgementClock,
+  setAcknowledgementPause,
+  tickAcknowledgements,
+  type Acknowledgement,
+  type AcknowledgementPauseReason,
+  type AcknowledgementVariant,
+} from './v3-acknowledgement-clock'
 
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
 
-export type ToastVariant = 'success' | 'error' | 'warning' | 'info'
-
-export interface Toast {
-  id:       string
-  variant:  ToastVariant
-  title:    string
-  detail?:  string
-  duration: number          // ms; 0 = persistente hasta cierre manual
-  closing?: boolean
-}
+export type ToastVariant = AcknowledgementVariant
+export type Toast = Acknowledgement
 
 interface ToastInput {
   variant: ToastVariant
   title: string
   detail?: string
   duration?: number
+  key?: string
 }
 
-interface ToastContextValue {
-  toasts:  Toast[]
+interface ToastActions {
   add:     (t: ToastInput) => string
   remove:  (id: string) => void
   clear:   () => void
+  pause:   (id: string, reason: AcknowledgementPauseReason, paused: boolean) => void
 }
 
 // ─── CONTEXT ──────────────────────────────────────────────────────────────────
 
-const ToastCtx = createContext<ToastContextValue>({
-  toasts: [],
+const ToastActionsCtx = createContext<ToastActions>({
   add:    () => '',
   remove: () => {},
   clear:  () => {},
+  pause:  () => {},
 })
+const ToastStateCtx = createContext(createAcknowledgementClock(2))
 
 // ─── PROVIDER ─────────────────────────────────────────────────────────────────
 
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [toasts, setToasts] = useState<Toast[]>([])
-  const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
-  const removeTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
-  const EXIT_ANIMATION_MS = 220
+  const [clock, setClock] = useState(() => createAcknowledgementClock(2))
+  const nextId = useRef(0)
 
   const remove = useCallback((id: string) => {
-    const t = timers.current.get(id)
-    if (t) { clearTimeout(t); timers.current.delete(id) }
-
-    if (removeTimers.current.has(id)) return
-
-    setToasts(prev => {
-      let exists = false
-      const next = prev.map(item => {
-        if (item.id !== id) return item
-        exists = true
-        return item.closing ? item : { ...item, closing: true }
-      })
-      return exists ? next : prev
-    })
-
-    const removeTimer = setTimeout(() => {
-      removeTimers.current.delete(id)
-      setToasts(prev => prev.filter(item => item.id !== id))
-    }, EXIT_ANIMATION_MS)
-
-    removeTimers.current.set(id, removeTimer)
+    setClock(previous => dismissAcknowledgement(previous, id, performance.now()))
   }, [])
 
   const add = useCallback((toast: ToastInput): string => {
-    const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-    const duration = typeof toast.duration === 'number'
-      ? toast.duration
-      : (toast.variant === 'error' ? 6000 : 4200)
-
-    setToasts(prev => {
-      // Máximo 5 toasts simultáneos — eliminar el más antiguo si se supera
-      const next = [...prev, { ...toast, id, duration, closing: false }]
-      if (next.length <= 5) return next
-
-      const dropped = next[0]
-      if (dropped) {
-        const autoTimer = timers.current.get(dropped.id)
-        if (autoTimer) {
-          clearTimeout(autoTimer)
-          timers.current.delete(dropped.id)
-        }
-        const exitTimer = removeTimers.current.get(dropped.id)
-        if (exitTimer) {
-          clearTimeout(exitTimer)
-          removeTimers.current.delete(dropped.id)
-        }
+    nextId.current += 1
+    const id = `toast-${Date.now()}-${nextId.current}`
+    setClock(previous => {
+      let updated = enqueueAcknowledgement(previous, { ...toast, id }, performance.now())
+      if (document.hidden) {
+        updated = updated.items.reduce((next, item) =>
+          setAcknowledgementPause(next, item.id, 'hidden', true, performance.now()), updated)
       }
-      return next.slice(next.length - 5)
+      return updated
     })
-
-    if (duration > 0) {
-      const timer = setTimeout(() => remove(id), duration)
-      timers.current.set(id, timer)
-    }
-
     return id
-  }, [remove])
+  }, [])
 
   const clear = useCallback(() => {
-    timers.current.forEach(t => clearTimeout(t))
-    timers.current.clear()
-    removeTimers.current.forEach(t => clearTimeout(t))
-    removeTimers.current.clear()
-    setToasts([])
+    setClock(previous => createAcknowledgementClock(previous.visibleLimit))
   }, [])
 
-  // Limpiar al desmontar
-  useEffect(() => {
-    const activeTimers = timers.current
-    const activeRemoveTimers = removeTimers.current
-    return () => {
-      activeTimers.forEach(t => clearTimeout(t))
-      activeRemoveTimers.forEach(t => clearTimeout(t))
-    }
+  const pause = useCallback((id: string, reason: AcknowledgementPauseReason, paused: boolean) => {
+    setClock(previous => setAcknowledgementPause(previous, id, reason, paused, performance.now()))
   }, [])
+
+  const active = clock.items.length > 0
+  useEffect(() => {
+    if (!active) return
+    const interval = window.setInterval(() => {
+      setClock(previous => tickAcknowledgements(previous, performance.now()))
+    }, 50)
+    return () => window.clearInterval(interval)
+  }, [active])
+
+  useEffect(() => {
+    const updateCapacity = () => {
+      const limit = window.matchMedia('(max-width: 767px)').matches ? 1 : 2
+      setClock(previous => previous.visibleLimit === limit
+        ? previous
+        : resizeAcknowledgementClock(previous, limit, performance.now()))
+    }
+    updateCapacity()
+    window.addEventListener('resize', updateCapacity)
+    return () => window.removeEventListener('resize', updateCapacity)
+  }, [])
+
+  useEffect(() => {
+    const updateVisibility = () => {
+      setClock(previous => previous.items.reduce((next, item) =>
+        setAcknowledgementPause(next, item.id, 'hidden', document.hidden, performance.now()), previous))
+    }
+    document.addEventListener('visibilitychange', updateVisibility)
+    return () => document.removeEventListener('visibilitychange', updateVisibility)
+  }, [])
+
+  const actions = useMemo(() => ({ add, remove, clear, pause }), [add, remove, clear, pause])
 
   return (
-    <ToastCtx.Provider value={{ toasts, add, remove, clear }}>
-      {children}
-    </ToastCtx.Provider>
+    <ToastActionsCtx.Provider value={actions}>
+      <ToastStateCtx.Provider value={clock}>{children}</ToastStateCtx.Provider>
+    </ToastActionsCtx.Provider>
   )
 }
 
@@ -177,7 +162,7 @@ type SuccessToastOptions = {
 }
 
 export function useToast(): { toast: ToastHelpers } {
-  const ctx = useContext(ToastCtx)
+  const ctx = useContext(ToastActionsCtx)
 
   const make = useCallback((variant: ToastVariant) =>
     (title: string, detail?: string) => {
@@ -269,104 +254,65 @@ const ICONS: Record<ToastVariant, ReactNode> = {
   ),
 }
 
-const VARIANT_STYLES: Record<ToastVariant, { wrap: string; icon: string; bar: string }> = {
-  success: {
-    wrap: 'border-emerald-500/45',
-    icon: 'bg-emerald-500/20 text-emerald-400',
-    bar:  'bg-emerald-400',
-  },
-  error: {
-    wrap: 'border-red-500/50',
-    icon: 'bg-red-500/20 text-red-400',
-    bar:  'bg-red-400',
-  },
-  warning: {
-    wrap: 'border-amber-500/45',
-    icon: 'bg-amber-500/20 text-amber-400',
-    bar:  'bg-amber-400',
-  },
-  info: {
-    wrap: 'border-blue-500/45',
-    icon: 'bg-blue-500/20 text-blue-400',
-    bar:  'bg-blue-400',
-  },
-}
-
 // ─── TOAST ITEM ───────────────────────────────────────────────────────────────
 
-function ToastItem({ toast: t, onRemove }: { toast: Toast; onRemove: (id: string) => void }) {
-  const [visible, setVisible] = useState(false)
-  const s = VARIANT_STYLES[t.variant]
-
-  // Entrada animada
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setVisible(true))
-    return () => cancelAnimationFrame(frame)
-  }, [])
-
-  // Accesibilidad: Enter/Escape cierra el toast
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === 'Escape') onRemove(t.id)
-  }, [t.id, onRemove])
+function ToastItem({ toast: t, actions }: { toast: Toast; actions: ToastActions }) {
+  const remainingSeconds = Math.max(1, Math.ceil(t.remaining / 1000))
+  const paused = t.pauseReasons.length > 0
+  const progress = t.duration > 0 ? Math.max(0, Math.min(1, t.remaining / t.duration)) : 0
 
   return (
     <div
-      role="alert"
-      aria-live={t.variant === 'error' ? 'assertive' : 'polite'}
+      role={t.variant === 'error' ? 'alert' : 'status'}
       aria-atomic="true"
-      tabIndex={0}
-      onKeyDown={handleKeyDown}
-      className={`
-        relative overflow-hidden
-        flex items-start gap-3 w-full max-w-sm
-        rounded-xl border px-4 py-3.5
-        bg-[var(--color-surface)]
-        shadow-[0_20px_48px_var(--color-shadow)]
-        transition-all duration-300 ease-out
-        focus:outline-none focus:ring-2 focus:ring-emerald-500/30
-        ${s.wrap}
-        ${visible && !t.closing
-          ? 'opacity-100 translate-y-0'
-          : 'opacity-0 translate-y-2'
+      aria-hidden={t.phase === 'closing' || undefined}
+      data-variant={t.variant}
+      data-phase={t.phase}
+      className="ft-v3-toast"
+      onPointerEnter={event => {
+        if (event.pointerType !== 'touch') actions.pause(t.id, 'hover', true)
+      }}
+      onPointerLeave={event => {
+        if (event.pointerType !== 'touch') actions.pause(t.id, 'hover', false)
+        actions.pause(t.id, 'hold', false)
+      }}
+      onPointerDown={() => actions.pause(t.id, 'hold', true)}
+      onPointerUp={() => actions.pause(t.id, 'hold', false)}
+      onPointerCancel={() => actions.pause(t.id, 'hold', false)}
+      onFocusCapture={() => actions.pause(t.id, 'focus', true)}
+      onBlurCapture={event => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          actions.pause(t.id, 'focus', false)
         }
-      `}
+      }}
+      onKeyDown={event => {
+        if (event.key === 'Escape' && event.currentTarget.contains(document.activeElement)) {
+          event.preventDefault()
+          event.stopPropagation()
+          actions.remove(t.id)
+        }
+      }}
     >
-      {/* Barra de progreso */}
-      {t.duration > 0 && (
-        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--color-border)]">
-          <div
-            className={`h-full ${s.bar} origin-left`}
-            style={{
-              animation: `toast-drain ${t.duration}ms linear forwards`,
-            }}
-          />
-        </div>
-      )}
-
-      {/* Icono */}
-      <span className={`
-        flex-shrink-0 w-6 h-6 rounded-lg
-        flex items-center justify-center mt-0.5
-        ${s.icon}
-      `}>
+      <span className="ft-v3-toast-glyph" aria-hidden="true">
         {ICONS[t.variant]}
       </span>
-
-      {/* Contenido */}
-      <div className="flex-1 min-w-0 py-0.5">
-        <p className="text-sm font-semibold text-[var(--color-text)] leading-tight">{t.title}</p>
-        {t.detail && (
-          <p className="text-[12px] text-[var(--color-text-muted)] mt-1 leading-relaxed">{t.detail}</p>
+      <div className="ft-v3-toast-copy">
+        <p className="ft-v3-toast-title">{t.title}</p>
+        {t.detail && <p className="ft-v3-toast-detail">{t.detail}</p>}
+        {t.duration > 0 && (
+          <div className="ft-v3-toast-lifetime" aria-hidden="true">
+            <span className="ft-v3-toast-track">
+              <span className="ft-v3-toast-fill" style={{ transform: `scaleX(${progress})` }} />
+            </span>
+            <span className="ft-v3-toast-seconds">{paused ? 'En pausa' : `Cierra en ${remainingSeconds} s`}</span>
+          </div>
         )}
       </div>
-
-      {/* Cerrar */}
       <button
-        onClick={() => onRemove(t.id)}
+        type="button"
+        onClick={() => actions.remove(t.id)}
         aria-label="Cerrar notificación"
-        className="flex-shrink-0 p-1 -mr-1 rounded-lg text-[var(--color-text-faint)]
-          hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]
-          transition-colors focus:outline-none focus:ring-1 focus:ring-[color:var(--color-border-hover)]"
+        className="ft-v3-toast-close"
       >
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
           stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -381,35 +327,14 @@ function ToastItem({ toast: t, onRemove }: { toast: Toast; onRemove: (id: string
 // Montar en el root layout, fuera del área de contenido.
 
 export function ToastRenderer() {
-  const { toasts, remove } = useContext(ToastCtx)
-
-  if (toasts.length === 0) return null
+  const clock = useContext(ToastStateCtx)
+  const actions = useContext(ToastActionsCtx)
+  const visible = clock.items.filter(item => item.phase !== 'queued')
+  if (visible.length === 0) return null
 
   return (
-    <>
-      {/* Keyframe para la barra de progreso */}
-      <style>{`
-        @keyframes toast-drain {
-          from { transform: scaleX(1); }
-          to   { transform: scaleX(0); }
-        }
-      `}</style>
-
-      {/* Zona de toasts: esquina superior derecha */}
-      <div
-        aria-label="Notificaciones"
-        className="
-          fixed z-[140] flex flex-col gap-2 pointer-events-none
-          top-[calc(var(--topbar-height)+0.65rem)] right-3 left-3
-          sm:left-auto sm:w-[390px] sm:right-5
-        "
-      >
-        {toasts.map(t => (
-          <div key={t.id} className="pointer-events-auto">
-            <ToastItem toast={t} onRemove={remove}/>
-          </div>
-        ))}
-      </div>
-    </>
+    <div data-ft-v3="" aria-label="Notificaciones" className="ft-v3-toast-host">
+      {visible.map(item => <ToastItem key={item.id} toast={item} actions={actions} />)}
+    </div>
   )
 }

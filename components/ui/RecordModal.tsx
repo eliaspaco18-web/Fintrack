@@ -8,11 +8,14 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
 } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/Button'
 import { FocusTrap } from '@/components/ui/accessibility'
+import { useV3WorkbenchPresence, type V3WorkbenchMotionSource } from '@/lib/ui/use-v3-workbench-presence'
+import { acquireV3ModalBackground } from '@/lib/ui/v3-modal-background'
 
 type RecordModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'full-form'
 
@@ -54,6 +57,9 @@ interface RecordModalProps {
   footerClassName?: string
   overlayClassName?: string
   focusTrapActive?: boolean
+  presentation?: 'legacy' | 'workbench'
+  workbenchKind?: 'ordinary' | 'schedule'
+  motionSource?: V3WorkbenchMotionSource
 }
 
 export function RecordModalFooter({ children }: { children: ReactNode }) {
@@ -77,8 +83,14 @@ export function RecordModal({
   footerClassName = '',
   overlayClassName = 'z-modal',
   focusTrapActive = true,
+  presentation = 'legacy',
+  workbenchKind = 'ordinary',
+  motionSource = 'keyboard',
 }: RecordModalProps) {
   const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null)
+  const [closeMotionSource, setCloseMotionSource] = useState<V3WorkbenchMotionSource>('keyboard')
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const overlayRef = useRef<HTMLDivElement>(null)
   const titleId = useId()
   const subtitleId = useId()
   const sizePreset = MODAL_SIZE_PRESETS[size]
@@ -107,29 +119,62 @@ export function RecordModal({
   const modalStyle = {
     '--ft-modal-padding': sizePreset.padding,
   } as CSSProperties
+  const isWorkbench = presentation === 'workbench'
+  const presence = useV3WorkbenchPresence(
+    open,
+    isWorkbench && !!portalRoot,
+    open ? motionSource : closeMotionSource,
+  )
 
   useEffect(() => {
     setPortalRoot(document.body)
   }, [])
 
-  if (!open || !portalRoot) return null
+  useEffect(() => {
+    if (open) setCloseMotionSource('keyboard')
+  }, [open])
+
+  useEffect(() => {
+    if (!isWorkbench || !presence.mounted || !portalRoot || !overlayRef.current) return
+    return acquireV3ModalBackground(overlayRef.current)
+  }, [isWorkbench, presence.mounted, portalRoot])
+
+  if ((!open && !isWorkbench) || (isWorkbench && !presence.mounted) || !portalRoot) return null
 
   return createPortal(
     <div
+      ref={overlayRef}
       className={`app-modal-overlay ${overlayClassName}`.trim()}
+      data-ft-v3={isWorkbench ? '' : undefined}
+      data-ft-workbench-overlay={isWorkbench ? '' : undefined}
+      data-phase={isWorkbench ? presence.phase : undefined}
       onPointerDown={event => {
-        if (event.target === event.currentTarget) {
+        if (event.target === event.currentTarget ||
+          (event.target instanceof HTMLElement && event.target.hasAttribute('data-ft-workbench-veil'))) {
+          if (isWorkbench) setCloseMotionSource('pointer')
           onClose()
         }
       }}
     >
-      <FocusTrap active={open && focusTrapActive} onEscape={focusTrapActive ? onClose : undefined}>
+      {isWorkbench ? <div ref={presence.veilRef} className="ft-v3-workbench-veil" data-ft-workbench-veil="" aria-hidden="true" /> : null}
+      <FocusTrap
+        active={(isWorkbench ? presence.mounted : open) && focusTrapActive}
+        onEscape={focusTrapActive ? () => {
+          if (isWorkbench) setCloseMotionSource('keyboard')
+          onClose()
+        } : undefined}
+        className={isWorkbench ? 'ft-v3-workbench-wrapper' : undefined}
+        initialFocusRef={isWorkbench ? headingRef : undefined}
+        deferRestoreFocus={isWorkbench}
+      >
         <div
+          ref={isWorkbench ? presence.frameRef : undefined}
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
           aria-describedby={subtitle ? subtitleId : undefined}
           data-testid={testId}
+          data-ft-workbench={isWorkbench ? workbenchKind : undefined}
           onPointerDown={event => event.stopPropagation()}
           onClick={event => event.stopPropagation()}
           className={`
@@ -156,6 +201,8 @@ export function RecordModal({
               )}
               <h2
                 id={titleId}
+                ref={headingRef}
+                tabIndex={isWorkbench ? -1 : undefined}
                 className="text-[1rem] font-semibold leading-snug tracking-[-0.02em] text-[var(--ft-text-strong)] md:text-[1.05rem]"
               >
                 {title}
@@ -169,8 +216,11 @@ export function RecordModal({
 
             <Button
               type="button"
-              onClick={onClose}
-              ariaLabel="Cerrar modal"
+              onClick={event => {
+                if (isWorkbench) setCloseMotionSource(event.detail === 0 ? 'keyboard' : 'pointer')
+                onClose()
+              }}
+              ariaLabel={isWorkbench ? 'Cerrar panel' : 'Cerrar modal'}
               variant="secondary"
               size="icon-md"
               className="shrink-0 focus-visible:ring-offset-[var(--ft-modal-bg)]"
@@ -182,6 +232,7 @@ export function RecordModal({
           </div>
 
           <div
+            ref={isWorkbench ? presence.bodyRef : undefined}
             data-record-modal-body="true"
             className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-[var(--ft-modal-padding)] py-5 ${bodyClassName}`.trim()}
           >
