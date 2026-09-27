@@ -54,7 +54,7 @@ BEGIN
   VALUES (
     p_user_id, p_source_account_id, p_destination_account_id,
     p_category_id, p_budget_id, p_type::transaction_type, p_amount,
-    p_currency::currency_code, p_exchange_rate,
+    p_currency, p_exchange_rate,
     p_description, p_transaction_date, p_notes, p_is_recurring, NULLIF(trim(p_sender), ''), NULLIF(trim(p_recipient), '')
   )
   RETURNING id INTO v_transaction_id;
@@ -71,7 +71,7 @@ BEGIN
       p_asset->>'name',
       (p_asset->>'asset_type')::asset_type,
       (p_asset->>'purchase_value')::numeric,
-      p_currency::currency_code,
+      p_currency,
       COALESCE((p_asset->>'current_value')::numeric, (p_asset->>'purchase_value')::numeric),
       COALESCE((p_asset->>'purchase_date')::date, p_transaction_date),
       (p_asset->>'depreciation_rate')::numeric,
@@ -99,7 +99,7 @@ BEGIN
       COALESCE((p_credit->>'interest_rate')::numeric, 0),
       (p_credit->>'closing_day')::integer,
       (p_credit->>'payment_day')::integer,
-      p_currency::currency_code,
+      p_currency,
       'ACTIVE'
     )
     RETURNING id INTO v_credit_id;
@@ -122,7 +122,7 @@ BEGIN
       0,
       COALESCE((p_loan->>'start_date')::date, p_transaction_date),
       (p_loan->>'end_date')::date,
-      p_currency::currency_code,
+      p_currency,
       'ACTIVE'
     )
     RETURNING id INTO v_loan_id;
@@ -180,7 +180,7 @@ BEGIN
       v_transaction_id,
       p_receivable->>'debtor_name',
       p_amount,
-      p_currency::currency_code,
+      p_currency,
       p_transaction_date,
       (p_receivable->>'due_date')::date,
       p_receivable->>'concept',
@@ -201,7 +201,7 @@ BEGIN
       v_transaction_id,
       p_payable->>'creditor_name',
       p_amount,
-      p_currency::currency_code,
+      p_currency,
       p_transaction_date,
       (p_payable->>'due_date')::date,
       p_payable->>'concept',

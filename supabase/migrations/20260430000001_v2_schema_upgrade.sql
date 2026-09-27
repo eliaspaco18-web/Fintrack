@@ -42,6 +42,17 @@ DROP VIEW IF EXISTS v_payables_summary;
 -- Eliminar la función con CASCADE para cubrir cualquier dependencia residual
 DROP FUNCTION IF EXISTS fn_latest_exchange_rate(currency_code, currency_code) CASCADE;
 
+-- Column defaults still depend on the enum and are not transformed by USING.
+ALTER TABLE profiles            ALTER COLUMN default_currency DROP DEFAULT;
+ALTER TABLE accounts            ALTER COLUMN currency         DROP DEFAULT;
+ALTER TABLE transactions        ALTER COLUMN currency         DROP DEFAULT;
+ALTER TABLE assets              ALTER COLUMN currency         DROP DEFAULT;
+ALTER TABLE credits             ALTER COLUMN currency         DROP DEFAULT;
+ALTER TABLE loans               ALTER COLUMN currency         DROP DEFAULT;
+ALTER TABLE accounts_receivable ALTER COLUMN currency         DROP DEFAULT;
+ALTER TABLE accounts_payable    ALTER COLUMN currency         DROP DEFAULT;
+ALTER TABLE budgets             ALTER COLUMN currency         DROP DEFAULT;
+
 ALTER TABLE profiles ALTER COLUMN default_currency TYPE text USING default_currency::text;
 ALTER TABLE accounts ALTER COLUMN currency TYPE text USING currency::text;
 ALTER TABLE transactions ALTER COLUMN currency TYPE text USING currency::text;
