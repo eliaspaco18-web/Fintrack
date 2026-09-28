@@ -1,4 +1,9 @@
 {
+  "git": {
+    "deploymentEnabled": {
+      "codex/redisenio-total": false
+    }
+  },
   "crons": [
     {
       "path": "/api/cron/exchange-rate",
