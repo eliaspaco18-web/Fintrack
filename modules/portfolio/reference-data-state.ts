@@ -56,6 +56,16 @@ export function getPortfolioBankDisplayName(account: PortfolioBankReferenceSourc
   return 'Sin banco'
 }
 
+export function resolveCreateAccountCurrency(
+  currentCurrency: string,
+  availableCurrencies: readonly Readonly<{ value: string }>[],
+): string {
+  if (availableCurrencies.length === 0) return currentCurrency
+  return availableCurrencies.some(option => option.value === currentCurrency)
+    ? currentCurrency
+    : availableCurrencies[0]!.value
+}
+
 function getPrimaryState(input: PortfolioReferenceDataStateInput): PortfolioPrimaryDataState {
   if (input.accountsLoading) return 'loading'
   if (input.accountsError) return 'error'

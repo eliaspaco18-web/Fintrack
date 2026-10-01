@@ -55,6 +55,7 @@ import {
   getIdentifiedPortfolioInstitution,
   getPortfolioBankDisplayName,
   getPortfolioReferenceDataState,
+  resolveCreateAccountCurrency,
 } from '@/modules/portfolio/reference-data-state'
 
 type BankEntityRef = {
@@ -617,6 +618,14 @@ export function PortfolioManager({
     handledQueryOpenRef.current = false
   }, [openCreateModal, openFromHeroQuery])
 
+  useEffect(() => {
+    if (!modalOpen || editingId !== null || currencyOptions.length === 0) return
+    setForm(previous => {
+      const currency = resolveCreateAccountCurrency(previous.currency, currencyOptions)
+      return currency === previous.currency ? previous : { ...previous, currency }
+    })
+  }, [currencyOptions, editingId, modalOpen])
+
   const startEdit = useCallback((account: AccountItem) => {
     setEditingId(account.id)
     setForm({
@@ -951,6 +960,7 @@ export function PortfolioManager({
     ? 'El resumen se mostrará cuando finalice la carga de cuentas.'
     : 'No se presenta un total hasta recuperar las cuentas.'
   const canCreateWithAvailableCurrency = Boolean(currencyOptions.length) && dataState.currenciesAvailable
+  const createFormCurrencyIsAvailable = currencyOptions.some(option => option.value === form.currency)
 
   return (
     <>
@@ -1790,7 +1800,7 @@ export function PortfolioManager({
                     || loading
                     || banksLoading
                     || currenciesLoading
-                    || (!editingAccount && !canCreateWithAvailableCurrency)
+                    || (!editingAccount && (!canCreateWithAvailableCurrency || !createFormCurrencyIsAvailable))
                     || (Boolean(banksError) && Boolean(form.bank_entity_id))
                   }
                   loading={saving}
