@@ -103,6 +103,9 @@ export function CreditsWorkspace() {
     if (openFromQuery) {
       if (handledRef.current) return
       handledRef.current = true
+      // The create button opens the modal before its router.replace settles.
+      // Do not reset a form the user may already have selected in that gap.
+      if (isModalOpen) return
       setModalStep('select_type')
       setSelectedMode(null)
       setModalSize('sm')
@@ -112,7 +115,7 @@ export function CreditsWorkspace() {
       return
     }
     handledRef.current = false
-  }, [openFromQuery])
+  }, [openFromQuery, isModalOpen])
 
   const modalTitle = modalStep === 'form'
     ? (selectedMode === 'CARD' ? 'Nueva tarjeta de crédito' : 'Nuevo crédito bancario')
