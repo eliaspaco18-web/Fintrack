@@ -1340,8 +1340,10 @@ export class TransactionService {
           p_asset:                  payload.p_asset      ? JSON.stringify(payload.p_asset)      : null,
           p_credit:                 payload.p_credit     ? JSON.stringify(payload.p_credit)     : null,
           p_loan:                   payload.p_loan       ? JSON.stringify(payload.p_loan)       : null,
-          p_receivable:             payload.p_receivable ? JSON.stringify(payload.p_receivable) : null,
-          p_payable:                payload.p_payable    ? JSON.stringify(payload.p_payable)    : null,
+          // PostgREST serializes RPC arguments itself. These jsonb arguments
+          // must be objects, not JSON strings, so SQL ->> can read their keys.
+          p_receivable:             payload.p_receivable,
+          p_payable:                payload.p_payable,
         }
       )
 
