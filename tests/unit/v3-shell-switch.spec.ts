@@ -11,11 +11,19 @@ const moduleExports: Record<string, unknown> = {}
 new Function('exports', compiled)(moduleExports)
 const isV3ShellEnabled = moduleExports.isV3ShellEnabled as (env: Record<string, string | undefined>) => boolean
 
-test('V3 shell requires an explicit flag and never activates on production', () => {
+test('V3 shell keeps Preview opt-in and Production off by default', () => {
   expect(isV3ShellEnabled({ NODE_ENV: 'development' })).toBe(false)
   expect(isV3ShellEnabled({ NODE_ENV: 'development', NEXT_PUBLIC_FINTRACK_V3_SHELL: '1' })).toBe(true)
   expect(isV3ShellEnabled({ NODE_ENV: 'production', VERCEL_ENV: 'preview', NEXT_PUBLIC_FINTRACK_V3_SHELL: '1' })).toBe(true)
   expect(isV3ShellEnabled({ NODE_ENV: 'production', VERCEL_ENV: 'production', NEXT_PUBLIC_FINTRACK_V3_SHELL: '1' })).toBe(false)
   expect(isV3ShellEnabled({ NODE_ENV: 'development', VERCEL_ENV: 'production', NEXT_PUBLIC_FINTRACK_V3_SHELL: '1' })).toBe(false)
   expect(isV3ShellEnabled({ NODE_ENV: 'production', NEXT_PUBLIC_FINTRACK_V3_SHELL: '1' })).toBe(false)
+})
+
+test('Production requires its own explicit server-side switch and fails closed', () => {
+  expect(isV3ShellEnabled({ VERCEL_ENV: 'production', FINTRACK_V3_SHELL_PRODUCTION: '1' })).toBe(true)
+  expect(isV3ShellEnabled({ VERCEL_ENV: 'production', FINTRACK_V3_SHELL_PRODUCTION: '0' })).toBe(false)
+  expect(isV3ShellEnabled({ VERCEL_ENV: 'production', FINTRACK_V3_SHELL_PRODUCTION: 'yes' })).toBe(false)
+  expect(isV3ShellEnabled({ VERCEL_ENV: 'production', FINTRACK_V3_SHELL_PRODUCTION: '' })).toBe(false)
+  expect(isV3ShellEnabled({ VERCEL_ENV: 'production', NEXT_PUBLIC_FINTRACK_V3_SHELL: '1', FINTRACK_V3_SHELL_PRODUCTION: 'invalid' })).toBe(false)
 })
