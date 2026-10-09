@@ -60,6 +60,7 @@ import { type Result, Errors, ok }      from '@/modules/shared/result.types'
 import { resolveAccountingUsdPenExchangeRate } from '@/lib/server/exchange-rate'
 import { CategoryKeys } from '@/lib/constants/category-keys'
 import { getCreditCardTransferPolicy } from './credit-card-transfer-policy'
+import { atomicDerivedJsonbArguments } from './transaction-atomic-rpc-arguments'
 import {
   ATTACHMENT_DELETE_BLOCKED_MESSAGE,
   ATTACHMENT_UPDATE_BLOCKED_MESSAGE,
@@ -1337,13 +1338,7 @@ export class TransactionService {
           p_is_recurring:           payload.p_is_recurring,
           p_sender:                 payload.p_sender,
           p_recipient:              payload.p_recipient,
-          p_asset:                  payload.p_asset      ? JSON.stringify(payload.p_asset)      : null,
-          p_credit:                 payload.p_credit     ? JSON.stringify(payload.p_credit)     : null,
-          p_loan:                   payload.p_loan       ? JSON.stringify(payload.p_loan)       : null,
-          // PostgREST serializes RPC arguments itself. These jsonb arguments
-          // must be objects, not JSON strings, so SQL ->> can read their keys.
-          p_receivable:             payload.p_receivable,
-          p_payable:                payload.p_payable,
+          ...atomicDerivedJsonbArguments(payload),
         }
       )
 

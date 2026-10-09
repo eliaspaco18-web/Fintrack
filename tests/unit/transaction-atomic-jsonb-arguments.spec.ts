@@ -2,20 +2,31 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
+import { atomicDerivedJsonbArguments } from '../../modules/transactions/transaction-atomic-rpc-arguments'
 
-test('receivable and payable RPC jsonb arguments are not double-encoded', () => {
+const derivedKeys = [
+  'p_asset',
+  'p_credit',
+  'p_loan',
+  'p_receivable',
+  'p_payable',
+] as const
+
+test('all five derived RPC arguments remain jsonb objects', () => {
   const service = readFileSync(resolve(process.cwd(), 'modules/transactions/transaction.service.ts'), 'utf8')
+  const argumentsHelper = readFileSync(resolve(process.cwd(), 'modules/transactions/transaction-atomic-rpc-arguments.ts'), 'utf8')
   const migration = readFileSync(resolve(process.cwd(), 'supabase/migrations/20260927000001_converge_transaction_atomic_security.sql'), 'utf8')
 
-  expect(service).toMatch(/p_receivable:\s+payload\.p_receivable\s*[,}]/)
-  expect(service).toMatch(/p_payable:\s+payload\.p_payable\s*[,}]/)
-  expect(service).not.toMatch(/p_receivable:\s+payload\.p_receivable\s*\?\s*JSON\.stringify/)
-  expect(service).not.toMatch(/p_payable:\s+payload\.p_payable\s*\?\s*JSON\.stringify/)
-  expect(migration).toContain("p_receivable->>'debtor_name'")
-  expect(migration).toContain("p_payable->>'creditor_name'")
+  expect(service).toContain('...atomicDerivedJsonbArguments(payload)')
+  for (const key of derivedKeys) {
+    expect(argumentsHelper).toMatch(new RegExp(`${key}: payload\\.${key}\\s*[,}]`))
+    expect(service).not.toMatch(new RegExp(`${key}:\\s*.*JSON\\.stringify`))
+    expect(migration).toContain(`${key}->>`)
+  }
+  expect(argumentsHelper).not.toContain('JSON.stringify')
 })
 
-test('Supabase RPC serializes a nested jsonb argument as an object', async () => {
+test('Supabase RPC serializes every derived jsonb argument as an object', async () => {
   let requestBody: unknown
   const fetchMock: typeof fetch = async (_input, init) => {
     requestBody = JSON.parse(String(init?.body))
@@ -29,13 +40,24 @@ test('Supabase RPC serializes a nested jsonb argument as an object', async () =>
     global: { fetch: fetchMock },
   })
 
-  await client.rpc('create_transaction_atomic', {
+  const derived = {
+    p_asset: { name: 'Unit Asset', asset_type: 'EQUIPMENT', purchase_value: 25 },
+    p_credit: { name: 'Unit Credit', credit_type: 'LINE_OF_CREDIT', credit_limit: 50 },
+    p_loan: { creditor_name: 'Unit Lender', principal_amount: 25, total_installments: 2 },
     p_receivable: { debtor_name: 'Unit Debtor' },
     p_payable: { creditor_name: 'Unit Creditor' },
-  })
+  } as unknown as Parameters<typeof atomicDerivedJsonbArguments>[0]
 
-  expect(requestBody).toMatchObject({
-    p_receivable: { debtor_name: 'Unit Debtor' },
-    p_payable: { creditor_name: 'Unit Creditor' },
-  })
+  await client.rpc('create_transaction_atomic', atomicDerivedJsonbArguments(derived))
+
+  expect(requestBody).toMatchObject(derived)
+  for (const key of derivedKeys) {
+    expect(typeof (requestBody as Record<string, unknown>)[key]).toBe('object')
+    expect((requestBody as Record<string, unknown>)[key]).not.toBeNull()
+  }
+})
+
+test('absent derived modules remain null instead of encoded strings', () => {
+  const absent = Object.fromEntries(derivedKeys.map(key => [key, null])) as Parameters<typeof atomicDerivedJsonbArguments>[0]
+  expect(atomicDerivedJsonbArguments(absent)).toEqual(absent)
 })
