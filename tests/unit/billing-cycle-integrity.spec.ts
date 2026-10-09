@@ -1,4 +1,4 @@
-import { describe, expect, test } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import {
   getBillingCycleDateIssue,
   getBillingCyclesSubmissionIssue,
@@ -12,7 +12,7 @@ const validCycle = {
   payment_date: '2026-10-05',
 }
 
-describe('billing-cycle integrity', () => {
+test.describe('billing-cycle integrity', () => {
   test('accepts a cycle that closes in its selected billing month', () => {
     expect(getBillingCycleDateIssue(validCycle)).toBeNull()
   })
