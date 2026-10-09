@@ -5,56 +5,33 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-if [[ $# -lt 1 ]]; then
-  echo "Uso: scripts/release-production.sh \"mensaje del commit\""
+if [[ $# -lt 2 || $# -gt 3 ]]; then
+  echo "Usage: scripts/release-production.sh migration_audit|stage_deployment <exact-40-character-main-SHA> [MIGRATIONS_REVIEWED]" >&2
   exit 1
 fi
 
-COMMIT_MESSAGE="$1"
-WORKFLOW_FILE="production-release.yml"
-TARGET_BRANCH="${TARGET_BRANCH:-main}"
-GH_BIN="${GH_BIN:-}"
+PHASE="$1"
+RELEASE_SHA="$2"
 
-if [[ -z "$GH_BIN" ]]; then
-  if command -v gh >/dev/null 2>&1; then
-    GH_BIN="$(command -v gh)"
-  elif [[ -x "$ROOT_DIR/.tools/gh/gh-current/bin/gh" ]]; then
-    GH_BIN="$ROOT_DIR/.tools/gh/gh-current/bin/gh"
-  fi
-fi
+[[ "$PHASE" == migration_audit || "$PHASE" == stage_deployment ]] || { echo 'Invalid phase' >&2; exit 1; }
+[[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid release SHA' >&2; exit 1; }
+[[ "$(git branch --show-current)" == main ]] || { echo 'A clean main checkout is required' >&2; exit 1; }
+[[ -z "$(git status --porcelain --untracked-files=all)" ]] || { echo 'Checkout must be clean' >&2; exit 1; }
+[[ "$(git rev-parse HEAD)" == "$RELEASE_SHA" ]] || { echo 'HEAD does not match the release SHA' >&2; exit 1; }
 
-echo "==> Validando rama actual"
-CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-if [[ "$CURRENT_BRANCH" != "$TARGET_BRANCH" ]]; then
-  echo "Estás en '$CURRENT_BRANCH'. Cambia a '$TARGET_BRANCH' o exporta TARGET_BRANCH."
+git fetch --no-tags origin main
+[[ "$(git rev-parse origin/main)" == "$RELEASE_SHA" ]] || { echo 'Remote main changed' >&2; exit 1; }
+
+if ! command -v gh >/dev/null 2>&1; then
+  echo 'GitHub CLI is required; no workflow was started' >&2
   exit 1
 fi
 
-echo "==> Preparando versión visible del release"
-node scripts/prepare-release-manifest.mjs "$COMMIT_MESSAGE"
-
-echo "==> Ejecutando checks locales de release"
-npm run build
-npm run typecheck
-npm run test:e2e -- tests/e2e/login-ui.spec.ts tests/e2e/auth-redirect.spec.ts
-
-echo "==> Preparando commit"
-git add -A
-
-if git diff --cached --quiet; then
-  echo "No hay cambios staged para commitear."
+if [[ "$PHASE" == stage_deployment ]]; then
+  [[ "${3:-}" == MIGRATIONS_REVIEWED ]] || { echo 'Explicit migration review acknowledgment required' >&2; exit 1; }
+  echo 'Staging requires separately approved migrations and disabled automatic Production domain assignment.' >&2
+  gh workflow run production-release.yml --ref main -f phase=stage_deployment -f commit_sha="$RELEASE_SHA" -f migration_gate=MIGRATIONS_REVIEWED
 else
-  git commit -m "$COMMIT_MESSAGE"
-fi
-
-echo "==> Empujando cambios a GitHub"
-git push origin "HEAD:$TARGET_BRANCH"
-
-if [[ -n "$GH_BIN" ]]; then
-  echo "==> Disparando workflow de producción en GitHub Actions"
-  "$GH_BIN" workflow run "$WORKFLOW_FILE" --ref "$TARGET_BRANCH"
-  echo "Workflow lanzado. Puedes seguirlo con: $GH_BIN run watch"
-else
-  echo "GitHub CLI no está disponible."
-  echo "Dispara manualmente el workflow '$WORKFLOW_FILE' desde Actions en GitHub sobre la rama '$TARGET_BRANCH'."
+  [[ $# -eq 2 ]] || { echo 'Unexpected migration gate for audit phase' >&2; exit 1; }
+  gh workflow run production-release.yml --ref main -f phase=migration_audit -f commit_sha="$RELEASE_SHA"
 fi
