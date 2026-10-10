@@ -106,14 +106,15 @@ export function DashboardRound07() {
     sources.receivables.data ?? [], sources.payables.data ?? [], today.iso, agendaDays,
   ), [sources.receivables.data, sources.payables.data, today.iso, agendaDays])
   const agendaLoading = !sources.receivables.data && !sources.payables.data
-  const flowPoints: MonthlyFlowDatum[] = useMemo(() => (sources.flow.data?.series ?? []).map((point, index, list) => ({
+  const flowPoints: MonthlyFlowDatum[] = useMemo(() => (sources.flow.data?.series ?? []).map((point, index) => ({
     id: `${index}-${point.month}`, label: point.month, periodLabel: point.month,
     income: Number.isFinite(point.ingresos) ? point.ingresos : null,
     expense: Number.isFinite(point.egresos) ? point.egresos : null,
     incomeLabel: Number.isFinite(point.ingresos) ? moneyLabel(point.ingresos, 'PEN') : 'No disponible',
     expenseLabel: Number.isFinite(point.egresos) ? moneyLabel(point.egresos, 'PEN') : 'No disponible',
     resultLabel: Number.isFinite(point.saldo_mensual) ? moneyLabel(point.saldo_mensual, 'PEN') : 'No disponible',
-    partial: index === list.length - 1,
+    // The API currently omits an ISO month key; a localized label cannot prove which bar is current.
+    partial: false,
   })), [sources.flow.data])
   const rankSource = categoryType === 'EXPENSE' ? sources.sidebar.data?.egresos_categoria : sources.sidebar.data?.ingresos_categoria
   const rankBasis = categoryType === 'EXPENSE' ? sources.summary.data?.egresos_mes : sources.summary.data?.ingresos_mes
@@ -173,7 +174,7 @@ export function DashboardRound07() {
           <div className={styles.reportAnalysis} data-mobile-expanded={showMobileAnalysis}>
             <div className={styles.flowBlock}>
               <div className={styles.subheading}><h3>Ingresos y egresos</h3><div className={styles.segment}><button aria-pressed={flowMonths === 3} onClick={() => setFlowMonths(3)}>3 meses</button><button aria-pressed={flowMonths === 6} onClick={() => setFlowMonths(6)}>6 meses</button></div></div>
-              <p className={styles.meta}>PEN de reporte · meses anteriores sin enlace de fecha verificable</p>
+              <p className={styles.meta}>PEN de reporte · la API no entrega una fecha completa para cada barra; no se usa esta serie para calcular los totales.</p>
               <SourceState loading={!sources.flow.data && !sources.flow.error} failed={Boolean(sources.flow.error)} available={Boolean(sources.flow.data)} retry={() => void sources.flow.mutate()}>
                 {flowPoints.length ? <><MonthlyFlowBars points={flowPoints} requestedMonths={flowMonths} /><button className={styles.textButton} onClick={() => setShowFlowTable(value => !value)} aria-expanded={showFlowTable}>{showFlowTable ? 'Ocultar datos' : 'Ver datos exactos'}</button>{showFlowTable ? <MonthlyFlowDataTable points={flowPoints} /> : null}</> : <p className={styles.empty}>Aún no hay meses de movimiento para comparar.</p>}
               </SourceState>
