@@ -1,0 +1,278 @@
+{
+  "startedAt": "2026-09-23T03:27:38.175Z",
+  "finishedAt": "2026-09-23T03:27:44.108Z",
+  "checks": [
+    {
+      "label": "Credits default clearly names isolated twelve-product scope",
+      "pass": true
+    },
+    {
+      "label": "Eight visible credit rows, not large product cards",
+      "pass": true
+    },
+    {
+      "label": "Card debts remain native PEN 10370 and USD 800",
+      "pass": true
+    },
+    {
+      "label": "Loan summary explicitly says original, not remaining principal",
+      "pass": true
+    },
+    {
+      "label": "36-credits-scalable-register: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Pagination shows remaining three active products",
+      "pass": true
+    },
+    {
+      "label": "Credit search has a useful zero-match state",
+      "pass": true
+    },
+    {
+      "label": "Loan type filter returns four rows",
+      "pass": true
+    },
+    {
+      "label": "Selected loan preserves principal and exact installment breakdown",
+      "pass": true
+    },
+    {
+      "label": "37-loan-contextual-workbench: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Loan drilldown uses selected loan, not hard-coded card payment",
+      "pass": true
+    },
+    {
+      "label": "Forty-product stress sample remains paginated at eight rows",
+      "pass": true
+    },
+    {
+      "label": "Closed products are separately filterable",
+      "pass": true
+    },
+    {
+      "label": "Base sample reconciles with Inicio",
+      "pass": true
+    },
+    {
+      "label": "Collapse preserves FT mark position and dimensions",
+      "pass": true
+    },
+    {
+      "label": "Desktop contracts to a 68px rail and frees workspace",
+      "pass": true
+    },
+    {
+      "label": "Collapsed navigation exposes focused label tooltip",
+      "pass": true
+    },
+    {
+      "label": "Escape dismisses rail tooltip",
+      "pass": true
+    },
+    {
+      "label": "38-sidebar-compact-identity: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Desktop collapse preference persists on reload",
+      "pass": true
+    },
+    {
+      "label": "39-dashboard-graphite-dark: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Dark base is graphite, not green",
+      "pass": true
+    },
+    {
+      "label": "Desktop ledger rows are 48–49px including table borders",
+      "pass": true
+    },
+    {
+      "label": "Expense, income and transfer amounts use distinct semantic colors",
+      "pass": true
+    },
+    {
+      "label": "40-dense-ledger-graphite: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Quick menu preserves all eight operation types",
+      "pass": true
+    },
+    {
+      "label": "Quick menu adds a correctly scoped budget action",
+      "pass": true
+    },
+    {
+      "label": "41-contextual-quick-actions: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Keyboard quick menu moves focus to first operation",
+      "pass": true
+    },
+    {
+      "label": "Escape restores quick-action focus",
+      "pass": true
+    },
+    {
+      "label": "Quick action opens the existing transfer form",
+      "pass": true
+    },
+    {
+      "label": "Quick button yields to the active modal",
+      "pass": true
+    },
+    {
+      "label": "Tablet defaults to compact independently of desktop preference",
+      "pass": true
+    },
+    {
+      "label": "42-credits-tablet: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Tablet expansion overlays, never shrinks content",
+      "pass": true
+    },
+    {
+      "label": "Tablet navigation is a labeled modal surface",
+      "pass": true
+    },
+    {
+      "label": "Tablet expansion also preserves FT coordinates",
+      "pass": true
+    },
+    {
+      "label": "Tablet navigation close is a 44px touch target",
+      "pass": true
+    },
+    {
+      "label": "43-tablet-navigation-expanded: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Tablet focus wraps inside navigation",
+      "pass": true
+    },
+    {
+      "label": "Tablet Escape restores trigger and background interactivity",
+      "pass": true
+    },
+    {
+      "label": "44-credits-mobile: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Mobile uses compact rich rows instead of wide table",
+      "pass": true
+    },
+    {
+      "label": "Mobile credit inspection retains 44px touch targets",
+      "pass": true
+    },
+    {
+      "label": "Mobile quick action occupies its own navigation slot",
+      "pass": true
+    },
+    {
+      "label": "45-mobile-quick-actions: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Mobile quick menu stays inside viewport",
+      "pass": true
+    },
+    {
+      "label": "46-mobile-ledger-dense: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Pointer module changes have bounded three-level reveal",
+      "pass": true
+    },
+    {
+      "label": "Route change places focus on the new heading",
+      "pass": true
+    },
+    {
+      "label": "Rapid navigation settles on latest module",
+      "pass": true
+    },
+    {
+      "label": "Reduced motion skips route animations",
+      "pass": true
+    },
+    {
+      "label": "Keyboard navigation is immediate",
+      "pass": true
+    },
+    {
+      "label": "Forty credits at 320px: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Forty credits at 375px: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Forty credits at 768px: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Forty credits at 1024px: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Forty credits at 1280px: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Forty credits at 1920px: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "No runtime or external-request errors",
+      "pass": true
+    }
+  ],
+  "errors": [],
+  "geometry": {
+    "logo": {
+      "before": {
+        "x": 18,
+        "y": 50,
+        "width": 32,
+        "height": 32
+      },
+      "after": {
+        "x": 18,
+        "y": 50,
+        "width": 32,
+        "height": 32
+      }
+    },
+    "ledger": [
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      49,
+      48.5
+    ]
+  },
+  "failure": null
+}

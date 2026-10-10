@@ -1,0 +1,404 @@
+{
+  "startedAt": "2026-09-23T13:41:32.204Z",
+  "finishedAt": "2026-09-23T13:41:45.966Z",
+  "checks": [
+    {
+      "label": "light ink/surface: contrast >= 4.5",
+      "pass": true
+    },
+    {
+      "label": "light muted/surface: contrast >= 4.5",
+      "pass": true
+    },
+    {
+      "label": "light faint/subtle: contrast >= 4.5",
+      "pass": true
+    },
+    {
+      "label": "light on-accent/accent: contrast >= 4.5",
+      "pass": true
+    },
+    {
+      "label": "light control/surface: contrast >= 3",
+      "pass": true
+    },
+    {
+      "label": "light positive/positive-soft: contrast >= 4.5",
+      "pass": true
+    },
+    {
+      "label": "light negative/negative-soft: contrast >= 4.5",
+      "pass": true
+    },
+    {
+      "label": "light warning/warning-soft: contrast >= 4.5",
+      "pass": true
+    },
+    {
+      "label": "dark ink/surface: contrast >= 4.5",
+      "pass": true
+    },
+    {
+      "label": "dark muted/surface: contrast >= 4.5",
+      "pass": true
+    },
+    {
+      "label": "dark faint/subtle: contrast >= 4.5",
+      "pass": true
+    },
+    {
+      "label": "dark on-accent/accent: contrast >= 4.5",
+      "pass": true
+    },
+    {
+      "label": "dark control/surface: contrast >= 3",
+      "pass": true
+    },
+    {
+      "label": "dark positive/positive-soft: contrast >= 4.5",
+      "pass": true
+    },
+    {
+      "label": "dark negative/negative-soft: contrast >= 4.5",
+      "pass": true
+    },
+    {
+      "label": "dark warning/warning-soft: contrast >= 4.5",
+      "pass": true
+    },
+    {
+      "label": "01-dashboard-desktop-light: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "02-dashboard-tablet-light: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "03-dashboard-mobile-light: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "04-transactions-desktop-light: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Search narrows the ledger",
+      "pass": true
+    },
+    {
+      "label": "Form confirms in context without changing the financial snapshot",
+      "pass": true
+    },
+    {
+      "label": "USD filter displays a truthful empty result",
+      "pass": true
+    },
+    {
+      "label": "07-accounts-desktop-light: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "08-budgets-desktop-light: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "09-credits-desktop-light: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "10-dashboard-desktop-dark: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "11-transactions-dark: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "12-dashboard-partial-error: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Retry restores healthy state",
+      "pass": true
+    },
+    {
+      "label": "13-first-use-mobile: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "14-transactions-mobile: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Dirty close offers protection",
+      "pass": true
+    },
+    {
+      "label": "Mobile submit shows its scoped confirmation",
+      "pass": true
+    },
+    {
+      "label": "16-dashboard-mobile-dark: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "17-loading-desktop: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "18-obligations-currency-warning: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "FT Ligature assets load at every illustrated size",
+      "pass": true
+    },
+    {
+      "label": "Result explanation includes eight source category rows",
+      "pass": true
+    },
+    {
+      "label": "Explanation drills into the exact category records",
+      "pass": true
+    },
+    {
+      "label": "Category context is visible and removable",
+      "pass": true
+    },
+    {
+      "label": "Removing category keeps the expense type filter",
+      "pass": true
+    },
+    {
+      "label": "Mobile keeps the analytical chart collapsed initially",
+      "pass": true
+    },
+    {
+      "label": "Mobile reveals the analytical chart on request",
+      "pass": true
+    },
+    {
+      "label": "30-day agenda exposes all eleven dated commitments",
+      "pass": true
+    },
+    {
+      "label": "Commitment detail preserves native USD amount",
+      "pass": true
+    },
+    {
+      "label": "26-dashboard-tablet-landscape: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Account drilldown contains four original-currency records",
+      "pass": true
+    },
+    {
+      "label": "Income categories reuse the same analytical region",
+      "pass": true
+    },
+    {
+      "label": "Desktop primary action opens expense directly",
+      "pass": true
+    },
+    {
+      "label": "dashboard 320: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Chart labels 320: rendered minimum 11px",
+      "pass": true
+    },
+    {
+      "label": "Chart targets 320: minimum 44px",
+      "pass": true
+    },
+    {
+      "label": "transactions 320: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "portfolio 320: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "budgets 320: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "credits 320: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "dashboard 375: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Chart labels 375: rendered minimum 11px",
+      "pass": true
+    },
+    {
+      "label": "Chart targets 375: minimum 44px",
+      "pass": true
+    },
+    {
+      "label": "transactions 375: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "portfolio 375: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "budgets 375: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "credits 375: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "dashboard 768: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Chart labels 768: rendered minimum 11px",
+      "pass": true
+    },
+    {
+      "label": "transactions 768: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "portfolio 768: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "budgets 768: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "credits 768: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "dashboard 1024: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Chart labels 1024: rendered minimum 11px",
+      "pass": true
+    },
+    {
+      "label": "transactions 1024: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "portfolio 1024: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "budgets 1024: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "credits 1024: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "dashboard 1280: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Chart labels 1280: rendered minimum 11px",
+      "pass": true
+    },
+    {
+      "label": "transactions 1280: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "portfolio 1280: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "budgets 1280: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "credits 1280: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "dashboard 1920: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Chart labels 1920: rendered minimum 11px",
+      "pass": true
+    },
+    {
+      "label": "transactions 1920: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "portfolio 1920: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "budgets 1920: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "credits 1920: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "No browser runtime errors",
+      "pass": true
+    }
+  ],
+  "errors": [],
+  "failure": null,
+  "geometry": {
+    "desktop": {
+      ".position-band": {
+        "x": 236,
+        "y": 181,
+        "width": 1176,
+        "height": 118
+      },
+      ".month-report": {
+        "x": 236,
+        "y": 353,
+        "width": 751.671875,
+        "height": 527
+      },
+      ".agenda-panel": {
+        "x": 1005.671875,
+        "y": 353,
+        "width": 406.328125,
+        "height": 342.5
+      },
+      ".dashboard-budgets": {
+        "x": 1005.671875,
+        "y": 711.5,
+        "width": 406.328125,
+        "height": 306.5
+      },
+      ".recent-register": {
+        "x": 236,
+        "y": 896,
+        "width": 751.671875,
+        "height": 401.5
+      },
+      ".credit-overview": {
+        "x": 1005.671875,
+        "y": 1034,
+        "width": 406.328125,
+        "height": 242.5
+      }
+    }
+  }
+}

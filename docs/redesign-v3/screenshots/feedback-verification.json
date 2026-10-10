@@ -1,0 +1,217 @@
+{
+  "startedAt": "2026-09-24T02:18:45.765Z",
+  "finishedAt": "2026-09-24T02:19:05.019Z",
+  "checks": [
+    {
+      "label": "Entry uses230ms and a small upper-right origin",
+      "pass": true
+    },
+    {
+      "label": "Feedback never takes focus",
+      "pass": true
+    },
+    {
+      "label": "Upper trailing alignment with24px desktop gutter",
+      "pass": true
+    },
+    {
+      "label": "Module primary actions remain above feedback",
+      "pass": true
+    },
+    {
+      "label": "Compact388px surface",
+      "pass": true
+    },
+    {
+      "label": "Temporal indicator is not a live progress announcement",
+      "pass": true
+    },
+    {
+      "label": "Linear timer visibly consumes remaining life",
+      "pass": true
+    },
+    {
+      "label": "70-feedback-top-right-light: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Hover freezes the exact bar position",
+      "pass": true
+    },
+    {
+      "label": "Paused state is explicit",
+      "pass": true
+    },
+    {
+      "label": "71-feedback-paused: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Leaving hover cannot resume a focused notification",
+      "pass": true
+    },
+    {
+      "label": "Resume uses remaining time rather than restarting",
+      "pass": true
+    },
+    {
+      "label": "Dismisses automatically after remaining lifetime",
+      "pass": true
+    },
+    {
+      "label": "Exit returns toward upper right in150ms",
+      "pass": true
+    },
+    {
+      "label": "Warning has6200ms visible lifetime",
+      "pass": true
+    },
+    {
+      "label": "72-feedback-warning-dark-ready: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Error has8200ms visible lifetime",
+      "pass": true
+    },
+    {
+      "label": "Error announces via alert",
+      "pass": true
+    },
+    {
+      "label": "Two visible, third is queued",
+      "pass": true
+    },
+    {
+      "label": "Queued notification starts with full own lifetime",
+      "pass": true
+    },
+    {
+      "label": "Hidden-reason pause shares the timer clock",
+      "pass": true
+    },
+    {
+      "label": "Top feedback fits320",
+      "pass": true
+    },
+    {
+      "label": "Top feedback fits390",
+      "pass": true
+    },
+    {
+      "label": "73-feedback-mobile-dark: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Top feedback fits768",
+      "pass": true
+    },
+    {
+      "label": "Top feedback fits834",
+      "pass": true
+    },
+    {
+      "label": "74-feedback-tablet-dark: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Top feedback fits1024",
+      "pass": true
+    },
+    {
+      "label": "Top feedback fits1440",
+      "pass": true
+    },
+    {
+      "label": "Error stays in modal subtree under its header",
+      "pass": true
+    },
+    {
+      "label": "Error retains draft and persistent cause",
+      "pass": true
+    },
+    {
+      "label": "75-feedback-error-workbench: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Reduced motion has no running animation including timer",
+      "pass": true
+    },
+    {
+      "label": "Reduced motion keeps textual lifetime",
+      "pass": true
+    },
+    {
+      "label": "76-feedback-reduced-motion: no horizontal overflow",
+      "pass": true
+    },
+    {
+      "label": "Reduced motion still self-dismisses",
+      "pass": true
+    },
+    {
+      "label": "Keyboard response is immediate",
+      "pass": true
+    },
+    {
+      "label": "Resize preserves one visible notice and remaining life",
+      "pass": true
+    },
+    {
+      "label": "Runtime reduced preference stops the visible line without dismissing",
+      "pass": true
+    },
+    {
+      "label": "Returning to motion preserves the same remaining clock",
+      "pass": true
+    },
+    {
+      "label": "Immediate dismissal interrupts entry without leaving a zombie panel",
+      "pass": true
+    },
+    {
+      "label": "No result panel, fake undo, or legacy bottom toast",
+      "pass": true
+    },
+    {
+      "label": "No exceptions or external requests",
+      "pass": true
+    }
+  ],
+  "errors": [],
+  "failure": null,
+  "observations": {
+    "entry": [
+      {
+        "duration": 230,
+        "frames": [
+          {
+            "transform": "translate(12px, -6px) scale(0.985)",
+            "opacity": "0.35"
+          },
+          {
+            "transform": "none",
+            "opacity": "1"
+          }
+        ]
+      }
+    ],
+    "desktop": {
+      "top": 177,
+      "right": 1416,
+      "width": 388,
+      "headBottom": 165,
+      "viewport": 1440
+    },
+    "exit": [
+      {
+        "duration": 150,
+        "frames": [
+          "none",
+          "translate(8px, -4px) scale(0.99)"
+        ]
+      }
+    ]
+  }
+}

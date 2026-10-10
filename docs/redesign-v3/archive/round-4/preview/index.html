@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="color-scheme" content="light dark">
+  <title>FinTrack · V3, un espacio de trabajo más inteligente</title>
+  <link rel="icon" type="image/svg+xml" href="brand/ft-favicon.svg">
+  <link rel="stylesheet" href="design.css">
+  <link rel="stylesheet" href="refinement.css">
+  <link rel="stylesheet" href="evolution.css">
+  <script src="app.js" defer></script>
+  <script src="dashboard.js" defer></script>
+  <script src="refinement.js" defer></script>
+  <script src="evolution.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Ir al contenido</a>
+  <div class="review-bar">
+    <span><b>FINTRACK V3 · RONDA 04</b><span class="review-note"> · Datos ficticios · 21 sep 2026</span></span>
+    <div class="review-controls">
+      <a class="review-brand motion-link" href="motion.html">Motion y superficies</a><a class="review-brand" href="brand.html">Identidad FT</a><label for="scenario">Estado</label>
+      <select id="scenario"><option value="ready">Con datos</option><option value="empty">Primer uso</option><option value="error">Error parcial</option><option value="loading">Cargando</option></select>
+      <button id="theme" aria-label="Cambiar a modo oscuro" title="Cambiar tema"></button>
+    </div>
+  </div>
+  <aside class="sidebar" id="sidebar" aria-label="Navegación principal"></aside>
+  <div class="workspace">
+    <header class="topbar" id="topbar"></header>
+    <main id="main" tabindex="-1"></main>
+  </div>
+  <nav class="bottom-nav" id="bottom-nav" aria-label="Navegación móvil"></nav>
+  <dialog id="overlay" aria-labelledby="overlay-title"></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
