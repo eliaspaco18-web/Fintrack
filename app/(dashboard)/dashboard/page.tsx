@@ -6,6 +6,8 @@
 
 import type { Metadata }         from 'next'
 import { DashboardClient }       from '@/components/dashboard/DashboardClient'
+import { DashboardRound07 } from '@/components/dashboard/DashboardRound07'
+import { isV3ShellEnabled } from '@/lib/flags/v3-shell'
 
 export const metadata: Metadata = {
   title: 'Dashboard | FinTrack',
@@ -22,6 +24,8 @@ export const revalidate = 60
 
 export default function DashboardPage() {
   return (
-    <DashboardClient />
+    process.env.VERCEL_ENV !== 'production' && isV3ShellEnabled()
+      ? <DashboardRound07 />
+      : <DashboardClient />
   )
 }
