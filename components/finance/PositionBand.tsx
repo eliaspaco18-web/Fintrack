@@ -46,7 +46,7 @@ function Group({ group, main }: { group: PositionGroup; main: boolean }) {
                 value={item.value}
                 currency={item.currency}
                 availability={item.availability}
-                className={main ? 'block whitespace-nowrap text-[19px] font-semibold leading-[27px] tracking-[-.7px] sm:text-[26px] sm:leading-[34px]' : 'text-[16px] font-semibold leading-[24px]'}
+                className={main ? 'block whitespace-nowrap text-[19px] font-semibold leading-[27px] tracking-[-.7px] xl:text-[26px] xl:leading-[34px]' : 'text-[16px] font-semibold leading-[24px]'}
               />
               {item.note ? <span className="text-[11px] text-[var(--ft-text-muted)]">{item.note}</span> : null}
             </li>
