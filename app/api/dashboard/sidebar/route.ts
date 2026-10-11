@@ -8,6 +8,7 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase.server'
 import { DashboardService } from '@/modules/dashboard/dashboard.service'
 import { measureServerOperation } from '@/lib/server/observability'
+import { categoryBreakdown } from '@/lib/dashboard/category-breakdown'
 import {
   apiError,
   apiOk,
@@ -16,14 +17,12 @@ import {
   getSessionUserId,
 } from '@/lib/api/response'
 import type {
-  DashboardCategoryBreakdownItem,
   DashboardCounterpartyPreview,
   DashboardSidebar,
 } from '@/lib/dashboard/types'
 
 const DAY_IN_MS = 86_400_000
-const UNCATEGORIZED_LABEL = 'Sin categoría'
-const UNCATEGORIZED_COLOR = '#8f8a80'
+const CATEGORY_QUERY_PAGE_SIZE = 500
 
 function toDateUtc(dateIso: string): Date {
   return new Date(`${dateIso}T00:00:00Z`)
@@ -59,25 +58,6 @@ function toPenAmount(amount: number, currency: string, exchangeRate: number): nu
   return currency === 'USD'
     ? amount * exchangeRate
     : amount
-}
-
-function normalizeCategoryBreakdown(
-  rows: Array<{
-    category_id: string | null
-    name: string
-    color: string
-    monto: number
-  }>
-): DashboardCategoryBreakdownItem[] {
-  const total = rows.reduce((sum, row) => sum + row.monto, 0)
-
-  return rows.map((row) => ({
-    category_id: row.category_id,
-    name: row.name,
-    color: row.color,
-    monto: Math.round(row.monto * 100) / 100,
-    pct: total > 0 ? Math.round((row.monto / total) * 1000) / 10 : 0,
-  }))
 }
 
 export async function GET(req: NextRequest) {
@@ -145,12 +125,14 @@ export async function GET(req: NextRequest) {
         .in('status', ['PENDING', 'PARTIAL']),
       supabase
         .from('transactions')
-        .select('category_id, amount_pen, type')
+        .select('category_id, amount_pen, type', { count: 'exact' })
         .eq('user_id', userId)
         .eq('affects_reports', true)
         .in('type', ['INCOME', 'EXPENSE'])
         .gte('transaction_date', monthStartIso)
-        .lt('transaction_date', nextMonthStartIso),
+        .lt('transaction_date', nextMonthStartIso)
+        .order('id', { ascending: true })
+        .range(0, CATEGORY_QUERY_PAGE_SIZE - 1),
     ])
 
     if (activeCardsResult.error) {
@@ -264,7 +246,33 @@ export async function GET(req: NextRequest) {
     .sort((a, b) => b.pending_amount_pen - a.pending_amount_pen)
     .slice(0, 3)
 
-    const transactionRows = monthTransactionsResult.data ?? []
+    const transactionCount = monthTransactionsResult.count
+    if (transactionCount === null || !Number.isSafeInteger(transactionCount) || transactionCount < 0) {
+      return apiError({ code: 'DATABASE_ERROR', message: 'Category transaction coverage is unavailable' })
+    }
+
+    const transactionRows = [...(monthTransactionsResult.data ?? [])]
+    while (transactionRows.length < transactionCount) {
+      const start = transactionRows.length
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('category_id, amount_pen, type')
+        .eq('user_id', userId)
+        .eq('affects_reports', true)
+        .in('type', ['INCOME', 'EXPENSE'])
+        .gte('transaction_date', monthStartIso)
+        .lt('transaction_date', nextMonthStartIso)
+        .order('id', { ascending: true })
+        .range(start, start + CATEGORY_QUERY_PAGE_SIZE - 1)
+
+      if (error || !data?.length) {
+        return apiError({ code: 'DATABASE_ERROR', message: 'Category transaction coverage is incomplete' })
+      }
+      transactionRows.push(...data)
+    }
+    if (transactionRows.length !== transactionCount) {
+      return apiError({ code: 'DATABASE_ERROR', message: 'Category transaction coverage changed during read' })
+    }
     const categoryIds = Array.from(new Set(
       transactionRows
         .map((row) => row.category_id)
@@ -272,11 +280,11 @@ export async function GET(req: NextRequest) {
     ))
 
     const categoryMap = new Map<string, { name: string; color: string }>()
-    if (categoryIds.length > 0) {
+    for (let start = 0; start < categoryIds.length; start += CATEGORY_QUERY_PAGE_SIZE) {
       const { data: categories, error: categoriesError } = await supabase
         .from('categories')
         .select('id, name, color')
-        .in('id', categoryIds)
+        .in('id', categoryIds.slice(start, start + CATEGORY_QUERY_PAGE_SIZE))
 
       if (categoriesError) {
         return apiError({
@@ -293,34 +301,13 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const incomeAgg = new Map<string, { category_id: string | null; name: string; color: string; monto: number }>()
-    const expenseAgg = new Map<string, { category_id: string | null; name: string; color: string; monto: number }>()
-
-    for (const row of transactionRows) {
-      const key = row.category_id ?? 'uncategorized'
-      const ref = row.category_id ? categoryMap.get(row.category_id) : null
-      const target = row.type === 'INCOME' ? incomeAgg : expenseAgg
-      const current = target.get(key) ?? {
+    const { income: ingresosCategoria, expense: egresosCategoria } = categoryBreakdown(
+      transactionRows.map((row) => ({
         category_id: row.category_id,
-        name: ref?.name ?? UNCATEGORIZED_LABEL,
-        color: ref?.color ?? UNCATEGORIZED_COLOR,
-        monto: 0,
-      }
-
-      current.monto += Number(row.amount_pen ?? 0)
-      target.set(key, current)
-    }
-
-    const ingresosCategoria = normalizeCategoryBreakdown(
-      Array.from(incomeAgg.values())
-        .sort((a, b) => b.monto - a.monto)
-        .slice(0, 5)
-    )
-
-    const egresosCategoria = normalizeCategoryBreakdown(
-      Array.from(expenseAgg.values())
-        .sort((a, b) => b.monto - a.monto)
-        .slice(0, 5)
+        amount_pen: row.amount_pen,
+        type: row.type === 'INCOME' ? 'INCOME' : 'EXPENSE',
+      })),
+      categoryMap,
     )
 
     const vencimientosCreditoBancario = summary.upcomingInstallments

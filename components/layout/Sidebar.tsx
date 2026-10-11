@@ -18,7 +18,6 @@ import { IconLogOut, IconX }             from './LayoutIcons'
 import { NAV_GROUPS, NAV_ITEMS }         from '@/lib/constants/nav'
 import { resolveUserAvatar }              from '@/lib/constants/avatar-presets'
 import type { SidebarMode }               from '@/lib/hooks/useLayout'
-import { CURRENT_RELEASE }                from '@/lib/release/current-release'
 import { FocusTrap }                     from '@/components/ui/accessibility'
 import { acquireV3ModalBackground }     from '@/lib/ui/v3-modal-background'
 import { FTMark }                       from './FTMark'
@@ -54,7 +53,7 @@ interface SidebarProfileProps {
 
 function SidebarSectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="px-2 pb-2 pt-2 text-[12px] font-medium leading-none text-[var(--sidebar-section-text)]">
+    <p className="px-2 pb-2 pt-2 text-[9px] font-bold uppercase leading-none tracking-[0.12em] text-[var(--sidebar-section-text)]">
       {children}
     </p>
   )
@@ -101,12 +100,12 @@ function SidebarNavigation({
   return (
     <>
     <nav
-      className={`flex-1 overflow-y-auto overflow-x-visible py-3 ${collapsed ? 'px-3' : 'px-3'}`}
+      className={`flex-1 overflow-y-auto overflow-x-visible pb-3 pt-7 ${collapsed ? 'px-3' : 'px-3'}`}
       aria-label="Navegación principal"
       onScroll={dismissTooltip}
     >
       {NAV_GROUPS.map((group, index) => (
-        <div key={group.label} className={index > 0 ? 'mt-3 border-t border-[var(--sidebar-panel-border)] pt-2' : ''}>
+        <div key={group.label} className={index > 0 ? 'mt-2 border-t border-[var(--sidebar-panel-border)] pt-2' : ''}>
           {!collapsed && <SidebarSectionLabel>{group.label}</SidebarSectionLabel>}
           <ul className="space-y-1">
             {group.keys.map(key => {
@@ -116,7 +115,7 @@ function SidebarNavigation({
           </ul>
         </div>
       ))}
-      <div className="mt-3 border-t border-[var(--sidebar-panel-border)] pt-2">
+      <div className="mt-2 border-t border-[var(--sidebar-panel-border)] pt-2">
         <ul className="space-y-1">
           {footerKeys.map(key => {
             const item = byKey.get(key)
@@ -164,7 +163,7 @@ function SidebarProfile({ user, collapsed }: SidebarProfileProps) {
             width={30}
             height={30}
             unoptimized
-            className="h-[30px] w-[30px] rounded-[10px] object-cover shadow-[inset_0_0_0_1px_var(--sidebar-avatar-border)]"
+          className="h-[30px] w-[30px] rounded-full object-cover shadow-[inset_0_0_0_1px_var(--sidebar-avatar-border)]"
           />
         </Link>
 
@@ -199,10 +198,7 @@ function SidebarProfile({ user, collapsed }: SidebarProfileProps) {
           {displayName}
         </p>
         <p className="mt-0.5 truncate text-[11px] leading-tight text-[var(--sidebar-account-email)]">
-          {user.email}
-        </p>
-        <p className="mt-1 truncate text-[11px] font-medium text-[var(--sidebar-section-text)]">
-          {CURRENT_RELEASE.version}
+          Espacio personal
         </p>
       </div>
 

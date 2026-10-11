@@ -142,7 +142,7 @@ export function DashboardRound07() {
 
   return <main data-ft-v3="" className={styles.dashboard}>
     <header className={styles.header}>
-      <div><p className={styles.eyebrow}>Inicio / Panorama</p><h1>Tu panorama financiero</h1><p className={styles.date}>{dateLabel}</p></div>
+      <div><h1 data-ft-route-heading="" tabIndex={-1}>Tu panorama financiero</h1><p className={styles.date}>{dateLabel}</p></div>
       <div className={styles.headerActions}>
         <Link href="/transactions" className={styles.periodControl}>Mes actual: {month} <span aria-hidden="true">↗</span></Link>
         <Link href={QUICK_OPERATIONS[0].href} className={styles.primaryAction}>＋ Registrar egreso</Link>
@@ -151,14 +151,14 @@ export function DashboardRound07() {
     </header>
 
     <PositionBand
-      accounts={{ label: 'Saldos de tus cuentas', href: '/portfolio', scope: sources.accounts.data ? `${accounts.count} cuentas activas · moneda original` : 'Moneda original', amounts: sources.accounts.data ? accounts.amounts : [], unavailableReason: sources.accounts.error ? 'No se pudieron consultar las cuentas.' : !sources.accounts.data ? 'Cargando cuentas…' : undefined }}
+      accounts={{ label: 'Saldos de tus cuentas', href: '/portfolio', linkLabel: sources.accounts.data ? `${accounts.count} cuentas` : 'Ver cuentas', scope: sources.accounts.data ? `${accounts.count} cuentas activas · moneda original` : 'Moneda original', amounts: sources.accounts.data ? accounts.amounts : [], unavailableReason: sources.accounts.error ? 'No se pudieron consultar las cuentas.' : !sources.accounts.data ? 'Cargando cuentas…' : undefined }}
       receivables={{ label: 'Por cobrar', href: '/receivables', scope: 'Pendiente documentado · cobertura no verificada', amounts: sources.receivables.data ? receivables.amounts : [], unavailableReason: sources.receivables.error ? 'No se pudo consultar.' : !sources.receivables.data ? 'Cargando…' : receivables.unverified ? `${receivables.unverified} sin importe verificable` : undefined }}
       payables={{ label: 'Por pagar', href: '/payables', scope: 'Pendiente documentado · cobertura no verificada', amounts: sources.payables.data ? payables.amounts : [], unavailableReason: sources.payables.error ? 'No se pudo consultar.' : !sources.payables.data ? 'Cargando…' : payables.unverified ? `${payables.unverified} sin importe verificable` : undefined }}
     />
 
     {attention.length ? <nav className={styles.attention} aria-label="Para revisar"><span>ⓘ &nbsp; Para revisar</span>{attention.slice(0, 2).map(item => <Link key={item.href} href={item.href}>{item.label} <span aria-hidden="true">›</span></Link>)}</nav> : null}
 
-    <div className={styles.bodyGrid}>
+    <div className={styles.bodyGrid} data-ft-route-group="work">
       <div className={styles.leftColumn}>
         <Panel title={`Así va ${month}`} subtitle={`Del 1 al ${today.day} · PEN de reporte`} className={styles.report}>
           <SourceState loading={!sources.summary.data && !sources.summary.error} failed={Boolean(sources.summary.error)} available={Boolean(sources.summary.data)} retry={() => void sources.summary.mutate()}>
@@ -174,9 +174,9 @@ export function DashboardRound07() {
           <div className={styles.reportAnalysis} data-mobile-expanded={showMobileAnalysis}>
             <div className={styles.flowBlock}>
               <div className={styles.subheading}><h3>Ingresos y egresos</h3><div className={styles.segment}><button aria-pressed={flowMonths === 3} onClick={() => setFlowMonths(3)}>3 meses</button><button aria-pressed={flowMonths === 6} onClick={() => setFlowMonths(6)}>6 meses</button></div></div>
-              <p className={styles.meta}>PEN de reporte · la API no entrega una fecha completa para cada barra; no se usa esta serie para calcular los totales.</p>
+              <p className={styles.meta}>PEN de reporte</p>
               <SourceState loading={!sources.flow.data && !sources.flow.error} failed={Boolean(sources.flow.error)} available={Boolean(sources.flow.data)} retry={() => void sources.flow.mutate()}>
-                {flowPoints.length ? <><MonthlyFlowBars points={flowPoints} requestedMonths={flowMonths} /><button className={styles.textButton} onClick={() => setShowFlowTable(value => !value)} aria-expanded={showFlowTable}>{showFlowTable ? 'Ocultar datos' : 'Ver datos exactos'}</button>{showFlowTable ? <MonthlyFlowDataTable points={flowPoints} /> : null}</> : <p className={styles.empty}>Aún no hay meses de movimiento para comparar.</p>}
+                {flowPoints.length ? <><MonthlyFlowBars points={flowPoints} requestedMonths={flowMonths} /><button className={styles.textButton} onClick={() => setShowFlowTable(value => !value)} aria-expanded={showFlowTable}>{showFlowTable ? 'Ocultar datos' : 'Ver datos exactos'}</button>{showFlowTable ? <MonthlyFlowDataTable points={flowPoints} /> : null}<p className={styles.meta}>La serie no trae una fecha completa por barra y no calcula estos totales.</p></> : <p className={styles.empty}>Aún no hay meses de movimiento para comparar.</p>}
               </SourceState>
             </div>
             <div className={styles.rankBlock}>
@@ -201,7 +201,7 @@ export function DashboardRound07() {
         <Panel title="Tu próxima agenda" subtitle="Compromisos documentados · no son pagos automáticos" className={styles.agenda}>
           <div className={styles.agendaControls}><div className={styles.segment}><button aria-pressed={agendaDays === 7} onClick={() => setAgendaDays(7)}>7 días</button><button aria-pressed={agendaDays === 30} onClick={() => setAgendaDays(30)}>30 días</button></div></div>
           <SourceState loading={agendaLoading && !sources.receivables.error && !sources.payables.error} failed={Boolean(sources.receivables.error || sources.payables.error)} available={!agendaLoading} retry={() => { void sources.receivables.mutate(); void sources.payables.mutate() }}>
-            {agenda.length ? <><p className={styles.meta}>Agenda parcial: ciclos y préstamos se consultan en Créditos. Documentos: cobertura no verificada.</p><ul className={styles.agendaList}>{agenda.slice(0, 4).map(item => <li key={`${item.source}-${item.id}`}><Link href={item.href}><span className={styles.dateTile}><strong>{item.dueDate.slice(8)}</strong><small>{new Intl.DateTimeFormat('es-PE', { month: 'short', timeZone: 'UTC' }).format(new Date(`${item.dueDate}T12:00:00Z`))}</small></span><span className={styles.agendaIdentity}><strong>{item.label}</strong><small>{item.dueDate < today.iso ? 'Vencido · ' : ''}{item.source === 'receivable' ? 'Por cobrar' : 'Por pagar'}</small></span><span className={styles.agendaAmount}>{amount(item.pending ?? Number.NaN, item.currency ?? 'PEN')}</span><span aria-hidden="true">›</span></Link></li>)}</ul>{agenda.length > 4 ? <button className={styles.textButton} onClick={() => setShowAllAgenda(true)}>Ver los {agenda.length} documentos</button> : null}</> : <p className={styles.empty}>No hay vencimientos documentados en este intervalo. Ciclos y préstamos: consultar Créditos.</p>}
+            {agenda.length ? <><ul className={styles.agendaList}>{agenda.slice(0, 4).map(item => <li key={`${item.source}-${item.id}`}><Link href={item.href}><span className={styles.dateTile}><strong>{item.dueDate.slice(8)}</strong><small>{new Intl.DateTimeFormat('es-PE', { month: 'short', timeZone: 'UTC' }).format(new Date(`${item.dueDate}T12:00:00Z`))}</small></span><span className={styles.agendaIdentity}><strong>{item.label}</strong><small>{item.dueDate < today.iso ? 'Vencido · ' : ''}{item.source === 'receivable' ? 'Por cobrar' : 'Por pagar'}</small></span><span className={styles.agendaAmount}>{amount(item.pending ?? Number.NaN, item.currency ?? 'PEN')}</span><span aria-hidden="true">›</span></Link></li>)}</ul><p className={styles.agendaScope}>Agenda parcial: ciclos y préstamos se consultan en Créditos. Cobertura de documentos no verificada.</p>{agenda.length > 4 ? <button className={styles.textButton} onClick={() => setShowAllAgenda(true)}>Ver los {agenda.length} documentos</button> : null}</> : <p className={styles.empty}>No hay vencimientos documentados en este intervalo. Ciclos y préstamos: consultar Créditos.</p>}
           </SourceState>
         </Panel>
 

@@ -228,7 +228,7 @@ function InnerShell({ user, navBadges = {}, children }: Omit<AppShellProps, 'exc
           <div
             key={pathname}
             ref={routeContentRef}
-            className="ft-shell-content w-full"
+            className={`ft-shell-content w-full ${pathname === '/dashboard' ? 'ft-shell-content-dashboard' : ''}`}
             style={{ paddingBottom: 'max(6rem, calc(var(--fab-safe-area, 0px) + 1.5rem))' }}
           >
             <ProductUpdatesBanner />
