@@ -12,8 +12,7 @@ import { useState, useCallback,
          useEffect,
          useMemo,
          useRef,
-         type ReactNode,
-         type RefObject }            from 'react'
+         type ReactNode }            from 'react'
 import { useTransactions }           from '@/lib/hooks/useTransactions'
 import { useCurrency }               from '@/lib/hooks/useDashboard'
 import { fetchWithTimeout }          from '@/lib/client/fetch-with-timeout'
@@ -48,6 +47,7 @@ import { ModalOverlayPortal }        from '@/components/ui/ModalOverlayPortal'
 import { AppSelect }                 from '@/components/ui/AppSelect'
 import { Button }                    from '@/components/ui/Button'
 import { FinancialIcon }             from '@/components/ui/FinancialIcon'
+import { AnchoredActionMenu }        from '@/components/ui/AnchoredActionMenu'
 import { TransactionEditModal }      from '@/components/forms/TransactionEditModal'
 import type { TransactionType }      from '@/types/database.types'
 import type { TransactionFormOptions } from '@/lib/contracts/ui.contracts'
@@ -81,12 +81,12 @@ const TYPE_CONFIG: Record<TransactionType, { label: string; prefix: string; clas
   EXPENSE: {
     label: 'Egreso',
     prefix: '−',
-    className: 'text-[var(--ft-text-muted)]',
+    className: 'text-[var(--ft-danger)]',
   },
   TRANSFER: {
     label: 'Transferencia',
     prefix: '⇄',
-    className: 'text-[var(--ft-info)]',
+    className: 'text-[var(--ft-text-muted)]',
   },
 }
 
@@ -235,56 +235,6 @@ function DesktopLedgerSkeletons() {
           </div>
         ))}
       </div>
-    </div>
-  )
-}
-
-function LedgerColumnHeader({
-  allVisibleSelected,
-  selectAllRef,
-  onToggleSelectVisible,
-  sortBy,
-  sortDir,
-  onSort,
-}: {
-  allVisibleSelected: boolean
-  selectAllRef: RefObject<HTMLInputElement>
-  onToggleSelectVisible: () => void
-  sortBy: TransactionListParams['sort_by']
-  sortDir: 'asc' | 'desc'
-  onSort: (value: string) => void
-}) {
-  return (
-    <div className="hidden min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-t border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-5 text-[11px] font-medium text-[var(--ft-text-muted)] xl:grid">
-      <input
-        ref={selectAllRef}
-        type="checkbox"
-        checked={allVisibleSelected}
-        onChange={onToggleSelectVisible}
-        aria-label="Seleccionar transacciones visibles"
-        className="h-4 w-4 rounded border border-[var(--ft-border)] text-[var(--ft-primary)] accent-[var(--ft-primary)]"
-      />
-      <div className="grid min-w-0 grid-cols-[92px_minmax(0,1.45fr)_minmax(0,0.85fr)_minmax(120px,0.6fr)] items-center gap-4">
-        <button
-          type="button"
-          onClick={() => onSort(`transaction_date-${sortBy === 'transaction_date' && sortDir === 'desc' ? 'asc' : 'desc'}`)}
-          aria-pressed={sortBy === 'transaction_date'}
-          className="justify-self-start rounded-control px-2 py-1.5 transition-colors duration-fast hover:bg-[var(--ft-surface-hover)] hover:text-[var(--ft-text-strong)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)] motion-reduce:transition-none"
-        >
-          Fecha {sortBy === 'transaction_date' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
-        </button>
-        <span id="transactions-ledger-heading">Movimiento</span>
-        <span className="truncate">Cuenta / ruta</span>
-        <button
-          type="button"
-          onClick={() => onSort(`amount-${sortBy === 'amount' && sortDir === 'desc' ? 'asc' : 'desc'}`)}
-          aria-pressed={sortBy === 'amount'}
-          className="justify-self-end rounded-control px-2 py-1.5 text-right transition-colors duration-fast hover:bg-[var(--ft-surface-hover)] hover:text-[var(--ft-text-strong)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)] motion-reduce:transition-none"
-        >
-          Monto {sortBy === 'amount' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
-        </button>
-      </div>
-      <span className="w-[112px] text-right">Acciones</span>
     </div>
   )
 }
@@ -1324,6 +1274,7 @@ export function TransactionTable({
 
   return (
     <div className="space-y-0">
+      {workspaceHeader ? <div className="mb-4">{workspaceHeader}</div> : null}
       <div
         data-testid="transactions-review-panel-layer"
         className={`grid items-start transition-[grid-template-columns,gap] duration-slow ease-[var(--ft-ease-out)] motion-reduce:transition-none ${
@@ -1333,13 +1284,12 @@ export function TransactionTable({
         }`}
       >
         <div className="min-w-0">
-          {/* Persistent orientation and command surface on roomy viewports. */}
-          <div className="lg:sticky lg:top-0 lg:z-sticky lg:-mt-5 lg:bg-[var(--ft-canvas)] lg:pt-5 xl:-mt-6 xl:pt-6">
+          {/* Search and filters stay available while the ledger scrolls. */}
+          <div className="lg:sticky lg:top-0 lg:z-sticky">
             <section
               aria-label="Espacio de trabajo de movimientos"
-              className="rounded-panel border border-[var(--ft-border)] bg-[var(--ft-surface)] shadow-elevation-md"
+              className="rounded-panel border border-[var(--ft-border)] bg-[var(--ft-surface)] shadow-elevation-sm"
             >
-            {workspaceHeader}
             {filterOptionsError && (
               <DataErrorBanner
                 message={filterOptionsError}
@@ -1419,8 +1369,9 @@ export function TransactionTable({
           </div>
 
           <div className="flex min-w-0 flex-col gap-2 border-t border-[var(--ft-border)] pt-3 sm:flex-row sm:items-center sm:justify-between">
-            <DataToolbarRow className="filters-row-tight min-w-0 flex-nowrap overflow-x-auto pb-1">
-              {QUICK_FILTERS.map(filter => (
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+              <DataToolbarRow aria-label="Tipo de movimiento" className="filters-row-tight min-w-0 flex-nowrap overflow-x-auto pb-1">
+              {QUICK_FILTERS.filter(filter => ['all', 'income', 'expense', 'transfer'].includes(filter.key)).map(filter => (
                 <DataFilterPreset
                   key={filter.key}
                   label={filter.label}
@@ -1430,6 +1381,18 @@ export function TransactionTable({
                 />
               ))}
             </DataToolbarRow>
+              <DataToolbarRow aria-label="Periodo rápido" className="filters-row-tight min-w-0 flex-nowrap overflow-x-auto pb-1 sm:border-l sm:border-[var(--ft-border)] sm:pl-2">
+                {QUICK_FILTERS.filter(filter => filter.key === 'this_month' || filter.key === 'last_month').map(filter => (
+                  <DataFilterPreset
+                    key={filter.key}
+                    label={filter.label}
+                    active={activeFilter === filter.key}
+                    onClick={() => handleQuickFilter(filter.key)}
+                    testId={`transactions-quick-filter-${filter.key}`}
+                  />
+                ))}
+              </DataToolbarRow>
+            </div>
             <p className="shrink-0 text-[11px] font-medium tabular-nums text-[var(--ft-text-muted)]">
               {isLoading
                 ? 'Cargando movimientos…'
@@ -1483,16 +1446,6 @@ export function TransactionTable({
           ) : null}
             </DataToolbar>
 
-            {!isLoading && !isEmpty ? (
-              <LedgerColumnHeader
-                allVisibleSelected={allVisibleSelected}
-                selectAllRef={selectAllRef}
-                onToggleSelectVisible={toggleSelectVisible}
-                sortBy={sortBy}
-                sortDir={sortDir}
-                onSort={setSort}
-              />
-            ) : null}
             </section>
           </div>
 
@@ -1595,7 +1548,7 @@ export function TransactionTable({
             </section>
           ) : null}
 
-          <DataTable className="mt-3 min-w-0 shadow-elevation-sm">
+          <DataTable className="mt-3 min-w-0 shadow-elevation-sm" density="movement">
             <h2 className="sr-only">Libro de movimientos</h2>
 
         {/* ── REGISTROS RESPONSIVE ─────────────────────────────────────── */}
@@ -1736,18 +1689,52 @@ export function TransactionTable({
           </div>
         ) : (
           <section aria-labelledby="transactions-ledger-heading" className="hidden min-w-0 xl:block">
-            <div role="list" aria-label="Registro de movimientos" className="divide-y divide-[var(--ft-border)]">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1020px] table-fixed border-collapse text-left" aria-label="Registro de movimientos">
+                <colgroup>
+                  <col className="w-[4%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[25%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[12%]" />
+                </colgroup>
+                {!isLoading && !isEmpty ? (
+                  <thead className="border-b border-[var(--ft-border)] bg-[var(--ft-surface-muted)] text-[11px] font-semibold text-[var(--ft-text-muted)]">
+                    <tr className="h-[34px]">
+                      <th scope="col" className="px-3">
+                        <input ref={selectAllRef} type="checkbox" checked={allVisibleSelected} onChange={toggleSelectVisible} aria-label="Seleccionar transacciones visibles" className="h-4 w-4 rounded border border-[var(--ft-border)] accent-[var(--ft-primary)]" />
+                      </th>
+                      <th scope="col" aria-sort={sortBy === 'transaction_date' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} className="px-2">
+                        <button type="button" onClick={() => setSort(`transaction_date-${sortBy === 'transaction_date' && sortDir === 'desc' ? 'asc' : 'desc'}`)} className="rounded-control py-1 text-left hover:text-[var(--ft-text-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ft-focus-ring-color)]">
+                          Fecha {sortBy === 'transaction_date' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
+                        </button>
+                      </th>
+                      <th scope="col" id="transactions-ledger-heading" className="px-3">Movimiento</th>
+                      <th scope="col" className="px-2">Cuenta / ruta</th>
+                      <th scope="col" className="px-2">Categoría</th>
+                      <th scope="col" aria-sort={sortBy === 'amount' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} className="px-3 text-right">
+                        <button type="button" onClick={() => setSort(`amount-${sortBy === 'amount' && sortDir === 'desc' ? 'asc' : 'desc'}`)} className="rounded-control py-1 text-right hover:text-[var(--ft-text-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ft-focus-ring-color)]">
+                          Monto {sortBy === 'amount' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
+                        </button>
+                      </th>
+                      <th scope="col" className="px-2 text-right">Acciones</th>
+                    </tr>
+                  </thead>
+                ) : null}
+                <tbody className="divide-y divide-[var(--ft-border)]">
               {transactions.map(tx => {
                 const isFocused = focusedTransaction?.id === tx.id
                 const isSelected = selectedTransactionIds.includes(tx.id)
 
                 return (
-                  <article
+                  <tr
                     key={tx.id}
-                    role="listitem"
                     data-testid={`transactions-row-${tx.id}`}
-                    className={`group/row grid min-h-[82px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-5 py-3 transition-[background-color,box-shadow] duration-fast motion-reduce:transition-none ${isFocused ? 'bg-[var(--ft-surface-muted)] shadow-[inset_3px_0_0_var(--ft-primary)]' : isSelected ? 'bg-[var(--ft-primary-soft)]' : 'bg-[var(--ft-surface)] hover:bg-[var(--ft-surface-hover)]'}`}
+                    className={`group/row h-12 transition-colors duration-fast motion-reduce:transition-none ${isFocused ? 'bg-[var(--ft-surface-muted)] shadow-[inset_3px_0_0_var(--ft-primary)]' : isSelected ? 'bg-[var(--ft-primary-soft)]' : 'bg-[var(--ft-surface)] hover:bg-[var(--ft-surface-hover)]'}`}
                   >
+                    <td className="px-3 align-middle">
                     <input
                       type="checkbox"
                       checked={isSelected}
@@ -1755,7 +1742,9 @@ export function TransactionTable({
                       aria-label={`Seleccionar ${tx.description}`}
                       className="h-4 w-4 rounded border border-[var(--ft-border)] text-[var(--ft-primary)] accent-[var(--ft-primary)]"
                     />
-
+                    </td>
+                    <td className="px-2 py-1.5 align-middle text-[var(--ft-text-muted)]"><DateCell date={tx.transactionDate} /></td>
+                    <td className="px-3 py-1.5 align-middle">
                     <button
                       type="button"
                       onClick={() => activateTransactionRow(tx.id)}
@@ -1763,23 +1752,26 @@ export function TransactionTable({
                       aria-controls="transactions-review-pane"
                       aria-expanded={isFocused && reviewPanelVisible}
                       aria-label={`Revisar ${tx.description}`}
-                      className="grid min-w-0 grid-cols-[92px_minmax(0,1.45fr)_minmax(0,0.85fr)_minmax(120px,0.6fr)] items-center gap-4 rounded-control text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]"
+                      className="flex min-h-10 min-w-0 items-center gap-2.5 rounded-control text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]"
                     >
-                      <div className="text-[var(--ft-text-muted)]">
-                        <DateCell date={tx.transactionDate} />
+                      <TransactionIdentityMark transaction={tx} />
+                      <div className="min-w-0">
+                        <p className="truncate text-[13px] font-semibold leading-4 text-[var(--ft-text-strong)]">{tx.description}</p>
+                        <span className={`mt-0.5 inline-flex items-center gap-1 text-[10px] font-semibold leading-3 ${TYPE_CONFIG[tx.type].className}`} aria-label={TYPE_CONFIG[tx.type].label}>
+                          <span aria-hidden="true" className="font-mono">{TYPE_CONFIG[tx.type].prefix}</span>{TYPE_CONFIG[tx.type].label}
+                        </span>
                       </div>
-                      <div className="flex min-w-0 items-center gap-3">
-                        <TransactionIdentityMark transaction={tx} />
-                        <div className="min-w-0">
-                          <p className="truncate text-[13px] font-semibold leading-5 text-[var(--ft-text-strong)]">
-                            {tx.description}
-                          </p>
-                          <div className="mt-1.5">
-                            <TransactionContext transaction={tx} />
-                          </div>
-                        </div>
+                    </button>
+                    </td>
+                    <td className="px-2 py-1.5 align-middle"><TransactionAccountPath transaction={tx} /></td>
+                    <td className="px-2 py-1.5 align-middle">
+                      {tx.category ? <p className="truncate text-[12px] font-medium text-[var(--ft-text-strong)]">{normalizeCategoryLabel(tx.category.name)}</p> : <p className="text-[12px] text-[var(--ft-text-subtle)]">Sin categoría</p>}
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                        <ModuleBadges tx={tx} />
+                        {!tx.affectsReports ? <span className="text-[10px] text-[var(--ft-warning)]">No reportable</span> : null}
                       </div>
-                      <TransactionAccountPath transaction={tx} />
+                    </td>
+                    <td className="px-3 py-1.5 align-middle text-right">
                       <AmountCell
                         amountPen={tx.amountPen}
                         original={tx.currency !== 'PEN'
@@ -1796,32 +1788,35 @@ export function TransactionTable({
                         format={format}
                         formatter={(n, c) => formatCurrency(n, c as 'PEN' | 'USD')}
                       />
-                    </button>
-
-                    <div className="w-[112px] opacity-70 transition-opacity duration-fast group-hover/row:opacity-100 focus-within:opacity-100 motion-reduce:transition-none">
-                      <DataRowActions actions={[
-                        {
-                          label: 'Ver detalle',
-                          onClick: () => router.push(`/transactions/${tx.id}`),
-                          testId: `transactions-row-detail-${tx.id}`,
-                        },
-                        {
-                          label: 'Editar',
-                          onClick: () => setEditTransactionId(tx.id),
-                          testId: `transactions-row-edit-${tx.id}`,
-                        },
-                        {
-                          label: 'Eliminar',
-                          variant: 'danger',
-                          disabled: deleteState.status === 'loading',
-                          onClick: () => openDeleteTransactionModal(tx.id),
-                          testId: `transactions-row-delete-${tx.id}`,
-                        },
-                      ]} />
+                    </td>
+                    <td className="px-2 align-middle">
+                    <div className="flex justify-end gap-1 opacity-80 transition-opacity duration-fast group-hover/row:opacity-100 focus-within:opacity-100 motion-reduce:transition-none">
+                      <DataRowActions actions={[{
+                        label: 'Editar',
+                        onClick: () => setEditTransactionId(tx.id),
+                        testId: `transactions-row-edit-${tx.id}`,
+                      }]} />
+                      <AnchoredActionMenu
+                        label={`Más acciones de ${tx.description}`}
+                        focusFirstOnPointer={false}
+                        triggerContent={(
+                          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" />
+                          </svg>
+                        )}
+                        className="h-8 w-8 rounded-control text-[var(--ft-text-muted)] hover:bg-[var(--ft-surface-hover)] hover:text-[var(--ft-text-strong)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]"
+                        actions={[
+                          { id: 'detail', label: 'Ver detalle', onSelect: () => router.push(`/transactions/${tx.id}`) },
+                          { id: 'delete', label: 'Eliminar', destructive: true, disabled: deleteState.status === 'loading', onSelect: () => openDeleteTransactionModal(tx.id) },
+                        ]}
+                      />
                     </div>
-                  </article>
+                    </td>
+                  </tr>
                 )
               })}
+                </tbody>
+              </table>
             </div>
 
             {pagination ? (

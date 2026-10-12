@@ -133,15 +133,16 @@ test.describe('authenticated transactions', () => {
     const row = page.locator('tbody tr', { hasText: description }).first()
     await expect(row).toBeVisible({ timeout: 15_000 })
 
-    const deleteButton = row.locator('[data-testid^="transactions-row-delete-"]').first()
-    await deleteButton.click({ force: true })
+    const moreButton = row.getByRole('button', { name: `Más acciones de ${description}` })
+    await moreButton.click()
+    await page.getByRole('menuitem', { name: 'Eliminar' }).click()
 
     await expect(page.getByTestId('transactions-delete-modal')).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('transactions-delete-modal')).toHaveCount(0)
-    await expect(deleteButton).toBeFocused()
 
-    await deleteButton.click({ force: true })
+    await moreButton.click()
+    await page.getByRole('menuitem', { name: 'Eliminar' }).click()
     await expect(page.getByTestId('transactions-delete-modal')).toBeVisible()
     await page.getByTestId('transactions-delete-confirm-button').click()
     await expect(page.getByTestId('transactions-delete-modal')).toHaveCount(0, { timeout: 20_000 })
@@ -161,7 +162,8 @@ test.describe('authenticated transactions', () => {
 
     const row = page.locator('tbody tr', { hasText: description }).first()
     await expect(row).toBeVisible({ timeout: 15_000 })
-    await row.click()
+    await row.getByRole('button', { name: `Más acciones de ${description}` }).click()
+    await page.getByRole('menuitem', { name: 'Ver detalle' }).click()
 
     await expect(page).toHaveURL(/\/transactions\/[0-9a-f-]+$/)
     await expect(page.getByTestId('transaction-detail-delete-button')).toBeVisible()
