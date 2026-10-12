@@ -49,6 +49,13 @@ const amount = (value: number, currency: string, direction: 'neutral' | 'income'
 const monthName = (iso: string) => new Intl.DateTimeFormat('es-PE', {
   month: 'long', timeZone: 'UTC',
 }).format(new Date(`${iso.slice(0, 7)}-01T12:00:00Z`))
+const recentDateLabel = (value: string | undefined) => {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value.slice(0, 10))) return value ?? '—'
+  const iso = value.slice(0, 10)
+  const date = new Date(`${iso}T12:00:00Z`)
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== iso) return value
+  return new Intl.DateTimeFormat('es-PE', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(date)
+}
 
 function SourceState({ loading, failed, available, retry, children }: {
   loading: boolean; failed: boolean; available: boolean; retry: () => void; children: React.ReactNode
@@ -192,7 +199,7 @@ export function DashboardRound07() {
 
         <Panel title="Últimos movimientos" subtitle="Lo último que registraste · no se usa para calcular el mes" href="/transactions" className={styles.recent}>
           <SourceState loading={!sources.recent.data && !sources.recent.error} failed={Boolean(sources.recent.error)} available={Boolean(sources.recent.data)} retry={() => void sources.recent.mutate()}>
-            {(sources.recent.data?.data ?? []).length ? <ul className={styles.recentList}>{sources.recent.data!.data.map(row => <li key={row.id}><Link href={`/transactions/${encodeURIComponent(row.id)}`}><span className={styles.recentDate}>{row.transactionDate || row.transaction_date}</span><span className={styles.recentIdentity}><strong>{row.description || (row.type === 'TRANSFER' ? 'Transferencia' : 'Movimiento')}</strong><small>{row.category?.name ?? (row.type === 'TRANSFER' ? 'Transferencia interna' : row.type === 'INCOME' ? 'Ingreso' : 'Egreso')}</small></span><span className={styles.recentAccount}>{row.sourceAccount?.name ?? row.source_account?.name ?? '—'}</span><span className={styles.recentAmount}>{row.type === 'TRANSFER' ? '' : row.type === 'INCOME' ? '+' : '−'}{amount(Math.abs(row.amount), row.currency)}</span><span aria-hidden="true">›</span></Link></li>)}</ul> : <p className={styles.empty}>Aún no hay movimientos. <Link href={QUICK_OPERATIONS[0].href}>Registrar el primero</Link></p>}
+            {(sources.recent.data?.data ?? []).length ? <ul className={styles.recentList}>{sources.recent.data!.data.map(row => <li key={row.id}><Link href={`/transactions/${encodeURIComponent(row.id)}`}><span className={styles.recentDate}>{recentDateLabel(row.transactionDate || row.transaction_date)}</span><span className={styles.recentIdentity}><strong>{row.description || (row.type === 'TRANSFER' ? 'Transferencia' : 'Movimiento')}</strong><small>{row.category?.name ?? (row.type === 'TRANSFER' ? 'Transferencia interna' : row.type === 'INCOME' ? 'Ingreso' : 'Egreso')}</small></span><span className={styles.recentAccount}>{row.sourceAccount?.name ?? row.source_account?.name ?? '—'}</span><span className={styles.recentAmount}>{row.type === 'TRANSFER' ? '' : row.type === 'INCOME' ? '+' : '−'}{amount(Math.abs(row.amount), row.currency)}</span><span aria-hidden="true">›</span></Link></li>)}</ul> : <p className={styles.empty}>Aún no hay movimientos. <Link href={QUICK_OPERATIONS[0].href}>Registrar el primero</Link></p>}
           </SourceState>
           <div className={styles.panelFooter}><Link href={QUICK_OPERATIONS[1].href}>＋ Registrar ingreso</Link><Link href={QUICK_OPERATIONS[2].href}>⇄ Transferir entre cuentas</Link><Link href={QUICK_OPERATIONS[0].href}>Otras operaciones ↗</Link></div>
         </Panel>
