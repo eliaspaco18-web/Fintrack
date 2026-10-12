@@ -144,7 +144,7 @@ function TransactionIdentityMark({ transaction }: { transaction: TransactionList
       {transaction.type === 'TRANSFER' ? (
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 7h13l-3-3m3 3-3 3M17 17H4l3 3m-3-3 3-3" /></svg>
       ) : (
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={transaction.type === 'INCOME' ? 'M12 4v16m-7-7 7 7 7-7' : 'M12 20V4m-7 7 7-7 7 7'} /></svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d={transaction.type === 'INCOME' ? 'M7 7h10v10M17 7 7 17' : 'M7 17h10V7M7 17 17 7'} /></svg>
       )}
     </span>
   )
@@ -1372,7 +1372,7 @@ export function TransactionTable({
                   aria-expanded={advancedFiltersOpen}
                   aria-controls="transactions-advanced-filters"
                   testId="transactions-advanced-filters-button"
-                  variant={advancedFiltersOpen || advancedFilterCount > 0 ? 'secondary' : 'ghost'}
+                  variant="secondary"
                   size="sm"
                   className="shrink-0"
                   leadingIcon={(
@@ -1919,7 +1919,7 @@ export function TransactionTable({
                   {TYPE_CONFIG[focusedTransaction.type].label}
                 </span>
               </div>
-              <p className={`whitespace-nowrap font-mono tabular-nums ${styles.summaryAmount} ${TYPE_CONFIG[focusedTransaction.type].className}`} aria-live="polite">
+              <p className={`whitespace-nowrap tabular-nums ${styles.summaryAmount} ${TYPE_CONFIG[focusedTransaction.type].className}`} aria-live="polite">
                 {focusedTransaction.type === 'TRANSFER' ? '' : TYPE_CONFIG[focusedTransaction.type].prefix}
                 {formatCurrency(Math.abs(focusedTransaction.amount), focusedTransaction.currency as 'PEN' | 'USD')}
               </p>
@@ -1982,7 +1982,7 @@ export function TransactionTable({
                   <dl className={styles.reviewFacts}>
                     <ReviewFactRow label="Fecha del movimiento"><TransactionDate date={focusedTransaction.transactionDate} /></ReviewFactRow>
                     <ReviewFactRow label="Moneda original">
-                      <span className="font-mono tabular-nums">{focusedTransaction.currency}</span>
+                      <span className="tabular-nums">{focusedTransaction.currency}</span>
                       {focusedTransaction.currency === 'PEN' ? ' · Sol peruano' : focusedTransaction.currency === 'USD' ? ' · Dólar estadounidense' : null}
                     </ReviewFactRow>
                     <ReviewFactRow label="En los reportes">

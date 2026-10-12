@@ -62,6 +62,7 @@
 }
 
 .summaryNote {
+  display: block;
   margin-top: 3px;
   color: var(--ft-r07-muted);
   font-size: 10px;
