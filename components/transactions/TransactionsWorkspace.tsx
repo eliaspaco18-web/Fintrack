@@ -17,7 +17,6 @@ import { fetchDashboardData } from '@/components/dashboard/api'
 import {
   OperationTypeSelector,
   operationTypeToFormConfig,
-  operationTypeLabel,
   type OperationType,
 } from '@/components/transactions/OperationTypeSelector'
 
@@ -79,6 +78,17 @@ const EXPORT_PERIOD_OPTIONS: Array<{ value: ExportPeriod; label: string }> = [
   { value: '11', label: 'Noviembre' },
   { value: '12', label: 'Diciembre' },
 ]
+
+const ASTRA_FORM_TITLES: Record<OperationType, string> = {
+  income: 'Registrar ingreso',
+  expense: 'Registrar egreso',
+  transfer: 'Transferir entre cuentas',
+  asset_purchase: 'Comprar un activo',
+  receivable_issue: 'Prestar dinero',
+  receivable_collect: 'Registrar cobro',
+  payable_issue: 'Registrar dinero recibido a devolver',
+  payable_pay: 'Registrar pago',
+}
 
 const EXPORT_FORMAT_OPTIONS: Array<{ value: ExportFormat; label: string; hint: string }> = [
   { value: 'pdf', label: 'PDF', hint: 'Resumen visual + detalle tabular profesional.' },
@@ -292,14 +302,14 @@ export function TransactionsWorkspace({
   }, [openFromQuery, hasPrefillParams, initialValues, selectedOperationType])
 
   const modalTitle = modalStep === 'form' && selectedOperationType
-    ? operationTypeLabel(selectedOperationType)
-    : 'Nueva transacción'
+    ? ASTRA_FORM_TITLES[selectedOperationType]
+    : '¿Qué vas a registrar?'
 
   const modalSubtitle = modalStep === 'form' && selectedOperationType
-    ? `Registrar operación de tipo: ${operationTypeLabel(selectedOperationType)}`
-    : 'Selecciona el tipo de operación que deseas registrar.'
+    ? 'Completa los datos reales del movimiento; sus relaciones y validaciones se mantienen.'
+    : 'Elige lo que ocurrió. FinTrack mantiene la relación con tus cuentas.'
   const createModalWidthClassName = useMemo(() => {
-    if (modalStep === 'select_type') return 'max-w-[min(96vw,560px)]'
+    if (modalStep === 'select_type') return 'max-w-[min(96vw,580px)]'
 
     switch (selectedOperationType) {
       case 'income':
@@ -596,12 +606,12 @@ export function TransactionsWorkspace({
       <RecordModal
         open={isModalOpen}
         onClose={closeCreateModal}
-        eyebrow="Movimientos"
         title={modalTitle}
         subtitle={modalSubtitle}
         widthClassName={createModalWidthClassName}
         presentation="workbench"
         motionSource="pointer"
+        overlayClassName={styles.astraOverlay}
       >
         {modalStep === 'select_type' ? (
           <OperationTypeSelector onSelect={handleOperationTypeSelected} />

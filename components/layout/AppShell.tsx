@@ -27,6 +27,7 @@ import { ProductUpdatesBanner }    from './ProductUpdatesBanner'
 import { ReleaseAnnouncementGate } from './ReleaseAnnouncementGate'
 import { Topbar }                   from './Topbar'
 import { QuickActionsFAB }          from './QuickActionsFAB'
+import transactionStyles from '@/components/tables/TransactionsRound07.module.css'
 
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
 
@@ -185,7 +186,10 @@ function InnerShell({ user, navBadges = {}, children }: Omit<AppShellProps, 'exc
   return (
     // h-dvh + overflow-hidden en el shell evita que el sidebar haga scroll
     // Solo el <main> scrollea internamente
-    <div data-ft-v3-shell="" className="fin-shell flex h-dvh overflow-hidden bg-[var(--ft-canvas)] text-[var(--ft-text-strong)]">
+    <div
+      data-ft-v3-shell=""
+      className={`fin-shell flex h-dvh overflow-hidden bg-[var(--ft-canvas)] text-[var(--ft-text-strong)] ${pathname === '/transactions' ? transactionStyles.astraShell : ''}`}
+    >
       <ReleaseAnnouncementGate />
 
       {/* Sidebar estático — tablet y desktop */}

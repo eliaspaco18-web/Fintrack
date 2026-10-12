@@ -1485,6 +1485,7 @@ export function TransactionTable({
             closeTestId="transactions-filter-drawer-close"
             presentation="workbench"
             motionSource="pointer"
+            overlayClassName={styles.astraOverlay}
             bodyClassName="ft-v3-filter-fields"
           >
             <section
@@ -1907,6 +1908,7 @@ export function TransactionTable({
         closeTestId="transactions-review-close"
         presentation="workbench"
         motionSource="pointer"
+        overlayClassName={styles.astraOverlay}
         focusTrapActive={isReviewOpen}
         bodyClassName={styles.reviewBody}
       >

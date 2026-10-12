@@ -2,6 +2,135 @@
   --ft-r07-line: var(--ft-border);
   --ft-r07-muted: var(--ft-text-muted);
   min-width: 0;
+  color: var(--ft-text-strong);
+  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.workspace :global(.font-display) { font-family: inherit; }
+
+/* Astra Round 07 operation picker, scoped to the transaction creation flow. */
+.operationSelector {
+  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+}
+
+.operationGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.operation {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--ft-border);
+  border-radius: 8px;
+  background: var(--ft-surface);
+  padding: 14px;
+  color: var(--ft-text-strong);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 110ms cubic-bezier(.22, 1, .36, 1), background-color 140ms, border-color 140ms;
+}
+
+.operation:hover {
+  background: var(--ft-primary-soft);
+  border-color: var(--ft-primary);
+}
+
+.operation:focus-visible {
+  outline: 2px solid var(--ft-focus-ring-color);
+  outline-offset: 3px;
+}
+
+.operation > svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
+
+.operation > span { min-width: 0; }
+.operation strong { display: block; font-size: 12px; }
+.operation small {
+  display: block;
+  margin-top: 4px;
+  color: var(--ft-text-muted);
+  font-size: 10px;
+}
+
+.operationGrid { grid-template-columns: 1fr 1fr; }
+
+@media (prefers-reduced-motion: reduce) {
+  .operation { transition: none; }
+}
+
+/* Match the product shell to Astra only on Movimientos; Dashboard stays untouched. */
+.astraShell {
+  --sidebar-width-expanded: 224px;
+  --sidebar-width-collapsed: 72px;
+  --topbar-height: 64px;
+  --sidebar-header-height: 84px;
+  --sidebar-item-height: 40px;
+  --sidebar-item-padding-x: 12px;
+  --sidebar-item-gap: 12px;
+  --sidebar-item-font-size: 13px;
+  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+}
+
+.astraShell :global(.fin-sidebar) {
+  background: var(--ft-surface) !important;
+}
+
+.astraShell :global(.fin-sidebar > div > div:first-child) {
+  align-items: flex-start;
+  border-bottom: 0;
+  padding-top: 28px;
+}
+
+.astraShell :global(.fin-sidebar nav) { padding-top: 0; }
+
+.astraShell :global(.ft-sidebar-mark) {
+  width: 29px;
+  height: 31px;
+}
+
+.astraShell :global(.ft-sidebar-wordmark span) {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -.8px;
+}
+
+.astraShell :global(.fin-sidebar p.px-2.pb-3.pt-2) {
+  font-size: 9px;
+  letter-spacing: 1.2px;
+}
+
+.astraShell :global(.ft-topbar-inner) {
+  padding-inline: 36px;
+}
+
+.astraShell :global(.ft-shell-content) {
+  max-width: 1512px;
+  padding: 32px 36px 52px;
+}
+
+@media (max-width: 1199px) {
+  .astraShell :global(.ft-topbar-inner) { padding-inline: 22px; }
+  .astraShell :global(.ft-shell-content) { padding: 20px 22px 52px; }
+}
+
+@media (max-width: 767px) {
+  .operationGrid { grid-template-columns: 1fr; }
+  .operation { padding: 16px; }
+  .operation strong { font-size: 13px; }
+  .operation small { font-size: 11px; }
+
+  .astraShell { --topbar-height: 56px; --sidebar-header-height: 56px; }
+  .astraShell :global(.ft-topbar-inner) { padding-inline: 16px; }
+  .astraShell :global(.ft-shell-content) { padding: 24px 20px 100px; }
 }
 
 .pageOverview {
@@ -334,9 +463,101 @@
   margin-left: auto;
 }
 
+/* Astra's app.js uses one horizontal .operation card for each of eight flows. */
+.astraOverlay:global(.app-modal-overlay) {
+  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+}
+
+.astraOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
+  width: min(580px, calc(100vw - 24px));
+  height: calc(100dvh - 52px);
+  margin: 40px 12px 12px;
+}
+
+.astraOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-ft-workbench] > :first-child) {
+  display: block;
+  padding: 20px 24px 19px;
+}
+
+.astraOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-ft-workbench] h2) {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 29px;
+  letter-spacing: -.5px;
+}
+
+.astraOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-ft-workbench] h2 + p) {
+  margin-top: 5px;
+  color: var(--ft-text-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.astraOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-record-modal-body]) {
+  padding: 22px 24px 24px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.astraOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-ft-workbench] > :last-child:not([data-record-modal-body])) {
+  padding: 13px 24px 16px;
+  background: var(--ft-inset);
+}
+
+.astraOverlay :global(.tx-modal-form) {
+  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-size: 14px;
+}
+
+.astraOverlay :global(.tx-modal-form .field-base) {
+  min-height: 44px;
+  border-radius: 6px;
+  border-color: #89949D;
+  background: #FFFFFF;
+  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-size: 13px;
+}
+
+.astraOverlay :global(.tx-modal-form label) {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.astraOverlay :global(.tx-modal-form .app-select-trigger) {
+  min-height: 44px;
+  border-radius: 6px;
+  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-size: 13px;
+}
+
+.astraOverlay :global(.app-select-menu) {
+  border-radius: 10px;
+  border-color: #DCE1E5;
+  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  box-shadow: 0 12px 30px rgb(36 42 48 / 12%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .astraOverlay :global(.ft-v3-workbench-wrapper),
+  .astraOverlay :global([data-record-modal-body]) { scroll-behavior: auto; }
+}
+
 @media (max-width: 767px) {
   .pageOverview header {
     margin-bottom: 18px;
+  }
+
+  .astraOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
+    height: calc(100dvh - 16px);
+    margin: 8px;
+  }
+
+  .astraOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-ft-workbench] > :first-child) { padding: 16px 18px; }
+  .astraOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-ft-workbench] h2) { font-size: 20px; line-height: 27px; }
+  .astraOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-record-modal-body]) { padding: 20px 18px; }
+  .astraOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-ft-workbench] > :last-child:not([data-record-modal-body])) {
+    padding: 13px 18px calc(16px + env(safe-area-inset-bottom));
   }
 
   .summary {
