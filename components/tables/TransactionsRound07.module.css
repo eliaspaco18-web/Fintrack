@@ -12,7 +12,7 @@
 
 .pageOverview header {
   align-items: flex-start;
-  margin-bottom: 26px;
+  margin-bottom: 22px;
 }
 
 .pageOverview h1 {
@@ -31,11 +31,11 @@
 .summary {
   display: flex;
   flex-wrap: wrap;
-  gap: 28px 36px;
+  gap: 36px;
   margin: 0;
   border: 0;
   border-bottom: 1px solid var(--ft-r07-line);
-  padding: 0 0 22px;
+  padding: 0 0 18px;
 }
 
 .summaryItem {
@@ -62,8 +62,7 @@
 }
 
 .summaryNote {
-  flex-basis: 100%;
-  margin-top: -22px;
+  margin-top: 3px;
   color: var(--ft-r07-muted);
   font-size: 10px;
   line-height: 16px;
@@ -102,6 +101,7 @@
 .controls :global([data-testid='transactions-search-input']) {
   height: 38px;
   min-width: 230px;
+  max-width: 230px;
   border-color: var(--ft-control);
   border-radius: 7px;
   font-size: 12px;
@@ -147,13 +147,38 @@
 }
 
 .identityMark {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px !important;
+  width: 25px;
+  height: 25px;
+  border: 0 !important;
+  border-radius: 5px !important;
+  background: transparent !important;
+}
+
+.desktopDescriptionType,
+.desktopAmountCurrency {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.rowEditAction {
+  min-height: 32px;
+  padding: 0 4px;
+  color: var(--ft-primary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.rowEditAction:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .reviewBody {
-  padding: 24px 28px !important;
+  padding: 22px 24px !important;
 }
 
 .panelSummary {
@@ -320,10 +345,6 @@
 
   .summaryItem {
     flex: 1 1 120px;
-  }
-
-  .summaryNote {
-    margin-top: -8px;
   }
 
   .controls {

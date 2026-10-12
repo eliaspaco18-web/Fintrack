@@ -155,13 +155,13 @@ function TransactionAccountPath({ transaction }: { transaction: TransactionListI
   const destinationName = transaction.destinationAccount?.name
 
   return (
-    <div className="min-w-0 text-[12px] leading-5">
-      <p className="truncate font-medium text-[var(--ft-text-strong)]">{sourceName}</p>
+    <div className="flex min-w-0 items-center gap-1 text-[12px] leading-5 text-[var(--ft-text-strong)]">
+      <span className="truncate font-medium">{sourceName}</span>
       {destinationName ? (
-        <p className="flex min-w-0 items-center gap-1 text-[var(--ft-text-muted)]">
+        <span className="flex min-w-0 items-center gap-1 text-[var(--ft-text-muted)]">
           <span aria-hidden="true" className="shrink-0 text-[var(--ft-text-subtle)]">→</span>
           <span className="truncate">{destinationName}</span>
-        </p>
+        </span>
       ) : null}
     </div>
   )
@@ -1364,7 +1364,7 @@ export function TransactionTable({
                 placeholder="Buscar por descripción…"
                 aria-label="Buscar movimientos por descripción"
                 data-testid="transactions-search-input"
-                className="min-w-[200px] flex-[1_1_240px] xl:max-w-[320px]"
+                className="min-w-[200px] flex-[1_1_230px]"
               />
                 <Button
                   type="button"
@@ -1727,13 +1727,13 @@ export function TransactionTable({
             <div className="overflow-x-auto">
               <table className="w-full min-w-[940px] table-fixed border-collapse text-left" aria-label="Registro de movimientos">
                 <colgroup>
-                  <col className="w-[4%]" />
-                  <col className="w-[29%]" />
+                  <col className="w-[5%]" />
+                  <col className="w-[24%]" />
                   <col className="w-[17%]" />
-                  <col className="w-[16%]" />
-                  <col className="w-[12%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[15%]" />
                   <col className="w-[14%]" />
-                  <col className="w-[8%]" />
+                  <col className="w-[7%]" />
                 </colgroup>
                 {!isLoading && !isEmpty ? (
                   <thead className="border-b border-[var(--ft-border)] bg-[var(--ft-surface-muted)] text-[11px] font-semibold text-[var(--ft-text-muted)]">
@@ -1786,12 +1786,12 @@ export function TransactionTable({
                       aria-controls="transactions-review-panel"
                       aria-expanded={isFocused && reviewPanelVisible}
                       aria-label={`Revisar ${tx.description}`}
-                      className="flex min-h-11 min-w-0 items-center gap-2 rounded-control text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]"
+                      className="flex min-h-8 min-w-0 items-center gap-2.5 rounded-control text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]"
                     >
                       <TransactionIdentityMark transaction={tx} />
                       <div className="min-w-0">
                         <p className="truncate text-[13px] font-semibold leading-4 text-[var(--ft-text-strong)]">{tx.description}</p>
-                        <span className={`mt-0.5 inline-flex text-[10px] font-medium leading-3 ${TYPE_CONFIG[tx.type].className}`} aria-label={TYPE_CONFIG[tx.type].label}>
+                        <span className={`${styles.desktopDescriptionType} ${TYPE_CONFIG[tx.type].className}`}>
                           {TYPE_CONFIG[tx.type].label}
                         </span>
                       </div>
@@ -1807,19 +1807,15 @@ export function TransactionTable({
                     </td>
                     <td className="px-2 py-0 align-middle text-[var(--ft-text-muted)]"><TransactionDate date={tx.transactionDate} /></td>
                     <td className="px-3 py-0 align-middle text-right">
-                      <p className={`whitespace-nowrap font-mono text-[12px] font-semibold tabular-nums ${TYPE_CONFIG[tx.type].className}`}>
+                      <p className={`whitespace-nowrap text-[13px] font-semibold tabular-nums ${TYPE_CONFIG[tx.type].className}`}>
                         {tx.type === 'TRANSFER' ? '' : TYPE_CONFIG[tx.type].prefix}
                         {formatCurrency(Math.abs(tx.amount), tx.currency as 'PEN' | 'USD')}
                       </p>
-                      <span className="text-[10px] font-medium text-[var(--ft-text-subtle)]">{tx.currency}</span>
+                      <span className={styles.desktopAmountCurrency}>{tx.currency}</span>
                     </td>
                     <td className="px-2 align-middle">
                     <div className="flex justify-end gap-1 opacity-80 transition-opacity duration-fast group-hover/row:opacity-100 focus-within:opacity-100 motion-reduce:transition-none">
-                      <DataRowActions actions={[{
-                        label: 'Editar',
-                        onClick: () => setEditTransactionId(tx.id),
-                        testId: `transactions-row-edit-${tx.id}`,
-                      }]} />
+                      <button type="button" onClick={() => setEditTransactionId(tx.id)} data-testid={`transactions-row-edit-${tx.id}`} className={`${styles.rowEditAction} rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ft-focus-ring-color)]`}>Editar</button>
                       <AnchoredActionMenu
                         label={`Más acciones de ${tx.description}`}
                         focusFirstOnPointer={false}
