@@ -53,7 +53,7 @@ interface SidebarProfileProps {
 
 function SidebarSectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="px-2 pb-2 pt-2 text-[9px] font-bold uppercase leading-none tracking-[0.12em] text-[var(--sidebar-section-text)]">
+    <p className="px-2 pb-3 pt-2 text-[9px] font-bold uppercase leading-none tracking-[0.12em] text-[var(--sidebar-section-text)]">
       {children}
     </p>
   )
@@ -100,12 +100,12 @@ function SidebarNavigation({
   return (
     <>
     <nav
-      className={`flex-1 overflow-y-auto overflow-x-visible pb-3 pt-7 ${collapsed ? 'px-3' : 'px-3'}`}
+      className="flex flex-1 flex-col overflow-y-auto overflow-x-visible px-3 pb-3 pt-9"
       aria-label="Navegación principal"
       onScroll={dismissTooltip}
     >
       {NAV_GROUPS.map((group, index) => (
-        <div key={group.label} className={index > 0 ? 'mt-2 border-t border-[var(--sidebar-panel-border)] pt-2' : ''}>
+        <div key={group.label} className={index > 0 ? 'mt-4 border-t border-[var(--sidebar-panel-border)] pt-3' : ''}>
           {!collapsed && <SidebarSectionLabel>{group.label}</SidebarSectionLabel>}
           <ul className="space-y-1">
             {group.keys.map(key => {
@@ -115,7 +115,7 @@ function SidebarNavigation({
           </ul>
         </div>
       ))}
-      <div className="mt-2 border-t border-[var(--sidebar-panel-border)] pt-2">
+      <div className="mt-auto border-t border-[var(--sidebar-panel-border)] pt-3">
         <ul className="space-y-1">
           {footerKeys.map(key => {
             const item = byKey.get(key)

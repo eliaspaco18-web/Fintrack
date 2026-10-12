@@ -14,6 +14,7 @@ import { ModalOverlayPortal } from '@/components/ui/ModalOverlayPortal'
 import { QUICK_OPERATIONS } from '@/lib/constants/quick-operations'
 import type { TransactionListItem } from '@/lib/contracts/ui.contracts'
 import type { CreditListItem } from '@/lib/credits/display-type'
+import { getCreditDetailPresentation } from '@/modules/credits/credit-detail-presentation'
 import type { DashboardSidebar, DashboardSummary, MoneyFlowPoint } from '@/lib/dashboard/types'
 import { formatV3Money } from '@/lib/finance/v3-money-display'
 import {
@@ -42,8 +43,8 @@ type BudgetPeriod = {
 const read = <T,>(url: string) => fetchDashboardData<T>(url)
 const number = (value: number) => new Intl.NumberFormat('es-PE', { maximumFractionDigits: 1 }).format(value)
 const moneyLabel = (value: number, currency: string) => formatV3Money({ value, currency }).text
-const amount = (value: number, currency: string) => (
-  <MoneyText value={Number.isFinite(value) ? value : null} currency={currency} />
+const amount = (value: number, currency: string, direction: 'neutral' | 'income' = 'neutral') => (
+  <MoneyText value={Number.isFinite(value) ? value : null} currency={currency} direction={direction} />
 )
 const monthName = (iso: string) => new Intl.DateTimeFormat('es-PE', {
   month: 'long', timeZone: 'UTC',
@@ -133,12 +134,12 @@ export function DashboardRound07() {
     .sort((a, b) => Number(b.over_limit) - Number(a.over_limit) || b.progress_percent - a.progress_percent || a.budget.name.localeCompare(b.budget.name))
   const cards = (sources.credits.data ?? []).filter(item => item.status === 'ACTIVE' && item.display_type === 'CARD')
   const loans = (sources.credits.data ?? []).filter(item => item.status === 'ACTIVE' && item.display_type === 'LOAN')
-  const attention: Array<{ label: string; href: string }> = []
+  const attention: Array<{ label: string; href: string; tone: 'danger' | 'neutral' }> = []
   const overdue = agenda.find(item => item.dueDate < today.iso)
-  if (overdue) attention.push({ label: 'Hay un compromiso documentado vencido', href: overdue.href })
+  if (overdue) attention.push({ label: 'Hay un compromiso documentado vencido', href: overdue.href, tone: 'danger' })
   const exceeded = orderedBudgets.find(item => item.over_limit)
-  if (exceeded) attention.push({ label: `Presupuesto excedido: ${exceeded.budget.name}`, href: '/budgets' })
-  if ((receivables.unverified || payables.unverified) && attention.length < 2) attention.push({ label: 'Hay importes pendientes sin moneda o monto verificable', href: receivables.unverified ? '/receivables' : '/payables' })
+  if (exceeded) attention.push({ label: `Presupuesto excedido: ${exceeded.budget.name}`, href: '/budgets', tone: 'danger' })
+  if ((receivables.unverified || payables.unverified) && attention.length < 2) attention.push({ label: 'Hay importes pendientes sin moneda o monto verificable', href: receivables.unverified ? '/receivables' : '/payables', tone: 'neutral' })
 
   return <main data-ft-v3="" className={styles.dashboard}>
     <header className={styles.header}>
@@ -152,11 +153,11 @@ export function DashboardRound07() {
 
     <PositionBand
       accounts={{ label: 'Saldos de tus cuentas', href: '/portfolio', linkLabel: sources.accounts.data ? `${accounts.count} cuentas` : 'Ver cuentas', scope: sources.accounts.data ? `${accounts.count} cuentas activas · moneda original` : 'Moneda original', amounts: sources.accounts.data ? accounts.amounts : [], unavailableReason: sources.accounts.error ? 'No se pudieron consultar las cuentas.' : !sources.accounts.data ? 'Cargando cuentas…' : undefined }}
-      receivables={{ label: 'Por cobrar', href: '/receivables', scope: 'Pendiente documentado · cobertura no verificada', amounts: sources.receivables.data ? receivables.amounts : [], unavailableReason: sources.receivables.error ? 'No se pudo consultar.' : !sources.receivables.data ? 'Cargando…' : receivables.unverified ? `${receivables.unverified} sin importe verificable` : undefined }}
-      payables={{ label: 'Por pagar', href: '/payables', scope: 'Pendiente documentado · cobertura no verificada', amounts: sources.payables.data ? payables.amounts : [], unavailableReason: sources.payables.error ? 'No se pudo consultar.' : !sources.payables.data ? 'Cargando…' : payables.unverified ? `${payables.unverified} sin importe verificable` : undefined }}
+      receivables={{ label: 'Por cobrar', href: '/receivables', scope: 'Pendiente documentado', amounts: sources.receivables.data ? receivables.amounts : [], unavailableReason: sources.receivables.error ? 'No se pudo consultar.' : !sources.receivables.data ? 'Cargando…' : receivables.unverified ? `${receivables.unverified} sin importe verificable` : undefined }}
+      payables={{ label: 'Por pagar', href: '/payables', scope: 'Pendiente documentado', amounts: sources.payables.data ? payables.amounts : [], unavailableReason: sources.payables.error ? 'No se pudo consultar.' : !sources.payables.data ? 'Cargando…' : payables.unverified ? `${payables.unverified} sin importe verificable` : undefined }}
     />
 
-    {attention.length ? <nav className={styles.attention} aria-label="Para revisar"><span>ⓘ &nbsp; Para revisar</span>{attention.slice(0, 2).map(item => <Link key={item.href} href={item.href}>{item.label} <span aria-hidden="true">›</span></Link>)}</nav> : null}
+    {attention.length ? <nav className={styles.attention} aria-label="Para revisar"><span>ⓘ &nbsp; Para revisar</span>{attention.slice(0, 2).map(item => <Link key={item.href} href={item.href} data-tone={item.tone}>{item.label} <span aria-hidden="true">›</span></Link>)}</nav> : null}
 
     <div className={styles.bodyGrid} data-ft-route-group="work">
       <div className={styles.leftColumn}>
@@ -164,7 +165,7 @@ export function DashboardRound07() {
           <SourceState loading={!sources.summary.data && !sources.summary.error} failed={Boolean(sources.summary.error)} available={Boolean(sources.summary.data)} retry={() => void sources.summary.mutate()}>
             {sources.summary.data ? <>
               <div className={styles.facts}>
-                <Link href={`/transactions?type=INCOME&date_from=${firstDay}&date_to=${today.iso}&page=1`}><span>Ingresos</span>{amount(sources.summary.data.ingresos_mes, 'PEN')}</Link>
+                <Link href={`/transactions?type=INCOME&date_from=${firstDay}&date_to=${today.iso}&page=1`}><span>Ingresos</span>{amount(sources.summary.data.ingresos_mes, 'PEN', 'income')}</Link>
                 <Link href={`/transactions?type=EXPENSE&date_from=${firstDay}&date_to=${today.iso}&page=1`}><span>Egresos</span>{amount(sources.summary.data.egresos_mes, 'PEN')}</Link>
                 <div className={styles.resultFact}><span>Resultado del período</span>{amount(sources.summary.data.resultado_mensual, 'PEN')}</div>
               </div>
@@ -176,7 +177,7 @@ export function DashboardRound07() {
               <div className={styles.subheading}><h3>Ingresos y egresos</h3><div className={styles.segment}><button aria-pressed={flowMonths === 3} onClick={() => setFlowMonths(3)}>3 meses</button><button aria-pressed={flowMonths === 6} onClick={() => setFlowMonths(6)}>6 meses</button></div></div>
               <p className={styles.meta}>PEN de reporte</p>
               <SourceState loading={!sources.flow.data && !sources.flow.error} failed={Boolean(sources.flow.error)} available={Boolean(sources.flow.data)} retry={() => void sources.flow.mutate()}>
-                {flowPoints.length ? <><MonthlyFlowBars points={flowPoints} requestedMonths={flowMonths} /><button className={styles.textButton} onClick={() => setShowFlowTable(value => !value)} aria-expanded={showFlowTable}>{showFlowTable ? 'Ocultar datos' : 'Ver datos exactos'}</button>{showFlowTable ? <MonthlyFlowDataTable points={flowPoints} /> : null}<p className={styles.meta}>La serie no trae una fecha completa por barra y no calcula estos totales.</p></> : <p className={styles.empty}>Aún no hay meses de movimiento para comparar.</p>}
+                {flowPoints.length ? <><MonthlyFlowBars points={flowPoints} requestedMonths={flowMonths} compact /><button className={styles.textButton} onClick={() => setShowFlowTable(value => !value)} aria-expanded={showFlowTable}>{showFlowTable ? 'Ocultar datos' : 'Ver datos exactos'}</button>{showFlowTable ? <MonthlyFlowDataTable points={flowPoints} /> : null}<p className={styles.meta}>La serie no trae una fecha completa por barra y no calcula estos totales.</p></> : <p className={styles.empty}>Aún no hay meses de movimiento para comparar.</p>}
               </SourceState>
             </div>
             <div className={styles.rankBlock}>
@@ -209,7 +210,7 @@ export function DashboardRound07() {
           <SourceState loading={!sources.budgets.data && !sources.budgets.error} failed={Boolean(sources.budgets.error)} available={Boolean(sources.budgets.data)} retry={() => void sources.budgets.mutate()}>
             {orderedBudgets.length ? <div className={styles.budgetList}>{orderedBudgets.slice(0, 3).map(item => {
               const valid = Number.isFinite(item.amount) && item.amount > 0 && Number.isFinite(item.spent_amount) && Number.isFinite(item.progress_percent)
-              const common = { periodId: item.id, href: '/budgets', label: item.budget.name, spentLabel: moneyLabel(item.spent_amount, item.budget.currency), limitLabel: moneyLabel(item.amount, item.budget.currency), basisLabel: item.budget.currency }
+              const common = { periodId: item.id, href: '/budgets', label: item.budget.name, spentLabel: moneyLabel(item.spent_amount, item.budget.currency), limitLabel: moneyLabel(item.amount, item.budget.currency) }
               return <BudgetProgressRow key={item.id} {...common} {...(valid ? { state: 'valid' as const, percentage: item.progress_percent, percentageLabel: `${number(item.progress_percent)}%`, remainingLabel: item.over_limit ? `${moneyLabel(Math.abs(item.remaining_amount), item.budget.currency)} excedidos` : `${moneyLabel(item.remaining_amount, item.budget.currency)} restantes`, exceeded: item.over_limit } : { state: 'invalid' as const, reason: 'Sin límite válido' })} />
             })}</div> : <p className={styles.empty}>No hay presupuestos activos para este mes. <Link href="/budgets?new=budget">Crear presupuesto</Link></p>}
           </SourceState>
@@ -217,7 +218,11 @@ export function DashboardRound07() {
 
         <SourceState loading={!sources.credits.data && !sources.credits.error} failed={Boolean(sources.credits.error)} available={Boolean(sources.credits.data)} retry={() => void sources.credits.mutate()}>
           {cards.length || loans.length ? <Panel title="Créditos, por separado" subtitle="Deuda en moneda original · no es dinero disponible" href="/credits" linkLabel="Revisar">
-            <ul className={styles.creditList}>{cards.slice(0, 2).map(item => <li key={item.id}><Link href={`/credits/${encodeURIComponent(item.id)}`}><span><strong>{item.name}</strong><small>Deuda de tarjeta</small></span>{amount(item.used_amount, item.currency)}</Link></li>)}{loans.slice(0, 2).map(item => <li key={item.id}><Link href={`/credits/${encodeURIComponent(item.id)}`}><span><strong>{item.name}</strong><small>Principal registrado de préstamo</small></span>{amount(item.credit_limit, item.currency)}</Link></li>)}</ul>
+            <ul className={styles.creditList}>{cards.slice(0, 2).map(item => {
+              const presentation = getCreditDetailPresentation(item, { status: 'NOT_APPLICABLE' })
+              const availability = presentation.availability
+              return <li key={item.id}><Link href={`/credits/${encodeURIComponent(item.id)}`}><span><strong>{item.name}</strong><small>Deuda de tarjeta</small></span>{amount(availability.used ?? Number.NaN, presentation.currency ?? item.currency)}</Link>{availability.status === 'AVAILABLE' ? <><div className={styles.creditTrack} aria-hidden="true"><span style={{ width: `${availability.utilizationPct}%` }} /></div><p className={styles.creditBasis}>{number(availability.utilizationPct)}% de la línea en {presentation.currency} · uso registrado</p></> : <p className={styles.creditBasis}>Uso de línea no verificable</p>}</li>
+            })}{loans.slice(0, 2).map(item => <li key={item.id}><Link href={`/credits/${encodeURIComponent(item.id)}`}><span><strong>{item.name}</strong><small>Principal registrado de préstamo</small></span>{amount(item.credit_limit, item.currency)}</Link></li>)}</ul>
             {cards.length > 2 || loans.length > 2 ? <p className={styles.meta}>Hay más productos registrados en Créditos.</p> : null}
           </Panel> : null}
         </SourceState>

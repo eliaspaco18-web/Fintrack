@@ -31,7 +31,7 @@ export function BudgetProgressRow(props: BudgetProgressRowProps) {
     >
       <span className="ft-v3-budget-heading">
         <span className="ft-v3-budget-name">{props.label}</span>
-        <span className="ft-v3-budget-spent">{props.spentLabel}<small>de {props.limitLabel}</small></span>
+        <span className="ft-v3-budget-status">{valid ? props.percentageLabel : props.reason}</span>
       </span>
       {valid ? (
         <span className="ft-v3-budget-track" aria-hidden="true">
@@ -39,10 +39,9 @@ export function BudgetProgressRow(props: BudgetProgressRowProps) {
         </span>
       ) : null}
       <span className="ft-v3-budget-footer">
-        <span>{valid ? props.percentageLabel : props.reason}</span>
+        <span>{props.spentLabel} de {props.limitLabel}{props.basisLabel ? ` · ${props.basisLabel}` : ''}</span>
         {valid ? <span>{props.remainingLabel}</span> : null}
       </span>
-      {props.basisLabel ? <span className="ft-v3-budget-basis">{props.basisLabel}</span> : null}
     </Link>
   )
 }

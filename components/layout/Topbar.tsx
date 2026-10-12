@@ -143,7 +143,7 @@ export function Topbar(props: TopbarProps) {
           {activeItem ? <span aria-hidden="true" className="hidden px-1 text-[12px] text-[var(--ft-text-subtle)] md:inline">/</span> : null}
 
           <div className="flex min-w-0 items-center gap-2">
-            <h1 tabIndex={-1} className="truncate text-[15px] font-semibold leading-none tracking-[-0.015em] text-[var(--ft-text-strong)]">
+            <h1 tabIndex={-1} className="truncate text-[13px] font-semibold leading-none tracking-[-0.01em] text-[var(--ft-text-strong)]">
               {title}
             </h1>
 

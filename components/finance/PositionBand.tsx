@@ -38,7 +38,7 @@ function Group({ group, main }: { group: PositionGroup; main: boolean }) {
       </div>
       {main ? <p className="sr-only">{group.scope}</p> : null}
       {group.amounts.length ? (
-        <ul className={main ? 'mt-3 grid grid-cols-2 gap-3' : 'mt-2 flex flex-wrap gap-x-3 gap-y-1'}>
+        <ul className={main ? 'mt-3 grid grid-cols-2 gap-3 xl:grid-cols-[174px_minmax(0,1fr)]' : 'mt-2 flex flex-wrap gap-x-3 gap-y-1'}>
           {group.amounts.map((item, index) => (
             <li key={`${item.currency ?? 'unknown'}-${index}`} className={main ? 'min-w-0' : 'flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5'}>
               {main ? <span className="mb-1 block text-[11px] text-[var(--ft-text-muted)]">{item.currency === 'PEN' ? 'Soles · PEN' : item.currency === 'USD' ? 'Dólares · USD' : item.currency ?? 'Moneda no disponible'}</span> : null}

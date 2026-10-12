@@ -80,10 +80,12 @@ export function MonthlyFlowBars({
   points,
   requestedMonths = 6,
   axisUnit = 'S/ ',
+  compact = false,
 }: {
   points: readonly MonthlyFlowDatum[]
   requestedMonths?: 3 | 6
   axisUnit?: string
+  compact?: boolean
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
   const tooltipDomId = useId()
@@ -125,8 +127,10 @@ export function MonthlyFlowBars({
   const selectedPoint = allPoints.find(point => point.id === selectedId) ?? null
   const tooltipPoint = allPoints.find(point => point.id === tooltipId) ?? null
   const domain = flowDomain(visible)
-  const plotTop = 32
-  const plotBottom = 192
+  const plotTop = compact ? 24 : 32
+  const plotBottom = compact ? 154 : 192
+  const chartHeight = compact ? 190 : 232
+  const monthLabelY = compact ? 177 : 216
   const plotStart = 68
   const plotEnd = width - 34
   const zeroY = domain.maximum === domain.minimum ? plotBottom
@@ -169,7 +173,7 @@ export function MonthlyFlowBars({
         setTooltipId(null)
       }
     }}>
-      <svg className="ft-v3-flow-svg" viewBox={`0 0 ${width} 232`} role="group" aria-label="Ingresos y egresos mensuales comparados desde cero; valores exactos en la tabla alternativa">
+      <svg className="ft-v3-flow-svg" data-compact={compact ? 'true' : undefined} viewBox={`0 0 ${width} ${chartHeight}`} role="group" aria-label="Ingresos y egresos mensuales comparados desde cero; valores exactos en la tabla alternativa">
         {domain.ticks.map((tick, index) => {
           const y = yOf(tick)
           return (
@@ -224,11 +228,11 @@ export function MonthlyFlowBars({
               {selected && valid(point.income) && valid(point.expense) ? (
                 <path d={`M${center} ${incomeY}h-3 M${center} ${incomeY}V${expenseY} M${center} ${expenseY}h3`} className="ft-v3-flow-bracket" />
               ) : null}
-              <text x={center} y="216" textAnchor="middle" className={selected ? 'ft-v3-flow-month selected' : 'ft-v3-flow-month'}>
+              <text x={center} y={monthLabelY} textAnchor="middle" className={selected ? 'ft-v3-flow-month selected' : 'ft-v3-flow-month'}>
                 {point.label}{point.partial ? '*' : ''}
               </text>
-              {selected ? <rect x={center - 10} y="224" width="20" height="2" rx="1" className="ft-v3-flow-anchor" /> : null}
-              <rect x={center - 30} y={plotTop - 8} width="60" height="207" fill="transparent" className="ft-v3-flow-hit" />
+              {selected ? <rect x={center - 10} y={compact ? 184 : 224} width="20" height="2" rx="1" className="ft-v3-flow-anchor" /> : null}
+              <rect x={center - 30} y={plotTop - 8} width="60" height={chartHeight - plotTop + 7} fill="transparent" className="ft-v3-flow-hit" />
             </g>
           )
         })}
@@ -236,6 +240,10 @@ export function MonthlyFlowBars({
       {selectedPoint ? (
         <p className="ft-v3-flow-result"><span>Resultado · {selectedPoint.periodLabel}{selectedPoint.partial ? ' (parcial)' : ''}</span><strong>{selectedPoint.resultLabel}</strong></p>
       ) : <p className="ft-v3-flow-result">Sin meses con importes verificados</p>}
+      <div className="ft-v3-flow-legend" aria-label="Leyenda del gráfico">
+        <span><i className="ft-v3-flow-legend-income" aria-hidden="true" /> Ingresos</span>
+        <span><i className="ft-v3-flow-legend-expense" aria-hidden="true" /> Egresos</span>
+      </div>
       {domain.ticks.length === 1 && available.length > 0 ? <p className="ft-v3-flow-zero-note">Todos los importes consultados son cero</p> : null}
       {tooltipPoint && tooltipIndex >= 0 ? (
         <div
