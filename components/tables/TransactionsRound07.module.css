@@ -1,0 +1,365 @@
+.workspace {
+  --ft-r07-line: var(--ft-border);
+  --ft-r07-muted: var(--ft-text-muted);
+  min-width: 0;
+}
+
+.pageOverview {
+  display: grid;
+  gap: 0;
+  margin-bottom: 20px;
+}
+
+.pageOverview header {
+  align-items: flex-start;
+  margin-bottom: 26px;
+}
+
+.pageOverview h1 {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 36px;
+  letter-spacing: -0.8px;
+}
+
+.pageOverview header p {
+  margin-top: 5px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px 36px;
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid var(--ft-r07-line);
+  padding: 0 0 22px;
+}
+
+.summaryItem {
+  min-width: 130px;
+  padding: 0 !important;
+  border: 0 !important;
+  margin: 0 !important;
+}
+
+.summaryItem > p {
+  display: block !important;
+  margin: 0 0 6px !important;
+  color: var(--ft-r07-muted);
+  font-size: 11px !important;
+  font-weight: 400 !important;
+}
+
+.summaryValue {
+  margin: 0 !important;
+  font-size: 24px !important;
+  font-weight: 600 !important;
+  line-height: 32px !important;
+  letter-spacing: -0.7px !important;
+}
+
+.summaryNote {
+  flex-basis: 100%;
+  margin-top: -22px;
+  color: var(--ft-r07-muted);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.toolbar {
+  margin: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.toolbar > div {
+  gap: 0;
+}
+
+.tabs {
+  gap: 24px;
+  border-bottom: 1px solid var(--ft-r07-line);
+  margin: 0 0 16px;
+}
+
+.tabs button {
+  height: auto;
+  min-height: 40px;
+  padding: 0 0 13px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.controls {
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.controls :global([data-testid='transactions-search-input']) {
+  height: 38px;
+  min-width: 230px;
+  border-color: var(--ft-control);
+  border-radius: 7px;
+  font-size: 12px;
+}
+
+.context {
+  min-height: 24px;
+  margin: 0 0 12px;
+  gap: 8px;
+  color: var(--ft-r07-muted);
+  font-size: 11px;
+}
+
+.workspace :global([data-ft-density='movement']) {
+  margin-top: 0;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.workspace :global([data-ft-density='movement'] thead th) {
+  height: 38px;
+  padding: 8px 14px;
+  font-size: 10px;
+}
+
+.workspace :global([data-ft-density='movement'] tbody tr) {
+  height: 48px;
+}
+
+.workspace :global([data-ft-density='movement'] tbody td) {
+  padding: 6px 14px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.workspace :global([data-ft-density='movement'] tbody td:first-child) {
+  padding-left: 12px;
+  padding-right: 4px;
+}
+
+.workspace :global([data-ft-density='movement'] tbody td:last-child) {
+  padding-right: 10px;
+}
+
+.identityMark {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px !important;
+}
+
+.reviewBody {
+  padding: 24px 28px !important;
+}
+
+.panelSummary {
+  margin: 0 0 22px;
+  border-bottom: 1px solid var(--ft-border);
+  padding: 0 0 22px;
+}
+
+.summaryEyebrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  color: var(--ft-text-muted);
+  font-size: 11px;
+}
+
+.summaryAmount {
+  margin: 0 !important;
+  font-size: 34px !important;
+  font-weight: 600 !important;
+  line-height: 44px !important;
+  letter-spacing: -1px !important;
+}
+
+.summaryCaption {
+  margin-top: 4px;
+  color: var(--ft-text-muted);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.recordPath {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 16px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.recordPath > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.recordPath small {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--ft-text-muted);
+  font-size: 10px;
+}
+
+.recordPath strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.reviewTabs {
+  display: flex;
+  gap: 22px;
+  margin: 0 0 20px;
+  border-bottom: 1px solid var(--ft-border);
+}
+
+.reviewTabs button {
+  min-height: 36px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  padding: 0 0 9px;
+  color: var(--ft-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.reviewTabs button[aria-selected='true'] {
+  border-bottom-color: var(--ft-primary);
+  color: var(--ft-primary);
+}
+
+.reviewFacts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px 24px;
+  margin: 0;
+}
+
+.reviewFacts > div {
+  min-width: 0;
+}
+
+.reviewFacts dt {
+  margin: 0 0 4px;
+  color: var(--ft-text-muted);
+  font-size: 11px;
+}
+
+.reviewFacts dd {
+  margin: 0;
+  color: var(--ft-text-strong);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 19px;
+  overflow-wrap: anywhere;
+}
+
+.reviewFacts .wideFact {
+  grid-column: 1 / -1;
+}
+
+.contextExplanation {
+  margin-top: 22px;
+  border-top: 1px solid var(--ft-border);
+  padding: 16px 0;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.contextExplanation h3 {
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.contextExplanation p {
+  color: var(--ft-text-muted);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.reviewFooter {
+  display: grid;
+  gap: 10px;
+}
+
+.reviewFooterMeta,
+.reviewFooterActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.reviewFooterMeta {
+  color: var(--ft-text-muted);
+  font-size: 10px;
+}
+
+.reviewFooterActions > :last-child {
+  margin-left: auto;
+}
+
+@media (max-width: 767px) {
+  .pageOverview header {
+    margin-bottom: 18px;
+  }
+
+  .summary {
+    gap: 16px 24px;
+    padding-bottom: 16px;
+  }
+
+  .summaryItem {
+    flex: 1 1 120px;
+  }
+
+  .summaryNote {
+    margin-top: -8px;
+  }
+
+  .controls {
+    align-items: stretch;
+  }
+
+  .controls :global([data-testid='transactions-search-input']) {
+    min-width: 100%;
+    max-width: none;
+  }
+
+  .reviewBody {
+    padding: 20px 18px !important;
+  }
+
+  .reviewFacts {
+    gap: 16px;
+  }
+}
+
+@media (max-width: 359px) {
+  .reviewFacts {
+    grid-template-columns: 1fr;
+  }
+
+  .reviewFacts .wideFact {
+    grid-column: auto;
+  }
+
+  .reviewFooterMeta,
+  .reviewFooterActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .reviewFooterActions > :last-child {
+    margin-left: 0;
+  }
+}

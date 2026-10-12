@@ -46,6 +46,7 @@ import { Button }                    from '@/components/ui/Button'
 import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
 import { AnchoredActionMenu }        from '@/components/ui/AnchoredActionMenu'
 import { TransactionEditModal }      from '@/components/forms/TransactionEditModal'
+import styles                       from './TransactionsRound07.module.css'
 import type { TransactionType }      from '@/types/database.types'
 import type { TransactionFormOptions } from '@/lib/contracts/ui.contracts'
 
@@ -138,7 +139,7 @@ function TransactionIdentityMark({ transaction }: { transaction: TransactionList
   return (
     <span
       aria-hidden="true"
-      className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--ft-border)] ${tone}`}
+      className={`inline-flex h-7 w-7 shrink-0 items-center justify-center border border-[var(--ft-border)] ${styles.identityMark} ${tone}`}
     >
       {transaction.type === 'TRANSFER' ? (
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 7h13l-3-3m3 3-3 3M17 17H4l3 3m-3-3 3-3" /></svg>
@@ -1315,8 +1316,8 @@ export function TransactionTable({
   const isReviewOpen = Boolean(focusedTransaction && reviewPanelVisible)
 
   return (
-    <div className="space-y-0">
-      {workspaceHeader ? <div className="mb-4">{workspaceHeader}</div> : null}
+    <div className={`space-y-0 ${styles.workspace}`}>
+      {workspaceHeader ? <div>{workspaceHeader}</div> : null}
       <div data-testid="transactions-review-panel-layer" className="min-w-0">
           {/* Search and filters stay available while the ledger scrolls. */}
           <div className="lg:sticky lg:top-0 lg:z-sticky">
@@ -1330,8 +1331,8 @@ export function TransactionTable({
                 onRetry={() => setFilterOptionsReloadTick(prev => prev + 1)}
               />
             )}
-            <DataToolbar compact className="border-y border-[var(--ft-border)] bg-transparent px-0 py-1.5">
-          <div role="group" aria-label="Tipo de movimiento" className="flex min-w-0 max-w-full items-center gap-1 overflow-x-auto border-b border-[var(--ft-border)]">
+            <DataToolbar compact className={`${styles.toolbar} border-y border-[var(--ft-border)] bg-transparent px-0 py-1.5`}>
+          <div role="group" aria-label="Tipo de movimiento" className={`${styles.tabs} flex min-w-0 max-w-full items-center gap-1 overflow-x-auto border-b border-[var(--ft-border)]`}>
             {QUICK_FILTERS.filter(filter => ['all', 'income', 'expense', 'transfer'].includes(filter.key)).map(filter => {
               const countKey = filter.key === 'all' ? 'all' : filter.key
               const count = transactionTypeCounts?.[countKey as keyof TransactionTypeCounts]
@@ -1356,7 +1357,7 @@ export function TransactionTable({
             })}
           </div>
 
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <div className={`${styles.controls} flex min-w-0 flex-wrap items-center gap-1.5`}>
               <DataSearchField
                 value={search}
                 onChange={setSearch}
@@ -1429,7 +1430,7 @@ export function TransactionTable({
               {toolbarActions}
           </div>
 
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[10px]" aria-label="Contexto activo del registro">
+          <div className={`${styles.context} flex min-w-0 flex-wrap items-center gap-1.5 text-[10px]`} aria-label="Contexto activo del registro">
               <span className="mr-1 font-medium text-[var(--ft-text-muted)]">{activeContextLabels.length ? 'Contexto activo' : 'Todos los movimientos'}</span>
               {activeContextLabels.map(label => (
                 <span
@@ -1905,57 +1906,56 @@ export function TransactionTable({
             </nav>
           </div>
         ) : undefined}
-        headerBadge={<span className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-control border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-2 py-1 text-[10px] font-medium text-[var(--ft-text-muted)]"><span aria-hidden="true" className="h-1 w-1 rounded-full bg-[var(--ft-primary)]" />Lectura</span>}
         testId="transactions-review-panel"
         dialogId="transactions-review-panel"
         closeTestId="transactions-review-close"
         presentation="workbench"
         motionSource="pointer"
         focusTrapActive={isReviewOpen}
-        bodyClassName="!pt-6"
+        bodyClassName={styles.reviewBody}
       >
         {focusedTransaction ? (
           <div key={focusedTransaction.id} className="ft-v3-review-record-content">
-            <section className="border-b border-[var(--ft-border)] pb-5" aria-label="Importe y clasificación">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-[11px] text-[var(--ft-text-muted)]">Importe original · {focusedTransaction.currency}</p>
+            <section className={styles.panelSummary} aria-label="Importe y clasificación">
+              <div className={styles.summaryEyebrow}>
+                <span>Importe original · {focusedTransaction.currency}</span>
                 <span className="rounded-control bg-[var(--ft-surface-muted)] px-2 py-0.5 text-[10px] font-medium text-[var(--ft-text-muted)]">
                   {TYPE_CONFIG[focusedTransaction.type].label}
                 </span>
               </div>
-              <p className={`mt-2 whitespace-nowrap font-mono text-[34px] font-semibold leading-[44px] tracking-[-0.04em] tabular-nums ${TYPE_CONFIG[focusedTransaction.type].className}`} aria-live="polite">
+              <p className={`whitespace-nowrap font-mono tabular-nums ${styles.summaryAmount} ${TYPE_CONFIG[focusedTransaction.type].className}`} aria-live="polite">
                 {focusedTransaction.type === 'TRANSFER' ? '' : TYPE_CONFIG[focusedTransaction.type].prefix}
                 {formatCurrency(Math.abs(focusedTransaction.amount), focusedTransaction.currency as 'PEN' | 'USD')}
               </p>
-              <p className="mt-0.5 text-[11px] leading-4 text-[var(--ft-text-muted)]">
+              <p className={styles.summaryCaption}>
                 {focusedTransaction.destinationAccount
                   ? 'Entre cuentas propias'
                   : `Registrado en ${focusedTransaction.sourceAccount?.name ?? 'cuenta no disponible'}`}
               </p>
-              <div className="mt-5 grid grid-cols-[minmax(0,1fr)_14px_minmax(0,1fr)] items-center gap-3">
+              <div className={styles.recordPath}>
                 <div className="min-w-0">
-                  <p className="mb-1 text-[10px] text-[var(--ft-text-muted)]">
+                  <small>
                     {focusedTransaction.destinationAccount ? 'Cuenta origen' : 'Cuenta'}
-                  </p>
-                  <p className="truncate text-[12px] font-semibold leading-5 text-[var(--ft-text-strong)]">
+                  </small>
+                  <strong className="block truncate text-[var(--ft-text-strong)]">
                     {focusedTransaction.sourceAccount?.name ?? 'No disponible'}
-                  </p>
+                  </strong>
                 </div>
                 <span aria-hidden="true" className="text-[var(--ft-text-subtle)]">›</span>
                 <div className="min-w-0">
-                  <p className="mb-1 text-[10px] text-[var(--ft-text-muted)]">
+                  <small>
                     {focusedTransaction.destinationAccount ? 'Cuenta destino' : 'Clasificación'}
-                  </p>
-                  <p className="truncate text-[12px] font-semibold leading-5 text-[var(--ft-text-strong)]">
+                  </small>
+                  <strong className="block truncate text-[var(--ft-text-strong)]">
                     {focusedTransaction.destinationAccount?.name
                       ?? (focusedTransaction.category?.name
                         ? normalizeCategoryLabel(focusedTransaction.category.name)
                         : 'Sin categoría')}
-                  </p>
+                  </strong>
                 </div>
               </div>
             </section>
-            <div className="mt-5 flex gap-6 border-b border-[var(--ft-border)]" role="tablist" aria-label="Vista del movimiento">
+            <div className={styles.reviewTabs} role="tablist" aria-label="Vista del movimiento">
               {(['detail', 'context'] as const).map(tab => (
                 <button key={tab} type="button" role="tab"
                   id={`transactions-review-tab-${tab}`}
@@ -1983,7 +1983,7 @@ export function TransactionTable({
               className="ft-v3-review-tab-panel pt-5" tabIndex={0}>
               {reviewTab === 'detail' ? (
                 <>
-                  <dl className="grid grid-cols-2 gap-x-6 gap-y-5">
+                  <dl className={styles.reviewFacts}>
                     <ReviewFactRow label="Fecha del movimiento"><TransactionDate date={focusedTransaction.transactionDate} /></ReviewFactRow>
                     <ReviewFactRow label="Moneda original">
                       <span className="font-mono tabular-nums">{focusedTransaction.currency}</span>
@@ -1997,9 +1997,9 @@ export function TransactionTable({
                     {focusedTransactionHasModuleContext ? (
                       <ReviewFactRow label="Módulos vinculados"><ModuleBadges tx={focusedTransaction} /></ReviewFactRow>
                     ) : null}
-                    <ReviewFactRow label="Descripción" className="col-span-2">{focusedTransaction.description}</ReviewFactRow>
+                    <ReviewFactRow label="Descripción" className={styles.wideFact}>{focusedTransaction.description}</ReviewFactRow>
                   </dl>
-                  <div className="mt-6 border-t border-[var(--ft-border)] pt-4">
+                  <div className={styles.contextExplanation}>
                     <h3 className="text-[12px] font-semibold text-[var(--ft-text-strong)]">El importe y su significado, juntos</h3>
                     <p className="mt-1.5 text-[12px] leading-5 text-[var(--ft-text-muted)]">
                       Se muestra el importe original del registro. La cuenta, la clasificación y su participación en reportes se conservan por separado.
@@ -2040,8 +2040,8 @@ export function TransactionTable({
         ) : null}
         <RecordModalFooter>
           {focusedTransaction ? (
-            <div className="space-y-2.5">
-              <div className="flex flex-wrap items-center justify-between gap-1">
+            <div className={styles.reviewFooter}>
+              <div className={styles.reviewFooterMeta}>
                 <p className="text-[10px] text-[var(--ft-text-muted)]">Inspección del registro · sin cambios</p>
                 <Button
                   href={`/transactions/${focusedTransaction.id}`}
@@ -2055,7 +2055,7 @@ export function TransactionTable({
                   Detalle completo
                 </Button>
               </div>
-              <div className="flex items-center justify-between gap-3">
+              <div className={styles.reviewFooterActions}>
                 <Button
                   type="button"
                   onClick={() => openDeleteTransactionModal(focusedTransaction.id)}

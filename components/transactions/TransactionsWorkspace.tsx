@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import useSWR, { mutate } from 'swr'
 import { TransactionForm } from '@/components/forms/TransactionForm'
+import styles from '@/components/tables/TransactionsRound07.module.css'
 import { TransactionTable } from '@/components/tables/TransactionTable'
 import { RecordModal } from '@/components/ui/RecordModal'
 import { Button } from '@/components/ui/Button'
@@ -541,7 +542,7 @@ export function TransactionsWorkspace({
           )}>Exportar</Button>
         )}
         workspaceHeader={(
-          <div className="space-y-3" data-testid="transactions-page-overview">
+      <div className={styles.pageOverview} data-testid="transactions-page-overview">
             <header aria-labelledby="transactions-workspace-heading" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <h1 id="transactions-workspace-heading" className="font-display text-[26px] font-semibold leading-8 tracking-[-0.035em] text-[var(--ft-text-strong)]">
@@ -560,22 +561,18 @@ export function TransactionsWorkspace({
               </div>
             </header>
 
-            <section aria-label={`Resumen del mes: ${reportMonthLabel}`} className="grid border-b border-[var(--ft-border)] pb-3 sm:grid-cols-3 sm:gap-8">
-              <div className="mb-1 flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 sm:col-span-3">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ft-text-muted)]">Resumen del período · {reportMonthLabel}</span>
-                <span className="text-[10px] text-[var(--ft-text-subtle)]">Los filtros no cambian estos totales · transferencias excluidas</span>
-              </div>
+            <section aria-label={`Resumen del mes: ${reportMonthLabel}`} className={styles.summary}>
               {[
                 { label: 'Ingresos', value: monthSummary.data?.ingresos_mes, type: 'INCOME' as const, tone: 'text-[var(--ft-success)]' },
                 { label: 'Egresos', value: monthSummary.data?.egresos_mes, type: 'EXPENSE' as const, tone: 'text-[var(--ft-danger)]' },
                 { label: 'Resultado', value: monthSummary.data?.resultado_mensual, type: null, tone: monthSummary.data && monthSummary.data.resultado_mensual < 0 ? 'text-[var(--ft-danger)]' : 'text-[var(--ft-text-strong)]' },
-              ].map((item, index) => (
-                <div key={item.label} className={`min-w-0 py-1 ${index > 0 ? 'mt-2 border-t border-[var(--ft-border)] pt-2 sm:mt-0 sm:border-t-0 sm:pt-1' : ''}`}>
-                  <p className="flex items-center justify-between gap-2 text-[12px] font-medium text-[var(--ft-text-muted)]">
-                    <span>{item.label} · PEN</span><span className="text-[10px] font-normal capitalize text-[var(--ft-text-subtle)] sm:hidden">{reportMonthLabel}</span>
+              ].map(item => (
+                <div key={item.label} className={`${styles.summaryItem} min-w-0`}>
+                  <p>
+                    <span>{item.label}{item.label === 'Resultado' ? ' del mes' : ''} · PEN</span>
                   </p>
                   {monthSummary.data ? (
-                    <div className={`mt-1 font-display text-[23px] font-semibold leading-7 tracking-[-0.035em] tabular-nums ${item.tone}`}>
+                    <div className={`${styles.summaryValue} font-display tabular-nums ${item.tone}`}>
                       {item.type ? <a className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ft-focus-ring-color)]" href={`/transactions?type=${item.type}&date_from=${reportStart}&date_to=${reportDate}&page=1`} aria-label={`Ver ${item.label.toLowerCase()} del mes`}>{formatCurrency(item.value ?? 0, 'PEN')}</a> : formatCurrency(item.value ?? 0, 'PEN')}
                     </div>
                   ) : (
@@ -583,6 +580,7 @@ export function TransactionsWorkspace({
                   )}
                 </div>
               ))}
+              <p className={styles.summaryNote}>Período · {reportMonthLabel} · Los filtros no cambian estos totales; transferencias excluidas.</p>
             </section>
             {monthSummary.error ? (
               <p className="-mt-2 flex items-center gap-2 text-[11px] text-[var(--ft-danger)]" role={monthSummary.data ? 'status' : 'alert'}>
