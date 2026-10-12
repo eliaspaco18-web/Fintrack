@@ -46,8 +46,10 @@ interface RecordModalProps {
   open: boolean
   onClose: () => void
   title: string
-  subtitle?: string
+  subtitle?: ReactNode
   eyebrow?: string
+  headerNavigation?: ReactNode
+  headerBadge?: ReactNode
   testId?: string
   closeTestId?: string
   dialogId?: string
@@ -76,6 +78,8 @@ export function RecordModal({
   title,
   subtitle,
   eyebrow,
+  headerNavigation,
+  headerBadge,
   testId,
   closeTestId,
   dialogId,
@@ -124,6 +128,24 @@ export function RecordModal({
     '--ft-modal-padding': sizePreset.padding,
   } as CSSProperties
   const isWorkbench = presentation === 'workbench'
+  const closeButton = (
+    <Button
+      type="button"
+      onClick={event => {
+        if (isWorkbench) setCloseMotionSource(event.detail === 0 ? 'keyboard' : 'pointer')
+        onClose()
+      }}
+      ariaLabel={isWorkbench ? 'Cerrar panel' : 'Cerrar modal'}
+      testId={closeTestId}
+      variant="secondary"
+      size="icon-md"
+      className="shrink-0 focus-visible:ring-offset-[var(--ft-modal-bg)]"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <path d="M18 6 6 18M6 6l12 12"/>
+      </svg>
+    </Button>
+  )
   const presence = useV3WorkbenchPresence(
     open,
     isWorkbench && !!portalRoot,
@@ -192,13 +214,21 @@ export function RecordModal({
           style={modalStyle}
         >
           <div
-            className="
-              sticky top-0 z-[1] flex shrink-0 items-start justify-between gap-4 border-b border-[var(--ft-border)]
+            className={`
+              sticky top-0 z-[1] shrink-0 border-b border-[var(--ft-border)]
               bg-[var(--ft-modal-bg)]
               px-[var(--ft-modal-padding)] pb-4 pt-5
-            "
+              ${headerNavigation ? '' : 'flex items-start justify-between gap-4'}
+            `}
           >
-            <div className="min-w-0">
+            {headerNavigation ? (
+              <div className="mb-3 flex min-h-8 items-center justify-between gap-2">
+                <div className="min-w-0 flex-1">{headerNavigation}</div>
+                {closeButton}
+              </div>
+            ) : null}
+            <div className={headerNavigation ? 'flex items-start justify-between gap-3' : 'min-w-0'}>
+              <div className="min-w-0">
               {eyebrow && (
                 <p className="mb-1 text-[12px] font-medium tracking-[0.04em] text-[var(--ft-text-subtle)]">
                   {eyebrow}
@@ -217,24 +247,10 @@ export function RecordModal({
                   {subtitle}
                 </p>
               )}
+              </div>
+              {headerBadge}
             </div>
-
-            <Button
-              type="button"
-              onClick={event => {
-                if (isWorkbench) setCloseMotionSource(event.detail === 0 ? 'keyboard' : 'pointer')
-                onClose()
-              }}
-              ariaLabel={isWorkbench ? 'Cerrar panel' : 'Cerrar modal'}
-              testId={closeTestId}
-              variant="secondary"
-              size="icon-md"
-              className="shrink-0 focus-visible:ring-offset-[var(--ft-modal-bg)]"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M18 6 6 18M6 6l12 12"/>
-              </svg>
-            </Button>
+            {!headerNavigation ? closeButton : null}
           </div>
 
           <div

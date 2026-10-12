@@ -3329,6 +3329,18 @@ input:-webkit-autofill:focus {
   background: var(--ft-inset);
   padding: 13px 24px 16px;
 }
+@keyframes ft-v3-review-tab-enter {
+  from { opacity: .65; transform: translateX(8px); }
+  to { opacity: 1; transform: none; }
+}
+[data-ft-v3] .ft-v3-review-tab-panel,
+[data-ft-v3] .ft-v3-review-record-content {
+  animation: ft-v3-review-tab-enter 160ms var(--ft-ease-out) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-ft-v3] .ft-v3-review-tab-panel,
+  [data-ft-v3] .ft-v3-review-record-content { animation: none; }
+}
 @media (max-width: 767px) {
   [data-ft-v3][data-ft-workbench-overlay] .ft-v3-workbench-wrapper {
     width: calc(100vw - 16px);

@@ -222,11 +222,11 @@ function DesktopLedgerSkeletons() {
   )
 }
 
-function ReviewFactRow({ label, children }: { label: string; children: ReactNode }) {
+function ReviewFactRow({ label, children, className = '' }: { label: string; children: ReactNode; className?: string }) {
   return (
-    <div className="grid grid-cols-[104px_minmax(0,1fr)] gap-4 py-3.5">
-      <dt className="text-[11px] font-medium text-[var(--ft-text-muted)]">{label}</dt>
-      <dd className="min-w-0 break-words text-right text-[12px] font-medium text-[var(--ft-text-strong)]">
+    <div className={`min-w-0 ${className}`}>
+      <dt className="mb-1 text-[11px] leading-4 text-[var(--ft-text-muted)]">{label}</dt>
+      <dd className="min-w-0 break-words text-[12px] font-semibold leading-5 text-[var(--ft-text-strong)]">
         {children}
       </dd>
     </div>
@@ -618,6 +618,7 @@ export function TransactionTable({
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([])
   const [focusedTransactionId, setFocusedTransactionId] = useState<string | null>(null)
   const [reviewPanelVisible, setReviewPanelVisible] = useState(false)
+  const [reviewTab, setReviewTab] = useState<'detail' | 'context'>('detail')
   const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false)
   const initializedFiltersRef = useRef(false)
   const suspendControlToParamsSyncRef = useRef(false)
@@ -764,6 +765,7 @@ export function TransactionTable({
     }
 
     setFocusedTransactionId(id)
+    setReviewTab('detail')
     if (reviewPanelVisible) return
 
     setReviewPanelVisible(false)
@@ -781,6 +783,7 @@ export function TransactionTable({
     const nextTransaction = transactions[focusedTransactionIndex + direction]
     if (!nextTransaction) return
     setFocusedTransactionId(nextTransaction.id)
+    setReviewTab('detail')
     const nextTrigger = document.querySelector<HTMLElement>(
       `[data-review-trigger-id="${nextTransaction.id}"]`
     )
@@ -1881,134 +1884,197 @@ export function TransactionTable({
         onClose={closeTransactionReview}
         title={focusedTransaction?.description ?? 'Detalle del movimiento'}
         subtitle={focusedTransaction
-          ? `${TYPE_CONFIG[focusedTransaction.type].label} · ${focusedTransactionPosition} de ${transactions.length}`
+          ? <><TransactionDate date={focusedTransaction.transactionDate} /> · Movimiento registrado</>
           : undefined}
-        eyebrow="Movimientos"
+        headerNavigation={focusedTransaction ? (
+          <div className="flex min-w-0 items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2 text-[11px] text-[var(--ft-text-muted)]">
+              <span aria-hidden="true" className="font-semibold text-[var(--ft-primary)]">⇄</span>
+              <span>Movimientos</span><span aria-hidden="true">/</span><span>Detalle</span>
+            </div>
+            <nav aria-label="Recorrer movimientos visibles" className="flex shrink-0 items-center gap-1">
+              <Button type="button" onClick={() => moveTransactionReview(-1)} disabled={focusedTransactionIndex <= 0}
+                ariaLabel="Movimiento anterior" variant="secondary" size="icon-sm" testId="transactions-review-previous"
+                className="h-11 w-11 sm:h-8 sm:w-8"><span aria-hidden="true">←</span></Button>
+              <span className="min-w-9 text-center text-[10px] tabular-nums text-[var(--ft-text-muted)]" aria-live="polite">
+                {focusedTransactionPosition}/{transactions.length}
+              </span>
+              <Button type="button" onClick={() => moveTransactionReview(1)} disabled={focusedTransactionIndex >= transactions.length - 1}
+                ariaLabel="Movimiento siguiente" variant="secondary" size="icon-sm" testId="transactions-review-next"
+                className="h-11 w-11 sm:h-8 sm:w-8"><span aria-hidden="true">→</span></Button>
+            </nav>
+          </div>
+        ) : undefined}
+        headerBadge={<span className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-control border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-2 py-1 text-[10px] font-medium text-[var(--ft-text-muted)]"><span aria-hidden="true" className="h-1 w-1 rounded-full bg-[var(--ft-primary)]" />Lectura</span>}
         testId="transactions-review-panel"
         dialogId="transactions-review-panel"
         closeTestId="transactions-review-close"
         presentation="workbench"
         motionSource="pointer"
         focusTrapActive={isReviewOpen}
-        bodyClassName="space-y-5"
+        bodyClassName="!pt-6"
       >
         {focusedTransaction ? (
-          <>
-              <div className="-mx-6 border-y border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-6 py-4" aria-live="polite">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-[11px] font-medium text-[var(--ft-text-muted)]">Importe original · {focusedTransaction.currency}</p>
-                    <p className="mt-1 text-[11px] leading-4 text-[var(--ft-text-subtle)]">
-                      <TransactionDate date={focusedTransaction.transactionDate} />
-                    </p>
-                  </div>
-                  <p className={`whitespace-nowrap font-mono text-[30px] font-semibold leading-9 tracking-[-0.045em] tabular-nums ${TYPE_CONFIG[focusedTransaction.type].className}`}>
-                    {focusedTransaction.type === 'TRANSFER' ? '' : TYPE_CONFIG[focusedTransaction.type].prefix}
-                    {formatCurrency(Math.abs(focusedTransaction.amount), focusedTransaction.currency as 'PEN' | 'USD')}
+          <div key={focusedTransaction.id} className="ft-v3-review-record-content">
+            <section className="border-b border-[var(--ft-border)] pb-5" aria-label="Importe y clasificación">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] text-[var(--ft-text-muted)]">Importe original · {focusedTransaction.currency}</p>
+                <span className="rounded-control bg-[var(--ft-surface-muted)] px-2 py-0.5 text-[10px] font-medium text-[var(--ft-text-muted)]">
+                  {TYPE_CONFIG[focusedTransaction.type].label}
+                </span>
+              </div>
+              <p className={`mt-2 whitespace-nowrap font-mono text-[34px] font-semibold leading-[44px] tracking-[-0.04em] tabular-nums ${TYPE_CONFIG[focusedTransaction.type].className}`} aria-live="polite">
+                {focusedTransaction.type === 'TRANSFER' ? '' : TYPE_CONFIG[focusedTransaction.type].prefix}
+                {formatCurrency(Math.abs(focusedTransaction.amount), focusedTransaction.currency as 'PEN' | 'USD')}
+              </p>
+              <p className="mt-0.5 text-[11px] leading-4 text-[var(--ft-text-muted)]">
+                {focusedTransaction.destinationAccount
+                  ? 'Entre cuentas propias'
+                  : `Registrado en ${focusedTransaction.sourceAccount?.name ?? 'cuenta no disponible'}`}
+              </p>
+              <div className="mt-5 grid grid-cols-[minmax(0,1fr)_14px_minmax(0,1fr)] items-center gap-3">
+                <div className="min-w-0">
+                  <p className="mb-1 text-[10px] text-[var(--ft-text-muted)]">
+                    {focusedTransaction.destinationAccount ? 'Cuenta origen' : 'Cuenta'}
+                  </p>
+                  <p className="truncate text-[12px] font-semibold leading-5 text-[var(--ft-text-strong)]">
+                    {focusedTransaction.sourceAccount?.name ?? 'No disponible'}
+                  </p>
+                </div>
+                <span aria-hidden="true" className="text-[var(--ft-text-subtle)]">›</span>
+                <div className="min-w-0">
+                  <p className="mb-1 text-[10px] text-[var(--ft-text-muted)]">
+                    {focusedTransaction.destinationAccount ? 'Cuenta destino' : 'Clasificación'}
+                  </p>
+                  <p className="truncate text-[12px] font-semibold leading-5 text-[var(--ft-text-strong)]">
+                    {focusedTransaction.destinationAccount?.name
+                      ?? (focusedTransaction.category?.name
+                        ? normalizeCategoryLabel(focusedTransaction.category.name)
+                        : 'Sin categoría')}
                   </p>
                 </div>
               </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <section className="min-w-0 rounded-surface border border-[var(--ft-border)] bg-[var(--ft-surface)] px-3 py-2.5" aria-label="Cuenta relacionada">
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--ft-text-muted)]">
-                    {focusedTransaction.destinationAccount ? 'Ruta entre cuentas' : 'Cuenta'}
-                  </p>
-                  <TransactionAccountPath transaction={focusedTransaction} />
-                </section>
-                <section className="min-w-0 rounded-surface border border-[var(--ft-border)] bg-[var(--ft-surface)] px-3 py-2.5" aria-label="Clasificación">
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--ft-text-muted)]">Clasificación</p>
-                  <div className="flex min-w-0 items-center gap-2">
-                    <TransactionIdentityMark transaction={focusedTransaction} />
-                    <div className="min-w-0">
-                      <p className="truncate text-[12px] font-semibold text-[var(--ft-text-strong)]">
-                        {focusedTransaction.category?.name ? normalizeCategoryLabel(focusedTransaction.category.name) : 'Sin categoría'}
+            </section>
+            <div className="mt-5 flex gap-6 border-b border-[var(--ft-border)]" role="tablist" aria-label="Vista del movimiento">
+              {(['detail', 'context'] as const).map(tab => (
+                <button key={tab} type="button" role="tab"
+                  id={`transactions-review-tab-${tab}`}
+                  aria-controls="transactions-review-tabpanel"
+                  aria-selected={reviewTab === tab}
+                  tabIndex={reviewTab === tab ? 0 : -1}
+                  onClick={() => setReviewTab(tab)}
+                  onKeyDown={event => {
+                    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+                    event.preventDefault()
+                    const next = event.key === 'Home' ? 'detail'
+                      : event.key === 'End' ? 'context'
+                        : tab === 'detail' ? 'context' : 'detail'
+                    setReviewTab(next)
+                    document.getElementById(`transactions-review-tab-${next}`)?.focus()
+                  }}
+                  className="min-h-11 border-b-2 border-transparent pb-2 text-[12px] font-semibold text-[var(--ft-text-muted)] transition-colors hover:text-[var(--ft-text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ft-primary)] aria-selected:border-[var(--ft-primary)] aria-selected:text-[var(--ft-primary)] motion-reduce:transition-none"
+                >
+                  {tab === 'detail' ? 'Detalle' : 'Contexto financiero'}
+                </button>
+              ))}
+            </div>
+            <div key={reviewTab} role="tabpanel" id="transactions-review-tabpanel"
+              aria-labelledby={`transactions-review-tab-${reviewTab}`}
+              className="ft-v3-review-tab-panel pt-5" tabIndex={0}>
+              {reviewTab === 'detail' ? (
+                <>
+                  <dl className="grid grid-cols-2 gap-x-6 gap-y-5">
+                    <ReviewFactRow label="Fecha del movimiento"><TransactionDate date={focusedTransaction.transactionDate} /></ReviewFactRow>
+                    <ReviewFactRow label="Moneda original">
+                      <span className="font-mono tabular-nums">{focusedTransaction.currency}</span>
+                      {focusedTransaction.currency === 'PEN' ? ' · Sol peruano' : focusedTransaction.currency === 'USD' ? ' · Dólar estadounidense' : null}
+                    </ReviewFactRow>
+                    <ReviewFactRow label="En los reportes">
+                      {focusedTransaction.affectsReports
+                        ? `Incluido como ${focusedTransaction.type === 'INCOME' ? 'ingreso' : 'egreso'}`
+                        : focusedTransaction.type === 'TRANSFER' ? 'Excluido · transferencia interna' : 'No incluido'}
+                    </ReviewFactRow>
+                    {focusedTransactionHasModuleContext ? (
+                      <ReviewFactRow label="Módulos vinculados"><ModuleBadges tx={focusedTransaction} /></ReviewFactRow>
+                    ) : null}
+                    <ReviewFactRow label="Descripción" className="col-span-2">{focusedTransaction.description}</ReviewFactRow>
+                  </dl>
+                  <div className="mt-6 border-t border-[var(--ft-border)] pt-4">
+                    <h3 className="text-[12px] font-semibold text-[var(--ft-text-strong)]">El importe y su significado, juntos</h3>
+                    <p className="mt-1.5 text-[12px] leading-5 text-[var(--ft-text-muted)]">
+                      Se muestra el importe original del registro. La cuenta, la clasificación y su participación en reportes se conservan por separado.
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <div className="divide-y divide-[var(--ft-border)]">
+                  <div className="flex gap-3 py-4 first:pt-0">
+                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-surface border border-[var(--ft-border)] text-[11px] text-[var(--ft-primary)]">1</span>
+                    <div><h3 className="text-[12px] font-semibold">Importe original, sin reinterpretar</h3><p className="mt-1 text-[11px] leading-5 text-[var(--ft-text-muted)]">Registrado en {focusedTransaction.currency}; aquí no se presenta una conversión ni un saldo calculado.</p></div>
+                  </div>
+                  <div className="flex gap-3 py-4">
+                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-surface border border-[var(--ft-border)] text-[11px] text-[var(--ft-primary)]">2</span>
+                    <div><h3 className="text-[12px] font-semibold">{focusedTransaction.affectsReports ? 'Participa en los reportes' : 'No afecta los reportes'}</h3>
+                      <p className="mt-1 text-[11px] leading-5 text-[var(--ft-text-muted)]">
+                        {focusedTransaction.affectsReports
+                          ? `Este registro figura como ${focusedTransaction.type === 'INCOME' ? 'ingreso' : 'egreso'}.`
+                          : 'Este registro no se suma a ingresos ni egresos de los reportes.'}
                       </p>
-                      <p className={`text-[11px] font-medium ${TYPE_CONFIG[focusedTransaction.type].className}`}>{TYPE_CONFIG[focusedTransaction.type].label}</p>
                     </div>
                   </div>
-                </section>
-              </div>
-              <div className="flex items-center justify-between gap-3 pt-1">
-                <p className="text-[11px] font-semibold text-[var(--ft-text-strong)]">Contexto del registro</p>
-                <span className="text-[10px] text-[var(--ft-text-subtle)]">Importe original, sin conversión</span>
-              </div>
-              <dl className="grid grid-cols-1 gap-x-5 divide-y divide-[var(--ft-border)] border-y border-[var(--ft-border)] sm:grid-cols-2 sm:divide-y-0">
-                <ReviewFactRow label="Moneda original">
-                  <span className="font-mono tabular-nums">{focusedTransaction.currency}</span>
-                </ReviewFactRow>
-                <ReviewFactRow label="Reportes">
-                  <span className={focusedTransaction.affectsReports ? 'text-[var(--ft-text-strong)]' : 'text-[var(--ft-warning)]'}>
-                    {focusedTransaction.affectsReports ? 'Afecta reportes' : 'No afecta reportes'}
-                  </span>
-                </ReviewFactRow>
-                {focusedTransactionHasModuleContext ? (
-                  <ReviewFactRow label="Módulos vinculados">
-                    <span className="flex justify-end text-right">
-                      <ModuleBadges tx={focusedTransaction} />
-                    </span>
-                  </ReviewFactRow>
-                ) : null}
-              </dl>
-          </>
+                  <div className="flex gap-3 py-4">
+                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-surface border border-[var(--ft-border)] text-[11px] text-[var(--ft-primary)]">3</span>
+                    <div><h3 className="text-[12px] font-semibold">Relaciones del registro</h3>
+                      <p className="mt-1 text-[11px] leading-5 text-[var(--ft-text-muted)]">
+                        {focusedTransaction.destinationAccount
+                          ? 'Movimiento entre las cuentas de origen y destino indicadas arriba.'
+                          : 'Cuenta y clasificación indicadas arriba.'}
+                      </p>
+                      {focusedTransactionHasModuleContext ? <div className="mt-2"><ModuleBadges tx={focusedTransaction} /></div> : null}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         ) : null}
         <RecordModalFooter>
           {focusedTransaction ? (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-3">
+            <div className="space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-1">
+                <p className="text-[10px] text-[var(--ft-text-muted)]">Inspección del registro · sin cambios</p>
                 <Button
-                  type="button"
-                  onClick={() => moveTransactionReview(-1)}
-                  disabled={focusedTransactionIndex <= 0}
+                  href={`/transactions/${focusedTransaction.id}`}
+                  prefetch
                   variant="ghost"
                   size="sm"
-                  testId="transactions-review-previous"
-                  leadingIcon={<span aria-hidden="true">←</span>}
-                >
-                  Anterior
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() => moveTransactionReview(1)}
-                  disabled={focusedTransactionIndex >= transactions.length - 1}
-                  variant="ghost"
-                  size="sm"
-                  testId="transactions-review-next"
+                  testId={`transactions-review-detail-${focusedTransaction.id}`}
                   trailingIcon={<span aria-hidden="true">→</span>}
+                  className="h-8 px-1"
                 >
-                  Siguiente
+                  Detalle completo
                 </Button>
               </div>
-              <Button
-                href={`/transactions/${focusedTransaction.id}`}
-                prefetch
-                variant="primary"
-                size="md"
-                fullWidth
-                testId={`transactions-review-detail-${focusedTransaction.id}`}
-                trailingIcon={<span aria-hidden="true">→</span>}
-              >
-                Abrir detalle completo
-              </Button>
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  type="button"
-                  onClick={() => setEditTransactionId(focusedTransaction.id)}
-                  variant="secondary"
-                  size="sm"
-                  testId={`transactions-review-edit-${focusedTransaction.id}`}
-                >
-                  Editar
-                </Button>
+              <div className="flex items-center justify-between gap-3">
                 <Button
                   type="button"
                   onClick={() => openDeleteTransactionModal(focusedTransaction.id)}
                   disabled={deleteState.status === 'loading'}
-                  variant="danger"
+                  variant="secondary"
                   size="sm"
                   testId={`transactions-review-delete-${focusedTransaction.id}`}
+                  className="text-[var(--ft-danger)]"
                 >
                   Eliminar
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => setEditTransactionId(focusedTransaction.id)}
+                  variant="primary"
+                  size="sm"
+                  testId={`transactions-review-edit-${focusedTransaction.id}`}
+                >
+                  Editar movimiento
                 </Button>
               </div>
             </div>
