@@ -66,7 +66,7 @@ function Group({ group, main }: { group: PositionGroup; main: boolean }) {
 /** Ordered, already-verified native groups. No sums or conversion happen here. */
 export function PositionBand({ accounts, receivables, payables, className = '' }: PositionBandProps) {
   return (
-    <section data-ft-route-group="summary" aria-label="Posición y pendientes registrados" className={`grid grid-cols-2 gap-4 rounded-[18px] border border-[var(--ft-border)] bg-[var(--ft-surface)] px-5 py-4 shadow-[var(--ft-shadow-contact)] md:grid-cols-[1.75fr_1fr_1fr] md:gap-0 ${className}`.trim()}>
+    <section data-ft-route-group="summary" aria-label="Posición y pendientes registrados" className={`grid grid-cols-2 gap-4 rounded-[18px] border border-[var(--ft-border)] bg-[var(--ft-surface)] px-5 py-[15px] shadow-[var(--ft-shadow-contact)] md:grid-cols-[1.75fr_1fr_1fr] md:gap-0 ${className}`.trim()}>
       <Group group={accounts} main />
       <Group group={receivables} main={false} />
       <Group group={payables} main={false} />

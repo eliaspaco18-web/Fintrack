@@ -43,7 +43,7 @@ type BudgetPeriod = {
 const read = <T,>(url: string) => fetchDashboardData<T>(url)
 const number = (value: number) => new Intl.NumberFormat('es-PE', { maximumFractionDigits: 1 }).format(value)
 const moneyLabel = (value: number, currency: string) => formatV3Money({ value, currency }).text
-const amount = (value: number, currency: string, direction: 'neutral' | 'income' = 'neutral') => (
+const amount = (value: number, currency: string, direction: 'neutral' | 'income' | 'expense' = 'neutral') => (
   <MoneyText value={Number.isFinite(value) ? value : null} currency={currency} direction={direction} />
 )
 const monthName = (iso: string) => new Intl.DateTimeFormat('es-PE', {
@@ -174,7 +174,7 @@ export function DashboardRound07() {
               <div className={styles.facts}>
                 <Link href={`/transactions?type=INCOME&date_from=${firstDay}&date_to=${today.iso}&page=1`}><span>Ingresos</span>{amount(sources.summary.data.ingresos_mes, 'PEN', 'income')}</Link>
                 <Link href={`/transactions?type=EXPENSE&date_from=${firstDay}&date_to=${today.iso}&page=1`}><span>Egresos</span>{amount(sources.summary.data.egresos_mes, 'PEN')}</Link>
-                <div className={styles.resultFact}><span>Resultado del período</span>{amount(sources.summary.data.resultado_mensual, 'PEN')}</div>
+                <div className={styles.resultFact}><span>Resultado del período</span>{amount(Math.abs(sources.summary.data.resultado_mensual), 'PEN', sources.summary.data.resultado_mensual < 0 ? 'expense' : 'income')}</div>
               </div>
             </> : null}
           </SourceState>
