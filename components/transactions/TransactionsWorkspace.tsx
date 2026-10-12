@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import useSWR, { mutate } from 'swr'
 import { TransactionForm } from '@/components/forms/TransactionForm'
@@ -15,6 +15,7 @@ import type { CreateTransactionResult } from '@/modules/transactions/transaction
 import type { DashboardSummary } from '@/lib/dashboard/types'
 import { fetchDashboardData } from '@/components/dashboard/api'
 import {
+  OperationTypePopover,
   OperationTypeSelector,
   operationTypeToFormConfig,
   type OperationType,
@@ -169,6 +170,10 @@ export function TransactionsWorkspace({
   })
 
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isOperationPopoverOpen, setIsOperationPopoverOpen] = useState(false)
+  const [isDesktopOperationSelector, setIsDesktopOperationSelector] = useState(false)
+  const operationMenuAnchorRef = useRef<HTMLDivElement>(null)
+  const operationMenuId = useId()
   const [formInstanceKey, setFormInstanceKey] = useState(0)
   const [isExportModalOpen, setIsExportModalOpen] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
@@ -190,6 +195,14 @@ export function TransactionsWorkspace({
 
   const openFromQuery = searchParams.get('new') === 'transaction'
 
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 768px)')
+    const update = () => setIsDesktopOperationSelector(media.matches)
+    update()
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
+
   const hasPrefillParams = useMemo(
     () => PREFILL_QUERY_KEYS.some(key => {
       const value = searchParams.get(key)
@@ -210,18 +223,33 @@ export function TransactionsWorkspace({
   }, [pathname, router, searchParams])
 
   const openCreateModal = useCallback(() => {
+    if (isOperationPopoverOpen) {
+      setIsOperationPopoverOpen(false)
+      if (openFromQuery) clearCreateQueryParams()
+      return
+    }
+
     setFormInstanceKey(previous => previous + 1)
     setModalStep('select_type')
     setSelectedOperationType(null)
-    setIsModalOpen(true)
+    const usePopover = window.matchMedia('(min-width: 768px)').matches
+    setIsOperationPopoverOpen(usePopover)
+    setIsModalOpen(!usePopover)
 
     if (openFromQuery) return
+    handledQueryOpenRef.current = true
     const params = new URLSearchParams(searchParams.toString())
     params.set('new', 'transaction')
     router.replace(toNextUrl(pathname, params), { scroll: false })
-  }, [openFromQuery, pathname, router, searchParams])
+  }, [clearCreateQueryParams, isOperationPopoverOpen, openFromQuery, pathname, router, searchParams])
+
+  const dismissOperationPopover = useCallback(() => {
+    setIsOperationPopoverOpen(false)
+    if (openFromQuery && !selectedOperationType) clearCreateQueryParams()
+  }, [clearCreateQueryParams, openFromQuery, selectedOperationType])
 
   const closeCreateModal = useCallback(() => {
+    setIsOperationPopoverOpen(false)
     setIsModalOpen(false)
     setModalStep('select_type')
     setSelectedOperationType(null)
@@ -234,14 +262,19 @@ export function TransactionsWorkspace({
 
   // PRD: cuando el usuario elige un tipo de operación, pasar al formulario
   const handleOperationTypeSelected = useCallback((opType: OperationType) => {
+    setIsOperationPopoverOpen(false)
     setSelectedOperationType(opType)
     setFormInstanceKey(previous => previous + 1)
     setModalStep('form')
+    setIsModalOpen(true)
   }, [])
 
   const handleBackToTypeSelection = useCallback(() => {
     setModalStep('select_type')
     setSelectedOperationType(null)
+    const usePopover = window.matchMedia('(min-width: 768px)').matches
+    setIsOperationPopoverOpen(usePopover)
+    setIsModalOpen(!usePopover)
   }, [])
 
   const handleSuccess = useCallback(async (result: CreateTransactionResult) => {
@@ -263,6 +296,7 @@ export function TransactionsWorkspace({
     }
 
     setIsModalOpen(false)
+    setIsOperationPopoverOpen(false)
     clearCreateQueryParams()
     await Promise.all([
       mutate((key: unknown) => typeof key === 'string' && key.startsWith('/api/transactions')),
@@ -278,10 +312,17 @@ export function TransactionsWorkspace({
       handledQueryOpenRef.current = true
       setFormInstanceKey(previous => previous + 1)
       if (hasPrefillParams && prefilledOperationType) {
+        setIsOperationPopoverOpen(false)
         setModalStep('form')
         setSelectedOperationType(prefilledOperationType)
+        setIsModalOpen(true)
+      } else {
+        const usePopover = window.matchMedia('(min-width: 768px)').matches
+        setIsOperationPopoverOpen(usePopover)
+        setModalStep('select_type')
+        setSelectedOperationType(null)
+        setIsModalOpen(!usePopover)
       }
-      setIsModalOpen(true)
       return
     }
 
@@ -308,24 +349,7 @@ export function TransactionsWorkspace({
   const modalSubtitle = modalStep === 'form' && selectedOperationType
     ? 'Completa los datos reales del movimiento; sus relaciones y validaciones se mantienen.'
     : 'Elige lo que ocurrió. FinTrack mantiene la relación con tus cuentas.'
-  const createModalWidthClassName = useMemo(() => {
-    if (modalStep === 'select_type') return 'max-w-[min(96vw,580px)]'
-
-    switch (selectedOperationType) {
-      case 'income':
-      case 'expense':
-      case 'transfer':
-        return 'max-w-[min(96vw,920px)]'
-      case 'asset_purchase':
-      case 'payable_issue':
-      case 'payable_pay':
-      case 'receivable_issue':
-      case 'receivable_collect':
-        return 'max-w-[min(96vw,960px)]'
-      default:
-        return 'max-w-[min(96vw,920px)]'
-    }
-  }, [modalStep, selectedOperationType])
+  const createModalWidthClassName = 'max-w-[min(96vw,580px)]'
 
   const fallbackPortfolioOptions = useMemo<ExportPortfolioOption[]>(
     () =>
@@ -567,7 +591,19 @@ export function TransactionsWorkspace({
                   <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></svg>
                   <span className="capitalize">{reportMonthLabel}</span>
                 </span>
-                <CreateModuleButton onClick={openCreateModal} label="Nuevo movimiento" className="w-full !h-9 !px-3 !text-[12px] sm:w-auto" testId="transactions-summary-create-button" />
+                <div ref={operationMenuAnchorRef} className="w-full sm:w-auto">
+                  <CreateModuleButton
+                    onClick={openCreateModal}
+                    label="Nuevo movimiento"
+                    className="w-full !h-9 !px-3 !text-[12px] sm:w-auto"
+                    testId="transactions-summary-create-button"
+                    ariaHasPopup={isDesktopOperationSelector ? 'menu' : 'dialog'}
+                    ariaExpanded={isDesktopOperationSelector
+                      ? isOperationPopoverOpen
+                      : isModalOpen && modalStep === 'select_type'}
+                    ariaControls={isDesktopOperationSelector ? operationMenuId : 'transaction-operation-selector-dialog'}
+                  />
+                </div>
               </div>
             </header>
 
@@ -602,16 +638,25 @@ export function TransactionsWorkspace({
         )}
       />
 
+      <OperationTypePopover
+        anchorRef={operationMenuAnchorRef}
+        menuId={operationMenuId}
+        open={isOperationPopoverOpen}
+        onClose={dismissOperationPopover}
+        onSelect={handleOperationTypeSelected}
+      />
+
       {/* ── MODAL CREAR TRANSACCIÓN (PRD: flujo 2 pasos) ─────────── */}
       <RecordModal
         open={isModalOpen}
+        dialogId="transaction-operation-selector-dialog"
         onClose={closeCreateModal}
         title={modalTitle}
         subtitle={modalSubtitle}
         widthClassName={createModalWidthClassName}
         presentation="workbench"
         motionSource="pointer"
-        overlayClassName={styles.astraOverlay}
+        overlayClassName={modalStep === 'form' ? styles.formOverlay : styles.astraOverlay}
       >
         {modalStep === 'select_type' ? (
           <OperationTypeSelector onSelect={handleOperationTypeSelected} />
@@ -653,6 +698,9 @@ export function TransactionsWorkspace({
         title="Exportar movimientos"
         subtitle="Selecciona periodo, ejercicio, portafolios y formato para generar un reporte profesional."
         widthClassName="max-w-[min(96vw,920px)]"
+        presentation="workbench"
+        motionSource="pointer"
+        overlayClassName={styles.formOverlay}
       >
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">

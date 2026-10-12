@@ -3117,7 +3117,7 @@ export function TransactionForm({
           />
         )}
 
-        <div className="grid grid-cols-1 gap-4 min-[860px]:grid-cols-[minmax(0,1.04fr)_minmax(320px,0.96fr)] min-[860px]:items-start min-[860px]:gap-5">
+        <div className="astra-form-grid grid grid-cols-1 gap-4 min-[860px]:grid-cols-[minmax(0,1.04fr)_minmax(320px,0.96fr)] min-[860px]:items-start min-[860px]:gap-5">
           <div className="space-y-4">
             {primaryContextZone}
           </div>

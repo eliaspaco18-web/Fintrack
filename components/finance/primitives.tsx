@@ -521,6 +521,7 @@ export function ConfirmDialog({
   testId,
   cancelTestId,
   confirmTestId,
+  overlayClassName,
 }: {
   open: boolean
   title: string
@@ -534,6 +535,7 @@ export function ConfirmDialog({
   testId?: string
   cancelTestId?: string
   confirmTestId?: string
+  overlayClassName?: string
 }) {
   const titleId = useId()
   const descriptionId = useId()
@@ -541,7 +543,7 @@ export function ConfirmDialog({
   if (!open) return null
 
   return (
-    <ModalOverlayPortal className="z-modal" data-testid={testId} onClick={() => {
+    <ModalOverlayPortal className={`z-modal ${overlayClassName ?? ''}`.trim()} data-testid={testId} onClick={() => {
       if (!loading) onCancel()
     }}>
       <FocusTrap active={open} onEscape={() => {

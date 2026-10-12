@@ -139,7 +139,7 @@ function TransactionIdentityMark({ transaction }: { transaction: TransactionList
   return (
     <span
       aria-hidden="true"
-      className={`inline-flex h-7 w-7 shrink-0 items-center justify-center border border-[var(--ft-border)] ${styles.identityMark} ${tone}`}
+      className={`inline-flex h-7 w-7 shrink-0 items-center justify-center border border-[var(--ft-border)] ${styles.identityMark} ${transaction.type === 'INCOME' ? styles.identityIncome : transaction.type === 'EXPENSE' ? styles.identityExpense : styles.identityTransfer} ${tone}`}
     >
       {transaction.type === 'TRANSFER' ? (
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 7h13l-3-3m3 3-3 3M17 17H4l3 3m-3-3 3-3" /></svg>
@@ -169,7 +169,7 @@ function TransactionAccountPath({ transaction }: { transaction: TransactionListI
 
 function MobileTransactionSkeletons() {
   return (
-    <div aria-hidden="true" className="divide-y divide-[var(--ft-border)] lg:hidden">
+    <div aria-hidden="true" className="divide-y divide-[var(--ft-border)] md:hidden">
       {Array.from({ length: 6 }).map((_, index) => (
         <div key={index} className="space-y-3 px-4 py-4 sm:px-5">
           <div className="flex items-start gap-3">
@@ -192,7 +192,7 @@ function MobileTransactionSkeletons() {
 
 function DesktopLedgerSkeletons() {
   return (
-    <div aria-hidden="true" className="hidden lg:block">
+    <div aria-hidden="true" className="hidden md:block">
       <div className="divide-y divide-[var(--ft-border)]">
         {Array.from({ length: 8 }).map((_, index) => (
           <div key={index} className="grid min-h-[82px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-5 py-3">
@@ -1361,7 +1361,7 @@ export function TransactionTable({
               <DataSearchField
                 value={search}
                 onChange={setSearch}
-                placeholder="Buscar por descripción…"
+                placeholder="Buscar un movimiento"
                 aria-label="Buscar movimientos por descripción"
                 data-testid="transactions-search-input"
                 className="min-w-[200px] flex-[1_1_230px]"
@@ -1390,17 +1390,6 @@ export function TransactionTable({
                     ) : null}
                   </span>
                 </Button>
-                <div role="group" aria-label="Periodo rápido" className="flex shrink-0 items-center gap-1">
-                  {QUICK_FILTERS.filter(filter => filter.key === 'this_month' || filter.key === 'last_month').map(filter => (
-                    <DataFilterPreset
-                      key={filter.key}
-                      label={filter.label}
-                      active={activeFilter === filter.key}
-                      onClick={() => handleQuickFilter(filter.key)}
-                      testId={`transactions-quick-filter-${filter.key}`}
-                    />
-                  ))}
-                </div>
               <SavedViewsToolbar
                 value={selectedSavedViewId}
                 onChange={nextId => {
@@ -1493,6 +1482,20 @@ export function TransactionTable({
               aria-label="Filtros avanzados de movimientos"
               className="grid gap-4 sm:grid-cols-2"
             >
+              <div role="group" aria-label="Periodo rápido" className="sm:col-span-2">
+                <p className="mb-2 text-[12px] font-medium text-[var(--ft-text-muted)]">Período</p>
+                <div className="flex flex-wrap gap-2">
+                  {QUICK_FILTERS.filter(filter => filter.key === 'this_month' || filter.key === 'last_month').map(filter => (
+                    <DataFilterPreset
+                      key={filter.key}
+                      label={filter.label}
+                      active={activeFilter === filter.key}
+                      onClick={() => handleQuickFilter(filter.key)}
+                      testId={`transactions-quick-filter-${filter.key}`}
+                    />
+                  ))}
+                </div>
+              </div>
               <div className="block min-w-0 space-y-1.5 xl:col-span-1">
                 <span className="text-[12px] font-medium text-[var(--ft-text-muted)]">Cuenta</span>
                 <AppSelect
@@ -1603,7 +1606,7 @@ export function TransactionTable({
         {isLoading ? (
           <MobileTransactionSkeletons />
         ) : isEmpty ? (
-          <div className="lg:hidden">
+          <div className="md:hidden">
             <FinanceEmptyState
               icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"/></svg>}
               title={hasFilteringCriteria ? 'Sin coincidencias' : 'Sin transacciones'}
@@ -1613,7 +1616,7 @@ export function TransactionTable({
             />
           </div>
         ) : (
-          <div className="lg:hidden">
+          <div className="md:hidden">
             <div className="flex items-center justify-between gap-3 border-b border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-4 py-2.5 sm:px-5">
               <label className="inline-flex min-h-9 items-center gap-2 text-[11px] font-medium text-[var(--ft-text-muted)]">
                 <input
@@ -1700,7 +1703,7 @@ export function TransactionTable({
 
         {/* ── FALLBACK RESPONSIVE: PAGINACIÓN ──────────────────────────── */}
         {pagination ? (
-          <div className="lg:hidden">
+          <div className="md:hidden">
             <DataPagination
               page={pagination.page}
               totalPages={totalPages}
@@ -1715,7 +1718,7 @@ export function TransactionTable({
         {isLoading ? (
           <DesktopLedgerSkeletons />
         ) : isEmpty ? (
-          <div className="hidden lg:block">
+          <div className="hidden md:block">
             <FinanceEmptyState
               icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"/></svg>}
               title={hasFilteringCriteria ? 'Sin coincidencias' : 'Sin transacciones'}
@@ -1724,14 +1727,14 @@ export function TransactionTable({
             />
           </div>
         ) : (
-          <section aria-labelledby="transactions-ledger-heading" className="hidden min-w-0 lg:block">
+          <section aria-labelledby="transactions-ledger-heading" className="hidden min-w-0 md:block">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[940px] table-fixed border-collapse text-left" aria-label="Registro de movimientos">
+              <table className={`desktop-table w-full table-fixed border-collapse text-left ${styles.astraLedger}`} aria-label="Registro de movimientos">
                 <colgroup>
                   <col className="w-[5%]" />
                   <col className="w-[24%]" />
-                  <col className="w-[17%]" />
-                  <col className="w-[18%]" />
+                  <col className="col-account w-[17%]" />
+                  <col className="col-category w-[18%]" />
                   <col className="w-[15%]" />
                   <col className="w-[14%]" />
                   <col className="w-[7%]" />
@@ -1743,8 +1746,8 @@ export function TransactionTable({
                         <input ref={selectAllRef} type="checkbox" checked={allVisibleSelected} onChange={toggleSelectVisible} aria-label="Seleccionar transacciones visibles" className="h-4 w-4 rounded border border-[var(--ft-border)] accent-[var(--ft-primary)]" />
                       </th>
                       <th scope="col" id="transactions-ledger-heading" className="px-3">Movimiento</th>
-                      <th scope="col" className="px-2">Cuenta / ruta</th>
-                      <th scope="col" className="px-2">Categoría</th>
+                      <th scope="col" className="col-account px-2">Cuenta / ruta</th>
+                      <th scope="col" className="col-category px-2">Categoría</th>
                       <th scope="col" aria-sort={sortBy === 'transaction_date' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} className="px-2">
                         <button type="button" onClick={() => setSort(`transaction_date-${sortBy === 'transaction_date' && sortDir === 'desc' ? 'asc' : 'desc'}`)} className="rounded-control py-1 text-left hover:text-[var(--ft-text-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ft-focus-ring-color)]">
                           Fecha {sortBy === 'transaction_date' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
@@ -1787,19 +1790,19 @@ export function TransactionTable({
                       aria-controls="transactions-review-panel"
                       aria-expanded={isFocused && reviewPanelVisible}
                       aria-label={`Revisar ${tx.description}`}
-                      className="flex min-h-8 min-w-0 items-center gap-2.5 rounded-control text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]"
+                      className="tx-cell flex min-h-8 min-w-0 items-center gap-2.5 rounded-control text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]"
                     >
                       <TransactionIdentityMark transaction={tx} />
                       <div className="min-w-0">
-                        <p className="truncate text-[13px] font-semibold leading-4 text-[var(--ft-text-strong)]">{tx.description}</p>
+                        <p className="row-button truncate text-[13px] font-semibold leading-4 text-[var(--ft-text-strong)]">{tx.description}</p>
                         <span className={`${styles.desktopDescriptionType} ${TYPE_CONFIG[tx.type].className}`}>
                           {TYPE_CONFIG[tx.type].label}
                         </span>
                       </div>
                     </button>
                     </td>
-                    <td className="px-2 py-0 align-middle"><TransactionAccountPath transaction={tx} /></td>
-                    <td className="px-2 py-0 align-middle">
+                    <td className="col-account px-2 py-0 align-middle"><TransactionAccountPath transaction={tx} /></td>
+                    <td className="col-category px-2 py-0 align-middle">
                       {tx.category ? <p className="truncate text-[12px] font-medium text-[var(--ft-text-strong)]">{normalizeCategoryLabel(tx.category.name)}</p> : <p className="text-[12px] text-[var(--ft-text-subtle)]">Sin categoría</p>}
                       <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                         <ModuleBadges tx={tx} />
@@ -2083,7 +2086,7 @@ export function TransactionTable({
 
       {saveViewModalOpen && (
         <ModalOverlayPortal
-          className="z-[80]"
+          className={`${styles.astraOverlay} z-[80]`}
           onClick={closeSaveViewModal}
           data-testid="transactions-save-view-modal"
         >
@@ -2178,6 +2181,7 @@ export function TransactionTable({
         cancelTestId="transactions-delete-view-cancel-button"
         confirmTestId="transactions-delete-view-confirm-button"
         confirmLabel="Eliminar"
+        overlayClassName={styles.astraOverlay}
       />
 
       <ConfirmDialog
@@ -2207,6 +2211,7 @@ export function TransactionTable({
         cancelTestId="transactions-delete-cancel-button"
         confirmTestId="transactions-delete-confirm-button"
         confirmLabel="Eliminar"
+        overlayClassName={styles.astraOverlay}
       />
 
       <ConfirmDialog
@@ -2235,6 +2240,7 @@ export function TransactionTable({
         cancelTestId="transactions-bulk-delete-cancel-button"
         confirmTestId="transactions-bulk-delete-confirm-button"
         confirmLabel="Eliminar seleccionadas"
+        overlayClassName={styles.astraOverlay}
       />
     </div>
   )

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { TransactionForm } from '@/components/forms/TransactionForm'
 import { RecordModal } from '@/components/ui/RecordModal'
+import styles from '@/components/tables/TransactionsRound07.module.css'
 import { InlineFeedback } from '@/components/forms/TransactionForm/FormFields'
 import {
   operationTypeLabel,
@@ -214,6 +215,7 @@ export function TransactionEditModal({
       testId="transaction-edit-modal"
       presentation="workbench"
       motionSource="pointer"
+      overlayClassName={styles.formOverlay}
     >
       {error ? (
         <InlineFeedback type="error" message={error} />
