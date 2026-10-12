@@ -36,9 +36,11 @@ export function DataTable({
 export function DataToolbar({
   children,
   className = '',
+  compact = false,
 }: {
   children: ReactNode
   className?: string
+  compact?: boolean
 }) {
   return (
     <div
@@ -47,7 +49,7 @@ export function DataToolbar({
         className,
       )}
     >
-      <div className="flex flex-col gap-3">{children}</div>
+      <div className={`flex flex-col ${compact ? 'gap-1.5' : 'gap-3'}`}>{children}</div>
     </div>
   )
 }
@@ -155,7 +157,7 @@ export function DataFilterPreset({
       } : undefined}
     >
       {label}
-      {count !== undefined && count > 0 ? (
+      {count !== undefined ? (
         <span className={joinClasses('text-[10px] tabular-nums', active ? 'opacity-65' : 'opacity-50')}>
           {count}
         </span>
@@ -275,29 +277,32 @@ export function SavedViewsToolbar({
   deleteTestId?: string
 }) {
   return (
-    <div className={joinClasses('flex w-full flex-wrap items-center gap-2 md:justify-end', className)}>
+    <div className={joinClasses('flex w-full flex-wrap items-center gap-1.5 md:w-auto md:flex-nowrap md:justify-end', className)}>
       <AppSelect
         value={value}
         onChange={onChange}
         testId={selectTestId}
-        className="filters-control sm:w-[165px]"
+        className="filters-control w-full sm:w-[165px]"
         compact
         searchPlaceholder="Buscar vista..."
         options={options}
       />
-      <Button type="button" onClick={onSave} testId={saveTestId} variant="secondary" size="sm">
-        Guardar vista
+      <Button type="button" onClick={onSave} testId={saveTestId} title="Guardar vista actual" aria-label="Guardar vista actual" variant="secondary" size="sm">
+        Guardar
       </Button>
-      <Button
-        type="button"
-        onClick={onDelete}
-        testId={deleteTestId}
-        disabled={deleteDisabled}
-        variant="danger"
-        size="sm"
-      >
-        Eliminar vista
-      </Button>
+      {!deleteDisabled ? (
+        <Button
+          type="button"
+          onClick={onDelete}
+          testId={deleteTestId}
+          title="Eliminar vista seleccionada"
+          aria-label="Eliminar vista seleccionada"
+          variant="danger"
+          size="sm"
+        >
+          Eliminar
+        </Button>
+      ) : null}
     </div>
   )
 }

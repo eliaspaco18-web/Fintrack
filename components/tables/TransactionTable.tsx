@@ -7,6 +7,7 @@
 // =============================================================================
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import useSWR from 'swr'
 import { useState, useCallback,
          useDeferredValue,
          useEffect,
@@ -43,7 +44,6 @@ import { ModalOverlayPortal }        from '@/components/ui/ModalOverlayPortal'
 import { AppSelect }                 from '@/components/ui/AppSelect'
 import { Button }                    from '@/components/ui/Button'
 import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
-import { FinancialIcon }             from '@/components/ui/FinancialIcon'
 import { AnchoredActionMenu }        from '@/components/ui/AnchoredActionMenu'
 import { TransactionEditModal }      from '@/components/forms/TransactionEditModal'
 import type { TransactionType }      from '@/types/database.types'
@@ -89,16 +89,6 @@ const TYPE_CONFIG: Record<TransactionType, { label: string; prefix: string; clas
 
 // ─── TYPE BADGE ───────────────────────────────────────────────────────────────
 
-function TypeBadge({ type }: { type: TransactionType }) {
-  const cfg = TYPE_CONFIG[type]
-  return (
-    <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${cfg.className}`}>
-      <span aria-hidden="true" className="font-mono text-[12px]">{cfg.prefix}</span>
-      {cfg.label}
-    </span>
-  )
-}
-
 // ─── MODULE BADGES ────────────────────────────────────────────────────────────
 
 function ModuleBadges({ tx }: {
@@ -128,19 +118,33 @@ function ModuleBadges({ tx }: {
   )
 }
 
-function TransactionIdentityMark({ transaction }: { transaction: TransactionListItem }) {
-  const identity = transaction.category ?? transaction.sourceAccount ?? transaction.destinationAccount
-  const iconName = identity?.icon || (transaction.type === 'TRANSFER' ? 'wallet' : 'tag')
-  const iconColor = identity?.color || 'var(--ft-text-muted)'
+function TransactionContext({ transaction }: { transaction: TransactionListItem }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-4 text-[var(--ft-text-muted)]">
+      {transaction.category ? <span>{normalizeCategoryLabel(transaction.category.name)}</span> : null}
+      <span className={`font-medium ${TYPE_CONFIG[transaction.type].className}`}>{TYPE_CONFIG[transaction.type].label}</span>
+      {!transaction.affectsReports ? <span className="text-[var(--ft-warning)]">No afecta reportes</span> : null}
+      <ModuleBadges tx={transaction} />
+    </div>
+  )
+}
 
+function TransactionIdentityMark({ transaction }: { transaction: TransactionListItem }) {
+  const tone = transaction.type === 'INCOME'
+    ? 'text-[var(--ft-success)] bg-[var(--ft-success-soft)]'
+    : transaction.type === 'EXPENSE'
+      ? 'text-[var(--ft-danger)] bg-[var(--ft-danger-soft)]'
+      : 'text-[var(--ft-text-muted)] bg-[var(--ft-surface-muted)]'
   return (
     <span
       aria-hidden="true"
-      className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-surface border border-[var(--ft-border)] bg-[var(--ft-surface-muted)]"
+      className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--ft-border)] ${tone}`}
     >
-      <span style={{ color: iconColor }}>
-        <FinancialIcon name={iconName} size={17} />
-      </span>
+      {transaction.type === 'TRANSFER' ? (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 7h13l-3-3m3 3-3 3M17 17H4l3 3m-3-3 3-3" /></svg>
+      ) : (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={transaction.type === 'INCOME' ? 'M12 4v16m-7-7 7 7 7-7' : 'M12 20V4m-7 7 7-7 7 7'} /></svg>
+      )}
     </span>
   )
 }
@@ -158,24 +162,6 @@ function TransactionAccountPath({ transaction }: { transaction: TransactionListI
           <span className="truncate">{destinationName}</span>
         </p>
       ) : null}
-    </div>
-  )
-}
-
-function TransactionContext({ transaction }: { transaction: TransactionListItem }) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-4 text-[var(--ft-text-muted)]">
-      {transaction.category ? (
-        <span>{normalizeCategoryLabel(transaction.category.name)}</span>
-      ) : null}
-      <TypeBadge type={transaction.type} />
-      {!transaction.affectsReports ? (
-        <span className="inline-flex items-center gap-1 text-[var(--ft-warning)]">
-          <span aria-hidden="true" className="h-1 w-1 rounded-full bg-current" />
-          No afecta reportes
-        </span>
-      ) : null}
-      <ModuleBadges tx={transaction} />
     </div>
   )
 }
@@ -303,6 +289,40 @@ interface SavedTransactionView {
   state: SavedTransactionViewState
 }
 
+interface TransactionTypeCounts {
+  all: number
+  income: number
+  expense: number
+  transfer: number
+}
+
+async function fetchTransactionTypeCounts(scopeKey: string): Promise<TransactionTypeCounts> {
+  const scope = JSON.parse(scopeKey) as Partial<TransactionListParams>
+  const countFor = async (type?: TransactionType) => {
+    const query = new URLSearchParams({ page: '1', per_page: '1' })
+    if (type) query.set('type', type)
+    Object.entries(scope).forEach(([name, value]) => {
+      if (value !== undefined && value !== null && value !== '') query.set(name, String(value))
+    })
+
+    const response = await fetchWithTimeout(`/api/transactions?${query.toString()}`)
+    const payload = await response.json()
+    const total = payload?.data?.pagination?.total
+    if (!response.ok || payload?.ok !== true || !Number.isInteger(total) || total < 0) {
+      throw new Error('TRANSACTION_COUNT_UNAVAILABLE')
+    }
+    return total as number
+  }
+
+  const [all, income, expense, transfer] = await Promise.all([
+    countFor(),
+    countFor('INCOME'),
+    countFor('EXPENSE'),
+    countFor('TRANSFER'),
+  ])
+  return { all, income, expense, transfer }
+}
+
 const QUICK_FILTER_SET = new Set<QuickFilter>(
   QUICK_FILTERS.map(filter => filter.key)
 )
@@ -364,6 +384,16 @@ function normalizeCategoryLabel(raw: string): string {
   const withoutPrefix = clean.replace(prefixPattern, '')
   const normalized = withoutPrefix.replace(/\s+/g, ' ').trim()
   return normalized.length > 0 ? normalized : clean
+}
+
+function TransactionDate({ date }: { date: string }) {
+  if (!date) return <span className="whitespace-nowrap text-[12px] tabular-nums text-[var(--ft-text-muted)]">—</span>
+  const normalized = date.includes('T') ? date : `${date}T12:00:00`
+  const value = new Date(normalized)
+  const formatted = Number.isNaN(value.getTime())
+    ? '—'
+    : value.toLocaleDateString('es-PE', { day: 'numeric', month: 'short', year: 'numeric' })
+  return <span className="whitespace-nowrap text-[12px] tabular-nums text-[var(--ft-text-muted)]">{formatted}</span>
 }
 
 function isSortValue(value: string): boolean {
@@ -600,6 +630,22 @@ export function TransactionTable({
   const reviewReturnFocusRef = useRef<HTMLElement | null>(null)
 
   const deferredSearch = useDeferredValue(search)
+
+  const typeCountScopeKey = useMemo(() => {
+    const quickScope = QuickFilterParams[activeFilter]
+    return JSON.stringify({
+      search: deferredSearch || undefined,
+      account_id: accountId || undefined,
+      category_id: categoryId || undefined,
+      date_from: dateFrom || quickScope.date_from,
+      date_to: dateTo || quickScope.date_to,
+    })
+  }, [accountId, activeFilter, categoryId, dateFrom, dateTo, deferredSearch])
+  const { data: transactionTypeCounts } = useSWR<TransactionTypeCounts>(
+    typeCountScopeKey,
+    fetchTransactionTypeCounts,
+    { revalidateOnFocus: false, dedupingInterval: 30_000 },
+  )
 
   const [sortBy, sortDir] = sort.split('-') as [TransactionListParams['sort_by'], 'asc' | 'desc']
   const selectedSavedView = useMemo(
@@ -1281,50 +1327,40 @@ export function TransactionTable({
                 onRetry={() => setFilterOptionsReloadTick(prev => prev + 1)}
               />
             )}
-            <DataToolbar className="space-y-2.5 border-y border-[var(--ft-border)] bg-transparent px-0 py-2.5">
-          <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <DataToolbarRow aria-label="Tipo de movimiento" className="filters-row-tight min-w-0 flex-nowrap overflow-x-auto">
-                {QUICK_FILTERS.filter(filter => ['all', 'income', 'expense', 'transfer'].includes(filter.key)).map(filter => (
-                  <DataFilterPreset
-                    key={filter.key}
-                    label={filter.label}
-                    active={activeFilter === filter.key}
-                    onClick={() => handleQuickFilter(filter.key)}
-                    testId={`transactions-quick-filter-${filter.key}`}
-                  />
-                ))}
-              </DataToolbarRow>
-              <span aria-hidden="true" className="hidden h-6 border-l border-[var(--ft-border)] sm:block" />
-              <DataToolbarRow aria-label="Periodo rápido" className="filters-row-tight min-w-0 flex-nowrap overflow-x-auto">
-                {QUICK_FILTERS.filter(filter => filter.key === 'this_month' || filter.key === 'last_month').map(filter => (
-                  <DataFilterPreset
-                    key={filter.key}
-                    label={filter.label}
-                    active={activeFilter === filter.key}
-                    onClick={() => handleQuickFilter(filter.key)}
-                    testId={`transactions-quick-filter-${filter.key}`}
-                  />
-                ))}
-              </DataToolbarRow>
-            </div>
-            <p className="shrink-0 text-[11px] font-medium tabular-nums text-[var(--ft-text-muted)]">
-              {isLoading
-                ? 'Cargando movimientos…'
-                : pagination
-                  ? `${pagination.total} movimiento${pagination.total === 1 ? '' : 's'}`
-                  : 'Movimientos'}
-            </p>
+            <DataToolbar compact className="border-y border-[var(--ft-border)] bg-transparent px-0 py-1.5">
+          <div role="group" aria-label="Tipo de movimiento" className="flex min-w-0 max-w-full items-center gap-1 overflow-x-auto border-b border-[var(--ft-border)]">
+            {QUICK_FILTERS.filter(filter => ['all', 'income', 'expense', 'transfer'].includes(filter.key)).map(filter => {
+              const countKey = filter.key === 'all' ? 'all' : filter.key
+              const count = transactionTypeCounts?.[countKey as keyof TransactionTypeCounts]
+              const active = filter.key === 'all'
+                ? !['income', 'expense', 'transfer'].includes(activeFilter)
+                : activeFilter === filter.key
+              return (
+                <button
+                  key={filter.key}
+                  type="button"
+                  data-testid={`transactions-quick-filter-${filter.key}`}
+                  aria-pressed={active}
+                  onClick={() => handleQuickFilter(filter.key)}
+                  className={`inline-flex h-9 shrink-0 items-center gap-1.5 border-b-2 px-2.5 text-[12px] font-medium transition-colors duration-fast motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ft-focus-ring-color)] ${active ? 'border-[var(--ft-primary)] text-[var(--ft-primary)]' : 'border-transparent text-[var(--ft-text-muted)] hover:text-[var(--ft-text-strong)]'}`}
+                >
+                  {filter.label}
+                  <span className={`text-[10px] tabular-nums ${active ? 'text-[var(--ft-primary)]' : 'text-[var(--ft-text-subtle)]'}`}>
+                    {count ?? '—'}
+                  </span>
+                </button>
+              )
+            })}
           </div>
 
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
               <DataSearchField
                 value={search}
                 onChange={setSearch}
                 placeholder="Buscar por descripción…"
                 aria-label="Buscar movimientos por descripción"
                 data-testid="transactions-search-input"
-                className="min-w-[220px] flex-1 xl:max-w-[360px]"
+                className="min-w-[200px] flex-[1_1_240px] xl:max-w-[320px]"
               />
                 <Button
                   type="button"
@@ -1350,15 +1386,17 @@ export function TransactionTable({
                     ) : null}
                   </span>
                 </Button>
-                <Button
-                  type="button"
-                  onClick={resetAllFilters}
-                  testId="transactions-reset-filters-button"
-                  variant={hasAdjustedControls ? 'secondary' : 'ghost'}
-                  size="sm"
-                >
-                  Limpiar
-                </Button>
+                <div role="group" aria-label="Periodo rápido" className="flex shrink-0 items-center gap-1">
+                  {QUICK_FILTERS.filter(filter => filter.key === 'this_month' || filter.key === 'last_month').map(filter => (
+                    <DataFilterPreset
+                      key={filter.key}
+                      label={filter.label}
+                      active={activeFilter === filter.key}
+                      onClick={() => handleQuickFilter(filter.key)}
+                      testId={`transactions-quick-filter-${filter.key}`}
+                    />
+                  ))}
+                </div>
               <SavedViewsToolbar
                 value={selectedSavedViewId}
                 onChange={nextId => {
@@ -1380,25 +1418,28 @@ export function TransactionTable({
                   ...savedViews.map(view => ({ value: view.id, label: view.name })),
                 ]}
               />
+              {hasAdjustedControls ? (
+                <Button type="button" onClick={resetAllFilters} testId="transactions-reset-filters-button" variant="ghost" size="sm">
+                  Limpiar
+                </Button>
+              ) : null}
               {toolbarActions}
           </div>
 
-          {activeContextLabels.length > 0 ? (
-            <div
-              aria-label="Contexto activo del registro"
-              className="flex flex-wrap items-center gap-1.5 border-t border-[var(--ft-border)] pt-3"
-            >
-              <span className="mr-1 text-[11px] font-medium text-[var(--ft-text-muted)]">Contexto activo</span>
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[10px]" aria-label="Contexto activo del registro">
+              <span className="mr-1 font-medium text-[var(--ft-text-muted)]">{activeContextLabels.length ? 'Contexto activo' : 'Todos los movimientos'}</span>
               {activeContextLabels.map(label => (
                 <span
                   key={label}
-                  className="rounded-control border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-2 py-1 text-[11px] text-[var(--ft-text-muted)]"
+                  className="rounded-full border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-2 py-0.5 text-[10px] text-[var(--ft-text-muted)]"
                 >
                   {label}
                 </span>
               ))}
-            </div>
-          ) : null}
+              <span className="ml-auto shrink-0 tabular-nums text-[var(--ft-text-muted)]">
+                {isLoading ? 'Cargando…' : pagination ? `${pagination.total} movimiento${pagination.total === 1 ? '' : 's'}` : '—'}
+              </span>
+          </div>
 
           {selectedTransactionIds.length > 0 ? (
             <DataToolbarRow className="items-center justify-between gap-3 rounded-surface border border-[var(--ft-primary-border)] bg-[var(--ft-primary-soft)] px-3 py-2.5">
@@ -1683,12 +1724,12 @@ export function TransactionTable({
               <table className="w-full min-w-[940px] table-fixed border-collapse text-left" aria-label="Registro de movimientos">
                 <colgroup>
                   <col className="w-[4%]" />
-                  <col className="w-[33%]" />
+                  <col className="w-[29%]" />
                   <col className="w-[17%]" />
                   <col className="w-[16%]" />
                   <col className="w-[12%]" />
-                  <col className="w-[12%]" />
-                  <col className="w-[6%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[8%]" />
                 </colgroup>
                 {!isLoading && !isEmpty ? (
                   <thead className="border-b border-[var(--ft-border)] bg-[var(--ft-surface-muted)] text-[11px] font-semibold text-[var(--ft-text-muted)]">
@@ -1733,7 +1774,7 @@ export function TransactionTable({
                       className="h-4 w-4 rounded border border-[var(--ft-border)] text-[var(--ft-primary)] accent-[var(--ft-primary)]"
                     />
                     </td>
-                    <td className="px-3 py-1.5 align-middle">
+                    <td className="px-3 py-0 align-middle">
                     <button
                       type="button"
                       onClick={() => activateTransactionRow(tx.id)}
@@ -1741,9 +1782,9 @@ export function TransactionTable({
                       aria-controls="transactions-review-panel"
                       aria-expanded={isFocused && reviewPanelVisible}
                       aria-label={`Revisar ${tx.description}`}
-                      className="flex min-h-10 min-w-0 items-center gap-2.5 rounded-control text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]"
+                      className="flex min-h-11 min-w-0 items-center gap-2 rounded-control text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]"
                     >
-                      <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-[var(--ft-primary)]" />
+                      <TransactionIdentityMark transaction={tx} />
                       <div className="min-w-0">
                         <p className="truncate text-[13px] font-semibold leading-4 text-[var(--ft-text-strong)]">{tx.description}</p>
                         <span className={`mt-0.5 inline-flex text-[10px] font-medium leading-3 ${TYPE_CONFIG[tx.type].className}`} aria-label={TYPE_CONFIG[tx.type].label}>
@@ -1752,16 +1793,16 @@ export function TransactionTable({
                       </div>
                     </button>
                     </td>
-                    <td className="px-2 py-1.5 align-middle"><TransactionAccountPath transaction={tx} /></td>
-                    <td className="px-2 py-1.5 align-middle">
+                    <td className="px-2 py-0 align-middle"><TransactionAccountPath transaction={tx} /></td>
+                    <td className="px-2 py-0 align-middle">
                       {tx.category ? <p className="truncate text-[12px] font-medium text-[var(--ft-text-strong)]">{normalizeCategoryLabel(tx.category.name)}</p> : <p className="text-[12px] text-[var(--ft-text-subtle)]">Sin categoría</p>}
                       <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                         <ModuleBadges tx={tx} />
                         {!tx.affectsReports ? <span className="text-[10px] text-[var(--ft-warning)]">No reportable</span> : null}
                       </div>
                     </td>
-                    <td className="px-2 py-1.5 align-middle text-[var(--ft-text-muted)]"><DateCell date={tx.transactionDate} /></td>
-                    <td className="px-3 py-1.5 align-middle text-right">
+                    <td className="px-2 py-0 align-middle text-[var(--ft-text-muted)]"><TransactionDate date={tx.transactionDate} /></td>
+                    <td className="px-3 py-0 align-middle text-right">
                       <p className={`whitespace-nowrap font-mono text-[12px] font-semibold tabular-nums ${TYPE_CONFIG[tx.type].className}`}>
                         {tx.type === 'TRANSFER' ? '' : TYPE_CONFIG[tx.type].prefix}
                         {formatCurrency(Math.abs(tx.amount), tx.currency as 'PEN' | 'USD')}
@@ -1853,66 +1894,56 @@ export function TransactionTable({
       >
         {focusedTransaction ? (
           <>
-            <div className="flex items-start gap-3" aria-live="polite">
-                <TransactionIdentityMark transaction={focusedTransaction} />
-                <div className="min-w-0 pt-0.5">
-                  <p className="text-[11px] font-medium text-[var(--ft-text-muted)]">Identidad y clasificación</p>
-                  <div className="mt-1.5">
-                    <TransactionContext transaction={focusedTransaction} />
-                  </div>
-                </div>
-              </div>
-
-              <div className="-mx-6 border-y border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-6 py-5">
+              <div className="-mx-6 border-y border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-6 py-4" aria-live="polite">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="text-[11px] font-medium text-[var(--ft-text-muted)]">Importe original</p>
-                    <p className="mt-1 text-[11px] leading-4 text-[var(--ft-text-subtle)]">Moneda del movimiento</p>
+                    <p className="text-[11px] font-medium text-[var(--ft-text-muted)]">Importe original · {focusedTransaction.currency}</p>
+                    <p className="mt-1 text-[11px] leading-4 text-[var(--ft-text-subtle)]">
+                      <TransactionDate date={focusedTransaction.transactionDate} />
+                    </p>
                   </div>
-                  <p className={`font-mono text-[25px] font-semibold leading-8 tracking-[-0.04em] tabular-nums ${TYPE_CONFIG[focusedTransaction.type].className}`}>
+                  <p className={`whitespace-nowrap font-mono text-[30px] font-semibold leading-9 tracking-[-0.045em] tabular-nums ${TYPE_CONFIG[focusedTransaction.type].className}`}>
                     {focusedTransaction.type === 'TRANSFER' ? '' : TYPE_CONFIG[focusedTransaction.type].prefix}
                     {formatCurrency(Math.abs(focusedTransaction.amount), focusedTransaction.currency as 'PEN' | 'USD')}
                   </p>
                 </div>
               </div>
 
-              <div className="mt-5 flex items-center justify-between gap-3">
-                <p className="text-[11px] font-semibold text-[var(--ft-text-strong)]">Datos del movimiento</p>
-                <span className="text-[10px] text-[var(--ft-text-subtle)]">Solo campos disponibles</span>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <section className="min-w-0 rounded-surface border border-[var(--ft-border)] bg-[var(--ft-surface)] px-3 py-2.5" aria-label="Cuenta relacionada">
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--ft-text-muted)]">
+                    {focusedTransaction.destinationAccount ? 'Ruta entre cuentas' : 'Cuenta'}
+                  </p>
+                  <TransactionAccountPath transaction={focusedTransaction} />
+                </section>
+                <section className="min-w-0 rounded-surface border border-[var(--ft-border)] bg-[var(--ft-surface)] px-3 py-2.5" aria-label="Clasificación">
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--ft-text-muted)]">Clasificación</p>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <TransactionIdentityMark transaction={focusedTransaction} />
+                    <div className="min-w-0">
+                      <p className="truncate text-[12px] font-semibold text-[var(--ft-text-strong)]">
+                        {focusedTransaction.category?.name ? normalizeCategoryLabel(focusedTransaction.category.name) : 'Sin categoría'}
+                      </p>
+                      <p className={`text-[11px] font-medium ${TYPE_CONFIG[focusedTransaction.type].className}`}>{TYPE_CONFIG[focusedTransaction.type].label}</p>
+                    </div>
+                  </div>
+                </section>
               </div>
-              <dl className="mt-2 divide-y divide-[var(--ft-border)] border-y border-[var(--ft-border)]">
-                {focusedTransaction.transactionDate ? (
-                  <ReviewFactRow label="Fecha">
-                    <DateCell date={focusedTransaction.transactionDate} />
-                  </ReviewFactRow>
-                ) : null}
-                {focusedTransaction.sourceAccount?.name ? (
-                  <ReviewFactRow label={focusedTransaction.destinationAccount ? 'Origen' : 'Cuenta'}>
-                    {focusedTransaction.sourceAccount.name}
-                  </ReviewFactRow>
-                ) : null}
-                {focusedTransaction.destinationAccount?.name ? (
-                  <ReviewFactRow label="Destino">
-                    {focusedTransaction.destinationAccount.name}
-                  </ReviewFactRow>
-                ) : null}
-                {focusedTransaction.category?.name ? (
-                  <ReviewFactRow label="Categoría">
-                    {normalizeCategoryLabel(focusedTransaction.category.name)}
-                  </ReviewFactRow>
-                ) : null}
-                {focusedTransaction.currency ? (
-                  <ReviewFactRow label="Moneda">
-                    <span className="font-mono tabular-nums">{focusedTransaction.currency}</span>
-                  </ReviewFactRow>
-                ) : null}
+              <div className="flex items-center justify-between gap-3 pt-1">
+                <p className="text-[11px] font-semibold text-[var(--ft-text-strong)]">Contexto del registro</p>
+                <span className="text-[10px] text-[var(--ft-text-subtle)]">Importe original, sin conversión</span>
+              </div>
+              <dl className="grid grid-cols-1 gap-x-5 divide-y divide-[var(--ft-border)] border-y border-[var(--ft-border)] sm:grid-cols-2 sm:divide-y-0">
+                <ReviewFactRow label="Moneda original">
+                  <span className="font-mono tabular-nums">{focusedTransaction.currency}</span>
+                </ReviewFactRow>
                 <ReviewFactRow label="Reportes">
                   <span className={focusedTransaction.affectsReports ? 'text-[var(--ft-text-strong)]' : 'text-[var(--ft-warning)]'}>
                     {focusedTransaction.affectsReports ? 'Afecta reportes' : 'No afecta reportes'}
                   </span>
                 </ReviewFactRow>
                 {focusedTransactionHasModuleContext ? (
-                  <ReviewFactRow label="Relaciones">
+                  <ReviewFactRow label="Módulos vinculados">
                     <span className="flex justify-end text-right">
                       <ModuleBadges tx={focusedTransaction} />
                     </span>

@@ -544,7 +544,7 @@ export function TransactionsWorkspace({
           <div className="space-y-3" data-testid="transactions-page-overview">
             <header aria-labelledby="transactions-workspace-heading" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
-                <h1 id="transactions-workspace-heading" className="font-display text-[24px] font-semibold leading-8 tracking-[-0.035em] text-[var(--ft-text-strong)]">
+                <h1 id="transactions-workspace-heading" className="font-display text-[26px] font-semibold leading-8 tracking-[-0.035em] text-[var(--ft-text-strong)]">
                   Movimientos
                 </h1>
                 <p className="mt-0.5 max-w-2xl text-[12px] leading-5 text-[var(--ft-text-muted)]">
@@ -561,6 +561,10 @@ export function TransactionsWorkspace({
             </header>
 
             <section aria-label={`Resumen del mes: ${reportMonthLabel}`} className="grid border-b border-[var(--ft-border)] pb-3 sm:grid-cols-3 sm:gap-8">
+              <div className="mb-1 flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 sm:col-span-3">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ft-text-muted)]">Resumen del período · {reportMonthLabel}</span>
+                <span className="text-[10px] text-[var(--ft-text-subtle)]">Los filtros no cambian estos totales · transferencias excluidas</span>
+              </div>
               {[
                 { label: 'Ingresos', value: monthSummary.data?.ingresos_mes, type: 'INCOME' as const, tone: 'text-[var(--ft-success)]' },
                 { label: 'Egresos', value: monthSummary.data?.egresos_mes, type: 'EXPENSE' as const, tone: 'text-[var(--ft-danger)]' },
@@ -571,7 +575,7 @@ export function TransactionsWorkspace({
                     <span>{item.label} · PEN</span><span className="text-[10px] font-normal capitalize text-[var(--ft-text-subtle)] sm:hidden">{reportMonthLabel}</span>
                   </p>
                   {monthSummary.data ? (
-                    <div className={`mt-1 font-display text-[20px] font-semibold leading-7 tracking-[-0.035em] tabular-nums ${item.tone}`}>
+                    <div className={`mt-1 font-display text-[23px] font-semibold leading-7 tracking-[-0.035em] tabular-nums ${item.tone}`}>
                       {item.type ? <a className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ft-focus-ring-color)]" href={`/transactions?type=${item.type}&date_from=${reportStart}&date_to=${reportDate}&page=1`} aria-label={`Ver ${item.label.toLowerCase()} del mes`}>{formatCurrency(item.value ?? 0, 'PEN')}</a> : formatCurrency(item.value ?? 0, 'PEN')}
                     </div>
                   ) : (
@@ -586,7 +590,6 @@ export function TransactionsWorkspace({
                 <button type="button" onClick={() => void monthSummary.mutate()} className="font-semibold underline underline-offset-2">Reintentar</button>
               </p>
             ) : null}
-            <p className="text-[10px] text-[var(--ft-text-subtle)]">Resumen mensual; los filtros cambian el registro, no estos totales. Las transferencias internas no cuentan como ingreso ni egreso.</p>
           </div>
         )}
       />
