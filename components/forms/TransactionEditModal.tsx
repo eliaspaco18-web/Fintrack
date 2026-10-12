@@ -212,6 +212,8 @@ export function TransactionEditModal({
       subtitle="Usa la misma ventana de registro, ajustada al tipo de movimiento seleccionado."
       widthClassName="max-w-[min(96vw,920px)]"
       testId="transaction-edit-modal"
+      presentation="workbench"
+      motionSource="pointer"
     >
       {error ? (
         <InlineFeedback type="error" message={error} />

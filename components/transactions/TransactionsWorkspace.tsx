@@ -535,38 +535,43 @@ export function TransactionsWorkspace({
       {/* ── REGISTRO CON FILTROS Y REVISIÓN CONTEXTUAL ──────────────── */}
       <TransactionTable
         options={options}
+        toolbarActions={(
+          <Button type="button" onClick={openExportModal} variant="secondary" size="sm" className="shrink-0" testId="transactions-summary-export-button" leadingIcon={(
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5" /><path d="M12 15V3" /></svg>
+          )}>Exportar</Button>
+        )}
         workspaceHeader={(
-          <div className="space-y-4" data-testid="transactions-page-overview">
-            <header aria-labelledby="transactions-workspace-heading" className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="space-y-3" data-testid="transactions-page-overview">
+            <header aria-labelledby="transactions-workspace-heading" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
-                <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.09em] text-[var(--ft-text-muted)]">Registro financiero</p>
-                <h1 id="transactions-workspace-heading" className="font-display text-[24px] font-bold leading-8 tracking-[-0.04em] text-[var(--ft-text-strong)] sm:text-[26px]">
+                <h1 id="transactions-workspace-heading" className="font-display text-[24px] font-semibold leading-8 tracking-[-0.035em] text-[var(--ft-text-strong)]">
                   Movimientos
                 </h1>
-                <p className="mt-1 max-w-2xl text-[13px] leading-5 text-[var(--ft-text-muted)]">
+                <p className="mt-0.5 max-w-2xl text-[12px] leading-5 text-[var(--ft-text-muted)]">
                   Cada ingreso, egreso y transferencia en un solo lugar.
                 </p>
               </div>
-              <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:shrink-0 sm:items-center">
-                <Button type="button" onClick={openExportModal} variant="secondary" size="sm" className="w-full sm:w-auto" testId="transactions-summary-export-button" leadingIcon={(
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5" /><path d="M12 15V3" /></svg>
-                )}>Exportar</Button>
+              <div className="flex w-full items-center gap-2 sm:w-auto sm:shrink-0">
+                <span className="inline-flex h-9 items-center gap-2 rounded-control border border-[var(--ft-border)] bg-[var(--ft-surface)] px-3 text-[12px] font-medium text-[var(--ft-text-strong)] sm:min-w-[146px]">
+                  <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></svg>
+                  <span className="capitalize">{reportMonthLabel}</span>
+                </span>
                 <CreateModuleButton onClick={openCreateModal} label="Nuevo movimiento" className="w-full !h-9 !px-3 !text-[12px] sm:w-auto" testId="transactions-summary-create-button" />
               </div>
             </header>
 
-            <section aria-label={`Resumen del mes: ${reportMonthLabel}`} className="grid overflow-hidden rounded-panel border border-[var(--ft-border)] bg-[var(--ft-surface)] sm:grid-cols-3">
+            <section aria-label={`Resumen del mes: ${reportMonthLabel}`} className="grid border-b border-[var(--ft-border)] pb-3 sm:grid-cols-3 sm:gap-8">
               {[
                 { label: 'Ingresos', value: monthSummary.data?.ingresos_mes, type: 'INCOME' as const, tone: 'text-[var(--ft-success)]' },
                 { label: 'Egresos', value: monthSummary.data?.egresos_mes, type: 'EXPENSE' as const, tone: 'text-[var(--ft-danger)]' },
                 { label: 'Resultado', value: monthSummary.data?.resultado_mensual, type: null, tone: monthSummary.data && monthSummary.data.resultado_mensual < 0 ? 'text-[var(--ft-danger)]' : 'text-[var(--ft-text-strong)]' },
               ].map((item, index) => (
-                <div key={item.label} className={`min-w-0 px-4 py-3.5 sm:px-5 ${index > 0 ? 'border-t border-[var(--ft-border)] sm:border-l sm:border-t-0' : ''}`}>
+                <div key={item.label} className={`min-w-0 py-1 ${index > 0 ? 'mt-2 border-t border-[var(--ft-border)] pt-2 sm:mt-0 sm:border-t-0 sm:pt-1' : ''}`}>
                   <p className="flex items-center justify-between gap-2 text-[12px] font-medium text-[var(--ft-text-muted)]">
-                    <span>{item.label}</span><span className="text-[10px] font-normal capitalize text-[var(--ft-text-subtle)]">{reportMonthLabel}</span>
+                    <span>{item.label} · PEN</span><span className="text-[10px] font-normal capitalize text-[var(--ft-text-subtle)] sm:hidden">{reportMonthLabel}</span>
                   </p>
                   {monthSummary.data ? (
-                    <div className={`mt-1.5 font-display text-[20px] font-semibold leading-7 tracking-[-0.035em] tabular-nums ${item.tone}`}>
+                    <div className={`mt-1 font-display text-[20px] font-semibold leading-7 tracking-[-0.035em] tabular-nums ${item.tone}`}>
                       {item.type ? <a className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ft-focus-ring-color)]" href={`/transactions?type=${item.type}&date_from=${reportStart}&date_to=${reportDate}&page=1`} aria-label={`Ver ${item.label.toLowerCase()} del mes`}>{formatCurrency(item.value ?? 0, 'PEN')}</a> : formatCurrency(item.value ?? 0, 'PEN')}
                     </div>
                   ) : (
@@ -581,7 +586,7 @@ export function TransactionsWorkspace({
                 <button type="button" onClick={() => void monthSummary.mutate()} className="font-semibold underline underline-offset-2">Reintentar</button>
               </p>
             ) : null}
-            <p className="-mt-2 text-[10px] text-[var(--ft-text-subtle)]">Resumen PEN · transferencias internas no cuentan como ingreso ni egreso</p>
+            <p className="text-[10px] text-[var(--ft-text-subtle)]">Resumen mensual; los filtros cambian el registro, no estos totales. Las transferencias internas no cuentan como ingreso ni egreso.</p>
           </div>
         )}
       />
@@ -594,6 +599,8 @@ export function TransactionsWorkspace({
         title={modalTitle}
         subtitle={modalSubtitle}
         widthClassName={createModalWidthClassName}
+        presentation="workbench"
+        motionSource="pointer"
       >
         {modalStep === 'select_type' ? (
           <OperationTypeSelector onSelect={handleOperationTypeSelected} />

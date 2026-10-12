@@ -49,6 +49,8 @@ interface RecordModalProps {
   subtitle?: string
   eyebrow?: string
   testId?: string
+  closeTestId?: string
+  dialogId?: string
   children: ReactNode
   footer?: ReactNode
   size?: RecordModalSize
@@ -75,6 +77,8 @@ export function RecordModal({
   subtitle,
   eyebrow,
   testId,
+  closeTestId,
+  dialogId,
   children,
   footer,
   size = 'xl',
@@ -174,6 +178,7 @@ export function RecordModal({
           aria-labelledby={titleId}
           aria-describedby={subtitle ? subtitleId : undefined}
           data-testid={testId}
+          id={dialogId}
           data-ft-workbench={isWorkbench ? workbenchKind : undefined}
           onPointerDown={event => event.stopPropagation()}
           onClick={event => event.stopPropagation()}
@@ -221,6 +226,7 @@ export function RecordModal({
                 onClose()
               }}
               ariaLabel={isWorkbench ? 'Cerrar panel' : 'Cerrar modal'}
+              testId={closeTestId}
               variant="secondary"
               size="icon-md"
               className="shrink-0 focus-visible:ring-offset-[var(--ft-modal-bg)]"
