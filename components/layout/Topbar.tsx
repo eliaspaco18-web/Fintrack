@@ -95,6 +95,7 @@ export function Topbar(props: TopbarProps) {
   const { preferred, toggle: toggleCurrency } = useCurrency()
   const [profileOpen, setProfileOpen] = useState(false)
   const { activeItem, title, detailLabel } = resolveCrumbs(pathname)
+  const isTransactionsTopbar = pathname.startsWith('/transactions')
   const alertCount = navBadges.alerts ?? 0
   const isLight = mounted && theme === 'light'
 
@@ -122,7 +123,7 @@ export function Topbar(props: TopbarProps) {
       fin-topbar sticky top-0 z-sticky h-[var(--topbar-height)] shrink-0
       border-b border-[var(--ft-border)]
       bg-[var(--ft-topbar-bg)]
-    ">
+    " data-ft-transactions-topbar={isTransactionsTopbar ? 'true' : undefined}>
       <div className="ft-topbar-inner flex h-full min-w-0 items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <Link href="/dashboard" aria-label="Ir a Inicio" prefetch={false} className="mr-1 inline-flex shrink-0 rounded-control focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)] md:hidden">

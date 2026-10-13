@@ -927,6 +927,61 @@ body {
   border-color: var(--ft-border) !important;
 }
 
+/* Astra Round 07 topbar treatment, scoped to Movimientos to protect Dashboard. */
+.fin-topbar[data-ft-transactions-topbar='true'] {
+  --ft-topbar-bg: var(--ft-canvas);
+  --topbar-height: 56px;
+}
+.fin-topbar[data-ft-transactions-topbar='true'] .ft-topbar-inner {
+  padding-inline: 28px;
+}
+.fin-topbar[data-ft-transactions-topbar='true'] .ft-topbar-inner > div:first-child {
+  gap: 12px;
+}
+.fin-topbar[data-ft-transactions-topbar='true'] .ft-topbar-inner > div:first-child > div {
+  gap: 12px;
+}
+.fin-topbar[data-ft-transactions-topbar='true'] .ft-topbar-inner > div:first-child > span[aria-hidden='true'] {
+  padding-inline: 0;
+}
+.fin-topbar[data-ft-transactions-topbar='true'] .ft-topbar-inner > div:last-child {
+  gap: 16px;
+}
+.fin-topbar[data-ft-transactions-topbar='true'] .ft-topbar-profile {
+  width: 36px;
+  height: 36px;
+  flex-basis: 36px;
+}
+.fin-topbar[data-ft-transactions-topbar='true'] .ft-topbar-profile > span {
+  width: 34px;
+  height: 34px;
+}
+@media (min-width: 1600px) {
+  .fin-topbar[data-ft-transactions-topbar='true'] .ft-topbar-inner { padding-inline: 40px; }
+}
+@media (min-width: 768px) and (max-width: 1199px) {
+  .fin-topbar[data-ft-transactions-topbar='true'] .ft-topbar-inner { padding-inline: 22px; }
+}
+@media (max-width: 767px) {
+  .fin-topbar[data-ft-transactions-topbar='true'] { --topbar-height: 52px; }
+  .fin-topbar[data-ft-transactions-topbar='true'] .ft-topbar-inner { padding-inline: 16px; }
+  .fin-topbar[data-ft-transactions-topbar='true'] .ft-topbar-inner > div:first-child,
+  .fin-topbar[data-ft-transactions-topbar='true'] .ft-topbar-inner > div:first-child > div {
+    gap: 9px;
+  }
+  .fin-topbar[data-ft-transactions-topbar='true'] .ft-topbar-inner > div:last-child { gap: 2px; }
+  .fin-topbar[data-ft-transactions-topbar='true'] .ft-topbar-utility {
+    width: 44px;
+    height: 44px;
+  }
+  .fin-topbar[data-ft-transactions-topbar='true'] .ft-topbar-profile {
+    width: 44px;
+    height: 44px;
+    flex-basis: 44px;
+  }
+  .fin-topbar[data-ft-transactions-topbar='true'] h1 { font-size: 13px; }
+}
+
 .topbar-menu-item {
   display: flex;
   min-height: 40px;
