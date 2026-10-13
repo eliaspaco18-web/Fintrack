@@ -571,7 +571,7 @@ export function TransactionsWorkspace({
       <TransactionTable
         options={options}
         toolbarActions={(
-          <Button type="button" onClick={openExportModal} variant="secondary" size="sm" className="ml-auto shrink-0" testId="transactions-summary-export-button" leadingIcon={(
+          <Button type="button" onClick={openExportModal} variant="secondary" size="sm" className="shrink-0" testId="transactions-summary-export-button" leadingIcon={(
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5" /><path d="M12 15V3" /></svg>
           )}>Exportar</Button>
         )}
@@ -587,7 +587,7 @@ export function TransactionsWorkspace({
                 </p>
               </div>
               <div className="flex w-full items-center gap-2 sm:w-auto sm:shrink-0">
-                <span className="inline-flex h-9 items-center gap-2 rounded-control border border-[var(--ft-border)] bg-[var(--ft-surface)] px-3 text-[12px] font-medium text-[var(--ft-text-strong)] sm:min-w-[146px]">
+                <span className={`${styles.monthScope} inline-flex items-center`}>
                   <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></svg>
                   <span className="capitalize">{reportMonthLabel}</span>
                 </span>
@@ -595,7 +595,7 @@ export function TransactionsWorkspace({
                   <CreateModuleButton
                     onClick={openCreateModal}
                     label="Nuevo movimiento"
-                    className="w-full !h-9 !px-3 !text-[12px] sm:w-auto"
+                    className={`${styles.createButton} w-full sm:w-auto`}
                     testId="transactions-summary-create-button"
                     ariaHasPopup={isDesktopOperationSelector ? 'menu' : 'dialog'}
                     ariaExpanded={isDesktopOperationSelector

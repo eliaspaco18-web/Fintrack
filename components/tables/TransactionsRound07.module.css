@@ -1,4 +1,7 @@
 .workspace {
+  --font-fintrack-v3: Manrope, system-ui, sans-serif;
+  --font-body: Manrope, system-ui, sans-serif;
+  --font-display: Manrope, system-ui, sans-serif;
   --ft-r07-canvas: #f5f6f7;
   --ft-r07-surface: #ffffff;
   --ft-r07-subtle: #f0f2f4;
@@ -8,7 +11,7 @@
   --ft-r07-line: #dce1e5;
   min-width: 0;
   color: var(--ft-text-strong);
-  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-family: Manrope, system-ui, sans-serif;
   font-size: 14px;
   line-height: 1.5;
 }
@@ -19,12 +22,12 @@
 .workspace :global(input),
 .workspace :global(select),
 .workspace :global(textarea) {
-  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-family: Manrope, system-ui, sans-serif;
 }
 
 /* Astra Round 07 operation picker, scoped to the transaction creation flow. */
 .operationSelector {
-  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-family: Manrope, system-ui, sans-serif;
 }
 
 .operationGrid {
@@ -95,7 +98,7 @@
   color: var(--operation-ink);
   box-shadow: 0 3px 8px rgb(25 51 49 / 7%), 0 16px 44px rgb(25 51 49 / 13%);
   z-index: 130;
-  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-family: Manrope, system-ui, sans-serif;
   font-size: 12px;
   line-height: 1.5;
 }
@@ -163,6 +166,45 @@
 
 /* Match the product shell to Astra only on Movimientos; Dashboard stays untouched. */
 .astraShell {
+  --font-fintrack-v3: Manrope, system-ui, sans-serif;
+  --font-body: Manrope, system-ui, sans-serif;
+  --font-display: Manrope, system-ui, sans-serif;
+  --ft-font-body: Manrope, system-ui, sans-serif;
+  --ft-canvas: #f5f6f7;
+  --ft-surface: #ffffff;
+  --ft-surface-muted: #f0f2f4;
+  --ft-surface-hover: #e9edef;
+  --ft-text-strong: #242a30;
+  --ft-text: #242a30;
+  --ft-text-muted: #59636d;
+  --ft-text-subtle: #65707b;
+  --ft-text-on-primary: #ffffff;
+  --ft-border: #dce1e5;
+  --ft-border-strong: #c8d0d5;
+  --ft-control: #89949d;
+  --ft-control-border: #89949d;
+  --ft-primary: #155e59;
+  --ft-primary-hover: #104b47;
+  --ft-primary-deep: #104b47;
+  --ft-primary-soft: #e8f1ee;
+  --ft-primary-border: #c8ded7;
+  --ft-focus-ring-color: rgb(21 94 89 / 28%);
+  --ft-success: #2b7356;
+  --ft-success-soft: #e8f2e9;
+  --ft-danger: #ad4545;
+  --ft-danger-soft: #f9eeee;
+  --ft-warning: #7c601f;
+  --ft-warning-soft: #f6efdc;
+  --ft-inset: #f3f4f6;
+  --ft-expense-fill: #e5eaed;
+  --ft-chart-expense: #74828c;
+  --ft-overlay: rgb(24 34 52 / 36%);
+  --ft-modal-bg: #ffffff;
+  --ft-radius-control: 10px;
+  --ft-radius-menu: 14px;
+  --ft-radius-badge: 6px;
+  --ft-radius-surface: 18px;
+  --ft-radius-workspace: 24px;
   --sidebar-width-expanded: 208px;
   --sidebar-width-collapsed: 72px;
   --topbar-height: 64px;
@@ -171,7 +213,47 @@
   --sidebar-item-padding-x: 12px;
   --sidebar-item-gap: 12px;
   --sidebar-item-font-size: 13px;
-  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-family: Manrope, system-ui, sans-serif;
+}
+
+.astraShell :global(.font-display) { font-family: inherit; }
+
+.astraShell :global(button),
+.astraShell :global(input),
+.astraShell :global(select),
+.astraShell :global(textarea) { font-family: inherit; }
+
+:global(html[data-theme='dark']) .astraShell {
+  --ft-canvas: #17191c;
+  --ft-surface: #202327;
+  --ft-surface-muted: #292d31;
+  --ft-surface-hover: #30353a;
+  --ft-text-strong: #edf0f2;
+  --ft-text: #edf0f2;
+  --ft-text-muted: #b7bfc5;
+  --ft-text-subtle: #a7afb6;
+  --ft-text-on-primary: #14352e;
+  --ft-border: #393f45;
+  --ft-border-strong: #515960;
+  --ft-control: #747f88;
+  --ft-control-border: #747f88;
+  --ft-primary: #8ad1bf;
+  --ft-primary-hover: #afe4d2;
+  --ft-primary-deep: #afe4d2;
+  --ft-primary-soft: #293d38;
+  --ft-primary-border: #405b52;
+  --ft-focus-ring-color: rgb(138 209 191 / 35%);
+  --ft-success: #95d6ad;
+  --ft-success-soft: #283a30;
+  --ft-danger: #f2a09b;
+  --ft-danger-soft: #402e30;
+  --ft-warning: #e5c781;
+  --ft-warning-soft: #3c3528;
+  --ft-inset: oklch(30% .03 165);
+  --ft-expense-fill: #334a40;
+  --ft-chart-expense: #a8b4bb;
+  --ft-overlay: rgb(10 12 15 / 66%);
+  --ft-modal-bg: #202327;
 }
 
 .astraShell :global(.fin-sidebar) {
@@ -222,7 +304,7 @@
 
 .astraShell :global(.ft-topbar-inner) {
   min-height: 64px;
-  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-family: Manrope, system-ui, sans-serif;
 }
 
 .astraShell :global(.ft-topbar-inner button),
@@ -252,26 +334,84 @@
 
 .pageOverview header {
   align-items: flex-start;
-  margin-bottom: 22px;
+  margin-bottom: 24px;
 }
 
 .pageOverview h1 {
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 700;
-  line-height: 36px;
+  line-height: 34px;
   letter-spacing: -0.8px;
 }
 
 .pageOverview header p {
   margin-top: 5px;
-  font-size: 13px;
-  line-height: 20px;
+  color: var(--ft-r07-muted);
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .pageOverview header > div:first-child { padding-top: 0; }
 
 .pageOverview header > div:first-child h1 {
   color: var(--ft-r07-ink);
+}
+
+.monthScope {
+  height: 36px;
+  min-height: 36px;
+  gap: 7px;
+  border-color: var(--ft-r07-line);
+  border-radius: 10px;
+  background: var(--ft-r07-surface);
+  padding: 0 12px;
+  color: var(--ft-r07-ink);
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.pageOverview .createButton {
+  height: 36px;
+  min-height: 36px;
+  gap: 7px;
+  border: 1px solid var(--ft-primary);
+  border-radius: 10px;
+  background: var(--ft-primary);
+  padding: 0 12px;
+  color: var(--ft-text-on-primary);
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  letter-spacing: normal;
+  box-shadow: inset 0 1px 0 rgb(252 253 251 / 10%);
+}
+
+.pageOverview .createButton:hover:not(:disabled) {
+  border-color: var(--ft-primary-hover);
+  background: var(--ft-primary-hover);
+}
+
+.pageOverview .createButton:active:not(:disabled) { transform: scale(.975); }
+
+.pageOverview .createButton:disabled {
+  border-color: var(--ft-surface-muted);
+  background: var(--ft-surface-muted);
+  color: var(--ft-text-subtle);
+  box-shadow: none;
+}
+
+.pageOverview .createButton:focus-visible {
+  outline: 2px solid var(--ft-primary);
+  outline-offset: 3px;
+  box-shadow: none;
+}
+
+.pageOverview .createButton > :global(svg) {
+  width: 15px;
+  height: 15px;
 }
 
 .summary {
@@ -349,8 +489,85 @@
 }
 
 .controls {
-  gap: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
   margin-bottom: 12px;
+}
+
+.controlsMain {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.controlsActions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.savedViews {
+  display: flex;
+  width: auto !important;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding-left: 10px;
+  border-left: 1px solid var(--ft-r07-line);
+}
+
+.savedViews :global(.filters-control) { width: 150px; }
+
+.savedViews :global([data-testid='transactions-save-view-button']),
+.savedViews :global([data-testid='transactions-delete-view-button']) {
+  min-height: 32px;
+  height: 32px;
+  padding-inline: 8px;
+  border-radius: 10px;
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.monthViewButton,
+.filterButton {
+  height: 36px;
+  min-height: 36px;
+  gap: 7px;
+  border: 1px solid var(--ft-r07-line);
+  border-radius: 10px;
+  background: var(--ft-r07-surface);
+  padding: 0 12px;
+  color: var(--ft-r07-ink);
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  letter-spacing: normal;
+  box-shadow: none;
+}
+
+.filterButton > :global(svg) { width: 15px; height: 15px; }
+.monthViewButton { width: 120px; justify-content: space-between; }
+.monthViewButton[aria-pressed='true'] { border-color: var(--ft-primary); color: var(--ft-primary); }
+.filterButton:hover,
+.monthViewButton:hover { background: var(--ft-r07-hover); }
+
+.filterButton:focus-visible,
+.monthViewButton:focus-visible,
+.monthScope:focus-visible {
+  outline: 2px solid var(--ft-primary);
+  outline-offset: 3px;
+  box-shadow: none;
 }
 
 .controls :global(.data-toolbar-row),
@@ -359,19 +576,20 @@
 .controls :global(button),
 .controls :global(select),
 .controls :global([role='combobox']) {
-  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-family: Manrope, system-ui, sans-serif;
   font-size: 12px;
 }
 
 .controls :global([data-testid='transactions-advanced-filters-button']) {
-  height: 38px;
-  min-height: 38px;
-  padding-inline: 13px;
+  height: 36px;
+  min-height: 36px;
+  padding-inline: 12px;
   border-color: var(--ft-r07-line);
-  border-radius: 7px;
+  border-radius: 10px;
   background: var(--ft-r07-surface);
   color: var(--ft-r07-ink);
   font-weight: 600;
+  box-shadow: none;
 }
 
 .controls :global([data-testid='transactions-advanced-filters-button']:hover) {
@@ -379,21 +597,21 @@
 }
 
 .controls :global([data-testid='transactions-saved-view-select']) {
-  min-height: 38px;
+  min-height: 36px;
   border-color: var(--ft-r07-line);
-  border-radius: 7px;
+  border-radius: 10px;
   background: var(--ft-r07-surface);
   font-size: 12px;
 }
 
-.controls :global(.filters-control) { width: 165px; }
+.controls :global(.filters-control) { width: 150px; }
 
 .controls :global(.filters-control .ft-select-trigger) {
-  min-height: 38px;
-  height: 38px;
+  min-height: 36px;
+  height: 36px;
   padding: 0 11px;
   border-color: var(--ft-r07-line);
-  border-radius: 7px;
+  border-radius: 10px;
   background: var(--ft-r07-surface);
   color: var(--ft-r07-ink);
   font-size: 12px;
@@ -404,24 +622,84 @@
   min-height: 32px;
   height: 32px;
   padding-inline: 8px;
-  border-radius: 7px;
+  border-radius: 10px;
   font-size: 10px;
 }
 
-.controls :global([data-testid='transactions-summary-export-button']) {
-  height: 38px;
-  min-height: 38px;
-  border-radius: 7px;
-  padding-inline: 13px;
+.controlsActions :global([data-testid='transactions-summary-export-button']) {
+  height: 36px;
+  min-height: 36px;
+  border: 1px solid var(--ft-r07-line);
+  border-radius: 10px;
+  background: var(--ft-r07-surface);
+  padding: 0 12px;
+  color: var(--ft-r07-ink);
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  letter-spacing: normal;
+  gap: 7px;
 }
 
-.controls :global([data-testid='transactions-search-input']) {
-  height: 38px;
+.controlsActions :global([data-testid='transactions-summary-export-button'] > svg) { width: 15px; height: 15px; }
+.controlsActions :global([data-testid='transactions-summary-export-button']:hover) {
+  border-color: var(--ft-border-strong);
+  background: var(--ft-r07-hover);
+}
+
+.controlsMain > .searchControl {
+  display: flex;
+  flex: 0 0 230px;
+  align-items: center;
+  gap: 8px;
+  width: 230px;
   min-width: 230px;
-  max-width: 230px;
-  border-color: var(--ft-control);
-  border-radius: 7px;
+  height: 38px;
+  border: 1px solid var(--ft-control);
+  border-radius: 10px;
+  background: var(--ft-r07-surface);
+  padding: 0 10px;
+  color: var(--ft-r07-muted);
+}
+
+.controlsMain > .searchControl:focus-within {
+  border-color: var(--ft-primary);
+  outline: 2px solid var(--ft-primary);
+  outline-offset: 3px;
+}
+
+.controlsMain > .searchControl > :global(svg) {
+  position: static;
+  inset: auto;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  transform: none;
+  color: var(--ft-r07-muted);
+}
+
+.controlsMain :global(input[data-testid='transactions-search-input']) {
+  width: 0;
+  min-width: 0;
+  max-width: none;
+  flex: 1 1 auto;
+  height: 20px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--ft-r07-muted);
   font-size: 12px;
+  line-height: 18px;
+  box-shadow: none;
+}
+
+.controlsMain :global(input[data-testid='transactions-search-input']:hover),
+.controlsMain :global(input[data-testid='transactions-search-input']:focus) {
+  border: 0;
+  box-shadow: none;
+  outline: 0;
 }
 
 .context {
@@ -444,7 +722,7 @@
   border-collapse: collapse;
   table-layout: fixed;
   color: var(--ft-r07-ink);
-  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-family: Manrope, system-ui, sans-serif;
 }
 
 .astraLedger { border-spacing: 0; }
@@ -751,23 +1029,96 @@
 }
 
 /* Astra's app.js uses one horizontal .operation card for each of eight flows. */
-.astraOverlay:global(.app-modal-overlay) {
-  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+.astraOverlay:global(.app-modal-overlay),
+.formOverlay:global(.app-modal-overlay) {
+  --font-fintrack-v3: Manrope, system-ui, sans-serif;
+  --font-body: Manrope, system-ui, sans-serif;
+  --font-display: Manrope, system-ui, sans-serif;
+  --ft-font-body: Manrope, system-ui, sans-serif;
+  --ft-canvas: #f5f6f7;
+  --ft-surface: #ffffff;
+  --ft-surface-muted: #f0f2f4;
+  --ft-surface-hover: #e9edef;
+  --ft-text-strong: #242a30;
+  --ft-text: #242a30;
+  --ft-text-muted: #59636d;
+  --ft-text-subtle: #65707b;
+  --ft-text-on-primary: #ffffff;
+  --ft-border: #dce1e5;
+  --ft-border-strong: #c8d0d5;
+  --ft-control: #89949d;
+  --ft-primary: #155e59;
+  --ft-primary-hover: #104b47;
+  --ft-primary-deep: #104b47;
+  --ft-primary-soft: #e8f1ee;
+  --ft-primary-border: #c8ded7;
+  --ft-focus-ring-color: rgb(21 94 89 / 28%);
+  --ft-success: #2b7356;
+  --ft-success-soft: #e8f2e9;
+  --ft-danger: #ad4545;
+  --ft-danger-soft: #f9eeee;
+  --ft-warning: #7c601f;
+  --ft-warning-soft: #f6efdc;
+  --ft-inset: #f3f4f6;
+  --ft-expense-fill: #e5eaed;
+  --ft-chart-expense: #74828c;
+  --ft-overlay: rgb(24 34 52 / 36%);
+  --ft-modal-bg: #ffffff;
+  --ft-radius-control: 10px;
+  --ft-radius-menu: 14px;
+  --ft-radius-badge: 6px;
+  --ft-radius-surface: 18px;
+  --ft-radius-workspace: 24px;
+  font-family: Manrope, system-ui, sans-serif;
 }
 
 .formOverlay:global(.app-modal-overlay) {
-  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-family: Manrope, system-ui, sans-serif;
 }
 
 .astraOverlay:global(.app-modal-overlay),
 .formOverlay:global(.app-modal-overlay) {
-  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-family: Manrope, system-ui, sans-serif;
+}
+
+:global(html[data-theme='dark']) .astraOverlay:global(.app-modal-overlay),
+:global(html[data-theme='dark']) .formOverlay:global(.app-modal-overlay) {
+  --ft-canvas: #17191c;
+  --ft-surface: #202327;
+  --ft-surface-muted: #292d31;
+  --ft-surface-hover: #30353a;
+  --ft-text-strong: #edf0f2;
+  --ft-text: #edf0f2;
+  --ft-text-muted: #b7bfc5;
+  --ft-text-subtle: #a7afb6;
+  --ft-text-on-primary: #14352e;
+  --ft-border: #393f45;
+  --ft-border-strong: #515960;
+  --ft-control: #747f88;
+  --ft-control-border: #747f88;
+  --ft-primary: #8ad1bf;
+  --ft-primary-hover: #afe4d2;
+  --ft-primary-deep: #afe4d2;
+  --ft-primary-soft: #293d38;
+  --ft-primary-border: #405b52;
+  --ft-focus-ring-color: rgb(138 209 191 / 35%);
+  --ft-success: #95d6ad;
+  --ft-success-soft: #283a30;
+  --ft-danger: #f2a09b;
+  --ft-danger-soft: #402e30;
+  --ft-warning: #e5c781;
+  --ft-warning-soft: #3c3528;
+  --ft-inset: oklch(30% .03 165);
+  --ft-expense-fill: #334a40;
+  --ft-chart-expense: #a8b4bb;
+  --ft-overlay: rgb(10 12 15 / 66%);
+  --ft-modal-bg: #202327;
 }
 
 .astraOverlay:global(.app-modal-overlay) :global([role='dialog']),
 .formOverlay:global(.app-modal-overlay) :global([role='dialog']) {
   color: #242a30;
-  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-family: Manrope, system-ui, sans-serif;
 }
 
 .astraOverlay:global(.app-modal-overlay) :global([data-ft-workbench]),
@@ -828,14 +1179,14 @@
   min-height: 44px;
   border-radius: 6px;
   border-color: #89949d;
-  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-family: Manrope, system-ui, sans-serif;
   font-size: 13px;
 }
 
 .astraOverlay:global(.app-modal-overlay) :global([role='dialog'] h2, [role='dialog'] h3),
 .formOverlay:global(.app-modal-overlay) :global([role='dialog'] h2, [role='dialog'] h3) {
   color: #242a30;
-  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-family: Manrope, system-ui, sans-serif;
 }
 
 .formOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
@@ -851,12 +1202,12 @@
 
 .formOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-record-modal-body]) {
   padding: 22px 24px 24px;
-  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-family: Manrope, system-ui, sans-serif;
 }
 
 .formOverlay :global(.tx-modal-form) {
   color: var(--ft-r07-ink);
-  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-family: Manrope, system-ui, sans-serif;
   font-size: 14px;
 }
 
@@ -874,7 +1225,7 @@
   border-color: #89949d;
   background-color: #fff;
   color: #242a30;
-  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-family: Manrope, system-ui, sans-serif;
   font-size: 13px;
 }
 
@@ -897,7 +1248,7 @@
   border-color: #dce1e5;
   border-radius: 10px;
   box-shadow: 0 12px 30px rgb(36 42 48 / 12%);
-  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-family: Manrope, system-ui, sans-serif;
 }
 
 .formOverlay :global(.tx-modal-form [class*='rounded-xl'][class*='border']) {
@@ -949,7 +1300,7 @@
 }
 
 .astraOverlay :global(.tx-modal-form) {
-  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-family: Manrope, system-ui, sans-serif;
   font-size: 14px;
 }
 
@@ -958,7 +1309,7 @@
   border-radius: 6px;
   border-color: #89949D;
   background: #FFFFFF;
-  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-family: Manrope, system-ui, sans-serif;
   font-size: 13px;
 }
 
@@ -971,14 +1322,14 @@
 .astraOverlay :global(.tx-modal-form .app-select-trigger) {
   min-height: 44px;
   border-radius: 6px;
-  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-family: Manrope, system-ui, sans-serif;
   font-size: 13px;
 }
 
 .astraOverlay :global(.app-select-menu) {
   border-radius: 10px;
   border-color: #DCE1E5;
-  font-family: var(--font-fintrack-v3), Manrope, sans-serif;
+  font-family: Manrope, system-ui, sans-serif;
   box-shadow: 0 12px 30px rgb(36 42 48 / 12%);
 }
 
@@ -990,6 +1341,60 @@
 @media (max-width: 767px) {
   .pageOverview header {
     margin-bottom: 18px;
+  }
+
+  .controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  .controlsMain {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .controlsMain > .searchControl {
+    grid-column: 1 / -1;
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    height: 44px;
+  }
+
+  .controlsMain :global(input[data-testid='transactions-search-input']) {
+    height: 42px;
+    font-size: 16px;
+  }
+
+  .controlsMain :global([data-testid='transactions-advanced-filters-button']),
+  .monthViewButton {
+    width: 100%;
+    height: 44px;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .savedViews {
+    grid-column: 1 / -1;
+    width: 100% !important;
+    flex-wrap: wrap;
+    border-top: 1px solid var(--ft-r07-line);
+    border-left: 0;
+    padding: 8px 0 0;
+  }
+
+  .savedViews :global(.filters-control) { flex: 1 1 150px; width: auto; }
+  .controls :global(.filters-control .ft-select-trigger) { min-height: 44px; height: 44px; }
+  .savedViews :global([data-testid='transactions-save-view-button']),
+  .savedViews :global([data-testid='transactions-delete-view-button']) { min-height: 44px; height: 44px; }
+
+  .controlsActions {
+    grid-column: 1;
+    justify-content: flex-end;
+    margin-left: 0;
   }
 
   .astraOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
@@ -1023,17 +1428,6 @@
   .summaryItem {
     flex: 1 1 120px;
   }
-
-  .controls {
-    align-items: stretch;
-  }
-
-  .controls :global([data-testid='transactions-search-input']) {
-    min-width: 100%;
-    max-width: none;
-  }
-
-  .controls :global(.filters-control) { flex: 1 1 100%; width: 100%; }
 
   .formOverlay :global(.astra-form-grid) { grid-template-columns: 1fr; }
 

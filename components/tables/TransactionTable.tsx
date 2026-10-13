@@ -1357,14 +1357,15 @@ export function TransactionTable({
             })}
           </div>
 
-          <div className={`${styles.controls} flex min-w-0 flex-wrap items-center gap-1.5`}>
+          <div className={`${styles.controls} min-w-0`}>
+            <div className={`${styles.controlsMain} min-w-0`}>
               <DataSearchField
                 value={search}
                 onChange={setSearch}
                 placeholder="Buscar un movimiento"
                 aria-label="Buscar movimientos por descripción"
                 data-testid="transactions-search-input"
-                className="min-w-[200px] flex-[1_1_230px]"
+                className={`${styles.searchControl} min-w-[200px] flex-[1_1_230px]`}
               />
                 <Button
                   type="button"
@@ -1374,7 +1375,7 @@ export function TransactionTable({
                   testId="transactions-advanced-filters-button"
                   variant="secondary"
                   size="sm"
-                  className="shrink-0"
+                  className={`${styles.filterButton} shrink-0`}
                   leadingIcon={(
                     <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                       <path d="M4 6h16M7 12h10M10 18h4" />
@@ -1390,6 +1391,22 @@ export function TransactionTable({
                     ) : null}
                   </span>
                 </Button>
+              <Button
+                type="button"
+                onClick={() => handleQuickFilter('this_month')}
+                aria-pressed={activeFilter === 'this_month'}
+                testId="transactions-current-month-view-button"
+                variant="secondary"
+                size="sm"
+                className={styles.monthViewButton}
+                trailingIcon={(
+                  <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m7 10 5 5 5-5" />
+                  </svg>
+                )}
+              >
+                Vista del mes
+              </Button>
               <SavedViewsToolbar
                 value={selectedSavedViewId}
                 onChange={nextId => {
@@ -1405,7 +1422,7 @@ export function TransactionTable({
                 selectTestId="transactions-saved-view-select"
                 saveTestId="transactions-save-view-button"
                 deleteTestId="transactions-delete-view-button"
-                className="shrink-0"
+                className={styles.savedViews}
                 options={[
                   { value: '', label: 'Vistas guardadas' },
                   ...savedViews.map(view => ({ value: view.id, label: view.name })),
@@ -1416,7 +1433,8 @@ export function TransactionTable({
                   Limpiar
                 </Button>
               ) : null}
-              {toolbarActions}
+            </div>
+            {toolbarActions ? <div className={styles.controlsActions}>{toolbarActions}</div> : null}
           </div>
 
           <div className={`${styles.context} flex min-w-0 flex-wrap items-center gap-1.5 text-[10px]`} aria-label="Contexto activo del registro">

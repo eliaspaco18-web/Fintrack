@@ -12,6 +12,32 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Astra Round 07 uses the same local Manrope files already shipped by the app.
+   This family alias is consumed only by the Movimientos-scoped visual layer. */
+@font-face {
+  font-family: Manrope;
+  src: url('/fonts/v3/manrope-regular.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: Manrope;
+  src: url('/fonts/v3/manrope-semibold.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: Manrope;
+  src: url('/fonts/v3/manrope-bold.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 700 800;
+  font-display: swap;
+}
+
 /* ── TOKENS DEL SISTEMA ──────────────────────────────────────────────────────── */
 /* Paso 1: un sistema canónico (`--ft-*`) con aliases de compatibilidad. */
 
