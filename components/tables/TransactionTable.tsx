@@ -1319,12 +1319,11 @@ export function TransactionTable({
     <div className={`space-y-0 ${styles.workspace}`}>
       {workspaceHeader ? <div>{workspaceHeader}</div> : null}
       <div data-testid="transactions-review-panel-layer" className="min-w-0">
-          {/* Search and filters stay available while the ledger scrolls. */}
-          <div className="lg:sticky lg:top-0 lg:z-sticky">
-            <section
-              aria-label="Espacio de trabajo de movimientos"
-              className="bg-transparent"
-            >
+          {/* Astra's filters scroll with the ledger; they do not overlay rows. */}
+          <section
+            aria-label="Espacio de trabajo de movimientos"
+            className="bg-transparent"
+          >
             {filterOptionsError && (
               <DataErrorBanner
                 message={filterOptionsError}
@@ -1479,8 +1478,7 @@ export function TransactionTable({
           ) : null}
             </DataToolbar>
 
-            </section>
-          </div>
+          </section>
 
           <RecordModal
             open={advancedFiltersOpen}

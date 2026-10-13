@@ -2,13 +2,15 @@
   --font-fintrack-v3: Manrope, system-ui, sans-serif;
   --font-body: Manrope, system-ui, sans-serif;
   --font-display: Manrope, system-ui, sans-serif;
-  --ft-r07-canvas: #f5f6f7;
-  --ft-r07-surface: #ffffff;
-  --ft-r07-subtle: #f0f2f4;
-  --ft-r07-hover: #e9edef;
-  --ft-r07-ink: #242a30;
-  --ft-r07-muted: #59636d;
-  --ft-r07-line: #dce1e5;
+  /* Keep the Astra Round 07 surface roles aligned with the theme-resolved
+     FinTrack shell tokens. Hard-coded light values here made dark mode unreadable. */
+  --ft-r07-canvas: var(--ft-canvas);
+  --ft-r07-surface: var(--ft-surface);
+  --ft-r07-subtle: var(--ft-surface-muted);
+  --ft-r07-hover: var(--ft-surface-hover);
+  --ft-r07-ink: var(--ft-text-strong);
+  --ft-r07-muted: var(--ft-text-muted);
+  --ft-r07-line: var(--ft-border);
   min-width: 0;
   color: var(--ft-text-strong);
   font-family: Manrope, system-ui, sans-serif;
@@ -1064,6 +1066,13 @@
   --ft-chart-expense: #74828c;
   --ft-overlay: rgb(24 34 52 / 36%);
   --ft-modal-bg: #ffffff;
+  --ft-r07-canvas: var(--ft-canvas);
+  --ft-r07-surface: var(--ft-surface);
+  --ft-r07-subtle: var(--ft-surface-muted);
+  --ft-r07-hover: var(--ft-surface-hover);
+  --ft-r07-ink: var(--ft-text-strong);
+  --ft-r07-muted: var(--ft-text-muted);
+  --ft-r07-line: var(--ft-border);
   --ft-radius-control: 10px;
   --ft-radius-menu: 14px;
   --ft-radius-badge: 6px;
@@ -1117,29 +1126,29 @@
 
 .astraOverlay:global(.app-modal-overlay) :global([role='dialog']),
 .formOverlay:global(.app-modal-overlay) :global([role='dialog']) {
-  color: #242a30;
+  color: var(--ft-text-strong);
   font-family: Manrope, system-ui, sans-serif;
 }
 
 .astraOverlay:global(.app-modal-overlay) :global([data-ft-workbench]),
 .formOverlay:global(.app-modal-overlay) :global([data-ft-workbench]) {
-  border-color: #dce1e5;
+  border-color: var(--ft-border);
   border-radius: 24px;
-  background: #fff;
-  color: #242a30;
+  background: var(--ft-surface);
+  color: var(--ft-text-strong);
   box-shadow: 0 0 0 1px rgb(24 30 36 / 4%), 0 8px 24px rgb(24 30 36 / 9%), 0 28px 72px rgb(24 30 36 / 16%);
 }
 
 .astraOverlay:global(.app-modal-overlay) :global([data-ft-workbench] > :first-child),
 .formOverlay:global(.app-modal-overlay) :global([data-ft-workbench] > :first-child) {
-  border-color: #dce1e5;
-  background: #fff;
+  border-color: var(--ft-border);
+  background: var(--ft-surface);
 }
 
 .astraOverlay:global(.app-modal-overlay) :global([data-ft-workbench] > :last-child:not([data-record-modal-body])),
 .formOverlay:global(.app-modal-overlay) :global([data-ft-workbench] > :last-child:not([data-record-modal-body])) {
-  border-color: #dce1e5;
-  background: #f3f4f6;
+  border-color: var(--ft-border);
+  background: var(--ft-inset);
 }
 
 :global(html[data-theme='dark']) .astraOverlay:global(.app-modal-overlay) :global([data-ft-workbench]),
@@ -1178,14 +1187,14 @@
 .formOverlay:global(.app-modal-overlay) :global(input:not([type='checkbox']), textarea, select, .app-select-trigger) {
   min-height: 44px;
   border-radius: 6px;
-  border-color: #89949d;
+  border-color: var(--ft-control);
   font-family: Manrope, system-ui, sans-serif;
   font-size: 13px;
 }
 
 .astraOverlay:global(.app-modal-overlay) :global([role='dialog'] h2, [role='dialog'] h3),
 .formOverlay:global(.app-modal-overlay) :global([role='dialog'] h2, [role='dialog'] h3) {
-  color: #242a30;
+  color: var(--ft-text-strong);
   font-family: Manrope, system-ui, sans-serif;
 }
 
@@ -1222,16 +1231,16 @@
 .formOverlay :global(.tx-modal-form .app-select-trigger) {
   min-height: 44px;
   border-radius: 6px;
-  border-color: #89949d;
-  background-color: #fff;
-  color: #242a30;
+  border-color: var(--ft-control);
+  background-color: var(--ft-surface);
+  color: var(--ft-text-strong);
   font-family: Manrope, system-ui, sans-serif;
   font-size: 13px;
 }
 
 .formOverlay :global(.tx-modal-form label),
 .formOverlay :global(.tx-modal-form [data-field-label]) {
-  color: #242a30;
+  color: var(--ft-text-strong);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0;
@@ -1245,9 +1254,11 @@
 }
 
 .formOverlay :global(.tx-modal-form .app-select-menu) {
-  border-color: #dce1e5;
+  border-color: var(--ft-border);
   border-radius: 10px;
   box-shadow: 0 12px 30px rgb(36 42 48 / 12%);
+  background: var(--ft-surface);
+  color: var(--ft-text-strong);
   font-family: Manrope, system-ui, sans-serif;
 }
 
@@ -1256,11 +1267,11 @@
 }
 
 .formOverlay :global(.tx-modal-form [class*='bg-[var(--c-surface-2)]']) {
-  background: #f0f2f4;
+  background: var(--ft-surface-muted);
 }
 
 .formOverlay :global(.tx-modal-form [class*='text-[var(--c-text)]']) {
-  color: #242a30;
+  color: var(--ft-text-strong);
 }
 
 .astraOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
@@ -1279,6 +1290,7 @@
   font-weight: 700;
   line-height: 29px;
   letter-spacing: -.5px;
+  color: var(--ft-text-strong);
 }
 
 .astraOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-ft-workbench] h2 + p) {
