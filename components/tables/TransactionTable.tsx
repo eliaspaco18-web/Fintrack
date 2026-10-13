@@ -24,6 +24,10 @@ import {
   type TransactionListParams,
 }                                    from '@/lib/contracts/ui.contracts'
 import {
+  getQuickFilterDateOverrides,
+  getQuickFilterParamPatch,
+} from '@/modules/transactions/quick-filter-query'
+import {
   ConfirmDialog,
   DataErrorBanner,
   DataFilterPreset,
@@ -266,6 +270,8 @@ interface TableControlState {
   categoryId: string
   page: number
   perPage: number
+  dateFrom: string
+  dateTo: string
   txParams: Partial<TransactionListParams>
 }
 
@@ -554,6 +560,9 @@ function resolveInitialControlState(
   const rawPerPage = Number(searchParams.get('per_page') ?? initialParams.per_page ?? 20)
   const page = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : 1
   const perPage = Number.isInteger(rawPerPage) && rawPerPage > 0 && rawPerPage <= 100 ? rawPerPage : 20
+  const queryDateFrom = searchParams.get('date_from') ?? initialParams.date_from
+  const queryDateTo = searchParams.get('date_to') ?? initialParams.date_to
+  const dateOverrides = getQuickFilterDateOverrides(activeFilter, queryDateFrom, queryDateTo)
 
   return {
     activeFilter,
@@ -563,8 +572,9 @@ function resolveInitialControlState(
     categoryId,
     page,
     perPage,
+    ...dateOverrides,
     txParams: {
-      ...QuickFilterParams[activeFilter],
+      ...getQuickFilterParamPatch(activeFilter, queryDateFrom, queryDateTo),
       search: search || undefined,
       account_id: accountId || undefined,
       category_id: categoryId || undefined,
@@ -599,8 +609,8 @@ export function TransactionTable({
   const [sort,         setSort]         = useState(initialControl.sort)
   const [accountId,    setAccountId]    = useState(initialControl.accountId)
   const [categoryId,   setCategoryId]   = useState(initialControl.categoryId)
-  const [dateFrom,     setDateFrom]     = useState('')
-  const [dateTo,       setDateTo]       = useState('')
+  const [dateFrom,     setDateFrom]     = useState(initialControl.dateFrom)
+  const [dateTo,       setDateTo]       = useState(initialControl.dateTo)
   const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false)
   const [accountOptions, setAccountOptions] = useState<FilterOption[]>([])
   const [categoryOptions, setCategoryOptions] = useState<FilterOption[]>([])
@@ -851,17 +861,15 @@ export function TransactionTable({
       return
     }
 
-    const quickDateParams = QuickFilterParams[activeFilter]
     setParams({
       search:   deferredSearch || undefined,
       account_id: accountId || undefined,
       category_id: categoryId || undefined,
       sort_by:  sortBy,
       sort_dir: sortDir,
-      ...quickDateParams,
-      // PRD: explicit date pickers override quick-filter dates
-      ...(dateFrom ? { date_from: dateFrom } : {}),
-      ...(dateTo ? { date_to: dateTo } : {}),
+      // Pass all quick-filter keys explicitly because setParams merges partial
+      // input and omitted keys would retain stale type/date constraints.
+      ...getQuickFilterParamPatch(activeFilter, dateFrom, dateTo),
     })
   }, [activeFilter, accountId, categoryId, dateFrom, dateTo, deferredSearch, sortBy, sortDir, setParams])
 
@@ -974,6 +982,8 @@ export function TransactionTable({
     setSort(fromUrl.sort)
     setAccountId(fromUrl.accountId)
     setCategoryId(fromUrl.categoryId)
+    setDateFrom(fromUrl.dateFrom)
+    setDateTo(fromUrl.dateTo)
     setParams(fromUrl.txParams)
 
     lastSyncedQueryRef.current = currentQuery
@@ -1101,6 +1111,7 @@ export function TransactionTable({
       category_id: undefined,
       date_from: undefined,
       date_to: undefined,
+      type: undefined,
       ...QuickFilterParams.all,
     })
   }, [setParams])
@@ -1210,8 +1221,10 @@ export function TransactionTable({
     setSort(`${nextSortBy}-${nextSortDir}`)
     setAccountId(selected.state.accountId)
     setCategoryId(selected.state.categoryId)
+    setDateFrom('')
+    setDateTo('')
     setParams({
-      ...QuickFilterParams[selected.state.activeFilter],
+      ...getQuickFilterParamPatch(selected.state.activeFilter),
       search: selected.state.search || undefined,
       account_id: selected.state.accountId || undefined,
       category_id: selected.state.categoryId || undefined,
