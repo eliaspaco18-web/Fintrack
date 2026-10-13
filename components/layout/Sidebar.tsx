@@ -53,7 +53,7 @@ interface SidebarProfileProps {
 
 function SidebarSectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="px-2 pb-3 pt-2 text-[9px] font-bold uppercase leading-none tracking-[0.12em] text-[var(--sidebar-section-text)]">
+    <p className="ft-sidebar-section-label px-2 pb-3 pt-2 text-[9px] font-bold uppercase leading-none tracking-[0.12em] text-[var(--sidebar-section-text)]">
       {children}
     </p>
   )
@@ -100,7 +100,7 @@ function SidebarNavigation({
   return (
     <>
     <nav
-      className="flex flex-1 flex-col overflow-y-auto overflow-x-visible px-3 pb-3 pt-9"
+      className="ft-sidebar-navigation flex flex-1 flex-col overflow-y-auto overflow-x-visible px-3 pb-3 pt-9"
       aria-label="Navegación principal"
       onScroll={dismissTooltip}
     >
@@ -235,12 +235,12 @@ export function StaticSidebar({ mode, animate = false, user, badges = {} }: Stat
         width: collapsed
           ? 'var(--sidebar-width-collapsed)'
           : 'var(--sidebar-width-expanded)',
-        '--ft-sidebar-scale': collapsed ? String(68 / 208) : '1',
+        '--ft-sidebar-scale': collapsed ? String(72 / 208) : '1',
         '--ft-sidebar-motion-duration': animate ? '240ms' : '0ms',
       } as React.CSSProperties}
     >
       <div className="relative z-[1] flex h-full flex-col overflow-visible bg-transparent">
-        <div className="flex h-[var(--sidebar-header-height)] shrink-0 items-center border-b border-[var(--sidebar-panel-border)] pl-[18px]">
+        <div className="fin-sidebar-header flex h-[var(--sidebar-header-height)] shrink-0 items-center pl-[18px]">
           <SidebarLogo collapsed={collapsed} />
         </div>
 
@@ -256,7 +256,7 @@ export function StaticSidebar({ mode, animate = false, user, badges = {} }: Stat
   )
 }
 
-/** Tablet labels are a temporary modal above the 68px rail, not a new layout width. */
+/** Tablet labels are a temporary modal above the shared 72px rail, not a new layout width. */
 export function TabletNavigation({ open, onClose, user, badges = {} }: MobileDrawerProps) {
   const [root, setRoot] = useState<HTMLElement | null>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -283,7 +283,7 @@ export function TabletNavigation({ open, onClose, user, badges = {} }: MobileDra
     <div className="ft-tablet-navigation-layer" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}>
       <FocusTrap active onEscape={onClose} initialFocusRef={headingRef} deferRestoreFocus className="ft-tablet-navigation-trap">
         <aside id="ft-tablet-navigation-panel" className="ft-tablet-navigation-panel" role="dialog" aria-modal="true" aria-labelledby="ft-tablet-navigation-title">
-          <div className="flex h-[var(--sidebar-header-height)] shrink-0 items-center justify-between border-b border-[var(--sidebar-panel-border)] pl-[18px] pr-2">
+          <div className="fin-sidebar-header flex h-[var(--sidebar-header-height)] shrink-0 items-center justify-between pl-[18px] pr-2">
             <SidebarLogo collapsed={false} onNavigate={onClose} />
             <button type="button" onClick={onClose} aria-label="Cerrar navegación" className="sidebar-icon-button !h-11 !w-11">
               <IconX size={17} />

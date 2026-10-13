@@ -166,8 +166,8 @@
   .operation { transition: none; }
 }
 
-/* Match the product shell to Astra only on Movimientos; Dashboard stays untouched. */
-.astraShell {
+/* Preserve Round 07's transaction-page tokens without styling the shared shell. */
+.transactionsContent {
   --font-fintrack-v3: Manrope, system-ui, sans-serif;
   --font-body: Manrope, system-ui, sans-serif;
   --font-display: Manrope, system-ui, sans-serif;
@@ -207,25 +207,17 @@
   --ft-radius-badge: 6px;
   --ft-radius-surface: 18px;
   --ft-radius-workspace: 24px;
-  --sidebar-width-expanded: 208px;
-  --sidebar-width-collapsed: 72px;
-  --topbar-height: 64px;
-  --sidebar-header-height: 84px;
-  --sidebar-item-height: 40px;
-  --sidebar-item-padding-x: 12px;
-  --sidebar-item-gap: 12px;
-  --sidebar-item-font-size: 13px;
   font-family: Manrope, system-ui, sans-serif;
 }
 
-.astraShell :global(.font-display) { font-family: inherit; }
+.transactionsContent :global(.font-display) { font-family: inherit; }
 
-.astraShell :global(button),
-.astraShell :global(input),
-.astraShell :global(select),
-.astraShell :global(textarea) { font-family: inherit; }
+.transactionsContent :global(button),
+.transactionsContent :global(input),
+.transactionsContent :global(select),
+.transactionsContent :global(textarea) { font-family: inherit; }
 
-:global(html[data-theme='dark']) .astraShell {
+:global(html[data-theme='dark']) .transactionsContent {
   --ft-canvas: #17191c;
   --ft-surface: #202327;
   --ft-surface-muted: #292d31;
@@ -258,63 +250,13 @@
   --ft-modal-bg: #202327;
 }
 
-.astraShell :global(.fin-sidebar) {
-  background: var(--ft-surface) !important;
-}
-
-.astraShell :global(.fin-sidebar > div > div:first-child) {
-  align-items: flex-start;
-  border-bottom: 0;
-  padding-top: 28px;
-}
-
-.astraShell :global(.fin-sidebar nav) { padding-top: 0; }
-
-.astraShell :global(.ft-sidebar-mark) {
-  width: 32px;
-  height: 32px;
-}
-
-.astraShell :global(.ft-sidebar-wordmark span) {
-  font-size: 21px;
-  font-weight: 800;
-  letter-spacing: -.7px;
-}
-
-.astraShell :global(.fin-sidebar p.px-2.pb-3.pt-2) {
-  font-size: 9px;
-  letter-spacing: 1.2px;
-}
-
-.astraShell :global(.ft-topbar-inner) {
-  padding-inline: 36px;
-}
-
-.astraShell :global(.ft-shell-content) {
+.transactionsContent:global(.ft-shell-content) {
   max-width: 1512px;
   padding: 32px 36px 52px;
 }
 
-.astraShell :global(.ft-sidebar-wordmark) { gap: 9px; }
-
-.astraShell :global(.fin-sidebar nav a),
-.astraShell :global(.fin-sidebar nav button) {
-  min-height: 40px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.astraShell :global(.ft-topbar-inner) {
-  min-height: 64px;
-  font-family: Manrope, system-ui, sans-serif;
-}
-
-.astraShell :global(.ft-topbar-inner button),
-.astraShell :global(.ft-topbar-inner a) { font-family: inherit; }
-
 @media (max-width: 1199px) {
-  .astraShell :global(.ft-topbar-inner) { padding-inline: 22px; }
-  .astraShell :global(.ft-shell-content) { padding: 20px 22px 52px; }
+  .transactionsContent:global(.ft-shell-content) { padding: 20px 22px 52px; }
 }
 
 @media (max-width: 767px) {
@@ -323,9 +265,7 @@
   .operation strong { font-size: 13px; }
   .operation small { font-size: 11px; }
 
-  .astraShell { --topbar-height: 56px; --sidebar-header-height: 56px; }
-  .astraShell :global(.ft-topbar-inner) { padding-inline: 16px; }
-  .astraShell :global(.ft-shell-content) { padding: 24px 20px 100px; }
+  .transactionsContent:global(.ft-shell-content) { padding: 24px 20px 100px; }
 }
 
 .pageOverview {

@@ -139,8 +139,8 @@ function InnerShell({ user, navBadges = {}, children }: Omit<AppShellProps, 'exc
     workspaceAnimationRef.current = null
 
     if (source !== 'pointer' || window.innerWidth < 1200 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    const previousWidth = previousMode === 'expanded' ? 208 : 68
-    const nextWidth = sidebarMode === 'expanded' ? 208 : 68
+    const previousWidth = previousMode === 'expanded' ? 208 : 72
+    const nextWidth = sidebarMode === 'expanded' ? 208 : 72
     const fromX = workspaceFlipOffset(previousWidth, nextWidth, currentTranslation)
     const animation = workspace.animate(
       [{ transform: `translateX(${fromX}px)` }, { transform: 'translateX(0)' }],
@@ -188,7 +188,7 @@ function InnerShell({ user, navBadges = {}, children }: Omit<AppShellProps, 'exc
     // Solo el <main> scrollea internamente
     <div
       data-ft-v3-shell=""
-      className={`fin-shell flex h-dvh overflow-hidden bg-[var(--ft-canvas)] text-[var(--ft-text-strong)] ${pathname === '/transactions' ? transactionStyles.astraShell : ''}`}
+      className="fin-shell flex h-dvh overflow-hidden bg-[var(--ft-canvas)] text-[var(--ft-text-strong)]"
     >
       <ReleaseAnnouncementGate />
 
@@ -232,7 +232,7 @@ function InnerShell({ user, navBadges = {}, children }: Omit<AppShellProps, 'exc
           <div
             key={pathname}
             ref={routeContentRef}
-            className={`ft-shell-content w-full ${pathname === '/dashboard' ? 'ft-shell-content-dashboard' : ''}`}
+            className={`ft-shell-content w-full ${pathname === '/dashboard' ? 'ft-shell-content-dashboard' : ''} ${pathname === '/transactions' ? transactionStyles.transactionsContent : ''}`}
             style={{ paddingBottom: 'max(6rem, calc(var(--fab-safe-area, 0px) + 1.5rem))' }}
           >
             <ProductUpdatesBanner />

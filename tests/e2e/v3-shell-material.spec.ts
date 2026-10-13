@@ -19,9 +19,9 @@ test('legacy shell keeps its previous geometry when V3 is not selected', async (
 
 for (const variant of [
   { name: 'desktop-expanded-light', width: 1440, height: 900, theme: 'light', rail: 208, expanded: true },
-  { name: 'desktop-compact-dark', width: 1440, height: 900, theme: 'dark', rail: 68, expanded: false },
-  { name: 'tablet-rail-light', width: 834, height: 900, theme: 'light', rail: 68, expanded: false },
-  { name: 'tablet-overlay-dark', width: 834, height: 900, theme: 'dark', rail: 68, expanded: false, overlay: true },
+  { name: 'desktop-compact-dark', width: 1440, height: 900, theme: 'dark', rail: 72, expanded: false },
+  { name: 'tablet-rail-light', width: 834, height: 900, theme: 'light', rail: 72, expanded: false },
+  { name: 'tablet-overlay-dark', width: 834, height: 900, theme: 'dark', rail: 72, expanded: false, overlay: true },
 ] as const) {
   test(`V3 shell material and identity geometry: ${variant.name}`, async ({ page }) => {
     await page.setViewportSize({ width: variant.width, height: variant.height })
@@ -35,11 +35,11 @@ for (const variant of [
       fixture.style.cssText = 'position:fixed;inset:0;z-index:1000;display:flex;background:var(--ft-canvas);color:var(--ft-text-strong)'
       fixture.innerHTML = `
         <aside class="fin-sidebar" style="width:var(--sidebar-width-${config.expanded ? 'expanded' : 'collapsed'});height:100%;border-right:1px solid var(--sidebar-panel-border)">
-          <div style="height:var(--sidebar-header-height);display:flex;align-items:center;padding-left:18px;border-bottom:1px solid var(--sidebar-panel-border)">
+          <div class="fin-sidebar-header flex h-[var(--sidebar-header-height)] shrink-0 items-center pl-[18px]">
             <svg class="ft-mark ft-sidebar-mark" viewBox="0 0 80 80" fill="none" aria-label="Marca FT12"><path class="ft-mark-structure" d="M15 66V25c0-7 5-12 12-12h38" stroke-width="11" stroke-linecap="round"/><path class="ft-mark-flow" d="M16 42h32" stroke-width="11" stroke-linecap="round"/><path class="ft-mark-structure" d="M50 28v38M37 28h28" stroke-width="11" stroke-linecap="round"/><circle cx="50" cy="42" r="6" fill="#D7B66F"/></svg>
             ${config.expanded ? '<span style="margin-left:12px;font-size:21px;font-weight:700">FinTrack</span>' : ''}
           </div>
-          <div style="padding:16px 12px">${config.expanded ? '<p>Tu día a día</p>' : ''}<p>Inicio</p><p>Movimientos</p><p>Cuentas</p></div>
+          <nav class="ft-sidebar-navigation flex flex-1 flex-col overflow-y-auto overflow-x-visible px-3 pb-3 pt-9">${config.expanded ? '<p class="ft-sidebar-section-label px-2 pb-3 pt-2 text-[9px] font-bold uppercase leading-none tracking-[0.12em]">Tu día a día</p>' : ''}<a class="sidebar-nav-link">Inicio</a><a class="sidebar-nav-link">Movimientos</a><a class="sidebar-nav-link">Cuentas</a></nav>
         </aside>
         <div style="flex:1;min-width:0">
           <header class="fin-topbar" style="height:var(--topbar-height);border-bottom:1px solid var(--ft-border)">
@@ -69,13 +69,18 @@ for (const variant of [
     expect(await rail.evaluate(element => getComputedStyle(element, '::before').zIndex)).toBe('-1')
     const mark = page.locator('#ft-shell-fixture .ft-sidebar-mark')
     expect(Math.round(await mark.evaluate(element => element.getBoundingClientRect().x))).toBe(18)
+    expect(Math.round(await mark.evaluate(element => element.getBoundingClientRect().y))).toBe(28)
     expect(Math.round(await mark.evaluate(element => element.getBoundingClientRect().width))).toBe(32)
+    const sidebarHeader = page.locator('#ft-shell-fixture .fin-sidebar-header')
+    expect(Math.round(await sidebarHeader.evaluate(element => element.getBoundingClientRect().height))).toBe(84)
+    expect(await sidebarHeader.evaluate(element => getComputedStyle(element).borderBottomWidth)).toBe('0px')
+    expect(await page.locator('#ft-shell-fixture .ft-sidebar-navigation').evaluate(element => getComputedStyle(element).paddingTop)).toBe('0px')
     expect(await mark.locator('path').count()).toBe(3)
     const topbar = page.locator('#ft-shell-fixture .fin-topbar')
     expect(Math.round(await topbar.evaluate(element => element.getBoundingClientRect().height))).toBe(56)
     if ('overlay' in variant && variant.overlay) {
       expect(Math.round(await page.locator('.ft-tablet-navigation-panel').evaluate(element => element.getBoundingClientRect().width))).toBe(208)
-      expect(Math.round(await rail.evaluate(element => element.getBoundingClientRect().width))).toBe(68)
+      expect(Math.round(await rail.evaluate(element => element.getBoundingClientRect().width))).toBe(72)
     }
     if (process.env.V3_CAPTURE_SHELL === '1') {
       await page.screenshot({ path: join(process.cwd(), `docs/redesign-v3/implementation/stage6-${variant.name}.png`) })

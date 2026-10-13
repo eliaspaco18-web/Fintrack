@@ -670,7 +670,7 @@ body {
 .fin-shell[data-ft-v3-shell] .fin-sidebar {
   position: relative;
   z-index: calc(var(--ft-z-sticky) + 1);
-  background-color: transparent !important;
+  background-color: var(--ft-shell-sidebar-bg) !important;
 }
 :root:not([data-theme='dark']) .fin-shell[data-ft-v3-shell] {
   --ft-canvas: #F5F6F7;
@@ -685,9 +685,63 @@ body {
   --sidebar-footer-bg: #FFFFFF;
 }
 .fin-shell[data-ft-v3-shell] {
+  --sidebar-width-expanded: 208px;
+  --sidebar-width-collapsed: 72px;
+  --sidebar-header-height: 84px;
   --sidebar-item-height: 40px;
   --sidebar-item-height-collapsed: 44px;
-  font-family: var(--font-fintrack-v3), system-ui, sans-serif;
+  --sidebar-item-padding-x: 12px;
+  --sidebar-item-gap: 12px;
+  --sidebar-item-font-size: 13px;
+  --ft-shell-sidebar-bg: #ffffff;
+  --sidebar-panel-border: #dce1e5;
+  --sidebar-panel-bg: var(--ft-shell-sidebar-bg);
+  --sidebar-shell-bg: var(--ft-shell-sidebar-bg);
+}
+:root[data-theme='dark'] .fin-shell[data-ft-v3-shell] {
+  --ft-shell-sidebar-bg: #202327;
+  --sidebar-panel-border: #393f45;
+}
+.fin-shell[data-ft-v3-shell] .fin-sidebar,
+.fin-shell[data-ft-v3-shell] .fin-topbar,
+.fin-shell[data-ft-v3-shell] .ft-tablet-navigation-panel {
+  font-family: Manrope, system-ui, sans-serif;
+}
+.fin-shell[data-ft-v3-shell] .fin-sidebar-header,
+.ft-tablet-navigation-panel .fin-sidebar-header {
+  align-items: flex-start;
+  border-bottom: 0;
+  padding-top: 28px;
+}
+.ft-tablet-navigation-panel {
+  --sidebar-header-height: 84px;
+  --sidebar-item-height: 40px;
+  --sidebar-item-padding-x: 12px;
+  --sidebar-item-gap: 12px;
+  --sidebar-item-font-size: 13px;
+}
+.fin-shell[data-ft-v3-shell] .ft-sidebar-navigation,
+.ft-tablet-navigation-panel .ft-sidebar-navigation {
+  padding-top: 0;
+}
+.fin-shell[data-ft-v3-shell] .ft-sidebar-wordmark span,
+.ft-tablet-navigation-panel .ft-sidebar-wordmark span {
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.7px;
+}
+.fin-shell[data-ft-v3-shell] .ft-sidebar-section-label,
+.ft-tablet-navigation-panel .ft-sidebar-section-label {
+  font-size: 9px;
+  letter-spacing: 1.2px;
+}
+.fin-shell[data-ft-v3-shell] .fin-sidebar nav a,
+.fin-shell[data-ft-v3-shell] .fin-sidebar nav button,
+.ft-tablet-navigation-panel nav a,
+.ft-tablet-navigation-panel nav button {
+  min-height: 40px;
+  font-size: 13px;
+  font-weight: 600;
 }
 .fin-shell[data-ft-v3-shell] .sidebar-account-avatar { border-radius: 50%; }
 .fin-shell[data-ft-v3-shell] .ft-topbar-utility { border: 0; background: transparent; }
@@ -924,13 +978,19 @@ body {
 
 .fin-topbar {
   background-color: var(--ft-topbar-bg) !important;
-  border-color: var(--ft-border) !important;
+  border-color: var(--ft-topbar-border, var(--ft-border)) !important;
 }
 
 /* Shared Astra Round 07 treatment for every authenticated V3 route. */
 .fin-shell[data-ft-v3-shell] .fin-topbar {
-  --ft-topbar-bg: var(--ft-canvas);
+  --ft-topbar-bg: #f5f6f7;
+  --ft-topbar-border: #dce1e5;
   --topbar-height: 56px;
+  font-family: Manrope, system-ui, sans-serif;
+}
+:root[data-theme='dark'] .fin-shell[data-ft-v3-shell] .fin-topbar {
+  --ft-topbar-bg: #17191c;
+  --ft-topbar-border: #393f45;
 }
 .fin-shell[data-ft-v3-shell] .ft-topbar-inner {
   padding-inline: 28px;
