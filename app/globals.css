@@ -743,6 +743,12 @@ body {
   font-size: 13px;
   font-weight: 600;
 }
+.fin-shell[data-ft-v3-shell] .sidebar-nav-label,
+.ft-tablet-navigation-panel .sidebar-nav-label,
+.fin-mobile-drawer .sidebar-nav-label {
+  font-family: Manrope, system-ui, sans-serif;
+  font-weight: 600;
+}
 .fin-shell[data-ft-v3-shell] .sidebar-account-avatar { border-radius: 50%; }
 .fin-shell[data-ft-v3-shell] .ft-topbar-utility { border: 0; background: transparent; }
 .fin-shell[data-ft-v3-shell] .ft-topbar-profile { flex: 0 0 36px; }

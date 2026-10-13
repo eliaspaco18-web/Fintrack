@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 test('the V3 AppShell uses one route-independent Sidebar and Topbar', () => {
@@ -7,6 +7,14 @@ test('the V3 AppShell uses one route-independent Sidebar and Topbar', () => {
   expect(source).toContain('<StaticSidebar')
   expect(source).toContain('<Topbar')
   expect(source).not.toContain("pathname === '/transactions' ? transactionStyles.astraShell")
+})
+
+test('sidebar module labels match Astra Manrope 600 and the local semibold font is present', () => {
+  const astraCss = readFileSync(join(process.cwd(), 'docs', 'redesign-v3', 'preview', 'design.css'), 'utf8')
+  const globalCss = readFileSync(join(process.cwd(), 'app', 'globals.css'), 'utf8')
+  expect(astraCss).toMatch(/\.nav-item\{[^}]*font-weight:600/)
+  expect(globalCss).toMatch(/font-family:\s*Manrope,\s*system-ui,\s*sans-serif;\s*font-weight:\s*600;/)
+  expect(existsSync(join(process.cwd(), 'public', 'fonts', 'v3', 'manrope-semibold.ttf'))).toBe(true)
 })
 
 const cssDirectory = join(process.cwd(), '.next', 'static', 'css')
@@ -36,7 +44,7 @@ for (const variant of [
                     <a class="ft-sidebar-logo group flex min-w-0 items-center gap-3"><svg class="ft-mark ft-sidebar-mark shrink-0" viewBox="0 0 80 80"><path d="M1 1"/></svg><div class="ft-sidebar-wordmark"><span>FinTrack</span></div></a>
                   </div>
                   <nav class="ft-sidebar-navigation flex flex-1 flex-col overflow-y-auto overflow-x-visible px-3 pb-3 pt-9">
-                    <div><p class="ft-sidebar-section-label px-2 pb-3 pt-2 text-[9px] font-bold uppercase leading-none tracking-[0.12em]">Tu día a día</p><ul class="space-y-1"><li><a class="sidebar-nav-link" data-active="true"><span class="sidebar-nav-icon">⌂</span><span class="text-[13px] font-medium tracking-[-0.01em] flex-1 min-w-0 truncate">${route}</span></a></li></ul></div>
+                    <div><p class="ft-sidebar-section-label px-2 pb-3 pt-2 text-[9px] font-bold uppercase leading-none tracking-[0.12em]">Tu día a día</p><ul class="space-y-1">${['Inicio', 'Movimientos', 'Cuentas'].map(label => `<li><a class="sidebar-nav-link" data-active="${label === route ? 'true' : 'false'}"><span class="sidebar-nav-icon">⌂</span><span class="sidebar-nav-label text-[13px] tracking-[-0.01em] flex-1 min-w-0 truncate">${label}</span></a></li>`).join('')}</ul></div>
                   </nav>
                   <div class="border-t border-[var(--sidebar-panel-border)] px-3 py-3"><div class="sidebar-account-card"><span>Usuario</span></div></div>
                 </div>
@@ -66,6 +74,7 @@ for (const variant of [
           const mark = sidebar.querySelector<HTMLElement>('.ft-sidebar-mark')!
           const navigation = sidebar.querySelector<HTMLElement>('.ft-sidebar-navigation')!
           const navLink = sidebar.querySelector<HTMLElement>('.sidebar-nav-link')!
+          const navLabels = Array.from(sidebar.querySelectorAll<HTMLElement>('.sidebar-nav-label'))
           const wordmark = sidebar.querySelector<HTMLElement>('.ft-sidebar-wordmark span')!
           const profile = sidebar.querySelector<HTMLElement>('.sidebar-account-card')!
           const topbar = topbars[index]!
@@ -92,6 +101,11 @@ for (const variant of [
             navItemHeight: navLink.getBoundingClientRect().height,
             navFont: getComputedStyle(navLink).fontFamily,
             navFontSize: getComputedStyle(navLink).fontSize,
+            navLabelTypography: navLabels.map(label => ({
+              family: getComputedStyle(label).fontFamily,
+              weight: getComputedStyle(label).fontWeight,
+              size: getComputedStyle(label).fontSize,
+            })),
             profileBottom: profile.getBoundingClientRect().bottom,
             topbarBackground: getComputedStyle(topbar).backgroundColor,
             topbarBorderColor: getComputedStyle(topbar).borderBottomColor,
@@ -139,6 +153,11 @@ for (const variant of [
       expect(shell.wordmarkWeight).toBe('800')
       expect(shell.navFont).toContain('Manrope')
       expect(shell.navFontSize).toBe('13px')
+      expect(shell.navLabelTypography).toEqual([
+        { family: 'Manrope, system-ui, sans-serif', weight: '600', size: '13px' },
+        { family: 'Manrope, system-ui, sans-serif', weight: '600', size: '13px' },
+        { family: 'Manrope, system-ui, sans-serif', weight: '600', size: '13px' },
+      ])
       expect(shell.topbarBackground).toBe(variant.background)
       expect(shell.topbarBorderColor).toBe(variant.border)
       expect(shell.height).toBe(variant.topbarHeight)

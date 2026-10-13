@@ -126,7 +126,7 @@ export function NavItem({ item, mode, badge = 0, onClick, onRailTooltipEnter, on
         <span className="sidebar-nav-icon">
           <NavIcon name={item.icon} size={18} strokeWidth={1.7} />
         </span>
-        <span className="text-[13px] font-medium tracking-[-0.01em] flex-1 min-w-0 truncate">
+        <span className="sidebar-nav-label text-[13px] tracking-[-0.01em] flex-1 min-w-0 truncate">
           {item.label}
         </span>
         {isDeveloper ? <span className="sidebar-dev-badge">DEV</span> : null}
