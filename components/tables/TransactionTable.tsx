@@ -28,6 +28,10 @@ import {
   getQuickFilterParamPatch,
 } from '@/modules/transactions/quick-filter-query'
 import {
+  buildTransactionSearchQuery,
+  resolveTransactionUrlSyncAction,
+} from '@/modules/transactions/transaction-url-sync'
+import {
   ConfirmDialog,
   DataErrorBanner,
   DataFilterPreset,
@@ -599,6 +603,7 @@ export function TransactionTable({
   const initialControlRef = useRef<TableControlState | null>(null)
   const baseInitialParamsRef = useRef(initialParams)
   const lastSyncedQueryRef = useRef(searchParams.toString())
+  const popStatePendingRef = useRef(false)
   if (!initialControlRef.current) {
     initialControlRef.current = resolveInitialControlState(initialParams, searchParams)
   }
@@ -861,6 +866,8 @@ export function TransactionTable({
       return
     }
 
+    if (popStatePendingRef.current) return
+
     setParams({
       search:   deferredSearch || undefined,
       account_id: accountId || undefined,
@@ -874,43 +881,38 @@ export function TransactionTable({
   }, [activeFilter, accountId, categoryId, dateFrom, dateTo, deferredSearch, sortBy, sortDir, setParams])
 
   useEffect(() => {
-    const next = new URLSearchParams(searchParams.toString())
-    const activeQuickFilterParams = QuickFilterParams[activeFilter]
-
-    const setOrDelete = (key: string, value: string | undefined) => {
-      if (!value) {
-        next.delete(key)
-        return
-      }
-      next.set(key, value)
-    }
-
-    setOrDelete('qf', activeFilter !== 'all' ? activeFilter : undefined)
-    setOrDelete('search', deferredSearch || undefined)
-    setOrDelete('account_id', accountId || undefined)
-    setOrDelete('category_id', categoryId || undefined)
-    setOrDelete('type', activeQuickFilterParams.type)
-    setOrDelete('date_from', dateFrom || activeQuickFilterParams.date_from)
-    setOrDelete('date_to', dateTo || activeQuickFilterParams.date_to)
-
-    if (sort === 'transaction_date-desc') {
-      next.delete('sort_by')
-      next.delete('sort_dir')
-    } else {
-      next.set('sort_by', sortBy ?? 'transaction_date')
-      next.set('sort_dir', sortDir)
-    }
-
+    const actualQuery = new URLSearchParams(window.location.search).toString()
     const currentPage = params.page ?? 1
     const currentPerPage = params.per_page ?? 20
-    setOrDelete('page', currentPage > 1 ? String(currentPage) : undefined)
-    setOrDelete('per_page', currentPerPage !== 20 ? String(currentPerPage) : undefined)
+    const nextQuery = buildTransactionSearchQuery({
+      currentQuery: actualQuery,
+      activeFilter,
+      search: deferredSearch,
+      accountId,
+      categoryId,
+      dateFrom,
+      dateTo,
+      sort,
+      sortBy,
+      sortDir,
+      page: currentPage,
+      perPage: currentPerPage,
+    })
+    const action = resolveTransactionUrlSyncAction({
+      actualQuery,
+      renderedQuery: searchParams.toString(),
+      desiredQuery: nextQuery,
+      lastSyncedQuery: lastSyncedQueryRef.current,
+      popStatePending: popStatePendingRef.current,
+    })
 
-    const nextQuery = next.toString()
-    const currentQuery = searchParams.toString()
-    if (nextQuery !== currentQuery) {
+    if (action === 'replace-url') {
       lastSyncedQueryRef.current = nextQuery
-      router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false })
+      const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname
+      // Filter changes only update query state; an App Router navigation here
+      // is asynchronous and can publish an older selection after a newer one.
+      // Next.js patches native history methods to keep useSearchParams in sync.
+      window.history.replaceState(null, '', nextUrl)
     }
   }, [
     activeFilter,
@@ -920,7 +922,6 @@ export function TransactionTable({
     dateTo,
     deferredSearch,
     pathname,
-    router,
     searchParams,
     sort,
     sortBy,
@@ -928,6 +929,15 @@ export function TransactionTable({
     params.page,
     params.per_page,
   ])
+
+  useEffect(() => {
+    const handlePopState = () => {
+      popStatePendingRef.current = true
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
 
   useEffect(() => {
     if (loadedPrefsRef.current) return
@@ -971,10 +981,25 @@ export function TransactionTable({
   }, [])
 
   useEffect(() => {
-    const currentQuery = searchParams.toString()
-    if (currentQuery === lastSyncedQueryRef.current) return
+    const actualQuery = new URLSearchParams(window.location.search).toString()
+    const renderedQuery = searchParams.toString()
+    const action = resolveTransactionUrlSyncAction({
+      actualQuery,
+      renderedQuery,
+      desiredQuery: lastSyncedQueryRef.current,
+      lastSyncedQuery: lastSyncedQueryRef.current,
+      popStatePending: popStatePendingRef.current,
+    })
 
-    const fromUrl = resolveInitialControlState(baseInitialParamsRef.current, searchParams)
+    if (action === 'wait' || action === 'replace-url') return
+    if (action === 'stable') {
+      popStatePendingRef.current = false
+      return
+    }
+    popStatePendingRef.current = false
+
+    const currentSearchParams = new URLSearchParams(actualQuery)
+    const fromUrl = resolveInitialControlState(baseInitialParamsRef.current, currentSearchParams)
 
     suspendControlToParamsSyncRef.current = true
     setActiveFilter(fromUrl.activeFilter)
@@ -986,7 +1011,7 @@ export function TransactionTable({
     setDateTo(fromUrl.dateTo)
     setParams(fromUrl.txParams)
 
-    lastSyncedQueryRef.current = currentQuery
+    lastSyncedQueryRef.current = actualQuery
   }, [searchParams, setParams])
 
   useEffect(() => {
