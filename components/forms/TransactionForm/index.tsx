@@ -63,6 +63,7 @@ import {
   NestedCategoryCreateModal,
 } from './NestedRecordCreationModals'
 import { StatusBadge } from '@/components/finance'
+import incomeStyles from './IncomeTransactionForm.module.css'
 import {
   getAttachmentAvailabilityOutcome,
   requestAttachmentUpload,
@@ -144,6 +145,20 @@ function cardUsedFor(option: FormSelectOption | null, currency: CreditCurrency):
 
 function cardAvailableFor(option: FormSelectOption | null, currency: CreditCurrency): number {
   return Math.max(cardLimitFor(option, currency) - cardUsedFor(option, currency), 0)
+}
+
+function IncomeInfoHint({ label, children }: { label: string; children: string }) {
+  return (
+    <details className={incomeStyles.infoHint}>
+      <summary aria-label={label} title={label}>
+        <svg aria-hidden="true" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="6.25" />
+          <path d="M8 7.1v3.7M8 5.2h.01" />
+        </svg>
+      </summary>
+      <span role="tooltip">{children}</span>
+    </details>
+  )
 }
 
 // ─── PROPS ────────────────────────────────────────────────────────────────────
@@ -866,6 +881,7 @@ export function TransactionForm({
     if (createsReceivable) return 'receivable_issue'
     return 'expense'
   }, [createsAsset, createsPayable, createsReceivable, operationType, type])
+  const isIncomeCreate = layoutMode === 'income' && !isEditMode
 
   // ── Cross-currency transfer detection ────────────────────────────────────
   const isCrossCurrencyTransfer = layoutMode === 'transfer'
@@ -1353,7 +1369,7 @@ export function TransactionForm({
   }
 
   const amountCurrencyField = (
-    <div className={isCompactLayout ? 'grid grid-cols-[1fr_100px] gap-2' : 'grid grid-cols-[1fr_110px] gap-3'}>
+    <div className={`${isCompactLayout ? 'grid grid-cols-[1fr_100px] gap-2' : 'grid grid-cols-[1fr_110px] gap-3'} ${isIncomeCreate ? incomeStyles.incomeAmountCurrency : ''}`}>
       <FieldWrapper
         label={layoutMode === 'asset_purchase' ? 'Valor de compra' : 'Monto'}
         required
@@ -1397,29 +1413,37 @@ export function TransactionForm({
 
       <FieldWrapper
         label="Moneda"
-        hint={isExpenseCreditPayment
-          ? 'Puedes registrar consumos de tarjeta en soles o dólares.'
-          : 'Se sincroniza con el portafolio seleccionado.'}
+        hint={isIncomeCreate
+          ? undefined
+          : isExpenseCreditPayment
+            ? 'Puedes registrar consumos de tarjeta en soles o dólares.'
+            : 'Se sincroniza con el portafolio seleccionado.'}
       >
-        <Select
-          {...register('currency')}
-          compact
-          data-testid="transaction-currency-select"
-          disabled={lockSettlementEdit || !isExpenseCreditPayment}
-        >
-          <option value="PEN">PEN (S/)</option>
-          <option value="USD">USD ($)</option>
-        </Select>
+        <div className={isIncomeCreate ? incomeStyles.incomeCurrencyControl : undefined}>
+          <Select
+            {...register('currency')}
+            compact
+            data-testid="transaction-currency-select"
+            disabled={lockSettlementEdit || !isExpenseCreditPayment}
+          >
+            <option value="PEN">PEN (S/)</option>
+            <option value="USD">USD ($)</option>
+          </Select>
+          {isIncomeCreate ? (
+            <IncomeInfoHint label="Ayuda sobre la moneda">
+              La moneda del ingreso se sincroniza con la cuenta destino seleccionada.
+            </IncomeInfoHint>
+          ) : null}
+        </div>
       </FieldWrapper>
     </div>
   )
 
   const exchangeRateField = (
     <div
-      className={`
-        overflow-hidden transition-all duration-300 ease-out
-        ${sections.exchangeRate ? 'max-h-24 opacity-100' : 'max-h-0 opacity-0'}
-      `}
+      className={isIncomeCreate
+        ? `${incomeStyles.incomeExchangeRate} ${sections.exchangeRate ? incomeStyles.incomeExchangeRateVisible : incomeStyles.incomeExchangeRateHidden}`
+        : `overflow-hidden transition-all duration-300 ease-out ${sections.exchangeRate ? 'max-h-24 opacity-100' : 'max-h-0 opacity-0'}`}
     >
       <FieldWrapper
         label="Tipo de cambio"
@@ -1450,10 +1474,46 @@ export function TransactionForm({
           })}
         />
       </FieldWrapper>
+      {isIncomeCreate ? (
+        <span className={incomeStyles.exchangeRateHelp}>
+          <IncomeInfoHint label="Ayuda sobre el tipo de cambio">
+            El tipo de cambio mostrado corresponde a la fecha de la operación. Conserva la precisión y las reglas actuales de FinTrack.
+          </IncomeInfoHint>
+        </span>
+      ) : null}
     </div>
   )
 
-  const equivalenceField = isCompactLayout ? (
+  const equivalenceField = isIncomeCreate ? (
+    <div className={incomeStyles.incomeEquivalence}>
+      <div className={incomeStyles.incomeEquivalenceHeading}>
+        <span>Equivalencia estimada</span>
+        <IncomeInfoHint label="Ayuda sobre la equivalencia">
+          La equivalencia es informativa y se calcula con el tipo de cambio aplicado a la operación.
+        </IncomeInfoHint>
+        <span className={incomeStyles.incomeAppliedRate}>
+          TC {formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN
+          {refreshingLiveRate ? ' · actualizando…' : ''}
+        </span>
+      </div>
+      {hasAmount ? (
+        <div className={incomeStyles.incomeEquivalenceValues}>
+          <div>
+            <span>En soles</span>
+            <strong>{formatCurrency(equivalentPen, 'PEN')}</strong>
+          </div>
+          <div>
+            <span>En dólares</span>
+            <strong>{formatCurrency(equivalentUsd, 'USD')}</strong>
+          </div>
+        </div>
+      ) : (
+        <p className={incomeStyles.incomeEquivalenceEmpty}>
+          Ingresa un monto para ver su equivalencia.
+        </p>
+      )}
+    </div>
+  ) : isCompactLayout ? (
     <div className="flex items-center justify-between gap-2 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-1.5">
       <span className="text-[10px] uppercase tracking-[0.06em] text-[var(--c-text-muted)]">
         Equiv.
@@ -2372,48 +2432,56 @@ export function TransactionForm({
     </div>
   ) : null
 
+  const transactionDateField = (
+    <FieldWrapper label="Fecha" required error={errors.transaction_date?.message}>
+      <Input
+        type="date"
+        className="w-full"
+        error={errors.transaction_date?.message}
+        data-testid="transaction-date-input"
+        {...register('transaction_date', { required: 'La fecha es requerida' })}
+      />
+    </FieldWrapper>
+  )
+
+  const descriptionField = (
+    <FieldWrapper
+      label="Descripción"
+      optional={layoutMode === 'transfer'}
+      required={layoutMode !== 'transfer'}
+      hint={layoutMode === 'transfer' && !isEditMode ? 'Se completa automáticamente según las cuentas elegidas.' : undefined}
+      error={errors.description?.message}
+    >
+      <Input
+        type="text"
+        placeholder={descriptionPlaceholder}
+        error={errors.description?.message}
+        data-testid="transaction-description-input"
+        readOnly={layoutMode === 'transfer' && !isEditMode}
+        {...register('description', {
+          maxLength: { value: 255, message: 'Máximo 255 caracteres' },
+          validate: v =>
+            type === 'TRANSFER' || v.trim().length > 0 || 'La descripción no puede estar vacía',
+        })}
+      />
+    </FieldWrapper>
+  )
+
   const dateDescriptionField = (
     <div className="grid grid-cols-1 gap-3">
-      <FieldWrapper label="Fecha" required error={errors.transaction_date?.message}>
-        <Input
-          type="date"
-          className="w-full"
-          error={errors.transaction_date?.message}
-          data-testid="transaction-date-input"
-          {...register('transaction_date', { required: 'La fecha es requerida' })}
-        />
-      </FieldWrapper>
-
-      <FieldWrapper
-        label="Descripción"
-        optional={layoutMode === 'transfer'}
-        required={layoutMode !== 'transfer'}
-        hint={layoutMode === 'transfer' && !isEditMode ? 'Se completa automáticamente según las cuentas elegidas.' : undefined}
-        error={errors.description?.message}
-      >
-        <Input
-          type="text"
-          placeholder={descriptionPlaceholder}
-          error={errors.description?.message}
-          data-testid="transaction-description-input"
-          readOnly={layoutMode === 'transfer' && !isEditMode}
-          {...register('description', {
-            maxLength: { value: 255, message: 'Máximo 255 caracteres' },
-            validate: v =>
-              type === 'TRANSFER' || v.trim().length > 0 || 'La descripción no puede estar vacía',
-          })}
-        />
-      </FieldWrapper>
+      {transactionDateField}
+      {descriptionField}
     </div>
   )
 
   const progressiveOptionalField = usesProgressiveOptionalSection ? (
     <OptionalSection
-      title="Mas opciones"
+      title={isIncomeCreate ? 'Más opciones' : 'Mas opciones'}
       summary={optionalSummary}
       open={advancedSectionOpen}
       onOpenChange={setAdvancedSectionOpen}
       hasError={hasOptionalSectionError || Boolean(attachmentError)}
+      className={isIncomeCreate ? incomeStyles.incomeOptionalSection : ''}
     >
       {layoutMode === 'income' && (
         <FieldWrapper label="Remitente" optional>
@@ -3117,23 +3185,43 @@ export function TransactionForm({
           />
         )}
 
-        <div className="astra-form-grid grid grid-cols-1 gap-4 min-[860px]:grid-cols-[minmax(0,1.04fr)_minmax(320px,0.96fr)] min-[860px]:items-start min-[860px]:gap-5">
-          <div className="space-y-4">
-            {primaryContextZone}
-          </div>
+        <div className={isIncomeCreate ? incomeStyles.incomeForm : 'astra-form-grid grid grid-cols-1 gap-4 min-[860px]:grid-cols-[minmax(0,1.04fr)_minmax(320px,0.96fr)] min-[860px]:items-start min-[860px]:gap-5'}>
+          {isIncomeCreate ? (
+            <>
+              <section className={incomeStyles.incomeSection} aria-label="Movimiento">
+                <h3 className={incomeStyles.incomeSectionHeading}>Movimiento</h3>
+                <div className={incomeStyles.incomePrimaryFields}>
+                  {accountField}
+                  {amountCurrencyField}
+                </div>
+                {exchangeRateField}
+                {equivalenceField}
+              </section>
 
-          <div className="space-y-4">
-            {secondaryRecordZone}
-          </div>
+              <section className={incomeStyles.incomeSection} aria-label="Clasificación">
+                <h3 className={incomeStyles.incomeSectionHeading}>Clasificación</h3>
+                <div className={incomeStyles.incomeClassificationFields}>
+                  {categoryField}
+                  {transactionDateField}
+                  <div className={incomeStyles.incomeDescription}>{descriptionField}</div>
+                </div>
+              </section>
+            </>
+          ) : (
+            <>
+              <div className="space-y-4">{primaryContextZone}</div>
+              <div className="space-y-4">{secondaryRecordZone}</div>
+            </>
+          )}
 
           {progressiveOptionalField ? (
-            <div className="min-[860px]:col-span-2">
+            <div className={isIncomeCreate ? incomeStyles.incomeOptionalSlot : 'min-[860px]:col-span-2'}>
               {progressiveOptionalField}
             </div>
           ) : null}
 
           {inlineOptionalField ? (
-            <div className="min-[860px]:col-span-2">
+            <div className={isIncomeCreate ? incomeStyles.incomeOptionalSlot : 'min-[860px]:col-span-2'}>
               {inlineOptionalField}
             </div>
           ) : null}
