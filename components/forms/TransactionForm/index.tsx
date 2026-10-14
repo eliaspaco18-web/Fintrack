@@ -14,7 +14,8 @@
 // Los datos del servidor (options) se pasan como props desde el Server Component.
 // =============================================================================
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { useRouter }                  from 'next/navigation'
 import type {
@@ -69,9 +70,15 @@ import {
   requestAttachmentUpload,
   type AttachmentUploadResponse,
 } from '@/modules/attachments/attachment-client'
+import { MAX_FINANCIAL_ATTACHMENT_BYTES } from '@/modules/attachments/attachment-integrity'
 
 const ATTACHMENT_ACCEPT =
   'image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt'
+
+function formatAttachmentSize(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
 
 const CATEGORY_ICON_PREFIXES = [
   'wallet',
@@ -148,16 +155,172 @@ function cardAvailableFor(option: FormSelectOption | null, currency: CreditCurre
 }
 
 function IncomeInfoHint({ label, children }: { label: string; children: string }) {
+  const tooltipId = useId()
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const tooltipRef = useRef<HTMLSpanElement>(null)
+  const lastInputRef = useRef<'mouse' | 'touch' | 'keyboard'>('mouse')
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [mounted, setMounted] = useState(false)
+  const [open, setOpen] = useState(false)
+  const [closing, setClosing] = useState(false)
+  const [position, setPosition] = useState<{ left: number; top: number } | null>(null)
+
+  useEffect(() => setMounted(true), [])
+
+  const showTooltip = useCallback(() => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    closeTimerRef.current = null
+    setClosing(false)
+    setOpen(true)
+  }, [])
+
+  const closeTooltip = useCallback((immediate = false) => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    closeTimerRef.current = null
+    if (immediate) {
+      setOpen(false)
+      setClosing(false)
+      return
+    }
+    setClosing(true)
+    closeTimerRef.current = setTimeout(() => {
+      setOpen(false)
+      setClosing(false)
+      closeTimerRef.current = null
+    }, 120)
+  }, [])
+
+  useEffect(() => () => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+  }, [])
+
+  const updatePosition = useCallback(() => {
+    const trigger = triggerRef.current
+    const tooltip = tooltipRef.current
+    if (!trigger || !tooltip) return
+
+    const margin = 12
+    const gap = 8
+    const triggerRect = trigger.getBoundingClientRect()
+    const tooltipRect = tooltip.getBoundingClientRect()
+    const maxLeft = Math.max(margin, window.innerWidth - tooltipRect.width - margin)
+    const left = Math.min(
+      maxLeft,
+      Math.max(margin, triggerRect.left + triggerRect.width / 2 - tooltipRect.width / 2),
+    )
+    const spaceAbove = triggerRect.top - margin
+    const spaceBelow = window.innerHeight - triggerRect.bottom - margin
+    const fitsAbove = spaceAbove >= tooltipRect.height + gap
+    const fitsBelow = spaceBelow >= tooltipRect.height + gap
+    const placeAbove = fitsAbove || (!fitsBelow && spaceAbove > spaceBelow)
+    const top = placeAbove
+      ? Math.max(margin, triggerRect.top - tooltipRect.height - gap)
+      : Math.min(window.innerHeight - tooltipRect.height - margin, triggerRect.bottom + gap)
+
+    setPosition(previous => previous?.left === left && previous.top === top ? previous : { left, top })
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!open || !mounted) return
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [mounted, open, updatePosition])
+
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        const restoreFocus = document.activeElement === triggerRef.current
+        closeTooltip(true)
+        if (restoreFocus) triggerRef.current?.focus()
+      }
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (!triggerRef.current?.contains(event.target as Node)) closeTooltip()
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    document.addEventListener('pointerdown', onPointerDown, true)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, true)
+      document.removeEventListener('pointerdown', onPointerDown, true)
+    }
+  }, [closeTooltip, open])
+
   return (
-    <details className={incomeStyles.infoHint}>
-      <summary aria-label={label} title={label}>
+    <span className={incomeStyles.infoHint}>
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-label={label}
+        aria-describedby={open ? tooltipId : undefined}
+        aria-expanded={open && !closing}
+        className={incomeStyles.infoHintTrigger}
+        onPointerDown={event => {
+          lastInputRef.current = event.pointerType === 'touch' ? 'touch' : 'mouse'
+        }}
+        onPointerEnter={event => {
+          if (event.pointerType === 'mouse') {
+            lastInputRef.current = 'mouse'
+            showTooltip()
+          }
+        }}
+        onPointerLeave={event => {
+          if (event.pointerType === 'mouse' && lastInputRef.current === 'mouse') closeTooltip()
+        }}
+        onFocus={event => {
+          if (lastInputRef.current !== 'touch') {
+            lastInputRef.current = event.currentTarget.matches(':focus-visible') ? 'keyboard' : 'mouse'
+            showTooltip()
+          }
+        }}
+        onBlur={() => {
+          if (lastInputRef.current === 'keyboard') closeTooltip()
+        }}
+        onKeyDown={event => {
+          if (event.key !== 'Escape') lastInputRef.current = 'keyboard'
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            event.stopPropagation()
+            closeTooltip(true)
+          }
+        }}
+        onClick={event => {
+          if (event.detail > 0 && lastInputRef.current === 'touch') {
+            if (open && !closing) closeTooltip()
+            else showTooltip()
+          }
+        }}
+      >
         <svg aria-hidden="true" viewBox="0 0 16 16" fill="none">
           <circle cx="8" cy="8" r="6.25" />
           <path d="M8 7.1v3.7M8 5.2h.01" />
         </svg>
-      </summary>
-      <span role="tooltip">{children}</span>
-    </details>
+      </button>
+      {open && mounted && typeof document !== 'undefined' ? createPortal(
+        <span
+          ref={tooltipRef}
+          id={tooltipId}
+          role="tooltip"
+          className={incomeStyles.infoTooltip}
+          data-state={closing ? 'closing' : 'open'}
+          style={{
+            left: position?.left ?? 12,
+            top: position?.top ?? 12,
+            visibility: position ? 'visible' : 'hidden',
+          }}
+        >
+          {children}
+        </span>,
+        document.body,
+      ) : null}
+    </span>
   )
 }
 
@@ -244,10 +407,18 @@ export function TransactionForm({
   const [inlineCategoryModalOpen, setInlineCategoryModalOpen] = useState(false)
   const [inlineCategoryScope, setInlineCategoryScope] = useState<'INCOME' | 'EXPENSE'>('EXPENSE')
   const [advancedSectionOpen, setAdvancedSectionOpen] = useState(false)
+  const incomeOptionsId = useId()
+  const [incomeAdditionalOptionsOpen, setIncomeAdditionalOptionsOpen] = useState({
+    sender: false,
+    notes: false,
+    recurrence: false,
+    receipt: false,
+  })
   const [crossCurrencyDestAmount, setCrossCurrencyDestAmount] = useState<string>('')
   const [targetDebtCurrency, setTargetDebtCurrency] = useState<CreditCurrency | null>(null)
   const [formOptions, setFormOptions] = useState<TransactionFormOptions>(options)
   const lastAutoUploadTxId = useRef<string | null>(null)
+  const incomeAttachmentInputRef = useRef<HTMLInputElement | null>(null)
   const [editSubmitState, setEditSubmitState] =
     useState<ActionState<unknown>>({ status: 'idle' })
 
@@ -1250,6 +1421,9 @@ export function TransactionForm({
         file,
       )
       setAttachmentFile(null)
+      if (isIncomeCreate && incomeAttachmentInputRef.current) {
+        incomeAttachmentInputRef.current.value = ''
+      }
       setAttachmentError(null)
       setLastAttachmentTxId(transactionId)
       setLastUploadedAttachment(result)
@@ -1273,7 +1447,7 @@ export function TransactionForm({
     } finally {
       setAttachmentUploading(false)
     }
-  }, [toast])
+  }, [isIncomeCreate, toast])
 
   const retryAttachmentUpload = useCallback(() => {
     if (!lastAttachmentTxId || !attachmentFile || attachmentUploading) return
@@ -1295,7 +1469,30 @@ export function TransactionForm({
     if (isEditMode) return
     if (!attachmentFile && !attachmentUploading && !attachmentError && !lastUploadedAttachment) return
     setAttachmentSectionOpen(true)
-  }, [attachmentError, attachmentFile, attachmentUploading, isEditMode, lastUploadedAttachment])
+    if (isIncomeCreate) {
+      setIncomeAdditionalOptionsOpen(current => ({ ...current, receipt: true }))
+    }
+  }, [attachmentError, attachmentFile, attachmentUploading, isEditMode, isIncomeCreate, lastUploadedAttachment])
+
+  useEffect(() => {
+    if (!isIncomeCreate) return
+    setIncomeAdditionalOptionsOpen(current => ({
+      ...current,
+      sender: current.sender || Boolean(errors.sender?.message),
+      notes: current.notes || Boolean(errors.notes?.message),
+      recurrence: current.recurrence || Boolean(errors.recurring_name?.message),
+      receipt: current.receipt || Boolean(attachmentError) || Boolean(attachmentFile) || attachmentUploading || Boolean(lastUploadedAttachment),
+    }))
+  }, [
+    attachmentError,
+    attachmentFile,
+    attachmentUploading,
+    errors.notes?.message,
+    errors.recurring_name?.message,
+    errors.sender?.message,
+    isIncomeCreate,
+    lastUploadedAttachment,
+  ])
 
   useEffect(() => {
     if (!usesProgressiveOptionalSection) return
@@ -1377,6 +1574,7 @@ export function TransactionForm({
       >
         <AmountInput
           currency={currency as 'PEN' | 'USD'}
+          prefixLayout={isIncomeCreate ? 'inline' : 'overlay'}
           error={errors.amount?.message}
           data-testid="transaction-amount-input"
           disabled={lockSettlementEdit}
@@ -1491,11 +1689,11 @@ export function TransactionForm({
         <IncomeInfoHint label="Ayuda sobre la equivalencia">
           La equivalencia es informativa y se calcula con el tipo de cambio aplicado a la operación.
         </IncomeInfoHint>
-        <span className={incomeStyles.incomeAppliedRate}>
-          TC {formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN
-          {refreshingLiveRate ? ' · actualizando…' : ''}
-        </span>
       </div>
+      <span className={incomeStyles.incomeAppliedRate}>
+        TC {formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN
+        {refreshingLiveRate ? ' · actualizando…' : ''}
+      </span>
       {hasAmount ? (
         <div className={incomeStyles.incomeEquivalenceValues}>
           <div>
@@ -2475,13 +2673,227 @@ export function TransactionForm({
   )
 
   const progressiveOptionalField = usesProgressiveOptionalSection ? (
+    isIncomeCreate ? (
+      <section className={incomeStyles.incomeOptionalSection} aria-label="Información adicional">
+        <div className={incomeStyles.incomeOptionsHeader}>
+          <div>
+            <h3 className={incomeStyles.incomeSectionHeading}>Información adicional</h3>
+            <p className={incomeStyles.incomeOptionsDescription}>Opcional · agrega contexto cuando lo necesites</p>
+          </div>
+          {hasOptionalSectionError || attachmentError ? (
+            <span className={incomeStyles.incomeReviewBadge}>Revisar</span>
+          ) : null}
+        </div>
+
+        <div className={incomeStyles.incomeOptionControls} role="group" aria-label="Opciones de ingreso">
+          {([
+            { key: 'sender', label: 'Remitente', hasValue: Boolean(watch('sender')?.trim()), hasError: Boolean(errors.sender?.message) },
+            { key: 'notes', label: 'Notas', hasValue: Boolean(watch('notes')?.trim()), hasError: Boolean(errors.notes?.message) },
+            { key: 'recurrence', label: 'Recurrencia', hasValue: Boolean(watch('is_recurring') || watch('recurring_name')?.trim()), hasError: Boolean(errors.recurring_name?.message) },
+            { key: 'receipt', label: 'Comprobante', hasValue: Boolean(attachmentFile || lastUploadedAttachment), hasError: Boolean(attachmentError) },
+          ] as const).map(option => {
+            const isOpen = incomeAdditionalOptionsOpen[option.key] || option.hasError
+            const panelId = `${incomeOptionsId}-${option.key}`
+            return (
+              <button
+                key={option.key}
+                type="button"
+                aria-expanded={isOpen}
+                aria-controls={panelId}
+                data-active={isOpen ? 'true' : 'false'}
+                data-has-value={option.hasValue ? 'true' : 'false'}
+                data-has-error={option.hasError ? 'true' : 'false'}
+                className={incomeStyles.incomeOptionButton}
+                onClick={() => setIncomeAdditionalOptionsOpen(current => ({
+                  ...current,
+                  [option.key]: !current[option.key],
+                }))}
+              >
+                <span aria-hidden="true" className={incomeStyles.incomeOptionMark}>{isOpen ? '−' : '+'}</span>
+                <span>{option.label}</span>
+                {option.hasError ? <span className={incomeStyles.incomeOptionError}>Revisar</span> : null}
+              </button>
+            )
+          })}
+        </div>
+
+        <div className={incomeStyles.incomeOptionPanels}>
+          <div
+            id={`${incomeOptionsId}-sender`}
+            data-income-option="sender"
+            hidden={!incomeAdditionalOptionsOpen.sender && !errors.sender?.message}
+            className={incomeStyles.incomeOptionPanel}
+          >
+              <FieldWrapper label="Remitente" optional>
+                <Input
+                  type="text"
+                  placeholder="Ej: ACME SAC"
+                  data-testid="transaction-sender-input"
+                  disabled={lockSettlementEdit}
+                  {...register('sender')}
+                />
+              </FieldWrapper>
+          </div>
+
+          <div
+            id={`${incomeOptionsId}-notes`}
+            data-income-option="notes"
+            hidden={!incomeAdditionalOptionsOpen.notes && !errors.notes?.message}
+            className={incomeStyles.incomeOptionPanel}
+          >
+              <FieldWrapper label="Notas" optional>
+                <Textarea
+                  rows={2}
+                  placeholder="Ej: Factura F001-238"
+                  data-testid="transaction-notes-input"
+                  {...register('notes')}
+                />
+              </FieldWrapper>
+          </div>
+
+          <div
+            id={`${incomeOptionsId}-recurrence`}
+            data-income-option="recurrence"
+            hidden={!incomeAdditionalOptionsOpen.recurrence && !errors.recurring_name?.message}
+            className={incomeStyles.incomeOptionPanel}
+          >
+              <CheckboxToggle
+                label="Transacción recurrente"
+                description="Guarda esta configuración como plantilla reutilizable."
+                checked={!!watch('is_recurring')}
+                disabled={lockSettlementEdit}
+                onChange={value => {
+                  setValue('is_recurring', value)
+                  if (value) setIncomeAdditionalOptionsOpen(current => ({ ...current, recurrence: true }))
+                }}
+              />
+              {watch('is_recurring') ? (
+                <div className={incomeStyles.incomeRecurringName}>
+                  <FieldWrapper
+                    label="Nombre de la recurrente"
+                    required
+                    error={errors.recurring_name?.message}
+                    hint="Será el nombre visible dentro del módulo de recurrentes."
+                  >
+                    <Input
+                      type="text"
+                      placeholder="Ej. Ingreso recurrente por cliente"
+                      data-testid="transaction-recurring-name-input"
+                      error={errors.recurring_name?.message}
+                      {...register('recurring_name', {
+                        maxLength: { value: 150, message: 'Máximo 150 caracteres' },
+                        validate: value =>
+                          !watch('is_recurring') || (value ?? '').trim().length > 0 || 'Ingresa un nombre para la plantilla recurrente',
+                      })}
+                    />
+                  </FieldWrapper>
+                </div>
+              ) : null}
+          </div>
+
+          <div
+            id={`${incomeOptionsId}-receipt`}
+            data-income-option="receipt"
+            hidden={!incomeAdditionalOptionsOpen.receipt && !attachmentError && !attachmentUploading}
+            className={incomeStyles.incomeAttachmentPanel}
+          >
+              {!isEditMode ? (
+                <>
+                  <label className={incomeStyles.incomeAttachmentAction}>
+                    <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
+                      <path d="M7.5 10.8 12.9 5.4a2.5 2.5 0 0 1 3.5 3.5L9.6 15.7a4 4 0 0 1-5.7-5.7l7.2-7.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                    <span>{attachmentFile || lastUploadedAttachment ? 'Reemplazar comprobante' : 'Adjuntar comprobante'}</span>
+                    <input
+                      ref={incomeAttachmentInputRef}
+                      type="file"
+                      accept={ATTACHMENT_ACCEPT}
+                      data-testid="transaction-attachment-input"
+                      className="sr-only"
+                      onChange={event => {
+                        const nextFile = event.target.files?.[0] ?? null
+                        setAttachmentFile(nextFile)
+                        setAttachmentError(null)
+                        setLastAttachmentTxId(null)
+                        setLastUploadedAttachment(null)
+                        lastAutoUploadTxId.current = null
+                      }}
+                    />
+                  </label>
+
+                  {attachmentFile ? (
+                    <div className={incomeStyles.incomeAttachmentFile}>
+                      <span aria-hidden="true" className={incomeStyles.incomeAttachmentFileIcon}>
+                        <svg viewBox="0 0 20 20" fill="none">
+                          <path d="M7.5 10.8 12.9 5.4a2.5 2.5 0 0 1 3.5 3.5L9.6 15.7a4 4 0 0 1-5.7-5.7l7.2-7.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                        </svg>
+                      </span>
+                      <span className={incomeStyles.incomeAttachmentFileName} title={attachmentFile.name}>
+                        {attachmentFile.name}
+                      </span>
+                      <span className={incomeStyles.incomeAttachmentFileSize}>{formatAttachmentSize(attachmentFile.size)}</span>
+                      <button
+                        type="button"
+                        className={incomeStyles.incomeAttachmentRemove}
+                        onClick={() => {
+                          setAttachmentFile(null)
+                          setAttachmentError(null)
+                          setLastAttachmentTxId(null)
+                          setLastUploadedAttachment(null)
+                          lastAutoUploadTxId.current = null
+                          if (incomeAttachmentInputRef.current) incomeAttachmentInputRef.current.value = ''
+                        }}
+                      >
+                        Quitar
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {!attachmentFile && !lastUploadedAttachment ? (
+                    <p className={incomeStyles.incomeAttachmentHint}>
+                      Imagen, PDF o documento · máximo {formatAttachmentSize(MAX_FINANCIAL_ATTACHMENT_BYTES)}.
+                    </p>
+                  ) : null}
+                  <p className={incomeStyles.incomeAttachmentHint}>
+                    Se subirá después de registrar el ingreso.
+                  </p>
+                </>
+              ) : null}
+
+              {attachmentUploading ? <p role="status" className={incomeStyles.incomeAttachmentStatus}>Subiendo comprobante…</p> : null}
+              {lastUploadedAttachment && !attachmentUploading && !attachmentError ? (
+                <p role="status" className={incomeStyles.incomeAttachmentSuccess}>
+                  {lastUploadedAttachment.availability === 'AVAILABLE'
+                    ? `Comprobante asociado: ${lastUploadedAttachment.file_name}`
+                    : `Comprobante asociado sin vista verificada: ${lastUploadedAttachment.file_name}`}
+                  {lastUploadedAttachment.signed_url ? (
+                    <>
+                      {' · '}
+                      <a href={lastUploadedAttachment.signed_url} target="_blank" rel="noreferrer">Ver</a>
+                    </>
+                  ) : null}
+                </p>
+              ) : null}
+              {attachmentError ? (
+                <div className={incomeStyles.incomeAttachmentError}>
+                  <p role="alert">{attachmentError}</p>
+                  {attachmentFile && lastAttachmentTxId ? (
+                    <button type="button" onClick={retryAttachmentUpload} disabled={attachmentUploading}>
+                      Reintentar
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+          </div>
+        </div>
+      </section>
+    ) : (
     <OptionalSection
-      title={isIncomeCreate ? 'Más opciones' : 'Mas opciones'}
+      title="Mas opciones"
       summary={optionalSummary}
       open={advancedSectionOpen}
       onOpenChange={setAdvancedSectionOpen}
       hasError={hasOptionalSectionError || Boolean(attachmentError)}
-      className={isIncomeCreate ? incomeStyles.incomeOptionalSection : ''}
     >
       {layoutMode === 'income' && (
         <FieldWrapper label="Remitente" optional>
@@ -2708,6 +3120,7 @@ export function TransactionForm({
       </FieldWrapper>
       )}
     </OptionalSection>
+    )
   ) : null
 
   const payableIssueField = operationType === 'payable_issue' ? (

@@ -396,16 +396,17 @@ export function CheckboxToggle({
 interface AmountInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type'> {
   currency: 'PEN' | 'USD'
   error?:   string
+  prefixLayout?: 'overlay' | 'inline'
 }
 
 export const AmountInput = forwardRef<HTMLInputElement, AmountInputProps>(
-  function AmountInput({ currency, error, className = '', ...props }, ref) {
+  function AmountInput({ currency, error, className = '', prefixLayout = 'overlay', ...props }, ref) {
     const symbol = currency === 'PEN' ? 'S/' : '$'
 
     return (
-      <div className="relative">
-        <span className="absolute left-3.5 top-1/2 -translate-y-1/2
-          text-sm font-bold text-[var(--c-text-muted)] pointer-events-none select-none tabular-nums">
+      <div className={`relative ${prefixLayout === 'inline' ? 'ft-form-amount-prefix-inline' : ''}`}>
+        <span className={`${prefixLayout === 'inline' ? 'ft-form-amount-prefix-label' : 'absolute left-3.5 top-1/2 -translate-y-1/2'}
+          text-sm font-bold text-[var(--c-text-muted)] pointer-events-none select-none tabular-nums`}>
           {symbol}
         </span>
         <NumericInput
@@ -416,7 +417,7 @@ export const AmountInput = forwardRef<HTMLInputElement, AmountInputProps>(
           placeholder="0.00"
           {...props}
           className={`
-            ft-form-amount-input w-full pl-10 pr-3.5 py-3 rounded-lg text-lg font-bold tabular-nums
+            ft-form-amount-input ${prefixLayout === 'inline' ? 'ft-form-amount-input-inline-prefix' : ''} w-full pl-10 pr-3.5 py-3 rounded-lg text-lg font-bold tabular-nums
             bg-[var(--c-surface-2)] text-[var(--c-text)] placeholder:text-[var(--c-text-faint)]
             border transition-[border-color,box-shadow,background-color,color] duration-150 outline-none
             focus:ring-2 ring-offset-0
