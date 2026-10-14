@@ -81,7 +81,8 @@
 .weekdays, .days { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.2rem; text-align: center; }
 .week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.2rem; }
 .weekdays { grid-template-columns: repeat(7, minmax(0, 1fr)); align-items: center; color: var(--ft-form-muted); font-size: 0.6875rem; font-weight: 600; line-height: 1rem; }
-.days { min-height: 0; row-gap: 0.125rem; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.days { min-height: 0; grid-auto-rows: 2.0625rem; align-content: start; row-gap: 0.125rem; overflow: hidden; }
+.popover[data-constrained='true'] .days { overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .week { min-width: 0; }
 .day { display: grid; width: 100%; min-height: 2.0625rem; place-items: center; border: 1px solid transparent; border-radius: 0.5rem; background: transparent; color: var(--ft-text-strong); font: inherit; font-size: 0.75rem; font-variant-numeric: tabular-nums; cursor: pointer; }
 .day[data-outside-month='true'] { color: var(--ft-text-faint); }
