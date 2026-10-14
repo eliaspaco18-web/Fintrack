@@ -9,6 +9,7 @@
   display: grid;
   gap: 0.625rem;
   min-width: 0;
+  container: income-form-section / inline-size;
 }
 
 .incomeSectionHeading {
@@ -47,18 +48,23 @@
 .incomeAmountCurrency :global(.ft-form-amount-prefix-label) {
   display: flex;
   align-items: center;
-  padding-inline: 0.875rem 0.375rem;
+  padding-inline: 0.75rem 0.375rem;
+  color: var(--ft-text-strong);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .incomeAmountCurrency :global(.ft-form-amount-input-inline-prefix) {
   min-width: 0;
-  min-height: 3rem;
-  padding-block: 0.5rem;
-  padding-inline: 0.5rem 0.75rem;
-  font-size: clamp(1.125rem, 1rem + 0.7vw, 1.375rem);
+  min-height: 2.75rem;
+  padding-block: 0.375rem;
+  padding-inline: 0.375rem 0.625rem;
+  font-size: clamp(1rem, 0.95rem + 0.45vw, 1.25rem);
   font-weight: 700;
-  line-height: 1.25;
-  letter-spacing: -0.025em;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
 
@@ -121,6 +127,10 @@
 }
 
 .incomeAppliedRate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.125rem 0.5rem;
   grid-column: 1;
   grid-row: 2;
   color: var(--ft-form-muted);
@@ -129,6 +139,12 @@
   letter-spacing: 0;
   text-transform: none;
   font-variant-numeric: tabular-nums;
+}
+
+.incomeReferenceRate {
+  color: var(--ft-form-muted);
+  font-size: 0.6875rem;
+  font-weight: 500;
 }
 
 .incomeEquivalenceValues {
@@ -142,10 +158,9 @@
 }
 
 .incomeEquivalenceValues > div {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: baseline;
-  justify-content: space-between;
   gap: 0.125rem 0.4rem;
   min-width: 0;
 }
@@ -159,12 +174,15 @@
 }
 
 .incomeEquivalenceValues strong {
+  min-width: 0;
+  max-width: 100%;
   color: var(--ft-text-strong);
-  font-size: 0.875rem;
+  font-size: clamp(0.75rem, 0.72rem + 0.2vw, 0.875rem);
   font-weight: 700;
   line-height: 1.35;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
+  word-break: normal;
   text-align: right;
 }
 
@@ -172,6 +190,38 @@
   grid-column: 2;
   grid-row: 1 / span 2;
   font-size: 0.75rem;
+}
+
+@container income-form-section (max-width: 480px) {
+  .incomeEquivalence {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    gap: 0.375rem 0.75rem;
+  }
+
+  .incomeAppliedRate,
+  .incomeEquivalenceEmpty {
+    grid-column: 1;
+  }
+
+  .incomeAppliedRate {
+    grid-row: 2;
+  }
+
+  .incomeEquivalenceValues {
+    grid-column: 1;
+    grid-row: 3;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.375rem;
+  }
+
+  .incomeEquivalenceValues > div {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .incomeEquivalenceEmpty {
+    grid-row: 3;
+  }
 }
 
 .incomeClassificationFields {
@@ -549,8 +599,8 @@
   }
 
   .incomeEquivalenceValues > div {
-    align-items: flex-start;
-    flex-direction: column;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
   }
 
   .incomeOptionPanels {

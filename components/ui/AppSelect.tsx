@@ -43,6 +43,55 @@ interface AppSelectProps {
   error?: string | null
   onRetry?: () => void
   sourceComplete?: boolean
+  matchTriggerWidth?: boolean
+}
+
+type AnchorRect = Pick<DOMRect, 'left' | 'top' | 'bottom' | 'width'>
+
+interface AppSelectViewportRect {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+export function getTriggerMatchedMenuStyle(
+  triggerRect: AnchorRect,
+  viewportRect: AppSelectViewportRect,
+  menuHeight: number,
+): CSSProperties {
+  const inset = 8
+  const gap = 8
+  const width = Math.min(Math.max(0, triggerRect.width), Math.max(0, viewportRect.width - inset * 2))
+  const left = Math.max(
+    viewportRect.left + inset,
+    Math.min(triggerRect.left, viewportRect.left + viewportRect.width - width - inset),
+  )
+  const spaceBelow = viewportRect.top + viewportRect.height - triggerRect.bottom - gap - inset
+  const spaceAbove = triggerRect.top - viewportRect.top - gap - inset
+  const requestedHeight = Math.max(0, menuHeight)
+  const fitsBelow = spaceBelow >= requestedHeight
+  const fitsAbove = spaceAbove >= requestedHeight
+  const flip = !fitsBelow && (fitsAbove || spaceAbove > spaceBelow)
+  const maxHeight = Math.max(0, Math.min(viewportRect.height - inset * 2, flip ? spaceAbove : spaceBelow))
+  const height = Math.min(requestedHeight, maxHeight)
+  const top = flip
+    ? Math.max(viewportRect.top + inset, triggerRect.top - height - gap)
+    : Math.min(triggerRect.bottom + gap, viewportRect.top + viewportRect.height - height - inset)
+
+  return {
+    position: 'fixed',
+    left,
+    top,
+    width,
+    maxWidth: width,
+    maxHeight,
+    overflowY: 'auto',
+    right: 'auto',
+    marginTop: 0,
+    visibility: 'visible',
+    transformOrigin: flip ? 'bottom center' : 'top center',
+  }
 }
 
 function normalize(text: string): string {
@@ -82,6 +131,7 @@ export function AppSelect({
   error = null,
   onRetry,
   sourceComplete = true,
+  matchTriggerWidth = false,
 }: AppSelectProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -170,9 +220,11 @@ export function AppSelect({
     setQuery('')
     setMenuStyle({ visibility: 'hidden' })
     setV3Layer(Boolean(wrapperRef.current?.closest('[data-ft-v3]')))
-    setPortalRoot(wrapperRef.current?.closest<HTMLElement>('[role="dialog"]') ?? document.body)
+    setPortalRoot(matchTriggerWidth
+      ? document.body
+      : wrapperRef.current?.closest<HTMLElement>('[role="dialog"]') ?? document.body)
     setOpen(true)
-  }, [disabled, selectId])
+  }, [disabled, matchTriggerWidth, selectId])
 
   const commitOption = useCallback((option: AppSelectOption, fromPointer = false) => {
     if (option.disabled) return
@@ -250,6 +302,14 @@ export function AppSelect({
       const viewportHeight = viewport?.height ?? window.innerHeight
       const triggerRect = trigger.getBoundingClientRect()
       const isMobile = viewportWidth < 768
+      if (matchTriggerWidth) {
+        setMenuStyle(getTriggerMatchedMenuStyle(
+          triggerRect,
+          { left: viewportLeft, top: viewportTop, width: viewportWidth, height: viewportHeight },
+          menu.offsetHeight,
+        ))
+        return
+      }
       const width = isMobile
         ? Math.max(0, viewportWidth - 16)
         : Math.min(400, Math.max(320, triggerRect.width), Math.max(0, viewportWidth - 24))
@@ -285,18 +345,24 @@ export function AppSelect({
     }
 
     const frame = window.requestAnimationFrame(positionMenu)
+    const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(positionMenu) : null
+    if (matchTriggerWidth) {
+      if (menuRef.current) resizeObserver?.observe(menuRef.current)
+      if (triggerRef.current) resizeObserver?.observe(triggerRef.current)
+    }
     window.addEventListener('resize', positionMenu)
     window.addEventListener('scroll', positionMenu, true)
     window.visualViewport?.addEventListener('resize', positionMenu)
     window.visualViewport?.addEventListener('scroll', positionMenu)
     return () => {
       window.cancelAnimationFrame(frame)
+      resizeObserver?.disconnect()
       window.removeEventListener('resize', positionMenu)
       window.removeEventListener('scroll', positionMenu, true)
       window.visualViewport?.removeEventListener('resize', positionMenu)
       window.visualViewport?.removeEventListener('scroll', positionMenu)
     }
-  }, [open, portalRoot, filtered.length, loading, error, sourceComplete])
+  }, [open, portalRoot, filtered.length, loading, error, sourceComplete, matchTriggerWidth])
 
   useEffect(() => {
     if (!open) return

@@ -152,6 +152,7 @@ type SelectProps = React.SelectHTMLAttributes<HTMLSelectElement> & {
   error?:       string
   placeholder?: string
   compact?:     boolean
+  matchTriggerWidth?: boolean
 }
 
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(
@@ -159,6 +160,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
     error,
     placeholder,
     compact = false,
+    matchTriggerWidth = false,
     children,
     className = '',
     onChange,
@@ -304,6 +306,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
           searchPlaceholder={placeholder ? `Buscar ${placeholder.toLowerCase()}...` : 'Buscar...'}
           buttonClassName={error ? 'app-select-invalid' : ''}
           className={className}
+          matchTriggerWidth={matchTriggerWidth}
         />
       </div>
     )

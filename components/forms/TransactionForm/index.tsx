@@ -1620,7 +1620,9 @@ export function TransactionForm({
         <div className={isIncomeCreate ? incomeStyles.incomeCurrencyControl : undefined}>
           <Select
             {...register('currency')}
-            compact
+            value={isIncomeCreate ? currency : undefined}
+            compact={!isIncomeCreate}
+            matchTriggerWidth={isIncomeCreate}
             data-testid="transaction-currency-select"
             disabled={lockSettlementEdit || !isExpenseCreditPayment}
           >
@@ -1645,7 +1647,7 @@ export function TransactionForm({
     >
       <FieldWrapper
         label="Tipo de cambio"
-        hint={`1 USD = ${formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN (${refreshingLiveRate ? 'actualizando…' : rateDateLabel})`}
+        hint={`${isIncomeCreate ? 'Referencia diaria: ' : ''}1 USD = ${formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN (${refreshingLiveRate ? 'actualizando…' : rateDateLabel})`}
         required
         error={errors.exchange_rate?.message}
       >
@@ -1675,7 +1677,7 @@ export function TransactionForm({
       {isIncomeCreate ? (
         <span className={incomeStyles.exchangeRateHelp}>
           <IncomeInfoHint label="Ayuda sobre el tipo de cambio">
-            El tipo de cambio mostrado corresponde a la fecha de la operación. Conserva la precisión y las reglas actuales de FinTrack.
+            La referencia diaria corresponde a la fecha de la operación. Si la cuenta es en dólares, el valor editable del campo es el que se aplica al ingreso y puede diferir de esa referencia.
           </IncomeInfoHint>
         </span>
       ) : null}
@@ -1691,8 +1693,15 @@ export function TransactionForm({
         </IncomeInfoHint>
       </div>
       <span className={incomeStyles.incomeAppliedRate}>
-        TC {formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN
-        {refreshingLiveRate ? ' · actualizando…' : ''}
+        <span>
+          {currency === 'USD' ? 'TC aplicado' : 'TC referencia'} {formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN
+          {refreshingLiveRate ? ' · actualizando…' : ''}
+        </span>
+        {currency === 'USD' && Math.abs(appliedRate - safeLiveRate) >= 0.0005 ? (
+          <span className={incomeStyles.incomeReferenceRate}>
+            Referencia diaria {formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN
+          </span>
+        ) : null}
       </span>
       {hasAmount ? (
         <div className={incomeStyles.incomeEquivalenceValues}>
@@ -1932,6 +1941,7 @@ export function TransactionForm({
           <Select
             placeholder="Seleccionar cuenta…"
             error={errors.source_account_id?.message}
+            matchTriggerWidth={isIncomeCreate}
             data-testid="transaction-source-account-select"
             disabled={lockSettlementEdit}
             {...register('source_account_id', { required: 'La cuenta es requerida' })}
@@ -2389,6 +2399,7 @@ export function TransactionForm({
       <Select
         placeholder="Sin categoría"
         data-testid="transaction-category-select"
+        matchTriggerWidth={isIncomeCreate}
         {...register('category_id', {
           required: 'La categoría es requerida',
           validate: value => !!value || 'La categoría es requerida',
