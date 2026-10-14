@@ -29,6 +29,9 @@ type Props = {
 }
 
 const WEEKDAYS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
+const CALENDAR_WEEK_ROWS = 6
+type CalendarView = { year: number; month: number }
+type CalendarMotion = { revision: number; direction: 'forward' | 'backward' }
 const MONTHS = Array.from({ length: 12 }, (_, month) => new Intl.DateTimeFormat('es-PE', {
   month: 'long',
   timeZone: 'UTC',
@@ -54,11 +57,16 @@ export function IncomeDatePicker({ value, onChange, onInvalidInput, error }: Pro
   const [position, setPosition] = useState<{ top: number; left: number; width: number; height: number; maxHeight: number; constrained: boolean } | null>(null)
   const lastAnchorRectRef = useRef<{ top: number; right: number; bottom: number; left: number; width: number; height: number } | null>(null)
   const desiredHeightRef = useRef<number | null>(null)
+  const panelHeightRef = useRef<number | null>(null)
+  const placementRef = useRef<'above' | 'below' | null>(null)
+  const gridAnimationRef = useRef<Animation | null>(null)
   const [inputValue, setInputValue] = useState(() => formatIsoDateForDisplay(value))
   const today = localTodayIso()
   const selected = dateParts(value)
   const currentView = selected ?? dateParts(today)!
   const [view, setView] = useState(currentView)
+  const viewRef = useRef(currentView)
+  const [gridMotion, setGridMotion] = useState<CalendarMotion>({ revision: 0, direction: 'forward' })
   const days = useMemo(() => calendarMonthDays(view.year, view.month), [view.month, view.year])
   const yearOptions = useMemo(() => {
     const currentYear = new Date().getFullYear()
@@ -71,15 +79,36 @@ export function IncomeDatePicker({ value, onChange, onInvalidInput, error }: Pro
   useEffect(() => {
     if (document.activeElement !== inputRef.current) setInputValue(formatIsoDateForDisplay(value))
     const parts = dateParts(value)
-    if (parts) setView(parts)
+    if (parts) {
+      viewRef.current = parts
+      setView(parts)
+    }
   }, [value])
 
+  const navigateView = useCallback((next: CalendarView | ((current: CalendarView) => CalendarView)) => {
+    const previous = viewRef.current
+    const resolved = typeof next === 'function' ? next(previous) : next
+    if (resolved.year === previous.year && resolved.month === previous.month) return
+    const previousIndex = previous.year * 12 + previous.month
+    const nextIndex = resolved.year * 12 + resolved.month
+    viewRef.current = resolved
+    setView(resolved)
+    setGridMotion(current => ({
+      revision: current.revision + 1,
+      direction: nextIndex > previousIndex ? 'forward' : 'backward',
+    }))
+  }, [])
+
   const close = useCallback((restoreFocus = false) => {
+    gridAnimationRef.current?.cancel()
+    gridAnimationRef.current = null
     setOpen(false)
     setPosition(null)
     setPortalRoot(null)
     lastAnchorRectRef.current = null
     desiredHeightRef.current = null
+    panelHeightRef.current = null
+    placementRef.current = null
     if (restoreFocus) requestAnimationFrame(() => triggerRef.current?.focus())
   }, [])
 
@@ -149,31 +178,41 @@ export function IncomeDatePicker({ value, onChange, onInvalidInput, error }: Pro
       Number.parseFloat(panelStyle.borderTopWidth || '0') +
       Number.parseFloat(panelStyle.borderBottomWidth || '0')
     const daysStyle = getComputedStyle(daysGrid)
-    const weekCount = daysGrid.querySelectorAll(':scope > [role="row"]').length
-    const weekHeight = Number.parseFloat(daysStyle.gridAutoRows)
-    const intrinsicDaysHeight = weekHeight * weekCount +
-      Number.parseFloat(daysStyle.rowGap || '0') * Math.max(0, weekCount - 1)
+    const explicitRowHeight = Number.parseFloat(daysStyle.gridTemplateRows)
+    const weekHeight = Number.isFinite(explicitRowHeight)
+      ? explicitRowHeight
+      : Number.parseFloat(daysStyle.gridAutoRows)
+    const intrinsicDaysHeight = weekHeight * CALENDAR_WEEK_ROWS +
+      Number.parseFloat(daysStyle.rowGap || '0') * (CALENDAR_WEEK_ROWS - 1)
     // Derive the calendar's full date-grid size from its explicit CSS row
     // track, never from scrollHeight/clientHeight or transient row geometry.
     // Those measurements reflect a previously constrained panel and can
     // feed its reduced size back into the next positioning pass.
     const measuredDesiredHeight = Math.min(Math.ceil(verticalChrome + intrinsicDaysHeight + 1), 344)
-    const desiredHeight = force || desiredHeightRef.current === null
-      ? measuredDesiredHeight
-      : desiredHeightRef.current
+    const desiredHeight = desiredHeightRef.current ?? measuredDesiredHeight
     desiredHeightRef.current = desiredHeight
     const safeAreaHeight = Math.max(0, safeModalBottom - safeModalTop)
-    if (safeAreaHeight < 160) {
+    if (!placementRef.current) {
+      placementRef.current = spaceBelow >= desiredHeight
+        ? 'below'
+        : spaceAbove >= desiredHeight
+          ? 'above'
+          : spaceBelow >= spaceAbove ? 'below' : 'above'
+    }
+    const placementSpace = placementRef.current === 'above' ? spaceAbove : spaceBelow
+    // On a compact viewport, reserve as much of the chosen side as is safely
+    // available and scroll only the date grid. Pin this height for the open
+    // session so navigating between months cannot resize or reorient it.
+    if (panelHeightRef.current === null || force) {
+      panelHeightRef.current = Math.floor(Math.min(desiredHeight, safeAreaHeight, placementSpace))
+    }
+    const panelHeight = panelHeightRef.current
+    if (panelHeight < 160) {
       close()
       return
     }
-    // Keep the calendar's height stable while its anchor moves inside a
-    // scrolling form. Constrain only to the fixed visible modal/viewport area,
-    // not the changing gap above or below the field.
-    const maxHeight = Math.floor(Math.min(desiredHeight, safeAreaHeight))
-    const panelHeight = maxHeight
-    const openAbove = spaceAbove >= panelHeight || spaceAbove > spaceBelow
-    const preferredTop = openAbove ? rect.top - panelHeight - gap : rect.bottom + gap
+    const maxHeight = panelHeight
+    const preferredTop = placementRef.current === 'above' ? rect.top - panelHeight - gap : rect.bottom + gap
     const top = Math.max(safeModalTop, Math.min(preferredTop, safeModalBottom - panelHeight))
     setPosition({ top, left, width, height: panelHeight, maxHeight, constrained: panelHeight < desiredHeight })
   }, [close])
@@ -184,6 +223,8 @@ export function IncomeDatePicker({ value, onChange, onInvalidInput, error }: Pro
     const focusScope = trigger.closest<HTMLElement>('[data-app-select-portal-root]')
     lastAnchorRectRef.current = null
     desiredHeightRef.current = null
+    panelHeightRef.current = null
+    placementRef.current = null
     setPortalRoot(focusScope ?? document.body)
     setOpen(true)
   }, [])
@@ -215,7 +256,26 @@ export function IncomeDatePicker({ value, onChange, onInvalidInput, error }: Pro
       window.visualViewport?.removeEventListener('resize', onViewportChange)
       window.visualViewport?.removeEventListener('scroll', onViewportChange)
     }
-  }, [close, open, portalRoot, updatePosition, view.month, view.year])
+  }, [close, open, portalRoot, updatePosition])
+
+  useLayoutEffect(() => {
+    if (gridMotion.revision === 0) return
+    const grid = panelRef.current?.querySelector<HTMLElement>('[data-calendar-grid="true"]')
+    if (!grid || typeof grid.animate !== 'function' || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    gridAnimationRef.current?.cancel()
+    const offset = gridMotion.direction === 'forward' ? 8 : -8
+    gridAnimationRef.current = grid.animate([
+      { opacity: 0.58, transform: `translateX(${offset}px)` },
+      { opacity: 1, transform: 'translateX(0)' },
+    ], {
+      duration: 160,
+      easing: 'cubic-bezier(0.25, 1, 0.5, 1)',
+    })
+    return () => {
+      gridAnimationRef.current?.cancel()
+      gridAnimationRef.current = null
+    }
+  }, [gridMotion])
 
   useEffect(() => {
     if (!open) return
@@ -235,9 +295,9 @@ export function IncomeDatePicker({ value, onChange, onInvalidInput, error }: Pro
     date.setUTCDate(date.getUTCDate() + delta)
     const nextIso = toIsoCalendarDate(date)
     const parts = dateParts(nextIso)
-    if (parts) setView(parts)
+    if (parts) navigateView(parts)
     requestAnimationFrame(() => panelRef.current?.querySelector<HTMLButtonElement>(`[data-calendar-date="${nextIso}"]`)?.focus())
-  }, [])
+  }, [navigateView])
 
   const handleDayKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, iso: string) => {
     const date = parseIsoCalendarDate(iso)
@@ -257,7 +317,7 @@ export function IncomeDatePicker({ value, onChange, onInvalidInput, error }: Pro
     if (event.key === 'PageUp' || event.key === 'PageDown') {
       event.preventDefault()
       const amount = (event.shiftKey ? 12 : 1) * (event.key === 'PageUp' ? -1 : 1)
-      setView(current => moveCalendarMonth(current.year, current.month, amount))
+      navigateView(current => moveCalendarMonth(current.year, current.month, amount))
     }
   }
 
@@ -366,16 +426,16 @@ export function IncomeDatePicker({ value, onChange, onInvalidInput, error }: Pro
           }}
         >
           <div className={styles.header} data-calendar-header="true">
-            <button type="button" className={styles.arrow} aria-label="Mes anterior" onClick={() => setView(current => moveCalendarMonth(current.year, current.month, -1))}>‹</button>
+            <button type="button" className={styles.arrow} aria-label="Mes anterior" onClick={() => navigateView(current => moveCalendarMonth(current.year, current.month, -1))}>‹</button>
             <div className={styles.selectors}>
-              <select aria-label="Mes" value={view.month} onChange={event => setView(current => ({ ...current, month: Number(event.target.value) }))}>
+              <select aria-label="Mes" value={view.month} onChange={event => navigateView(current => ({ ...current, month: Number(event.target.value) }))}>
                 {MONTHS.map((month, index) => <option key={month} value={index}>{month}</option>)}
               </select>
-              <select aria-label="Año" value={view.year} onChange={event => setView(current => ({ ...current, year: Number(event.target.value) }))}>
+              <select aria-label="Año" value={view.year} onChange={event => navigateView(current => ({ ...current, year: Number(event.target.value) }))}>
                 {yearOptions.map(year => <option key={year} value={year}>{year}</option>)}
               </select>
             </div>
-            <button type="button" className={styles.arrow} aria-label="Mes siguiente" onClick={() => setView(current => moveCalendarMonth(current.year, current.month, 1))}>›</button>
+            <button type="button" className={styles.arrow} aria-label="Mes siguiente" onClick={() => navigateView(current => moveCalendarMonth(current.year, current.month, 1))}>›</button>
           </div>
           <div className={styles.weekdays} role="row" data-calendar-weekdays="true">
             {WEEKDAYS.map((weekday, index) => <span role="columnheader" aria-label={['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'][index]} key={weekday}>{weekday}</span>)}
