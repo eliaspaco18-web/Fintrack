@@ -400,6 +400,7 @@
 }
 
 .incomeAttachmentAction {
+  position: relative;
   display: inline-flex;
   width: fit-content;
   min-height: 2.5rem;

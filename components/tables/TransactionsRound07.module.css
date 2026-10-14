@@ -1110,11 +1110,11 @@
   background: #292d31;
 }
 
-:global(html[data-theme='dark']) .astraOverlay:global(.app-modal-overlay) :global(input:not([type='checkbox'])),
+:global(html[data-theme='dark']) .astraOverlay:global(.app-modal-overlay) :global(input:not([type='checkbox']):not(.sr-only)),
 :global(html[data-theme='dark']) .astraOverlay:global(.app-modal-overlay) :global(textarea),
 :global(html[data-theme='dark']) .astraOverlay:global(.app-modal-overlay) :global(select),
 :global(html[data-theme='dark']) .astraOverlay:global(.app-modal-overlay) :global(.app-select-trigger),
-:global(html[data-theme='dark']) .formOverlay:global(.app-modal-overlay) :global(input:not([type='checkbox'])),
+:global(html[data-theme='dark']) .formOverlay:global(.app-modal-overlay) :global(input:not([type='checkbox']):not(.sr-only)),
 :global(html[data-theme='dark']) .formOverlay:global(.app-modal-overlay) :global(textarea),
 :global(html[data-theme='dark']) .formOverlay:global(.app-modal-overlay) :global(select),
 :global(html[data-theme='dark']) .formOverlay:global(.app-modal-overlay) :global(.app-select-trigger) {
@@ -1123,8 +1123,8 @@
   color: #edf0f2;
 }
 
-.astraOverlay:global(.app-modal-overlay) :global(input:not([type='checkbox']), textarea, select, .app-select-trigger),
-.formOverlay:global(.app-modal-overlay) :global(input:not([type='checkbox']), textarea, select, .app-select-trigger) {
+.astraOverlay:global(.app-modal-overlay) :global(input:not([type='checkbox']):not(.sr-only), textarea, select, .app-select-trigger),
+.formOverlay:global(.app-modal-overlay) :global(input:not([type='checkbox']):not(.sr-only), textarea, select, .app-select-trigger) {
   min-height: 44px;
   border-radius: 6px;
   border-color: var(--ft-control);
@@ -1165,7 +1165,7 @@
 }
 
 .formOverlay :global(.tx-modal-form .ft-form-input),
-.formOverlay :global(.tx-modal-form input),
+.formOverlay :global(.tx-modal-form input:not(.sr-only)),
 .formOverlay :global(.tx-modal-form textarea),
 .formOverlay :global(.tx-modal-form select),
 .formOverlay :global(.tx-modal-form .app-select-trigger) {
