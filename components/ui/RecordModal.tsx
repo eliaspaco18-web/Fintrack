@@ -185,6 +185,7 @@ export function RecordModal({
       {isWorkbench ? <div ref={presence.veilRef} className="ft-v3-workbench-veil" data-ft-workbench-veil="" aria-hidden="true" /> : null}
       <FocusTrap
         active={(isWorkbench ? presence.mounted : open) && focusTrapActive}
+        selectPortalHost
         onEscape={focusTrapActive ? () => {
           if (isWorkbench) setCloseMotionSource('keyboard')
           onClose()

@@ -407,7 +407,10 @@ export const AmountInput = forwardRef<HTMLInputElement, AmountInputProps>(
     const symbol = currency === 'PEN' ? 'S/' : '$'
 
     return (
-      <div className={`relative ${prefixLayout === 'inline' ? 'ft-form-amount-prefix-inline' : ''}`}>
+      <div
+        className={`relative ${prefixLayout === 'inline' ? 'ft-form-amount-prefix-inline' : ''}`}
+        data-error={prefixLayout === 'inline' && error ? 'true' : undefined}
+      >
         <span className={`${prefixLayout === 'inline' ? 'ft-form-amount-prefix-label' : 'absolute left-3.5 top-1/2 -translate-y-1/2'}
           text-sm font-bold text-[var(--c-text-muted)] pointer-events-none select-none tabular-nums`}>
           {symbol}

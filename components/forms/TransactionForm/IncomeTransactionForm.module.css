@@ -43,14 +43,34 @@
   grid-template-columns: max-content minmax(0, 1fr);
   align-items: stretch;
   min-width: 0;
+  min-height: 2.875rem;
+  overflow: hidden;
+  border: 1px solid var(--ft-form-border);
+  border-radius: var(--ft-form-radius);
+  background: var(--ft-surface-muted);
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+.incomeAmountCurrency :global(.ft-form-amount-prefix-inline:focus-within) {
+  border-color: var(--ft-primary);
+  background: var(--ft-surface);
+  box-shadow: var(--ft-focus-ring);
+}
+
+.incomeAmountCurrency :global(.ft-form-amount-prefix-inline[data-error='true']) {
+  border-color: var(--ft-danger, #dc2626);
+}
+
+.incomeAmountCurrency :global(.ft-form-amount-prefix-inline[data-error='true']:focus-within) {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ft-danger, #dc2626) 16%, transparent);
 }
 
 .incomeAmountCurrency :global(.ft-form-amount-prefix-label) {
   display: flex;
   align-items: center;
-  padding-inline: 0.75rem 0.375rem;
+  padding-inline: 0.75rem 0.5rem;
   color: var(--ft-text-strong);
-  font-size: 1rem;
+  font-size: 0.9375rem;
   font-weight: 700;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -58,14 +78,25 @@
 
 .incomeAmountCurrency :global(.ft-form-amount-input-inline-prefix) {
   min-width: 0;
-  min-height: 2.75rem;
-  padding-block: 0.375rem;
-  padding-inline: 0.375rem 0.625rem;
+  min-height: 2.625rem;
+  padding-block: 0.3125rem;
+  padding-inline: 0.25rem 0.625rem;
   font-size: clamp(1rem, 0.95rem + 0.45vw, 1.25rem);
   font-weight: 700;
   line-height: 1.2;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.incomeAmountCurrency :global(.ft-form-amount-input-inline-prefix:focus) {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
 }
 
 .incomeCurrencyControl {
@@ -73,6 +104,10 @@
   grid-template-columns: minmax(0, 1fr) 1.75rem;
   align-items: center;
   gap: 0.375rem;
+}
+
+.incomeCurrencyControl :global(.app-select-trigger) {
+  min-height: 2.875rem;
 }
 
 .incomeExchangeRate {
@@ -159,9 +194,10 @@
 
 .incomeEquivalenceValues > div {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: 0.125rem 0.4rem;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: start;
+  gap: 0.2rem;
   min-width: 0;
 }
 
@@ -171,6 +207,10 @@
   color: var(--ft-form-muted);
   font-size: 0.6875rem;
   line-height: 1.35;
+}
+
+.incomeEquivalenceValues span {
+  white-space: nowrap;
 }
 
 .incomeEquivalenceValues strong {
@@ -183,7 +223,7 @@
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
   word-break: normal;
-  text-align: right;
+  text-align: left;
 }
 
 .incomeEquivalenceEmpty {
@@ -216,7 +256,7 @@
   }
 
   .incomeEquivalenceValues > div {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .incomeEquivalenceEmpty {
@@ -599,8 +639,8 @@
   }
 
   .incomeEquivalenceValues > div {
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: baseline;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
   }
 
   .incomeOptionPanels {

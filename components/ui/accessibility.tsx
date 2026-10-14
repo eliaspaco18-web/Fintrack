@@ -61,11 +61,12 @@ interface FocusTrapProps {
   children:  ReactNode
   onEscape?: () => void
   className?: string
+  selectPortalHost?: boolean
   initialFocusRef?: RefObject<HTMLElement | null>
   deferRestoreFocus?: boolean
 }
 
-export function FocusTrap({ active, children, onEscape, className, initialFocusRef, deferRestoreFocus = false }: FocusTrapProps) {
+export function FocusTrap({ active, children, onEscape, className, selectPortalHost = false, initialFocusRef, deferRestoreFocus = false }: FocusTrapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const onEscapeRef = useRef(onEscape)
 
@@ -133,7 +134,7 @@ export function FocusTrap({ active, children, onEscape, className, initialFocusR
     }
   }, [active, initialFocusRef, deferRestoreFocus])
 
-  return <div ref={containerRef} className={className}>{children}</div>
+  return <div ref={containerRef} className={className} data-app-select-portal-root={selectPortalHost ? '' : undefined}>{children}</div>
 }
 
 // ─── KEYBOARD SHORTCUTS ───────────────────────────────────────────────────────

@@ -55,6 +55,21 @@ interface AppSelectViewportRect {
   height: number
 }
 
+export function resolveAppSelectPortalRoot(
+  wrapper: HTMLElement | null,
+  body: HTMLElement,
+  matchTriggerWidth: boolean,
+): HTMLElement {
+  const dialog = wrapper?.closest<HTMLElement>('[role="dialog"]') ?? null
+  const focusScope = dialog?.parentElement ?? null
+
+  if (matchTriggerWidth && focusScope?.hasAttribute('data-app-select-portal-root')) {
+    return focusScope
+  }
+
+  return dialog ?? body
+}
+
 export function getTriggerMatchedMenuStyle(
   triggerRect: AnchorRect,
   viewportRect: AppSelectViewportRect,
@@ -220,9 +235,7 @@ export function AppSelect({
     setQuery('')
     setMenuStyle({ visibility: 'hidden' })
     setV3Layer(Boolean(wrapperRef.current?.closest('[data-ft-v3]')))
-    setPortalRoot(matchTriggerWidth
-      ? document.body
-      : wrapperRef.current?.closest<HTMLElement>('[role="dialog"]') ?? document.body)
+    setPortalRoot(resolveAppSelectPortalRoot(wrapperRef.current, document.body, matchTriggerWidth))
     setOpen(true)
   }, [disabled, matchTriggerWidth, selectId])
 

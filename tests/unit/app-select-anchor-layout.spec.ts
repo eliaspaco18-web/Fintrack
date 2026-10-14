@@ -1,5 +1,8 @@
 import { expect, test } from '@playwright/test'
-import { getTriggerMatchedMenuStyle } from '../../components/ui/AppSelect'
+import {
+  getTriggerMatchedMenuStyle,
+  resolveAppSelectPortalRoot,
+} from '../../components/ui/AppSelect'
 
 test.describe('AppSelect trigger-matched menu layout', () => {
   test('keeps the menu aligned to the trigger and uses its exact width', () => {
@@ -49,5 +52,70 @@ test.describe('AppSelect trigger-matched menu layout', () => {
     expect(style.maxWidth).toBe(304)
     expect(style.maxHeight).toBe(404)
     expect(style.top).toBe(68)
+  })
+
+  test('keeps a trigger-matched menu in the modal focus scope instead of behind its overlay', () => {
+    const focusScope = {
+      hasAttribute: (name: string) => name === 'data-app-select-portal-root',
+    }
+    const dialog = { parentElement: focusScope }
+    const wrapper = { closest: (selector: string) => selector === '[role="dialog"]' ? dialog : null }
+    const body = {} as HTMLElement
+
+    expect(resolveAppSelectPortalRoot(
+      wrapper as unknown as HTMLElement,
+      body,
+      true,
+    )).toBe(focusScope)
+    expect(resolveAppSelectPortalRoot(
+      wrapper as unknown as HTMLElement,
+      body,
+      false,
+    )).toBe(dialog)
+  })
+
+  test('retains the body fallback when a matching-width select is outside a modal', () => {
+    const body = {} as HTMLElement
+    const wrapper = { closest: () => null }
+
+    expect(resolveAppSelectPortalRoot(
+      wrapper as unknown as HTMLElement,
+      body,
+      true,
+    )).toBe(body)
+  })
+
+  test('renders above the dialog and remains inside its focus-trap scope', async ({ page }) => {
+    await page.setContent(`
+      <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; }
+        .overlay { position: fixed; inset: 0; z-index: 120; background: rgb(0 0 0 / .35); }
+        .focus-scope { position: relative; z-index: 1; width: 100%; height: 100%; }
+        .dialog { position: absolute; inset: 15% 20%; overflow: hidden; background: white; }
+        .dialog-content { position: relative; z-index: 1; height: 100%; }
+        .menu { position: fixed; z-index: 40; left: 40%; top: 35%; width: 220px; height: 120px; background: white; border: 1px solid; }
+      </style>
+      <div class="overlay">
+        <div class="focus-scope" data-app-select-portal-root>
+          <div class="dialog" role="dialog"><div class="dialog-content">Dialog</div></div>
+          <div class="menu" role="listbox" tabindex="0">Options</div>
+        </div>
+      </div>
+    `)
+
+    const result = await page.evaluate(() => {
+      const menu = document.querySelector<HTMLElement>('.menu')!
+      const point = menu.getBoundingClientRect()
+      return {
+        topElement: document.elementFromPoint(point.left + point.width / 2, point.top + point.height / 2)?.className,
+        withinFocusScope: document.querySelector('.focus-scope')?.contains(menu) ?? false,
+        menuVisible: getComputedStyle(menu).visibility === 'visible',
+      }
+    })
+
+    expect(result.topElement).toBe('menu')
+    expect(result.withinFocusScope).toBe(true)
+    expect(result.menuVisible).toBe(true)
   })
 })

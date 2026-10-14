@@ -217,6 +217,87 @@ test('a selection inside a modal stays in its accessibility subtree and flips wi
   await expect(page.getByRole('combobox', { name: 'Cuenta' })).toBeFocused()
 })
 
+test('trigger-matched AppSelect stays above the modal overlay inside its focus scope and commits a choice', async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 700 })
+  await page.setContent(`
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; }
+      .overlay { position: fixed; inset: 0; z-index: 120; background: rgb(0 0 0 / .35); }
+      .focus-scope { position: relative; z-index: 1; width: 100%; height: 100%; }
+      .dialog { position: absolute; left: 220px; top: 160px; width: 360px; height: 220px; overflow: hidden; background: white; }
+      .dialog-content { position: relative; z-index: 1; padding-top: 154px; }
+      .app-select { position: relative; }
+      .app-select-menu { position: absolute; z-index: 40; background: white; border: 1px solid #888; }
+      .app-select-option { display: block; width: 100%; height: 44px; }
+    </style>
+    <div class="overlay">
+      <div class="focus-scope" data-app-select-portal-root>
+        <div class="dialog" role="dialog" aria-modal="true" aria-label="Registrar ingreso">
+          <div id="root" class="dialog-content"></div>
+        </div>
+      </div>
+    </div>
+  `)
+  await page.addScriptTag({ path: reactPath })
+  await page.addScriptTag({ path: reactDomPath })
+  await page.addScriptTag({ content: browserComponentSource() })
+  await page.addScriptTag({ content: `
+    function Harness() {
+      const [value, setValue] = React.useState('pen');
+      return React.createElement(window.FinTrackTestAppSelect, {
+        options: [{ value: 'pen', label: 'PEN (S/)' }, { value: 'usd', label: 'USD ($)' }],
+        value,
+        onChange: setValue,
+        ariaLabel: 'Moneda',
+        matchTriggerWidth: true,
+        testId: 'income-currency-select',
+      });
+    }
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Harness));
+  ` })
+
+  const trigger = page.getByTestId('income-currency-select')
+  await trigger.click()
+  const menu = page.getByRole('dialog', { name: 'Moneda' })
+  await expect(menu).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Moneda' })).toBeFocused()
+  expect(await menu.evaluate(element => element.parentElement?.hasAttribute('data-app-select-portal-root'))).toBe(true)
+  const triggerBox = await trigger.boundingBox()
+  const menuBox = await menu.boundingBox()
+  expect(triggerBox).not.toBeNull()
+  expect(menuBox).not.toBeNull()
+  expect(menuBox!.width).toBe(triggerBox!.width)
+
+  const overlap = await menu.evaluate(element => {
+    const rect = element.getBoundingClientRect()
+    const x = rect.left + rect.width / 2
+    const y = rect.top + rect.height / 2
+    return {
+      extendsBeyondDialog: rect.bottom > document.querySelector('.dialog')!.getBoundingClientRect().bottom,
+      topElementIsMenu: document.elementFromPoint(x, y)?.closest('.app-select-menu') === element,
+    }
+  })
+  expect(overlap.extendsBeyondDialog).toBe(true)
+  expect(overlap.topElementIsMenu).toBe(true)
+
+  await page.getByRole('option', { name: 'USD ($)' }).click()
+  await expect(trigger).toContainText('USD ($)')
+  await expect(trigger).toBeFocused()
+  await expect(page.getByRole('dialog', { name: 'Registrar ingreso' })).toBeVisible()
+
+  await trigger.click()
+  await page.getByRole('combobox', { name: 'Moneda' }).press('Escape')
+  await expect(menu).toBeHidden()
+  await expect(trigger).toBeFocused()
+  await expect(page.getByRole('dialog', { name: 'Registrar ingreso' })).toBeVisible()
+
+  await trigger.click()
+  await page.locator('.dialog').click({ position: { x: 10, y: 10 } })
+  await expect(menu).toBeHidden()
+  await expect(page.getByRole('dialog', { name: 'Registrar ingreso' })).toBeVisible()
+})
+
 test('mobile selection uses the visual viewport bounds without committing on search', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 600 })
   await page.setContent('<style>.app-select-menu{background:white;z-index:20}.app-select-option{display:block;height:48px}</style><div id="root"></div>')
