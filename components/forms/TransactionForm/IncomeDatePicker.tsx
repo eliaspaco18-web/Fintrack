@@ -51,7 +51,7 @@ export function IncomeDatePicker({ value, onChange, onInvalidInput, error }: Pro
   const panelRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
   const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null)
-  const [position, setPosition] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null)
+  const [position, setPosition] = useState<{ top: number; left: number; width: number; height: number; maxHeight: number } | null>(null)
   const [inputValue, setInputValue] = useState(() => formatIsoDateForDisplay(value))
   const today = localTodayIso()
   const selected = dateParts(value)
@@ -88,18 +88,32 @@ export function IncomeDatePicker({ value, onChange, onInvalidInput, error }: Pro
     const gap = 6
     const width = Math.min(296, window.innerWidth - inset * 2)
     const left = Math.max(inset, Math.min(rect.left, window.innerWidth - width - inset))
-    const spaceBelow = window.innerHeight - rect.bottom - gap - inset
-    const spaceAbove = rect.top - gap - inset
-    const flip = spaceBelow < panel.scrollHeight && spaceAbove > spaceBelow
-    const constrainedHeight = Math.min(360, flip ? spaceAbove : spaceBelow)
-    const maxHeight = Math.max(0, constrainedHeight < 120 ? Math.min(360, window.innerHeight - inset * 2) : constrainedHeight)
-    const panelHeight = Math.min(panel.scrollHeight, maxHeight)
-    const top = constrainedHeight < 120
-      ? inset
-      : flip
-        ? Math.max(inset, rect.top - panelHeight - gap)
-        : Math.max(inset, Math.min(rect.bottom + gap, window.innerHeight - panelHeight - inset))
-    setPosition({ top, left, width, maxHeight })
+    const viewportTop = window.visualViewport?.offsetTop ?? 0
+    const viewportBottom = Math.min(
+      window.innerHeight,
+      viewportTop + (window.visualViewport?.height ?? window.innerHeight),
+    )
+    const safeTop = Math.max(inset, viewportTop + inset)
+    const safeBottom = Math.max(safeTop, viewportBottom - inset)
+    const modalBody = trigger.closest<HTMLElement>('[role="dialog"]')
+      ?.querySelector<HTMLElement>('[data-record-modal-body="true"]')
+    // The portal is outside the scrolling body, so use its visible top as the
+    // upper boundary. This keeps an upward-opening calendar below the sticky
+    // modal header instead of painting over the title.
+    const bodyTop = modalBody?.getBoundingClientRect().top
+    const safeModalTop = Math.max(safeTop, bodyTop === undefined ? safeTop : bodyTop + 4)
+    const spaceBelow = Math.max(0, safeBottom - rect.bottom - gap)
+    const spaceAbove = Math.max(0, rect.top - gap - safeModalTop)
+    const weekCount = panel.querySelectorAll('[role="grid"] [role="row"]').length
+    const desiredHeight = Math.min(Math.max(panel.scrollHeight, weekCount === 6 ? 332 : 0), 344)
+    const openAbove = spaceAbove >= desiredHeight || (spaceAbove > spaceBelow && spaceAbove >= 128)
+    const availableHeight = openAbove ? spaceAbove : spaceBelow
+    const maxHeight = Math.min(desiredHeight, availableHeight)
+    const panelHeight = maxHeight
+    const top = openAbove
+      ? Math.max(safeModalTop, rect.top - panelHeight - gap)
+      : Math.min(rect.bottom + gap, safeBottom - panelHeight)
+    setPosition({ top, left, width, height: panelHeight, maxHeight })
   }, [])
 
   const show = useCallback(() => {
@@ -262,6 +276,7 @@ export function IncomeDatePicker({ value, onChange, onInvalidInput, error }: Pro
             top: position.top,
             left: position.left,
             width: position.width,
+            height: position.height,
             maxHeight: position.maxHeight,
           } : { visibility: 'hidden' }}
           onKeyDown={event => {
