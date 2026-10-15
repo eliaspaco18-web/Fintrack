@@ -5,6 +5,291 @@
   min-width: 0;
 }
 
+/* Shared Astra Round 07 section rhythm for the next create-form pair.
+   This is opt-in from expense/transfer create mode only; income and edit forms
+   keep their existing layout. */
+.operationCreateForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.operationCreateFormRoot {
+  min-width: 0;
+}
+
+.operationCreateFormRoot[data-stage-a-operation='expense'] :global([data-testid='transaction-submit-button']) {
+  background-color: var(--ft-danger);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--ft-danger) 20%, transparent);
+}
+
+.operationCreateFormRoot[data-stage-a-operation='expense'] :global([data-testid='transaction-submit-button']:hover:not(:disabled)) {
+  filter: brightness(0.94);
+}
+
+.operationCreateFormRoot[data-stage-a-operation='transfer'] :global([data-testid='transaction-submit-button']) {
+  background-color: var(--ft-primary);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--ft-primary) 20%, transparent);
+}
+
+.operationCreateFormRoot[data-stage-a-operation='transfer'] :global([data-testid='transaction-submit-button']:hover:not(:disabled)) {
+  background-color: var(--ft-primary-hover);
+}
+
+.operationFormActions {
+  position: sticky;
+  z-index: 2;
+  bottom: calc(-1 * var(--ft-modal-padding, 1.25rem));
+  margin: 0 calc(-1 * var(--ft-modal-padding, 1.25rem)) calc(-1 * var(--ft-modal-padding, 1.25rem));
+  padding: 0.75rem var(--ft-modal-padding, 1.25rem);
+  border-top: 1px solid var(--ft-form-border);
+  background: var(--ft-modal-bg);
+}
+
+.operationCreateSection {
+  container: operation-create-section / inline-size;
+}
+
+.operationCreateClassificationFields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.72fr);
+  align-items: start;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.operationCreateFullWidth {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.operationTransferSummary {
+  border-color: var(--ft-form-border);
+  background: var(--ft-surface-muted);
+  padding: 0.75rem;
+}
+
+.operationTransferFx {
+  display: grid;
+  gap: 0.625rem;
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--ft-primary-border);
+  border-radius: var(--ft-form-radius);
+  background: color-mix(in srgb, var(--ft-primary-soft) 48%, var(--ft-form-surface));
+}
+
+.operationTransferFxIcon {
+  display: grid;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 0.5rem;
+  background: var(--ft-primary-soft);
+  color: var(--ft-primary);
+  font-size: 0.75rem;
+}
+
+.operationTransferFxHeading {
+  margin: 0;
+  color: var(--ft-primary);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.operationTransferFxIntro {
+  margin: 0;
+  color: var(--ft-form-muted);
+  font-size: 0.6875rem;
+  line-height: 1.45;
+}
+
+.operationTransferFxAmounts,
+.operationTransferFxRateGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.625rem;
+  min-width: 0;
+}
+
+.operationTransferFxAmounts > div,
+.operationTransferFxRate {
+  display: grid;
+  align-content: start;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.operationTransferFxLabel {
+  display: block;
+  min-height: 1.9em;
+  margin: 0;
+  color: var(--ft-form-muted);
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.operationTransferFxOutput,
+.operationTransferFxInput {
+  display: flex;
+  min-width: 0;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--ft-form-radius);
+  font-variant-numeric: tabular-nums;
+}
+
+.operationTransferFxOutput {
+  border: 1px solid var(--ft-form-border);
+  background: var(--ft-surface-muted);
+  color: var(--ft-text-strong);
+}
+
+.operationTransferFxInput {
+  border: 1px solid var(--ft-primary-border);
+  background: var(--ft-form-surface);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.operationTransferFxInput:focus-within {
+  border-color: var(--ft-primary);
+  box-shadow: var(--ft-form-focus-ring);
+}
+
+.operationTransferFxCurrency {
+  flex: 0 0 auto;
+  color: var(--ft-form-muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.operationTransferFxValue,
+.operationTransferFxInputValue {
+  width: 100%;
+  min-width: 0;
+  color: var(--ft-text-strong);
+  font-size: 0.875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
+.operationTransferFxInputValue {
+  border: 0;
+  outline: 0;
+  background: transparent;
+}
+
+.operationTransferFxInputValue::placeholder {
+  color: var(--ft-text-subtle);
+  opacity: 0.8;
+}
+
+.operationTransferFxRates {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+  padding-top: 0.625rem;
+  border-top: 1px solid var(--ft-form-border);
+}
+
+.operationTransferFxRate {
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--ft-form-border);
+  border-radius: calc(var(--ft-form-radius) - 2px);
+  background: var(--ft-form-surface);
+}
+
+.operationPaymentMethod {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--ft-form-border);
+  border-radius: var(--ft-form-radius);
+  background: var(--ft-form-surface);
+}
+
+.operationPaymentMethodLabel {
+  margin: 0;
+  color: var(--ft-form-muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.operationPaymentMethodOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.operationPaymentMethodOption {
+  display: inline-flex;
+  min-height: 2.125rem;
+  align-items: center;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--ft-form-border);
+  border-radius: calc(var(--ft-form-radius) - 2px);
+  background: var(--ft-surface-muted);
+  color: var(--ft-form-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease;
+}
+
+.operationPaymentMethodOption:hover,
+.operationPaymentMethodOption:focus-visible {
+  border-color: var(--ft-primary-border);
+  color: var(--ft-primary);
+}
+
+.operationPaymentMethodOption[data-active='true'] {
+  border-color: var(--ft-primary-border);
+  background: var(--ft-primary-soft);
+  color: var(--ft-primary);
+}
+
+.operationPaymentMethodOption:focus-visible {
+  outline: 2px solid var(--ft-focus-ring-color);
+  outline-offset: 2px;
+}
+
+.operationPaymentMethodOption:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@container operation-create-section (max-width: 420px) {
+  .operationCreateClassificationFields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .operationCreateFullWidth {
+    grid-column: 1;
+  }
+}
+
+@media (max-width: 420px) {
+  .operationTransferFxAmounts,
+  .operationTransferFxRateGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .operationTransferFxLabel {
+    min-height: 0;
+  }
+}
+
 .incomeSection {
   display: grid;
   gap: 0.625rem;

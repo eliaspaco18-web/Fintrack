@@ -415,6 +415,13 @@ export function TransactionForm({
     recurrence: false,
     receipt: false,
   })
+  const [operationAdditionalOptionsOpen, setOperationAdditionalOptionsOpen] = useState({
+    recipient: false,
+    budget: false,
+    notes: false,
+    recurrence: false,
+    receipt: false,
+  })
   const [crossCurrencyDestAmount, setCrossCurrencyDestAmount] = useState<string>('')
   const [targetDebtCurrency, setTargetDebtCurrency] = useState<CreditCurrency | null>(null)
   const [formOptions, setFormOptions] = useState<TransactionFormOptions>(options)
@@ -1054,6 +1061,13 @@ export function TransactionForm({
     return 'expense'
   }, [createsAsset, createsPayable, createsReceivable, operationType, type])
   const isIncomeCreate = layoutMode === 'income' && !isEditMode
+  // Egreso and transfer adopt the approved Round 07 create-form presentation.
+  // The edit flow and the other operation types intentionally retain their
+  // existing layouts until their own review stage.
+  const isStageACreate = !isEditMode && (layoutMode === 'expense' || layoutMode === 'transfer')
+  const isStageAExpenseCreate = isStageACreate && layoutMode === 'expense'
+  const usesApprovedCreateControls = isIncomeCreate || isStageACreate
+  const usesApprovedDatePicker = usesApprovedCreateControls
 
   // ── Cross-currency transfer detection ────────────────────────────────────
   const isCrossCurrencyTransfer = layoutMode === 'transfer'
@@ -1567,15 +1581,15 @@ export function TransactionForm({
   }
 
   const amountCurrencyField = (
-    <div className={`${isCompactLayout ? 'grid grid-cols-[1fr_100px] gap-2' : 'grid grid-cols-[1fr_110px] gap-3'} ${isIncomeCreate ? incomeStyles.incomeAmountCurrency : ''}`}>
+    <div className={`${isCompactLayout ? 'grid grid-cols-[1fr_100px] gap-2' : 'grid grid-cols-[1fr_110px] gap-3'} ${usesApprovedCreateControls ? incomeStyles.incomeAmountCurrency : ''}`}>
       <FieldWrapper
-        label={layoutMode === 'asset_purchase' ? 'Valor de compra' : 'Monto'}
+        label={layoutMode === 'asset_purchase' ? 'Valor de compra' : isStageACreate && layoutMode === 'transfer' ? 'Monto enviado' : 'Monto'}
         required
         error={errors.amount?.message}
       >
         <AmountInput
           currency={currency as 'PEN' | 'USD'}
-          prefixLayout={isIncomeCreate ? 'inline' : 'overlay'}
+          prefixLayout={usesApprovedCreateControls ? 'inline' : 'overlay'}
           error={errors.amount?.message}
           data-testid="transaction-amount-input"
           disabled={lockSettlementEdit}
@@ -1611,28 +1625,34 @@ export function TransactionForm({
       </FieldWrapper>
 
       <FieldWrapper
-        label="Moneda"
-        hint={isIncomeCreate
+        label={isStageACreate && layoutMode === 'transfer' ? 'Moneda de origen' : 'Moneda'}
+        hint={usesApprovedCreateControls
           ? undefined
           : isExpenseCreditPayment
             ? 'Puedes registrar consumos de tarjeta en soles o dólares.'
             : 'Se sincroniza con el portafolio seleccionado.'}
       >
-        <div className={isIncomeCreate ? incomeStyles.incomeCurrencyControl : undefined}>
+        <div className={usesApprovedCreateControls ? incomeStyles.incomeCurrencyControl : undefined}>
           <Select
             {...register('currency')}
             value={isIncomeCreate ? currency : undefined}
-            compact={!isIncomeCreate}
-            matchTriggerWidth={isIncomeCreate}
+            compact={!usesApprovedCreateControls}
+            matchTriggerWidth={usesApprovedCreateControls}
             data-testid="transaction-currency-select"
             disabled={lockSettlementEdit || !isExpenseCreditPayment}
           >
             <option value="PEN">PEN (S/)</option>
             <option value="USD">USD ($)</option>
           </Select>
-          {isIncomeCreate ? (
+          {usesApprovedCreateControls ? (
             <IncomeInfoHint label="Ayuda sobre la moneda">
-              La moneda del ingreso se sincroniza con la cuenta destino seleccionada.
+              {isIncomeCreate
+                ? 'La moneda del ingreso se sincroniza con la cuenta destino seleccionada.'
+                : isExpenseCreditPayment
+                  ? 'Puedes registrar consumos de tarjeta en soles o dólares.'
+                  : layoutMode === 'transfer'
+                    ? 'La moneda del importe se sincroniza con la cuenta origen. El resumen muestra la moneda de destino cuando son distintas.'
+                    : 'La moneda del egreso se sincroniza con la cuenta origen seleccionada.'}
             </IncomeInfoHint>
           ) : null}
         </div>
@@ -1642,13 +1662,13 @@ export function TransactionForm({
 
   const exchangeRateField = (
     <div
-      className={isIncomeCreate
+      className={isIncomeCreate || isStageAExpenseCreate
         ? `${incomeStyles.incomeExchangeRate} ${sections.exchangeRate ? incomeStyles.incomeExchangeRateVisible : incomeStyles.incomeExchangeRateHidden}`
         : `overflow-hidden transition-all duration-300 ease-out ${sections.exchangeRate ? 'max-h-24 opacity-100' : 'max-h-0 opacity-0'}`}
     >
       <FieldWrapper
         label="Tipo de cambio"
-        hint={`${isIncomeCreate ? 'Referencia diaria: ' : ''}1 USD = ${formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN (${refreshingLiveRate ? 'actualizando…' : rateDateLabel})`}
+        hint={`${isIncomeCreate || isStageAExpenseCreate ? 'Referencia diaria: ' : ''}1 USD = ${formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN (${refreshingLiveRate ? 'actualizando…' : rateDateLabel})`}
         required
         error={errors.exchange_rate?.message}
       >
@@ -1675,7 +1695,7 @@ export function TransactionForm({
           })}
         />
       </FieldWrapper>
-      {isIncomeCreate ? (
+      {isIncomeCreate || isStageAExpenseCreate ? (
         <span className={incomeStyles.exchangeRateHelp}>
           <IncomeInfoHint label="Ayuda sobre el tipo de cambio">
             La referencia diaria corresponde a la fecha de la operación. Si la cuenta es en dólares, el valor editable del campo es el que se aplica al ingreso y puede diferir de esa referencia.
@@ -1685,7 +1705,8 @@ export function TransactionForm({
     </div>
   )
 
-  const equivalenceField = isIncomeCreate ? (
+  const usesApprovedEquivalence = isIncomeCreate || isStageAExpenseCreate || (isStageACreate && layoutMode === 'transfer' && !isCrossCurrencyTransfer)
+  const equivalenceField = usesApprovedEquivalence ? (
     <div className={incomeStyles.incomeEquivalence}>
       <div className={incomeStyles.incomeEquivalenceHeading}>
         <span>Equivalencia estimada</span>
@@ -1778,20 +1799,22 @@ export function TransactionForm({
   )
 
   const paymentMethodField = type === 'EXPENSE' && operationType !== 'transfer' && operationType !== 'asset_purchase' && operationType !== 'payable_issue' && operationType !== 'receivable_issue' && operationType !== 'receivable_collect' ? (
-    <div className={`rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] ${isCompactLayout ? 'px-3 py-2' : 'px-3.5 py-3'}`}>
-      <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">
+    <div className={isStageACreate ? incomeStyles.operationPaymentMethod : `rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] ${isCompactLayout ? 'px-3 py-2' : 'px-3.5 py-3'}`}>
+      <p className={isStageACreate ? incomeStyles.operationPaymentMethodLabel : 'text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]'}>
         Forma de pago
       </p>
-      <div className="mt-1.5 flex flex-wrap gap-1.5">
+      <div className={isStageACreate ? incomeStyles.operationPaymentMethodOptions : 'mt-1.5 flex flex-wrap gap-1.5'}>
         <button
           type="button"
+          aria-pressed={isStageACreate ? !isExpenseCreditPayment : undefined}
           disabled={lockSettlementEdit}
           onClick={() => {
             setValue('payment_method', 'DEBIT', { shouldDirty: true, shouldValidate: false })
             setValue('credit_card_id', undefined, { shouldDirty: true, shouldValidate: false })
             setValue('credit_operation', undefined, { shouldDirty: true, shouldValidate: false })
           }}
-          className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+          data-active={isStageACreate ? (!isExpenseCreditPayment ? 'true' : 'false') : undefined}
+          className={isStageACreate ? incomeStyles.operationPaymentMethodOption : `rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
             !isExpenseCreditPayment
               ? 'border-[var(--c-primary-border)] bg-[var(--c-primary-soft)] text-[var(--c-primary)]'
               : 'border-[var(--c-border)] bg-[var(--c-surface)] text-[var(--c-text-muted)] hover:text-[var(--c-text)]'
@@ -1801,12 +1824,14 @@ export function TransactionForm({
         </button>
         <button
           type="button"
+          aria-pressed={isStageACreate ? isExpenseCreditPayment : undefined}
           disabled={lockSettlementEdit}
           onClick={() => {
             setValue('payment_method', 'CREDIT', { shouldDirty: true, shouldValidate: false })
             setValue('credit_operation', 'CONSUMPTION', { shouldDirty: true, shouldValidate: false })
           }}
-          className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+          data-active={isStageACreate ? (isExpenseCreditPayment ? 'true' : 'false') : undefined}
+          className={isStageACreate ? incomeStyles.operationPaymentMethodOption : `rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
             isExpenseCreditPayment
               ? 'border-sky-400/35 bg-sky-500/15 text-sky-300'
               : 'border-[var(--c-border)] bg-[var(--c-surface)] text-[var(--c-text-muted)] hover:text-[var(--c-text)]'
@@ -1839,6 +1864,7 @@ export function TransactionForm({
         <Select
           placeholder="Cuenta origen…"
           error={errors.source_account_id?.message}
+          matchTriggerWidth={isStageACreate}
           data-testid="transaction-source-account-select"
           disabled={lockSettlementEdit}
           {...register('source_account_id', { required: 'La cuenta origen es requerida' })}
@@ -1867,6 +1893,7 @@ export function TransactionForm({
         <Select
           placeholder="Cuenta destino…"
           error={(errors as Record<string, { message?: string }>).destination_account_id?.message}
+          matchTriggerWidth={isStageACreate}
           data-testid="transaction-destination-account-select"
           disabled={lockSettlementEdit}
           {...register('destination_account_id', {
@@ -1893,6 +1920,7 @@ export function TransactionForm({
           <Select
             placeholder="Seleccionar tarjeta…"
             error={errors.credit_card_id?.message || errors.source_account_id?.message}
+            matchTriggerWidth={isStageACreate}
             data-testid="transaction-credit-card-select"
             value={selectedCreditCardId ?? ''}
             disabled={lockSettlementEdit}
@@ -1942,7 +1970,7 @@ export function TransactionForm({
           <Select
             placeholder="Seleccionar cuenta…"
             error={errors.source_account_id?.message}
-            matchTriggerWidth={isIncomeCreate}
+            matchTriggerWidth={usesApprovedCreateControls}
             data-testid="transaction-source-account-select"
             disabled={lockSettlementEdit}
             {...register('source_account_id', { required: 'La cuenta es requerida' })}
@@ -2272,7 +2300,7 @@ export function TransactionForm({
 
   const transferSummaryField = layoutMode === 'transfer' ? (
     <>
-    <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3.5 py-3">
+    <div className={`${isStageACreate ? incomeStyles.operationTransferSummary : ''} rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3.5 py-3`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
@@ -2300,42 +2328,45 @@ export function TransactionForm({
 
       {/* ── Sección cambio de moneda (cross-currency) ─────────────────────── */}
       {isCrossCurrencyTransfer && (
-        <div className="rounded-xl border border-dashed border-amber-500/30 bg-amber-500/[0.04] px-3.5 py-3">
+        <section className={isStageACreate ? incomeStyles.operationTransferFx : 'rounded-xl border border-dashed border-amber-500/30 bg-amber-500/[0.04] px-3.5 py-3'} aria-label="Cambio de moneda">
           <div className="flex items-center gap-2">
-            <div className="flex h-5 w-5 items-center justify-center rounded-md bg-amber-500/15 text-[11px]">
+            <div className={isStageACreate ? incomeStyles.operationTransferFxIcon : 'flex h-5 w-5 items-center justify-center rounded-md bg-amber-500/15 text-[11px]'} aria-hidden="true">
               ⇄
             </div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-amber-400/90">
-              Cambio de moneda
+            <p className={isStageACreate ? incomeStyles.operationTransferFxHeading : 'text-[10px] font-semibold uppercase tracking-[0.08em] text-amber-400/90'}>
+              {isStageACreate ? 'Conversión entre cuentas' : 'Cambio de moneda'}
             </p>
           </div>
-          <p className="mt-1.5 text-[11px] leading-[1.5] text-[var(--c-text-muted)]">
-            Ingresa cuánto sale de la cuenta origen y cuánto ingresa en la cuenta destino para calcular el tipo de cambio implícito.
+          <p className={isStageACreate ? incomeStyles.operationTransferFxIntro : 'mt-1.5 text-[11px] leading-[1.5] text-[var(--c-text-muted)]'}>
+            {isStageACreate
+              ? 'Ingresa el importe que recibirás. El tipo de cambio implícito se calcula con ambos importes.'
+              : 'Ingresa cuánto sale de la cuenta origen y cuánto ingresa en la cuenta destino para calcular el tipo de cambio implícito.'}
           </p>
 
-          <div className="mt-3 grid grid-cols-2 gap-2.5">
+          <div className={isStageACreate ? incomeStyles.operationTransferFxAmounts : 'mt-3 grid grid-cols-2 gap-2.5'}>
             <div>
-              <p className="mb-1 text-[10px] font-medium text-[var(--c-text-faint)]">
-                Sale ({sourceAccountCurrency})
+              <p className={isStageACreate ? incomeStyles.operationTransferFxLabel : 'mb-1 text-[10px] font-medium text-[var(--c-text-faint)]'}>
+                {isStageACreate ? `Sale · monto enviado (${sourceAccountCurrency})` : `Sale (${sourceAccountCurrency})`}
               </p>
-              <div className="flex items-center gap-1.5 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-1.5">
-                <span className="text-[11px] text-[var(--c-text-faint)]">
+              <div className={isStageACreate ? incomeStyles.operationTransferFxOutput : 'flex items-center gap-1.5 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-1.5'}>
+                <span className={isStageACreate ? incomeStyles.operationTransferFxCurrency : 'text-[11px] text-[var(--c-text-faint)]'}>
                   {sourceAccountCurrency === 'PEN' ? 'S/' : '$'}
                 </span>
-                <span className="text-[13px] font-semibold tabular-nums text-[var(--c-text)]">
+                <span className={isStageACreate ? incomeStyles.operationTransferFxValue : 'text-[13px] font-semibold tabular-nums text-[var(--c-text)]'}>
                   {hasAmount ? formatNumber(numericAmount, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
                 </span>
               </div>
             </div>
             <div>
-              <p className="mb-1 text-[10px] font-medium text-[var(--c-text-faint)]">
-                Ingresa ({destinationAccountCurrency})
-              </p>
-              <div className="flex items-center gap-1.5 rounded-lg border border-[var(--c-primary-border)] bg-[var(--c-surface-2)] px-2.5 py-0">
-                <span className="text-[11px] text-[var(--c-text-faint)]">
+              <label className={isStageACreate ? incomeStyles.operationTransferFxLabel : 'mb-1 text-[10px] font-medium text-[var(--c-text-faint)]'} htmlFor={isStageACreate ? 'transfer-destination-amount' : undefined}>
+                {isStageACreate ? `Recibe · importe editable (${destinationAccountCurrency})` : `Ingresa (${destinationAccountCurrency})`}
+              </label>
+              <div className={isStageACreate ? incomeStyles.operationTransferFxInput : 'flex items-center gap-1.5 rounded-lg border border-[var(--c-primary-border)] bg-[var(--c-surface-2)] px-2.5 py-0'}>
+                <span className={isStageACreate ? incomeStyles.operationTransferFxCurrency : 'text-[11px] text-[var(--c-text-faint)]'}>
                   {destinationAccountCurrency === 'PEN' ? 'S/' : '$'}
                 </span>
                 <input
+                  id={isStageACreate ? 'transfer-destination-amount' : undefined}
                   type="number"
                   inputMode="decimal"
                   step="0.01"
@@ -2343,23 +2374,24 @@ export function TransactionForm({
                   placeholder="0.00"
                   value={crossCurrencyDestAmount}
                   onChange={e => setCrossCurrencyDestAmount(e.target.value)}
-                  className="w-full bg-transparent py-1.5 text-[13px] font-semibold tabular-nums text-[var(--c-text)] outline-none placeholder:text-[var(--c-text-faint)]/40"
+                  aria-label={isStageACreate ? `Importe recibido en ${destinationAccountCurrency}` : undefined}
+                  className={isStageACreate ? incomeStyles.operationTransferFxInputValue : 'w-full bg-transparent py-1.5 text-[13px] font-semibold tabular-nums text-[var(--c-text)] outline-none placeholder:text-[var(--c-text-faint)]/40'}
                 />
               </div>
             </div>
           </div>
 
           {hasAmount && hasCrossDestAmount && (
-            <div className="mt-3 space-y-2">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-lg bg-[var(--c-surface)] px-2.5 py-2">
-                  <p className="text-[9px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">TC implícito</p>
+            <div className={isStageACreate ? incomeStyles.operationTransferFxRates : 'mt-3 space-y-2'}>
+              <div className={isStageACreate ? incomeStyles.operationTransferFxRateGrid : 'grid grid-cols-2 gap-2'}>
+                <div className={isStageACreate ? incomeStyles.operationTransferFxRate : 'rounded-lg bg-[var(--c-surface)] px-2.5 py-2'}>
+                  <p className="text-[9px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">{isStageACreate ? 'TC implícito · calculado' : 'TC implícito'}</p>
                   <p className="mt-0.5 text-[14px] font-bold tabular-nums text-[var(--c-text)]">
                     {formatNumber(implicitCrossRate, { minimumFractionDigits: 3, maximumFractionDigits: 4 })}
                   </p>
                 </div>
-                <div className="rounded-lg bg-[var(--c-surface)] px-2.5 py-2">
-                  <p className="text-[9px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">TC del sistema</p>
+                <div className={isStageACreate ? incomeStyles.operationTransferFxRate : 'rounded-lg bg-[var(--c-surface)] px-2.5 py-2'}>
+                  <p className="text-[9px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">{isStageACreate ? 'TC del sistema · referencia' : 'TC del sistema'}</p>
                   <p className="mt-0.5 text-[14px] font-bold tabular-nums text-[var(--c-text-muted)]">
                     {formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
                   </p>
@@ -2385,7 +2417,7 @@ export function TransactionForm({
               </div>
             </div>
           )}
-        </div>
+        </section>
       )}
     </>
   ) : null
@@ -2400,7 +2432,7 @@ export function TransactionForm({
       <Select
         placeholder="Sin categoría"
         data-testid="transaction-category-select"
-        matchTriggerWidth={isIncomeCreate}
+        matchTriggerWidth={usesApprovedCreateControls}
         {...register('category_id', {
           required: 'La categoría es requerida',
           validate: value => !!value || 'La categoría es requerida',
@@ -2642,7 +2674,7 @@ export function TransactionForm({
     </div>
   ) : null
 
-  const transactionDateField = isIncomeCreate ? (
+  const transactionDateField = usesApprovedDatePicker ? (
     <FieldWrapper label="Fecha" required error={errors.transaction_date?.message}>
       <input type="hidden" {...register('transaction_date', { required: 'La fecha es requerida' })} />
       <IncomeDatePicker
@@ -2699,6 +2731,19 @@ export function TransactionForm({
       {descriptionField}
     </div>
   )
+
+  const stageAOptionalItems = isStageACreate ? (
+    layoutMode === 'expense' ? ([
+      { key: 'recipient' as const, label: 'Destinatario', hasValue: Boolean(watch('recipient')?.trim()), hasError: Boolean(errors.recipient?.message) },
+      { key: 'budget' as const, label: 'Presupuesto', hasValue: Boolean(watch('budget_id')), hasError: Boolean(errors.budget_id?.message) },
+      { key: 'notes' as const, label: 'Notas', hasValue: Boolean(watch('notes')?.trim()), hasError: Boolean(errors.notes?.message) },
+      { key: 'recurrence' as const, label: 'Recurrencia', hasValue: Boolean(watch('is_recurring') || watch('recurring_name')?.trim()), hasError: Boolean(errors.recurring_name?.message) },
+      { key: 'receipt' as const, label: 'Comprobante', hasValue: Boolean(attachmentFile || lastUploadedAttachment), hasError: Boolean(attachmentError) },
+    ]) : ([
+      { key: 'notes' as const, label: 'Notas', hasValue: Boolean(watch('notes')?.trim()), hasError: Boolean(errors.notes?.message) },
+      { key: 'receipt' as const, label: 'Comprobante', hasValue: Boolean(attachmentFile || lastUploadedAttachment), hasError: Boolean(attachmentError) },
+    ])
+  ) : []
 
   const progressiveOptionalField = usesProgressiveOptionalSection ? (
     isIncomeCreate ? (
@@ -2913,6 +2958,157 @@ export function TransactionForm({
                 </div>
               ) : null}
           </div>
+        </div>
+      </section>
+    ) : isStageACreate ? (
+      <section className={incomeStyles.incomeOptionalSection} aria-label="Información adicional">
+        <div className={incomeStyles.incomeOptionsHeader}>
+          <div>
+            <h3 className={incomeStyles.incomeSectionHeading}>Información adicional</h3>
+            <p className={incomeStyles.incomeOptionsDescription}>Opcional · abre solo lo que necesitas</p>
+          </div>
+          {hasOptionalSectionError || attachmentError ? (
+            <span className={incomeStyles.incomeReviewBadge}>Revisar</span>
+          ) : null}
+        </div>
+
+        <div className={incomeStyles.incomeOptionControls} role="group" aria-label={`Opciones de ${layoutMode === 'expense' ? 'egreso' : 'transferencia'}`}>
+          {stageAOptionalItems.map(option => {
+            const isOpen = operationAdditionalOptionsOpen[option.key] || option.hasError
+            const panelId = `${incomeOptionsId}-${option.key}`
+            return (
+              <button
+                key={option.key}
+                type="button"
+                aria-expanded={isOpen}
+                aria-controls={panelId}
+                data-active={isOpen ? 'true' : 'false'}
+                data-has-value={option.hasValue ? 'true' : 'false'}
+                data-has-error={option.hasError ? 'true' : 'false'}
+                className={incomeStyles.incomeOptionButton}
+                onClick={() => setOperationAdditionalOptionsOpen(current => ({
+                  ...current,
+                  [option.key]: !current[option.key],
+                }))}
+              >
+                <span aria-hidden="true" className={incomeStyles.incomeOptionMark}>{isOpen ? '−' : '+'}</span>
+                <span>{option.label}</span>
+                {option.hasError ? <span className={incomeStyles.incomeOptionError}>Revisar</span> : null}
+              </button>
+            )
+          })}
+        </div>
+
+        <div className={incomeStyles.incomeOptionPanels}>
+          {layoutMode === 'expense' ? (
+            <>
+              <div id={`${incomeOptionsId}-recipient`} hidden={!operationAdditionalOptionsOpen.recipient && !errors.recipient?.message} className={incomeStyles.incomeOptionPanel}>
+                <FieldWrapper label="Destinatario" optional>
+                  <Input type="text" placeholder="Ej: Inmobiliaria Norte" data-testid="transaction-recipient-input" disabled={lockSettlementEdit} {...register('recipient')} />
+                </FieldWrapper>
+              </div>
+              <div id={`${incomeOptionsId}-budget`} hidden={!operationAdditionalOptionsOpen.budget && !errors.budget_id?.message} className={incomeStyles.incomeOptionPanel}>
+                <FieldWrapper
+                  label="Presupuesto"
+                  optional
+                  hint={categoryId
+                    ? 'Solo se muestran presupuestos compatibles con la categoría y fecha.'
+                    : 'Selecciona una categoría para ver presupuestos compatibles.'}
+                >
+                  <Select placeholder="Sin presupuesto" data-testid="transaction-budget-select" matchTriggerWidth disabled={lockSettlementEdit || !categoryId || budgetsLoading || filteredBudgets.length === 0} {...register('budget_id')}>
+                    <option value="">Sin presupuesto</option>
+                    {filteredBudgets.map(budget => <option key={budget.value} value={budget.value}>{budget.label}</option>)}
+                  </Select>
+                  {budgetsLoading ? <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">Buscando presupuestos compatibles…</p> : null}
+                  {!budgetsLoading && !categoryId ? <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">Elige primero una categoría para filtrar presupuestos estrictamente.</p> : null}
+                  {!budgetsLoading && categoryId && filteredBudgets.length === 0 ? <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">No hay presupuestos activos para esta categoría en la fecha seleccionada.</p> : null}
+                </FieldWrapper>
+              </div>
+            </>
+          ) : null}
+
+          <div id={`${incomeOptionsId}-notes`} hidden={!operationAdditionalOptionsOpen.notes && !errors.notes?.message} className={incomeStyles.incomeOptionPanel}>
+            <FieldWrapper label="Notas" optional>
+              <Textarea rows={2} placeholder={layoutMode === 'expense' ? 'Observaciones adicionales…' : 'Observaciones de la transferencia…'} data-testid="transaction-notes-input" {...register('notes')} />
+            </FieldWrapper>
+          </div>
+
+          {layoutMode === 'expense' ? (
+            <div id={`${incomeOptionsId}-recurrence`} hidden={!operationAdditionalOptionsOpen.recurrence && !errors.recurring_name?.message} className={incomeStyles.incomeOptionPanel}>
+              <CheckboxToggle
+                label="Transacción recurrente"
+                description="Guarda esta configuración como plantilla reutilizable."
+                checked={!!watch('is_recurring')}
+                disabled={lockSettlementEdit}
+                onChange={value => setValue('is_recurring', value)}
+              />
+              {watch('is_recurring') ? (
+                <div className={incomeStyles.incomeRecurringName}>
+                  <FieldWrapper label="Nombre de la recurrente" required error={errors.recurring_name?.message} hint="Será el nombre visible dentro del módulo de recurrentes.">
+                    <Input type="text" placeholder="Ej. Pago mensual de internet" data-testid="transaction-recurring-name-input" error={errors.recurring_name?.message} {...register('recurring_name', {
+                      maxLength: { value: 150, message: 'Máximo 150 caracteres' },
+                      validate: value => !watch('is_recurring') || (value ?? '').trim().length > 0 || 'Ingresa un nombre para la plantilla recurrente',
+                    })} />
+                  </FieldWrapper>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {!isEditMode ? (
+            <div id={`${incomeOptionsId}-receipt`} hidden={!operationAdditionalOptionsOpen.receipt && !attachmentError && !attachmentUploading} className={incomeStyles.incomeAttachmentPanel}>
+              <label className={incomeStyles.incomeAttachmentAction}>
+                <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
+                  <path d="M7.5 10.8 12.9 5.4a2.5 2.5 0 0 1 3.5 3.5L9.6 15.7a4 4 0 0 1-5.7-5.7l7.2-7.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+                <span>{attachmentFile || lastUploadedAttachment ? 'Reemplazar comprobante' : 'Adjuntar comprobante'}</span>
+                <input
+                  ref={incomeAttachmentInputRef}
+                  type="file"
+                  accept={ATTACHMENT_ACCEPT}
+                  data-testid="transaction-attachment-input"
+                  className="sr-only"
+                  onChange={event => {
+                    const nextFile = event.target.files?.[0] ?? null
+                    setAttachmentFile(nextFile)
+                    setAttachmentError(null)
+                    setLastAttachmentTxId(null)
+                    setLastUploadedAttachment(null)
+                    lastAutoUploadTxId.current = null
+                  }}
+                />
+              </label>
+              {attachmentFile ? (
+                <div className={incomeStyles.incomeAttachmentFile}>
+                  <span aria-hidden="true" className={incomeStyles.incomeAttachmentFileIcon}>
+                    <svg viewBox="0 0 20 20" fill="none">
+                      <path d="M7.5 10.8 12.9 5.4a2.5 2.5 0 0 1 3.5 3.5L9.6 15.7a4 4 0 0 1-5.7-5.7l7.2-7.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  </span>
+                  <span className={incomeStyles.incomeAttachmentFileName} title={attachmentFile.name}>{attachmentFile.name}</span>
+                  <span className={incomeStyles.incomeAttachmentFileSize}>{formatAttachmentSize(attachmentFile.size)}</span>
+                  <button type="button" className={incomeStyles.incomeAttachmentRemove} onClick={() => {
+                    setAttachmentFile(null)
+                    setAttachmentError(null)
+                    setLastAttachmentTxId(null)
+                    setLastUploadedAttachment(null)
+                    lastAutoUploadTxId.current = null
+                    if (incomeAttachmentInputRef.current) incomeAttachmentInputRef.current.value = ''
+                  }}>Quitar</button>
+                </div>
+              ) : null}
+              {!attachmentFile && !lastUploadedAttachment ? <p className={incomeStyles.incomeAttachmentHint}>Imagen, PDF o documento · máximo {formatAttachmentSize(MAX_FINANCIAL_ATTACHMENT_BYTES)}.</p> : null}
+              <p className={incomeStyles.incomeAttachmentHint}>Se subirá después de registrar la operación.</p>
+              {attachmentUploading ? <p role="status" className={incomeStyles.incomeAttachmentStatus}>Subiendo comprobante…</p> : null}
+              {lastUploadedAttachment && !attachmentUploading && !attachmentError ? (
+                <p role="status" className={incomeStyles.incomeAttachmentSuccess}>
+                  {lastUploadedAttachment.availability === 'AVAILABLE' ? 'Comprobante asociado:' : 'Comprobante asociado sin vista verificada:'} {lastUploadedAttachment.file_name}
+                  {lastUploadedAttachment.signed_url ? <>{' · '}<a href={lastUploadedAttachment.signed_url} target="_blank" rel="noreferrer">Ver</a></> : null}
+                </p>
+              ) : null}
+              {attachmentError ? <div className={incomeStyles.incomeAttachmentError}><p role="alert">{attachmentError}</p>{attachmentFile && lastAttachmentTxId ? <button type="button" onClick={retryAttachmentUpload} disabled={attachmentUploading}>Reintentar</button> : null}</div> : null}
+            </div>
+          ) : null}
         </div>
       </section>
     ) : (
@@ -3603,7 +3799,8 @@ export function TransactionForm({
         onSubmit={handleFormSubmit}
         noValidate
         data-testid="transaction-form"
-        className={`${isCompactLayout ? 'space-y-2.5' : 'space-y-5'} ${className}`}
+        data-stage-a-operation={isStageACreate ? layoutMode : undefined}
+        className={`${isCompactLayout ? 'space-y-2.5' : 'space-y-5'} ${isStageACreate ? incomeStyles.operationCreateFormRoot : ''} ${className}`}
       >
         {!hideTypeSelector && (
           <div data-testid="transaction-type-selector">
@@ -3626,7 +3823,7 @@ export function TransactionForm({
           />
         )}
 
-        <div className={isIncomeCreate ? incomeStyles.incomeForm : 'astra-form-grid grid grid-cols-1 gap-4 min-[860px]:grid-cols-[minmax(0,1.04fr)_minmax(320px,0.96fr)] min-[860px]:items-start min-[860px]:gap-5'}>
+        <div className={isIncomeCreate ? incomeStyles.incomeForm : isStageACreate ? incomeStyles.operationCreateForm : 'astra-form-grid grid grid-cols-1 gap-4 min-[860px]:grid-cols-[minmax(0,1.04fr)_minmax(320px,0.96fr)] min-[860px]:items-start min-[860px]:gap-5'}>
           {isIncomeCreate ? (
             <>
               <section className={incomeStyles.incomeSection} aria-label="Movimiento">
@@ -3648,6 +3845,56 @@ export function TransactionForm({
                 </div>
               </section>
             </>
+          ) : isStageACreate && layoutMode === 'expense' ? (
+            <>
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Movimiento">
+                <h3 className={incomeStyles.incomeSectionHeading}>Movimiento</h3>
+                <div className={incomeStyles.incomePrimaryFields}>
+                  {paymentMethodField}
+                  {accountField}
+                  {creditCardImpactField}
+                  {amountCurrencyField}
+                </div>
+                {exchangeRateField}
+                {equivalenceField}
+              </section>
+
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Clasificación y registro">
+                <h3 className={incomeStyles.incomeSectionHeading}>Clasificación y registro</h3>
+                <div className={incomeStyles.operationCreateClassificationFields}>
+                  {categoryField}
+                  {transactionDateField}
+                  <div className={incomeStyles.incomeDescription}>{descriptionField}</div>
+                </div>
+              </section>
+            </>
+          ) : isStageACreate && layoutMode === 'transfer' ? (
+            <>
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection} ${incomeStyles.operationCreateFullWidth}`} aria-label="Transferencia">
+                <h3 className={incomeStyles.incomeSectionHeading}>Transferencia</h3>
+                <div className={incomeStyles.incomePrimaryFields}>
+                  {transferAccountsField}
+                  {transferSummaryField}
+                  {creditCardImpactField}
+                </div>
+              </section>
+
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Importe y moneda">
+                <h3 className={incomeStyles.incomeSectionHeading}>Importe y moneda</h3>
+                <div className={incomeStyles.incomePrimaryFields}>
+                  {amountCurrencyField}
+                  {exchangeRateField}
+                  {!isCrossCurrencyTransfer ? equivalenceField : null}
+                </div>
+              </section>
+
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Datos del registro">
+                <h3 className={incomeStyles.incomeSectionHeading}>Datos del registro</h3>
+                <div className={incomeStyles.incomePrimaryFields}>
+                  {dateDescriptionField}
+                </div>
+              </section>
+            </>
           ) : (
             <>
               <div className="space-y-4">{primaryContextZone}</div>
@@ -3656,13 +3903,13 @@ export function TransactionForm({
           )}
 
           {progressiveOptionalField ? (
-            <div className={isIncomeCreate ? incomeStyles.incomeOptionalSlot : 'min-[860px]:col-span-2'}>
+            <div className={isIncomeCreate ? incomeStyles.incomeOptionalSlot : isStageACreate ? incomeStyles.operationCreateFullWidth : 'min-[860px]:col-span-2'}>
               {progressiveOptionalField}
             </div>
           ) : null}
 
           {inlineOptionalField ? (
-            <div className={isIncomeCreate ? incomeStyles.incomeOptionalSlot : 'min-[860px]:col-span-2'}>
+            <div className={isIncomeCreate ? incomeStyles.incomeOptionalSlot : isStageACreate ? incomeStyles.operationCreateFullWidth : 'min-[860px]:col-span-2'}>
               {inlineOptionalField}
             </div>
           ) : null}
@@ -3700,6 +3947,7 @@ export function TransactionForm({
       {/* ── 9. SUBMIT ────────────────────────────────────────────────────── */}
       <RecordModalFooter>
         <FormActions
+          className={isStageACreate ? incomeStyles.operationFormActions : ''}
           secondaryAction={onCancel ? (
             <Button
               type="button"
