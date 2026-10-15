@@ -147,7 +147,22 @@ export function IncomeDatePicker({ value, onChange, onInvalidInput, error }: Pro
     const inset = 8
     const gap = 6
     const width = Math.min(CALENDAR_PANEL_WIDTH, window.innerWidth - inset * 2)
-    const left = Math.max(inset, Math.min(rect.left, window.innerWidth - width - inset))
+    const viewportMaxLeft = Math.max(inset, window.innerWidth - width - inset)
+    const modalBody = trigger.closest<HTMLElement>('[role="dialog"]')
+      ?.querySelector<HTMLElement>('[data-record-modal-body="true"]')
+    const bodyRect = modalBody?.getBoundingClientRect()
+    const bodyContentLeft = modalBody && bodyRect ? bodyRect.left + modalBody.clientLeft : inset
+    const bodyContentRight = modalBody && bodyRect
+      ? bodyContentLeft + modalBody.clientWidth
+      : window.innerWidth - inset
+    const pickerRect = trigger.parentElement?.getBoundingClientRect() ?? rect
+    const horizontalOffset = Math.min(40, Math.max(30, Math.round(pickerRect.width * 0.1)))
+    const preferredLeft = rect.left - horizontalOffset
+    const minLeft = Math.max(inset, bodyContentLeft + 8)
+    const maxLeft = Math.min(viewportMaxLeft, bodyContentRight - width - 32)
+    const left = maxLeft >= minLeft
+      ? Math.max(minLeft, Math.min(preferredLeft, maxLeft))
+      : Math.max(inset, Math.min(preferredLeft, viewportMaxLeft))
     const viewportTop = window.visualViewport?.offsetTop ?? 0
     const viewportBottom = Math.min(
       window.innerHeight,
@@ -155,9 +170,6 @@ export function IncomeDatePicker({ value, onChange, onInvalidInput, error }: Pro
     )
     const safeTop = Math.max(inset, viewportTop + inset)
     const safeBottom = Math.max(safeTop, viewportBottom - inset)
-    const modalBody = trigger.closest<HTMLElement>('[role="dialog"]')
-      ?.querySelector<HTMLElement>('[data-record-modal-body="true"]')
-    const bodyRect = modalBody?.getBoundingClientRect()
     if (bodyRect) {
       const visibleBodyTop = Math.max(safeTop, bodyRect.top)
       const visibleBodyBottom = Math.min(safeBottom, bodyRect.bottom)
