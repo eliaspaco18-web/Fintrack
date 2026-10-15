@@ -194,6 +194,7 @@ export interface UseFormOrchestratorReturn {
   sections:        SectionVisibility
   submitState:     ActionState<CreateTransactionResult>
   categoryOptions: { income: CategoryOption[]; expense: CategoryOption[] }
+  resetVersion:    number
   submit:          () => void
   resetForm:       () => void
   setType:         (t: TransactionFormValues['type']) => void
@@ -207,15 +208,21 @@ export function useFormOrchestrator(
 ): UseFormOrchestratorReturn {
   const [submitState, setSubmitState] =
     useState<ActionState<CreateTransactionResult>>({ status: 'idle' })
+  const [resetVersion, setResetVersion] = useState(0)
 
   const form = useForm<TransactionFormValues>({
     defaultValues: { ...FORM_DEFAULTS, ...initialValues },
     mode:          'onBlur',
   })
 
-  useEffect(() => {
+  const resetToInitialValues = useCallback(() => {
     form.reset({ ...FORM_DEFAULTS, ...initialValues })
+    setResetVersion(version => version + 1)
   }, [form, initialValues])
+
+  useEffect(() => {
+    resetToInitialValues()
+  }, [resetToInitialValues])
 
   const type              = useWatch({ control: form.control, name: 'type' })
   const currency          = useWatch({ control: form.control, name: 'currency' })
@@ -266,9 +273,9 @@ export function useFormOrchestrator(
   }, [form])
 
   const resetForm = useCallback(() => {
-    form.reset({ ...FORM_DEFAULTS, ...initialValues })
+    resetToInitialValues()
     setSubmitState({ status: 'idle' })
-  }, [form, initialValues])
+  }, [resetToInitialValues])
 
   const submit = form.handleSubmit(async (values) => {
     setSubmitState({ status: 'loading' })
@@ -334,7 +341,7 @@ export function useFormOrchestrator(
         onSuccess?.(result.data)
         setTimeout(() => {
           setSubmitState({ status: 'idle' })
-          form.reset({ ...FORM_DEFAULTS, ...initialValues })
+          resetToInitialValues()
         }, 3000)
       } else {
         setSubmitState({ status: 'error', error: result.error as FormError })
@@ -359,6 +366,7 @@ export function useFormOrchestrator(
     form,
     sections,
     submitState,
+    resetVersion,
     categoryOptions: {
       income:  options.categories.income,
       expense: options.categories.expense,

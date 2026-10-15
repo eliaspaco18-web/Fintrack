@@ -15,6 +15,7 @@
 // =============================================================================
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Controller } from 'react-hook-form'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { useRouter }                  from 'next/navigation'
@@ -442,6 +443,7 @@ export function TransactionForm({
     form,
     sections,
     submitState,
+    resetVersion,
     categoryOptions,
     submit,
     resetForm,
@@ -823,6 +825,25 @@ export function TransactionForm({
       return !getCreditCardTransferPolicy(sourceType, destinationType).violation
     })
   }, [formOptions.accounts, sourceAccountId, sourceAccountOption])
+  const transferDestinationAccounts = useMemo(() => {
+    const sourceType = typeof sourceAccountOption?.meta?.type === 'string'
+      ? sourceAccountOption.meta.type
+      : null
+
+    return formOptions.accounts
+      .map(account => {
+        const destinationType = typeof account.meta?.type === 'string'
+          ? account.meta.type
+          : null
+        const disabled = account.value === sourceAccountId
+          || Boolean(getCreditCardTransferPolicy(sourceType, destinationType).violation)
+
+        return { ...account, disabled }
+      })
+      // Retain an existing, now-invalid selection so the selector remains
+      // truthful while validation guides the user to choose another account.
+      .filter(account => !account.disabled || account.value === destinationAccountId)
+  }, [destinationAccountId, formOptions.accounts, sourceAccountId, sourceAccountOption])
   const creditCardOptions = useMemo(
     () => formOptions.creditCards ?? [],
     [formOptions.creditCards]
@@ -1021,7 +1042,7 @@ export function TransactionForm({
       : Math.min(selectedCreditCardLimit, selectedCreditCardAvailable + (hasAmount ? numericAmount : 0))
     : selectedCreditCardAvailable
   const projectedCreditUtilization = selectedCreditCardLimit > 0
-    ? Math.min((projectedCreditUsed / selectedCreditCardLimit) * 100, 100)
+    ? (projectedCreditUsed / selectedCreditCardLimit) * 100
     : 0
   const creditAmountExceedsAvailable =
     creditMovementKind === 'CONSUMPTION' &&
@@ -1587,19 +1608,11 @@ export function TransactionForm({
         required
         error={errors.amount?.message}
       >
-        <AmountInput
-          currency={currency as 'PEN' | 'USD'}
-          prefixLayout={usesApprovedCreateControls ? 'inline' : 'overlay'}
-          error={errors.amount?.message}
-          data-testid="transaction-amount-input"
-          disabled={lockSettlementEdit}
-          {...register('amount', {
+        <Controller
+          control={form.control}
+          name="amount"
+          rules={{
             required: 'El monto es requerido',
-            setValueAs: value => {
-              const parsed = parseNumericInput(value, Number.NaN)
-              if (!Number.isFinite(parsed)) return undefined
-              return roundToDecimals(parsed, 2)
-            },
             validate: {
               positive: v => Number(v) > 0 || 'El monto debe ser mayor a cero',
               twoDecimals: v => {
@@ -1620,7 +1633,25 @@ export function TransactionForm({
                 return n <= selectedCreditCardAvailable || 'El monto supera la línea disponible de la tarjeta'
               },
             },
-          })}
+          }}
+          render={({ field }) => (
+            <AmountInput
+              key={`transaction-amount-${resetVersion}`}
+              currency={currency as 'PEN' | 'USD'}
+              prefixLayout={usesApprovedCreateControls ? 'inline' : 'overlay'}
+              error={errors.amount?.message}
+              data-testid="transaction-amount-input"
+              disabled={lockSettlementEdit}
+              name={field.name}
+              ref={field.ref}
+              value={field.value ?? ''}
+              onBlur={field.onBlur}
+              onChange={event => {
+                const parsed = parseNumericInput(event.target.value, Number.NaN)
+                field.onChange(Number.isFinite(parsed) ? roundToDecimals(parsed, 2) : '')
+              }}
+            />
+          )}
         />
       </FieldWrapper>
 
@@ -1901,8 +1932,8 @@ export function TransactionForm({
             validate: v => v !== sourceAccountId || 'No puede ser la misma cuenta',
           })}
         >
-          {destinationAccounts.map(a => (
-            <option key={a.value} value={a.value}>{a.label}</option>
+          {transferDestinationAccounts.map(a => (
+            <option key={a.value} value={a.value} disabled={a.disabled}>{a.label}</option>
           ))}
         </Select>
       </FieldWrapper>
@@ -2036,7 +2067,7 @@ export function TransactionForm({
   ) : null
 
   const creditCardImpactField = creditMovementKind && activeCreditCardOption ? (
-    <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3.5 py-3">
+    <div className={`${isStageACreate && layoutMode === 'transfer' ? incomeStyles.operationTransferCreditImpact : ''} rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3.5 py-3`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
@@ -3002,12 +3033,12 @@ export function TransactionForm({
         <div className={incomeStyles.incomeOptionPanels}>
           {layoutMode === 'expense' ? (
             <>
-              <div id={`${incomeOptionsId}-recipient`} hidden={!operationAdditionalOptionsOpen.recipient && !errors.recipient?.message} className={incomeStyles.incomeOptionPanel}>
+              <div id={`${incomeOptionsId}-recipient`} data-income-option="recipient" hidden={!operationAdditionalOptionsOpen.recipient && !errors.recipient?.message} className={incomeStyles.incomeOptionPanel}>
                 <FieldWrapper label="Destinatario" optional>
                   <Input type="text" placeholder="Ej: Inmobiliaria Norte" data-testid="transaction-recipient-input" disabled={lockSettlementEdit} {...register('recipient')} />
                 </FieldWrapper>
               </div>
-              <div id={`${incomeOptionsId}-budget`} hidden={!operationAdditionalOptionsOpen.budget && !errors.budget_id?.message} className={incomeStyles.incomeOptionPanel}>
+              <div id={`${incomeOptionsId}-budget`} data-income-option="budget" hidden={!operationAdditionalOptionsOpen.budget && !errors.budget_id?.message} className={incomeStyles.incomeOptionPanel}>
                 <div className={incomeStyles.operationOptionalField}>
                   <FieldWrapper label="Presupuesto" optional error={errors.budget_id?.message}>
                     <Select placeholder="Sin presupuesto" data-testid="transaction-budget-select" matchTriggerWidth disabled={lockSettlementEdit || !categoryId || budgetsLoading || filteredBudgets.length === 0} {...register('budget_id')}>
@@ -3028,14 +3059,8 @@ export function TransactionForm({
             </>
           ) : null}
 
-          <div id={`${incomeOptionsId}-notes`} hidden={!operationAdditionalOptionsOpen.notes && !errors.notes?.message} className={incomeStyles.incomeOptionPanel}>
-            <FieldWrapper label="Notas" optional>
-              <Textarea rows={2} placeholder={layoutMode === 'expense' ? 'Observaciones adicionales…' : 'Observaciones de la transferencia…'} data-testid="transaction-notes-input" {...register('notes')} />
-            </FieldWrapper>
-          </div>
-
           {layoutMode === 'expense' ? (
-            <div id={`${incomeOptionsId}-recurrence`} hidden={!operationAdditionalOptionsOpen.recurrence && !errors.recurring_name?.message} className={incomeStyles.incomeOptionPanel}>
+            <div id={`${incomeOptionsId}-recurrence`} data-income-option="recurrence" hidden={!operationAdditionalOptionsOpen.recurrence && !errors.recurring_name?.message} className={incomeStyles.incomeOptionPanel}>
               <div className={incomeStyles.operationExpenseRecurrence}>
                 <CheckboxToggle
                   label="Transacción recurrente"
@@ -3049,28 +3074,37 @@ export function TransactionForm({
                   </IncomeInfoHint>
                 </span>
               </div>
-              {watch('is_recurring') ? (
-                <div className={incomeStyles.incomeRecurringName}>
-                  <div className={incomeStyles.operationOptionalField}>
-                    <FieldWrapper label="Nombre de la recurrente" required error={errors.recurring_name?.message}>
-                      <Input type="text" placeholder="Ej. Pago mensual de internet" data-testid="transaction-recurring-name-input" error={errors.recurring_name?.message} {...register('recurring_name', {
-                        maxLength: { value: 150, message: 'Máximo 150 caracteres' },
-                        validate: value => !watch('is_recurring') || (value ?? '').trim().length > 0 || 'Ingresa un nombre para la plantilla recurrente',
-                      })} />
-                    </FieldWrapper>
-                    <span className={incomeStyles.operationOptionalHint}>
-                      <IncomeInfoHint label="Ayuda sobre el nombre recurrente">
-                        Este será el nombre visible de la plantilla en el módulo de recurrentes.
-                      </IncomeInfoHint>
-                    </span>
-                  </div>
+            </div>
+          ) : null}
+
+          <div id={`${incomeOptionsId}-notes`} data-income-option="notes" hidden={!operationAdditionalOptionsOpen.notes && !errors.notes?.message} className={incomeStyles.incomeOptionPanel}>
+            <FieldWrapper label="Notas" optional>
+              <Textarea rows={2} placeholder={layoutMode === 'expense' ? 'Observaciones adicionales…' : 'Observaciones de la transferencia…'} data-testid="transaction-notes-input" {...register('notes')} />
+            </FieldWrapper>
+          </div>
+
+          {layoutMode === 'expense' && watch('is_recurring') ? (
+            <div id={`${incomeOptionsId}-recurrence-name`} data-income-option="recurrence-name" hidden={!operationAdditionalOptionsOpen.recurrence && !errors.recurring_name?.message} className={incomeStyles.incomeOptionPanel}>
+              <div className={incomeStyles.incomeRecurringName}>
+                <div className={incomeStyles.operationOptionalField}>
+                  <FieldWrapper label="Nombre de la recurrente" required error={errors.recurring_name?.message}>
+                    <Input type="text" placeholder="Ej. Pago mensual de internet" data-testid="transaction-recurring-name-input" error={errors.recurring_name?.message} {...register('recurring_name', {
+                      maxLength: { value: 150, message: 'Máximo 150 caracteres' },
+                      validate: value => !watch('is_recurring') || (value ?? '').trim().length > 0 || 'Ingresa un nombre para la plantilla recurrente',
+                    })} />
+                  </FieldWrapper>
+                  <span className={incomeStyles.operationOptionalHint}>
+                    <IncomeInfoHint label="Ayuda sobre el nombre recurrente">
+                      Este será el nombre visible de la plantilla en el módulo de recurrentes.
+                    </IncomeInfoHint>
+                  </span>
                 </div>
-              ) : null}
+              </div>
             </div>
           ) : null}
 
           {!isEditMode ? (
-            <div id={`${incomeOptionsId}-receipt`} hidden={!operationAdditionalOptionsOpen.receipt && !attachmentError && !attachmentUploading} className={incomeStyles.incomeAttachmentPanel}>
+            <div id={`${incomeOptionsId}-receipt`} data-income-option="receipt" hidden={!operationAdditionalOptionsOpen.receipt && !attachmentError && !attachmentUploading} className={incomeStyles.incomeAttachmentPanel}>
               <label className={incomeStyles.incomeAttachmentAction}>
                 <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
                   <path d="M7.5 10.8 12.9 5.4a2.5 2.5 0 0 1 3.5 3.5L9.6 15.7a4 4 0 0 1-5.7-5.7l7.2-7.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />

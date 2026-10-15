@@ -30,12 +30,23 @@
 }
 
 .operationCreateFormRoot[data-stage-a-operation='transfer'] :global([data-testid='transaction-submit-button']) {
-  background-color: var(--ft-primary);
-  box-shadow: 0 8px 20px color-mix(in srgb, var(--ft-primary) 20%, transparent);
+  background-color: #1f4f78;
+  box-shadow: 0 8px 20px rgba(31, 79, 120, 0.18);
 }
 
 .operationCreateFormRoot[data-stage-a-operation='transfer'] :global([data-testid='transaction-submit-button']:hover:not(:disabled)) {
-  background-color: var(--ft-primary-hover);
+  background-color: #183d5e;
+  filter: none;
+}
+
+.operationCreateFormRoot[data-stage-a-operation='transfer'] :global([data-testid='transaction-submit-button']:active:not(:disabled)) {
+  background-color: #143149;
+}
+
+.operationCreateFormRoot[data-stage-a-operation='transfer'] :global([data-testid='transaction-submit-button']:focus-visible) {
+  outline: 2px solid rgba(31, 79, 120, 0.18);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px rgba(31, 79, 120, 0.18), 0 8px 20px rgba(31, 79, 120, 0.18);
 }
 
 .operationFormActions {
@@ -55,6 +66,27 @@
 .operationTransferDateDescription {
   grid-template-columns: minmax(0, 0.72fr) minmax(0, 1fr);
   align-items: start;
+}
+
+.operationTransferDateDescription > :last-child {
+  grid-column: 1 / -1;
+}
+
+.operationTransferCreditImpact {
+  font-family: inherit;
+}
+
+.operationTransferCreditImpact :global(.font-mono) {
+  font-family: inherit;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.operationTransferCreditImpact :global(p[class*='uppercase']) {
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.065em;
+  line-height: 1.35;
 }
 
 .operationExpenseOptional {
@@ -312,13 +344,14 @@
   }
 }
 
-@container operation-expense-options (max-width: 560px) {
+@container operation-expense-options (max-width: 440px) {
   .incomeOptionPanels {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .incomeOptionPanel[data-income-option='notes'],
-  .incomeOptionPanel[data-income-option='recurrence'] {
+  .incomeOptionPanel[data-income-option='recurrence'],
+  .incomeOptionPanel[data-income-option='recurrence-name'] {
     grid-column: 1;
   }
 }
@@ -725,6 +758,20 @@
   margin-top: 0.625rem;
 }
 
+@container operation-expense-options (min-width: 441px) {
+  .incomeOptionPanel[data-income-option='notes'] {
+    grid-column: 1;
+  }
+
+  .incomeOptionPanel[data-income-option='recurrence-name'] {
+    grid-column: 2;
+  }
+
+  .incomeRecurringName {
+    margin-top: 0;
+  }
+}
+
 .incomeAttachmentPanel {
   display: grid;
   gap: 0.375rem;
@@ -921,6 +968,14 @@
 }
 
 @media (max-width: 640px) {
+  .operationCreateFormRoot[data-stage-a-operation='expense'] .operationCreateClassificationFields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .operationCreateFormRoot[data-stage-a-operation='expense'] .incomeDescription {
+    grid-column: 1 / -1;
+  }
+
   .incomeForm {
     gap: 0.75rem;
   }
@@ -983,6 +1038,7 @@
 
   .incomeOptionPanel[data-income-option='notes'],
   .incomeOptionPanel[data-income-option='recurrence'],
+  .incomeOptionPanel[data-income-option='recurrence-name'],
   .incomeAttachmentPanel {
     grid-column: auto;
   }
