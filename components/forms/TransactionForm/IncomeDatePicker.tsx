@@ -30,6 +30,7 @@ type Props = {
 
 const WEEKDAYS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
 const CALENDAR_WEEK_ROWS = 6
+const CALENDAR_PANEL_WIDTH = 284
 type CalendarView = { year: number; month: number }
 type CalendarMotion = { revision: number; direction: 'forward' | 'backward' }
 const MONTHS = Array.from({ length: 12 }, (_, month) => new Intl.DateTimeFormat('es-PE', {
@@ -67,7 +68,15 @@ export function IncomeDatePicker({ value, onChange, onInvalidInput, error }: Pro
   const [view, setView] = useState(currentView)
   const viewRef = useRef(currentView)
   const [gridMotion, setGridMotion] = useState<CalendarMotion>({ revision: 0, direction: 'forward' })
-  const days = useMemo(() => calendarMonthDays(view.year, view.month), [view.month, view.year])
+  const days = useMemo(() => {
+    const monthDays = calendarMonthDays(view.year, view.month)
+    const firstDisplayedDate = monthDays[0]!
+    return Array.from({ length: CALENDAR_WEEK_ROWS * 7 }, (_, index) => {
+      const date = new Date(firstDisplayedDate)
+      date.setUTCDate(firstDisplayedDate.getUTCDate() + index)
+      return date
+    })
+  }, [view.month, view.year])
   const yearOptions = useMemo(() => {
     const currentYear = new Date().getFullYear()
     const from = Math.min(currentYear - 30, view.year - 2)
@@ -137,7 +146,7 @@ export function IncomeDatePicker({ value, onChange, onInvalidInput, error }: Pro
     }
     const inset = 8
     const gap = 6
-    const width = Math.min(296, window.innerWidth - inset * 2)
+    const width = Math.min(CALENDAR_PANEL_WIDTH, window.innerWidth - inset * 2)
     const left = Math.max(inset, Math.min(rect.left, window.innerWidth - width - inset))
     const viewportTop = window.visualViewport?.offsetTop ?? 0
     const viewportBottom = Math.min(
@@ -188,7 +197,7 @@ export function IncomeDatePicker({ value, onChange, onInvalidInput, error }: Pro
     // track, never from scrollHeight/clientHeight or transient row geometry.
     // Those measurements reflect a previously constrained panel and can
     // feed its reduced size back into the next positioning pass.
-    const measuredDesiredHeight = Math.min(Math.ceil(verticalChrome + intrinsicDaysHeight + 1), 344)
+    const measuredDesiredHeight = Math.min(Math.ceil(verticalChrome + intrinsicDaysHeight + 1), 384)
     const desiredHeight = desiredHeightRef.current ?? measuredDesiredHeight
     desiredHeightRef.current = desiredHeight
     const safeAreaHeight = Math.max(0, safeModalBottom - safeModalTop)
@@ -412,7 +421,7 @@ export function IncomeDatePicker({ value, onChange, onInvalidInput, error }: Pro
             position: 'fixed',
             top: 0,
             left: 8,
-            width: 'min(296px, calc(100vw - 16px))',
+            width: `min(${CALENDAR_PANEL_WIDTH}px, calc(100vw - 16px))`,
             visibility: 'hidden',
             pointerEvents: 'none',
           }}
