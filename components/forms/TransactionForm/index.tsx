@@ -1581,7 +1581,7 @@ export function TransactionForm({
   }
 
   const amountCurrencyField = (
-    <div className={`${isCompactLayout ? 'grid grid-cols-[1fr_100px] gap-2' : 'grid grid-cols-[1fr_110px] gap-3'} ${usesApprovedCreateControls ? incomeStyles.incomeAmountCurrency : ''}`}>
+    <div className={`${isCompactLayout ? 'grid grid-cols-[1fr_100px] gap-2' : 'grid grid-cols-[1fr_110px] gap-3'} ${usesApprovedCreateControls ? incomeStyles.incomeAmountCurrency : ''} ${isStageACreate && layoutMode === 'transfer' ? incomeStyles.operationTransferAmountCurrency : ''}`}>
       <FieldWrapper
         label={layoutMode === 'asset_purchase' ? 'Valor de compra' : isStageACreate && layoutMode === 'transfer' ? 'Monto enviado' : 'Monto'}
         required
@@ -2726,7 +2726,7 @@ export function TransactionForm({
   )
 
   const dateDescriptionField = (
-    <div className="grid grid-cols-1 gap-3">
+    <div className={`grid grid-cols-1 gap-3 ${isStageACreate && layoutMode === 'transfer' ? incomeStyles.operationTransferDateDescription : ''}`}>
       {transactionDateField}
       {descriptionField}
     </div>
@@ -2961,7 +2961,7 @@ export function TransactionForm({
         </div>
       </section>
     ) : isStageACreate ? (
-      <section className={incomeStyles.incomeOptionalSection} aria-label="Información adicional">
+      <section className={`${incomeStyles.incomeOptionalSection} ${layoutMode === 'expense' ? incomeStyles.operationExpenseOptional : ''}`} aria-label="Información adicional">
         <div className={incomeStyles.incomeOptionsHeader}>
           <div>
             <h3 className={incomeStyles.incomeSectionHeading}>Información adicional</h3>
@@ -3008,21 +3008,22 @@ export function TransactionForm({
                 </FieldWrapper>
               </div>
               <div id={`${incomeOptionsId}-budget`} hidden={!operationAdditionalOptionsOpen.budget && !errors.budget_id?.message} className={incomeStyles.incomeOptionPanel}>
-                <FieldWrapper
-                  label="Presupuesto"
-                  optional
-                  hint={categoryId
-                    ? 'Solo se muestran presupuestos compatibles con la categoría y fecha.'
-                    : 'Selecciona una categoría para ver presupuestos compatibles.'}
-                >
-                  <Select placeholder="Sin presupuesto" data-testid="transaction-budget-select" matchTriggerWidth disabled={lockSettlementEdit || !categoryId || budgetsLoading || filteredBudgets.length === 0} {...register('budget_id')}>
-                    <option value="">Sin presupuesto</option>
-                    {filteredBudgets.map(budget => <option key={budget.value} value={budget.value}>{budget.label}</option>)}
-                  </Select>
-                  {budgetsLoading ? <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">Buscando presupuestos compatibles…</p> : null}
-                  {!budgetsLoading && !categoryId ? <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">Elige primero una categoría para filtrar presupuestos estrictamente.</p> : null}
-                  {!budgetsLoading && categoryId && filteredBudgets.length === 0 ? <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">No hay presupuestos activos para esta categoría en la fecha seleccionada.</p> : null}
-                </FieldWrapper>
+                <div className={incomeStyles.operationOptionalField}>
+                  <FieldWrapper label="Presupuesto" optional error={errors.budget_id?.message}>
+                    <Select placeholder="Sin presupuesto" data-testid="transaction-budget-select" matchTriggerWidth disabled={lockSettlementEdit || !categoryId || budgetsLoading || filteredBudgets.length === 0} {...register('budget_id')}>
+                      <option value="">Sin presupuesto</option>
+                      {filteredBudgets.map(budget => <option key={budget.value} value={budget.value}>{budget.label}</option>)}
+                    </Select>
+                    {budgetsLoading ? <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">Buscando presupuestos compatibles…</p> : null}
+                    {!budgetsLoading && !categoryId ? <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">Elige una categoría para consultar presupuestos.</p> : null}
+                    {!budgetsLoading && categoryId && filteredBudgets.length === 0 ? <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">No hay presupuestos activos para esta categoría y fecha.</p> : null}
+                  </FieldWrapper>
+                  <span className={incomeStyles.operationOptionalHint}>
+                    <IncomeInfoHint label="Ayuda sobre presupuestos">
+                      Solo se muestran presupuestos activos compatibles con la categoría y la fecha de este egreso.
+                    </IncomeInfoHint>
+                  </span>
+                </div>
               </div>
             </>
           ) : null}
@@ -3035,21 +3036,34 @@ export function TransactionForm({
 
           {layoutMode === 'expense' ? (
             <div id={`${incomeOptionsId}-recurrence`} hidden={!operationAdditionalOptionsOpen.recurrence && !errors.recurring_name?.message} className={incomeStyles.incomeOptionPanel}>
-              <CheckboxToggle
-                label="Transacción recurrente"
-                description="Guarda esta configuración como plantilla reutilizable."
-                checked={!!watch('is_recurring')}
-                disabled={lockSettlementEdit}
-                onChange={value => setValue('is_recurring', value)}
-              />
+              <div className={incomeStyles.operationExpenseRecurrence}>
+                <CheckboxToggle
+                  label="Transacción recurrente"
+                  checked={!!watch('is_recurring')}
+                  disabled={lockSettlementEdit}
+                  onChange={value => setValue('is_recurring', value)}
+                />
+                <span className={incomeStyles.operationOptionalHint}>
+                  <IncomeInfoHint label="Ayuda sobre recurrencia">
+                    Guarda esta configuración como plantilla reutilizable para futuras operaciones.
+                  </IncomeInfoHint>
+                </span>
+              </div>
               {watch('is_recurring') ? (
                 <div className={incomeStyles.incomeRecurringName}>
-                  <FieldWrapper label="Nombre de la recurrente" required error={errors.recurring_name?.message} hint="Será el nombre visible dentro del módulo de recurrentes.">
-                    <Input type="text" placeholder="Ej. Pago mensual de internet" data-testid="transaction-recurring-name-input" error={errors.recurring_name?.message} {...register('recurring_name', {
-                      maxLength: { value: 150, message: 'Máximo 150 caracteres' },
-                      validate: value => !watch('is_recurring') || (value ?? '').trim().length > 0 || 'Ingresa un nombre para la plantilla recurrente',
-                    })} />
-                  </FieldWrapper>
+                  <div className={incomeStyles.operationOptionalField}>
+                    <FieldWrapper label="Nombre de la recurrente" required error={errors.recurring_name?.message}>
+                      <Input type="text" placeholder="Ej. Pago mensual de internet" data-testid="transaction-recurring-name-input" error={errors.recurring_name?.message} {...register('recurring_name', {
+                        maxLength: { value: 150, message: 'Máximo 150 caracteres' },
+                        validate: value => !watch('is_recurring') || (value ?? '').trim().length > 0 || 'Ingresa un nombre para la plantilla recurrente',
+                      })} />
+                    </FieldWrapper>
+                    <span className={incomeStyles.operationOptionalHint}>
+                      <IncomeInfoHint label="Ayuda sobre el nombre recurrente">
+                        Este será el nombre visible de la plantilla en el módulo de recurrentes.
+                      </IncomeInfoHint>
+                    </span>
+                  </div>
                 </div>
               ) : null}
             </div>

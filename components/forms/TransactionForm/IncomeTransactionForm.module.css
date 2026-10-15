@@ -52,6 +52,33 @@
   container: operation-create-section / inline-size;
 }
 
+.operationTransferDateDescription {
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1fr);
+  align-items: start;
+}
+
+.operationExpenseOptional {
+  container: operation-expense-options / inline-size;
+}
+
+.operationOptionalField,
+.operationExpenseRecurrence {
+  position: relative;
+  min-width: 0;
+}
+
+.operationOptionalHint {
+  position: absolute;
+  z-index: 1;
+  top: -0.125rem;
+  right: 0;
+  display: inline-flex;
+}
+
+.operationExpenseRecurrence > :global(label) {
+  padding-right: 2rem;
+}
+
 .operationCreateClassificationFields {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 0.72fr);
@@ -279,6 +306,23 @@
   }
 }
 
+@container operation-create-section (max-width: 560px) {
+  .operationTransferDateDescription {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container operation-expense-options (max-width: 560px) {
+  .incomeOptionPanels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .incomeOptionPanel[data-income-option='notes'],
+  .incomeOptionPanel[data-income-option='recurrence'] {
+    grid-column: 1;
+  }
+}
+
 @media (max-width: 420px) {
   .operationTransferFxAmounts,
   .operationTransferFxRateGrid {
@@ -321,6 +365,10 @@
   grid-template-columns: minmax(0, 1fr) minmax(9.5rem, 10rem);
   align-items: end;
   gap: 0.75rem;
+}
+
+.incomeAmountCurrency.operationTransferAmountCurrency {
+  align-items: start;
 }
 
 .incomeAmountCurrency :global(.ft-form-amount-prefix-inline) {
