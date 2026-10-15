@@ -49,6 +49,15 @@
   box-shadow: 0 0 0 3px rgba(31, 79, 120, 0.18), 0 8px 20px rgba(31, 79, 120, 0.18);
 }
 
+.operationCreateFormRoot[data-asset-purchase-create='true'] :global([data-testid='transaction-submit-button']) {
+  background-color: var(--ft-primary);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--ft-primary) 20%, transparent);
+}
+
+.operationCreateFormRoot[data-asset-purchase-create='true'] :global([data-testid='transaction-submit-button']:hover:not(:disabled)) {
+  filter: brightness(0.94);
+}
+
 .operationFormActions {
   position: sticky;
   z-index: 2;
@@ -61,6 +70,65 @@
 
 .operationCreateSection {
   container: operation-create-section / inline-size;
+}
+
+.assetPurchasePrimaryFields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.assetPurchaseDetails {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.assetPurchaseFields {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  align-items: start;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.assetPurchaseValue {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 0.625rem;
+  border-top: 1px solid var(--ft-form-border);
+  color: var(--ft-form-muted);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+}
+
+.assetPurchaseValue strong {
+  flex: 0 0 auto;
+  color: var(--ft-text-strong);
+  font-size: 0.875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.assetPurchaseOptional {
+  container: asset-purchase-options / inline-size;
+}
+
+.assetPurchaseOptional .incomeOptionPanel,
+.assetPurchaseOptional .incomeAttachmentPanel {
+  grid-column: 1 / -1;
+}
+
+.assetPurchaseIdentificationFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  min-width: 0;
 }
 
 .operationTransferDateDescription {
@@ -338,6 +406,14 @@
   }
 }
 
+@container operation-create-section (max-width: 600px) {
+  .assetPurchasePrimaryFields,
+  .assetPurchaseFields,
+  .assetPurchaseIdentificationFields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @container operation-create-section (max-width: 560px) {
   .operationTransferDateDescription {
     grid-template-columns: minmax(0, 1fr);
@@ -352,6 +428,16 @@
   .incomeOptionPanel[data-income-option='notes'],
   .incomeOptionPanel[data-income-option='recurrence'],
   .incomeOptionPanel[data-income-option='recurrence-name'] {
+    grid-column: 1;
+  }
+}
+
+@container asset-purchase-options (max-width: 440px) {
+  .incomeOptionPanels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .incomeAttachmentPanel {
     grid-column: 1;
   }
 }

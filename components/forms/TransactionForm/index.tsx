@@ -423,6 +423,12 @@ export function TransactionForm({
     recurrence: false,
     receipt: false,
   })
+  const [assetAdditionalOptionsOpen, setAssetAdditionalOptionsOpen] = useState({
+    identification: false,
+    supplier: false,
+    notes: false,
+    receipt: false,
+  })
   const [crossCurrencyDestAmount, setCrossCurrencyDestAmount] = useState<string>('')
   const [targetDebtCurrency, setTargetDebtCurrency] = useState<CreditCurrency | null>(null)
   const [formOptions, setFormOptions] = useState<TransactionFormOptions>(options)
@@ -1082,12 +1088,14 @@ export function TransactionForm({
     return 'expense'
   }, [createsAsset, createsPayable, createsReceivable, operationType, type])
   const isIncomeCreate = layoutMode === 'income' && !isEditMode
+  const isAssetPurchaseCreate = layoutMode === 'asset_purchase' && !isEditMode
   // Egreso and transfer adopt the approved Round 07 create-form presentation.
   // The edit flow and the other operation types intentionally retain their
   // existing layouts until their own review stage.
   const isStageACreate = !isEditMode && (layoutMode === 'expense' || layoutMode === 'transfer')
   const isStageAExpenseCreate = isStageACreate && layoutMode === 'expense'
-  const usesApprovedCreateControls = isIncomeCreate || isStageACreate
+  const usesApprovedRatePresentation = isIncomeCreate || isStageAExpenseCreate || isAssetPurchaseCreate
+  const usesApprovedCreateControls = isIncomeCreate || isStageACreate || isAssetPurchaseCreate
   const usesApprovedDatePicker = usesApprovedCreateControls
 
   // ── Cross-currency transfer detection ────────────────────────────────────
@@ -1131,7 +1139,7 @@ export function TransactionForm({
       case 'expense':
         return ['Destinatario', 'Presupuesto', 'Notas', 'Recurrencia', 'Comprobante']
       case 'asset_purchase':
-        return ['Proveedor', 'Notas', 'Comprobante']
+        return ['Identificación del activo', 'Proveedor', 'Notas', 'Comprobante']
       case 'receivable_collect':
         return ['Notas', 'Comprobante']
       case 'payable_pay':
@@ -1666,7 +1674,7 @@ export function TransactionForm({
         <div className={usesApprovedCreateControls ? incomeStyles.incomeCurrencyControl : undefined}>
           <Select
             {...register('currency')}
-            value={isIncomeCreate ? currency : undefined}
+            value={isIncomeCreate || isAssetPurchaseCreate ? currency : undefined}
             compact={!usesApprovedCreateControls}
             matchTriggerWidth={usesApprovedCreateControls}
             data-testid="transaction-currency-select"
@@ -1683,7 +1691,9 @@ export function TransactionForm({
                   ? 'Puedes registrar consumos de tarjeta en soles o dólares.'
                   : layoutMode === 'transfer'
                     ? 'La moneda del importe se sincroniza con la cuenta origen. El resumen muestra la moneda de destino cuando son distintas.'
-                    : 'La moneda del egreso se sincroniza con la cuenta origen seleccionada.'}
+                    : layoutMode === 'asset_purchase'
+                      ? 'La moneda de la compra se sincroniza con la cuenta de origen seleccionada.'
+                      : 'La moneda del egreso se sincroniza con la cuenta origen seleccionada.'}
             </IncomeInfoHint>
           ) : null}
         </div>
@@ -1693,13 +1703,13 @@ export function TransactionForm({
 
   const exchangeRateField = (
     <div
-      className={isIncomeCreate || isStageAExpenseCreate
+      className={usesApprovedRatePresentation
         ? `${incomeStyles.incomeExchangeRate} ${sections.exchangeRate ? incomeStyles.incomeExchangeRateVisible : incomeStyles.incomeExchangeRateHidden}`
         : `overflow-hidden transition-all duration-300 ease-out ${sections.exchangeRate ? 'max-h-24 opacity-100' : 'max-h-0 opacity-0'}`}
     >
       <FieldWrapper
         label="Tipo de cambio"
-        hint={`${isIncomeCreate || isStageAExpenseCreate ? 'Referencia diaria: ' : ''}1 USD = ${formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN (${refreshingLiveRate ? 'actualizando…' : rateDateLabel})`}
+        hint={`${usesApprovedRatePresentation ? 'Referencia diaria: ' : ''}1 USD = ${formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN (${refreshingLiveRate ? 'actualizando…' : rateDateLabel})`}
         required
         error={errors.exchange_rate?.message}
       >
@@ -1726,17 +1736,19 @@ export function TransactionForm({
           })}
         />
       </FieldWrapper>
-      {isIncomeCreate || isStageAExpenseCreate ? (
+      {usesApprovedRatePresentation ? (
         <span className={incomeStyles.exchangeRateHelp}>
           <IncomeInfoHint label="Ayuda sobre el tipo de cambio">
-            La referencia diaria corresponde a la fecha de la operación. Si la cuenta es en dólares, el valor editable del campo es el que se aplica al ingreso y puede diferir de esa referencia.
+            {isAssetPurchaseCreate
+              ? 'La referencia diaria corresponde a la fecha de la operación. Si la cuenta es en dólares, el valor editable del campo es el que se aplica a la compra del activo y puede diferir de esa referencia.'
+              : 'La referencia diaria corresponde a la fecha de la operación. Si la cuenta es en dólares, el valor editable del campo es el que se aplica a la operación y puede diferir de esa referencia.'}
           </IncomeInfoHint>
         </span>
       ) : null}
     </div>
   )
 
-  const usesApprovedEquivalence = isIncomeCreate || isStageAExpenseCreate || (isStageACreate && layoutMode === 'transfer' && !isCrossCurrencyTransfer)
+  const usesApprovedEquivalence = isIncomeCreate || isStageAExpenseCreate || isAssetPurchaseCreate || (isStageACreate && layoutMode === 'transfer' && !isCrossCurrencyTransfer)
   const equivalenceField = usesApprovedEquivalence ? (
     <div className={incomeStyles.incomeEquivalence}>
       <div className={incomeStyles.incomeEquivalenceHeading}>
@@ -2453,7 +2465,7 @@ export function TransactionForm({
     </>
   ) : null
 
-  const categoryField = operationType !== 'transfer' && type !== 'TRANSFER' && operationType !== 'asset_purchase' && operationType !== 'payable_issue' && operationType !== 'payable_pay' && operationType !== 'receivable_issue' && operationType !== 'receivable_collect' ? (
+  const categoryField = operationType !== 'transfer' && type !== 'TRANSFER' && (operationType !== 'asset_purchase' || isAssetPurchaseCreate) && operationType !== 'payable_issue' && operationType !== 'payable_pay' && operationType !== 'receivable_issue' && operationType !== 'receivable_collect' ? (
     <FieldWrapper
       label="Categoría"
       required
@@ -2461,7 +2473,7 @@ export function TransactionForm({
       className=""
     >
       <Select
-        placeholder="Sin categoría"
+        placeholder={isAssetPurchaseCreate ? 'Seleccionar categoría...' : 'Sin categoría'}
         data-testid="transaction-category-select"
         matchTriggerWidth={usesApprovedCreateControls}
         {...register('category_id', {
@@ -2502,7 +2514,7 @@ export function TransactionForm({
         </button>
       </div>
 
-      {type === 'EXPENSE' && !hideTypeSelector && (
+      {type === 'EXPENSE' && operationType !== 'asset_purchase' && !hideTypeSelector && (
         <div className="mt-3 space-y-1.5">
           <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">
             Relacionar egreso con
@@ -2540,7 +2552,7 @@ export function TransactionForm({
         </div>
       )}
 
-      {type === 'INCOME' && !hideTypeSelector && (
+      {type === 'INCOME' && operationType !== 'asset_purchase' && !hideTypeSelector && (
         <div className="mt-3 space-y-1.5">
           <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">
             Relacionar ingreso con
@@ -2575,7 +2587,7 @@ export function TransactionForm({
         </div>
       )}
 
-      {!isEditMode && sections.assetModule && (
+      {!isEditMode && operationType !== 'asset_purchase' && sections.assetModule && (
         <div className="mt-2">
           <ModuleTriggerHint
             moduleName="Módulo de activo activado"
@@ -2584,7 +2596,7 @@ export function TransactionForm({
           />
         </div>
       )}
-      {!isEditMode && sections.receivableModule && (
+      {!isEditMode && operationType !== 'asset_purchase' && sections.receivableModule && (
         <div className="mt-2">
           <ModuleTriggerHint
             moduleName="Cuenta por cobrar"
@@ -2593,7 +2605,7 @@ export function TransactionForm({
           />
         </div>
       )}
-      {!isEditMode && sections.payableModule && (
+      {!isEditMode && operationType !== 'asset_purchase' && sections.payableModule && (
         <div className="mt-2">
           <ModuleTriggerHint
             moduleName="Cuenta por pagar"
@@ -2606,22 +2618,24 @@ export function TransactionForm({
   ) : null
 
   const assetPurchaseField = operationType === 'asset_purchase' ? (
-    <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-3.5">
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-            Activo
-          </p>
-          <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">
-            Define primero el activo y usa el mismo monto de la transacción como valor de compra.
-          </p>
+    <div className={isAssetPurchaseCreate ? incomeStyles.assetPurchaseDetails : 'rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-3.5'}>
+      {!isAssetPurchaseCreate ? (
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+              Activo
+            </p>
+            <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">
+              Define primero el activo y usa el mismo monto de la transacción como valor de compra.
+            </p>
+          </div>
+          <StatusBadge tone="primary" dot={false}>
+            Mismo monto
+          </StatusBadge>
         </div>
-        <StatusBadge tone="primary" dot={false}>
-          Mismo monto
-        </StatusBadge>
-      </div>
+      ) : null}
 
-      <div className="grid gap-3 md:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+      <div className={isAssetPurchaseCreate ? incomeStyles.assetPurchaseFields : 'grid gap-3 md:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]'}>
         <input
           type="hidden"
           {...register('asset_type_id', { required: 'Selecciona el tipo de activo' })}
@@ -2683,7 +2697,7 @@ export function TransactionForm({
         </FieldWrapper>
       </div>
 
-      {selectedAssetTypeOption ? (
+      {!isAssetPurchaseCreate && selectedAssetTypeOption ? (
         <div className="mt-3 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
           <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
             Tipo seleccionado
@@ -2694,14 +2708,23 @@ export function TransactionForm({
         </div>
       ) : null}
 
-      <div className="mt-3 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
-        <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-          Valor del activo
-        </p>
-        <p className="mt-1 text-[15px] font-semibold tabular-nums text-[var(--c-text)]">
-          {hasAmount ? formatCurrency(numericAmount, currency as 'PEN' | 'USD') : 'Ingresa el monto para fijar el valor'}
-        </p>
-      </div>
+      {isAssetPurchaseCreate ? (
+        <div className={incomeStyles.assetPurchaseValue}>
+          <span>Valor del activo · mismo importe de compra</span>
+          <strong>
+            {hasAmount ? formatCurrency(numericAmount, currency as 'PEN' | 'USD') : 'Se completa con el monto'}
+          </strong>
+        </div>
+      ) : (
+        <div className="mt-3 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
+          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+            Valor del activo
+          </p>
+          <p className="mt-1 text-[15px] font-semibold tabular-nums text-[var(--c-text)]">
+            {hasAmount ? formatCurrency(numericAmount, currency as 'PEN' | 'USD') : 'Ingresa el monto para fijar el valor'}
+          </p>
+        </div>
+      )}
     </div>
   ) : null
 
@@ -2775,6 +2798,18 @@ export function TransactionForm({
       { key: 'receipt' as const, label: 'Comprobante', hasValue: Boolean(attachmentFile || lastUploadedAttachment), hasError: Boolean(attachmentError) },
     ])
   ) : []
+
+  const assetOptionalItems = isAssetPurchaseCreate ? [
+    {
+      key: 'identification' as const,
+      label: 'Identificación del activo',
+      hasValue: Boolean(watch('asset_serial')?.trim() || watch('asset_location')?.trim()),
+      hasError: Boolean(errors.asset_serial?.message || errors.asset_location?.message),
+    },
+    { key: 'supplier' as const, label: 'Proveedor', hasValue: Boolean(watch('recipient')?.trim()), hasError: Boolean(errors.recipient?.message) },
+    { key: 'notes' as const, label: 'Notas', hasValue: Boolean(watch('notes')?.trim()), hasError: Boolean(errors.notes?.message) },
+    { key: 'receipt' as const, label: 'Comprobante', hasValue: Boolean(attachmentFile || lastUploadedAttachment), hasError: Boolean(attachmentError) },
+  ] : []
 
   const progressiveOptionalField = usesProgressiveOptionalSection ? (
     isIncomeCreate ? (
@@ -2989,6 +3024,177 @@ export function TransactionForm({
                 </div>
               ) : null}
           </div>
+        </div>
+      </section>
+    ) : isAssetPurchaseCreate ? (
+      <section className={`${incomeStyles.incomeOptionalSection} ${incomeStyles.assetPurchaseOptional}`} aria-label="Información adicional">
+        <div className={incomeStyles.incomeOptionsHeader}>
+          <div>
+            <h3 className={incomeStyles.incomeSectionHeading}>Información adicional</h3>
+            <p className={incomeStyles.incomeOptionsDescription}>Opcional · muestra solo los datos que necesitas</p>
+          </div>
+          {assetOptionalItems.some(option => option.hasError) ? (
+            <span className={incomeStyles.incomeReviewBadge}>Revisar</span>
+          ) : null}
+        </div>
+
+        <div className={incomeStyles.incomeOptionControls} role="group" aria-label="Opciones de compra de activo">
+          {assetOptionalItems.map(option => {
+            const isOpen = assetAdditionalOptionsOpen[option.key] || option.hasError
+            const panelId = `${incomeOptionsId}-asset-${option.key}`
+            return (
+              <button
+                key={option.key}
+                type="button"
+                aria-expanded={isOpen}
+                aria-controls={panelId}
+                data-active={isOpen ? 'true' : 'false'}
+                data-has-value={option.hasValue ? 'true' : 'false'}
+                data-has-error={option.hasError ? 'true' : 'false'}
+                className={incomeStyles.incomeOptionButton}
+                onClick={() => setAssetAdditionalOptionsOpen(current => ({
+                  ...current,
+                  [option.key]: !current[option.key],
+                }))}
+              >
+                <span aria-hidden="true" className={incomeStyles.incomeOptionMark}>{isOpen ? '−' : '+'}</span>
+                <span>{option.label}</span>
+                {option.hasError ? <span className={incomeStyles.incomeOptionError}>Revisar</span> : null}
+              </button>
+            )
+          })}
+        </div>
+
+        <div className={incomeStyles.incomeOptionPanels}>
+          <div
+            id={`${incomeOptionsId}-asset-identification`}
+            data-income-option="asset-identification"
+            hidden={!assetAdditionalOptionsOpen.identification && !errors.asset_serial?.message && !errors.asset_location?.message}
+            className={incomeStyles.incomeOptionPanel}
+          >
+            <div className={incomeStyles.assetPurchaseIdentificationFields}>
+              <FieldWrapper label="Número de serie" optional error={errors.asset_serial?.message}>
+                <Input
+                  placeholder="SN-000000"
+                  error={errors.asset_serial?.message}
+                  data-testid="transaction-asset-serial-input"
+                  {...register('asset_serial')}
+                />
+              </FieldWrapper>
+              <FieldWrapper label="Ubicación" optional error={errors.asset_location?.message}>
+                <Input
+                  placeholder="Ej: Oficina principal"
+                  error={errors.asset_location?.message}
+                  data-testid="transaction-asset-location-input"
+                  {...register('asset_location')}
+                />
+              </FieldWrapper>
+            </div>
+          </div>
+
+          <div
+            id={`${incomeOptionsId}-asset-supplier`}
+            data-income-option="asset-supplier"
+            hidden={!assetAdditionalOptionsOpen.supplier && !errors.recipient?.message}
+            className={incomeStyles.incomeOptionPanel}
+          >
+            <FieldWrapper label="Proveedor" optional error={errors.recipient?.message}>
+              <Input
+                type="text"
+                placeholder="Ej: iShop Peru"
+                data-testid="transaction-recipient-input"
+                {...register('recipient')}
+              />
+            </FieldWrapper>
+          </div>
+
+          <div
+            id={`${incomeOptionsId}-asset-notes`}
+            data-income-option="asset-notes"
+            hidden={!assetAdditionalOptionsOpen.notes && !errors.notes?.message}
+            className={incomeStyles.incomeOptionPanel}
+          >
+            <FieldWrapper label="Notas" optional error={errors.notes?.message}>
+              <Textarea rows={2} placeholder="Observaciones de la compra…" data-testid="transaction-notes-input" {...register('notes')} />
+            </FieldWrapper>
+          </div>
+
+          {!isEditMode ? (
+            <div
+              id={`${incomeOptionsId}-asset-receipt`}
+              data-income-option="asset-receipt"
+              hidden={!assetAdditionalOptionsOpen.receipt && !attachmentError && !attachmentUploading}
+              className={incomeStyles.incomeAttachmentPanel}
+            >
+              <label className={incomeStyles.incomeAttachmentAction}>
+                <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
+                  <path d="M7.5 10.8 12.9 5.4a2.5 2.5 0 0 1 3.5 3.5L9.6 15.7a4 4 0 0 1-5.7-5.7l7.2-7.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+                <span>{attachmentFile || lastUploadedAttachment ? 'Reemplazar comprobante' : 'Adjuntar comprobante'}</span>
+                <input
+                  ref={incomeAttachmentInputRef}
+                  type="file"
+                  accept={ATTACHMENT_ACCEPT}
+                  data-testid="transaction-attachment-input"
+                  className="sr-only"
+                  onChange={event => {
+                    const nextFile = event.target.files?.[0] ?? null
+                    setAttachmentFile(nextFile)
+                    setAttachmentError(null)
+                    setLastAttachmentTxId(null)
+                    setLastUploadedAttachment(null)
+                    lastAutoUploadTxId.current = null
+                  }}
+                />
+              </label>
+              {attachmentFile ? (
+                <div className={incomeStyles.incomeAttachmentFile}>
+                  <span aria-hidden="true" className={incomeStyles.incomeAttachmentFileIcon}>
+                    <svg viewBox="0 0 20 20" fill="none">
+                      <path d="M7.5 10.8 12.9 5.4a2.5 2.5 0 0 1 3.5 3.5L9.6 15.7a4 4 0 0 1-5.7-5.7l7.2-7.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  </span>
+                  <span className={incomeStyles.incomeAttachmentFileName} title={attachmentFile.name}>{attachmentFile.name}</span>
+                  <span className={incomeStyles.incomeAttachmentFileSize}>{formatAttachmentSize(attachmentFile.size)}</span>
+                  <button
+                    type="button"
+                    className={incomeStyles.incomeAttachmentRemove}
+                    onClick={() => {
+                      setAttachmentFile(null)
+                      setAttachmentError(null)
+                      setLastAttachmentTxId(null)
+                      setLastUploadedAttachment(null)
+                      lastAutoUploadTxId.current = null
+                      if (incomeAttachmentInputRef.current) incomeAttachmentInputRef.current.value = ''
+                    }}
+                  >
+                    Quitar
+                  </button>
+                </div>
+              ) : null}
+              {!attachmentFile && !lastUploadedAttachment ? (
+                <p className={incomeStyles.incomeAttachmentHint}>
+                  Imagen, PDF o documento · máximo {formatAttachmentSize(MAX_FINANCIAL_ATTACHMENT_BYTES)}.
+                </p>
+              ) : null}
+              <p className={incomeStyles.incomeAttachmentHint}>Se subirá después de registrar la compra.</p>
+              {attachmentUploading ? <p role="status" className={incomeStyles.incomeAttachmentStatus}>Subiendo comprobante…</p> : null}
+              {lastUploadedAttachment && !attachmentUploading && !attachmentError ? (
+                <p role="status" className={incomeStyles.incomeAttachmentSuccess}>
+                  {lastUploadedAttachment.availability === 'AVAILABLE' ? 'Comprobante asociado:' : 'Comprobante asociado sin vista verificada:'} {lastUploadedAttachment.file_name}
+                  {lastUploadedAttachment.signed_url ? <>{' · '}<a href={lastUploadedAttachment.signed_url} target="_blank" rel="noreferrer">Ver</a></> : null}
+                </p>
+              ) : null}
+              {attachmentError ? (
+                <div className={incomeStyles.incomeAttachmentError}>
+                  <p role="alert">{attachmentError}</p>
+                  {attachmentFile && lastAttachmentTxId ? (
+                    <button type="button" onClick={retryAttachmentUpload} disabled={attachmentUploading}>Reintentar</button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </section>
     ) : isStageACreate ? (
@@ -3848,7 +4054,8 @@ export function TransactionForm({
         noValidate
         data-testid="transaction-form"
         data-stage-a-operation={isStageACreate ? layoutMode : undefined}
-        className={`${isCompactLayout ? 'space-y-2.5' : 'space-y-5'} ${isStageACreate ? incomeStyles.operationCreateFormRoot : ''} ${className}`}
+        data-asset-purchase-create={isAssetPurchaseCreate ? 'true' : undefined}
+        className={`${isCompactLayout ? 'space-y-2.5' : 'space-y-5'} ${isStageACreate || isAssetPurchaseCreate ? incomeStyles.operationCreateFormRoot : ''} ${className}`}
       >
         {!hideTypeSelector && (
           <div data-testid="transaction-type-selector">
@@ -3871,7 +4078,7 @@ export function TransactionForm({
           />
         )}
 
-        <div className={isIncomeCreate ? incomeStyles.incomeForm : isStageACreate ? incomeStyles.operationCreateForm : 'astra-form-grid grid grid-cols-1 gap-4 min-[860px]:grid-cols-[minmax(0,1.04fr)_minmax(320px,0.96fr)] min-[860px]:items-start min-[860px]:gap-5'}>
+        <div className={isIncomeCreate ? incomeStyles.incomeForm : isStageACreate || isAssetPurchaseCreate ? incomeStyles.operationCreateForm : 'astra-form-grid grid grid-cols-1 gap-4 min-[860px]:grid-cols-[minmax(0,1.04fr)_minmax(320px,0.96fr)] min-[860px]:items-start min-[860px]:gap-5'}>
           {isIncomeCreate ? (
             <>
               <section className={incomeStyles.incomeSection} aria-label="Movimiento">
@@ -3891,6 +4098,32 @@ export function TransactionForm({
                   {transactionDateField}
                   <div className={incomeStyles.incomeDescription}>{descriptionField}</div>
                 </div>
+              </section>
+            </>
+          ) : isAssetPurchaseCreate ? (
+            <>
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Compra">
+                <h3 className={incomeStyles.incomeSectionHeading}>Compra</h3>
+                <div className={incomeStyles.assetPurchasePrimaryFields}>
+                  {accountField}
+                  {amountCurrencyField}
+                </div>
+                {exchangeRateField}
+                {equivalenceField}
+              </section>
+
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Clasificación">
+                <h3 className={incomeStyles.incomeSectionHeading}>Clasificación</h3>
+                <div className={incomeStyles.incomeClassificationFields}>
+                  {categoryField}
+                  {transactionDateField}
+                  <div className={incomeStyles.incomeDescription}>{descriptionField}</div>
+                </div>
+              </section>
+
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Activo">
+                <h3 className={incomeStyles.incomeSectionHeading}>Activo</h3>
+                {assetPurchaseField}
               </section>
             </>
           ) : isStageACreate && layoutMode === 'expense' ? (
@@ -3951,13 +4184,13 @@ export function TransactionForm({
           )}
 
           {progressiveOptionalField ? (
-            <div className={isIncomeCreate ? incomeStyles.incomeOptionalSlot : isStageACreate ? incomeStyles.operationCreateFullWidth : 'min-[860px]:col-span-2'}>
+            <div className={isIncomeCreate ? incomeStyles.incomeOptionalSlot : isStageACreate || isAssetPurchaseCreate ? incomeStyles.operationCreateFullWidth : 'min-[860px]:col-span-2'}>
               {progressiveOptionalField}
             </div>
           ) : null}
 
           {inlineOptionalField ? (
-            <div className={isIncomeCreate ? incomeStyles.incomeOptionalSlot : isStageACreate ? incomeStyles.operationCreateFullWidth : 'min-[860px]:col-span-2'}>
+            <div className={isIncomeCreate ? incomeStyles.incomeOptionalSlot : isStageACreate || isAssetPurchaseCreate ? incomeStyles.operationCreateFullWidth : 'min-[860px]:col-span-2'}>
               {inlineOptionalField}
             </div>
           ) : null}
@@ -3995,7 +4228,7 @@ export function TransactionForm({
       {/* ── 9. SUBMIT ────────────────────────────────────────────────────── */}
       <RecordModalFooter>
         <FormActions
-          className={isStageACreate ? incomeStyles.operationFormActions : ''}
+          className={isStageACreate || isAssetPurchaseCreate ? incomeStyles.operationFormActions : ''}
           secondaryAction={onCancel ? (
             <Button
               type="button"
