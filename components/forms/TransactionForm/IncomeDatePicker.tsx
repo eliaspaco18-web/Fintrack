@@ -26,6 +26,8 @@ type Props = {
   onChange: (value: string) => void
   onInvalidInput: (message: string | null) => void
   error?: string
+  inputLabel?: string
+  inputTestId?: string
 }
 
 const WEEKDAYS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
@@ -48,7 +50,14 @@ function dateParts(value: string): { year: number; month: number } | null {
   return date ? { year: date.getUTCFullYear(), month: date.getUTCMonth() } : null
 }
 
-export function IncomeDatePicker({ value, onChange, onInvalidInput, error }: Props) {
+export function IncomeDatePicker({
+  value,
+  onChange,
+  onInvalidInput,
+  error,
+  inputLabel = 'Fecha del ingreso, día, mes y año',
+  inputTestId = 'transaction-date-input',
+}: Props) {
   const id = useId()
   const triggerRef = useRef<HTMLButtonElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -366,12 +375,12 @@ export function IncomeDatePicker({ value, onChange, onInvalidInput, error }: Pro
         inputMode="numeric"
         value={inputValue}
         placeholder="DD/MM/AAAA"
-        aria-label="Fecha del ingreso, día, mes y año"
+        aria-label={inputLabel}
         aria-invalid={Boolean(error) || undefined}
         aria-describedby={error ? `${id}-error` : undefined}
         autoComplete="off"
         className={styles.input}
-        data-testid="transaction-date-input"
+        data-testid={inputTestId}
         onChange={event => {
           const next = event.target.value
           setInputValue(next)

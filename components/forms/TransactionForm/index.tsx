@@ -1089,13 +1089,16 @@ export function TransactionForm({
   }, [createsAsset, createsPayable, createsReceivable, operationType, type])
   const isIncomeCreate = layoutMode === 'income' && !isEditMode
   const isAssetPurchaseCreate = layoutMode === 'asset_purchase' && !isEditMode
+  const isReceivableIssueCreate = layoutMode === 'receivable_issue' && !isEditMode
+  const isReceivableCollectCreate = layoutMode === 'receivable_collect' && !isEditMode
+  const isReceivableCreate = isReceivableIssueCreate || isReceivableCollectCreate
   // Egreso and transfer adopt the approved Round 07 create-form presentation.
   // The edit flow and the other operation types intentionally retain their
   // existing layouts until their own review stage.
   const isStageACreate = !isEditMode && (layoutMode === 'expense' || layoutMode === 'transfer')
   const isStageAExpenseCreate = isStageACreate && layoutMode === 'expense'
-  const usesApprovedRatePresentation = isIncomeCreate || isStageAExpenseCreate || isAssetPurchaseCreate
-  const usesApprovedCreateControls = isIncomeCreate || isStageACreate || isAssetPurchaseCreate
+  const usesApprovedRatePresentation = isIncomeCreate || isStageAExpenseCreate || isAssetPurchaseCreate || isReceivableCreate
+  const usesApprovedCreateControls = isIncomeCreate || isStageACreate || isAssetPurchaseCreate || isReceivableCreate
   const usesApprovedDatePicker = usesApprovedCreateControls
 
   // ── Cross-currency transfer detection ────────────────────────────────────
@@ -1130,6 +1133,7 @@ export function TransactionForm({
     layoutMode === 'expense' ||
     layoutMode === 'transfer' ||
     layoutMode === 'asset_purchase' ||
+    isReceivableIssueCreate ||
     layoutMode === 'receivable_collect' ||
     layoutMode === 'payable_pay'
   const optionalSummary = useMemo(() => {
@@ -1142,6 +1146,8 @@ export function TransactionForm({
         return ['Identificación del activo', 'Proveedor', 'Notas', 'Comprobante']
       case 'receivable_collect':
         return ['Notas', 'Comprobante']
+      case 'receivable_issue':
+        return ['Notas', 'Recurrencia', 'Comprobante']
       case 'payable_pay':
         return ['Notas', 'Comprobante']
       case 'transfer':
@@ -1164,6 +1170,7 @@ export function TransactionForm({
         return 'Cuenta destino'
       case 'expense':
       case 'asset_purchase':
+      case 'receivable_issue':
       case 'payable_pay':
         return 'Cuenta origen'
       default:
@@ -1516,7 +1523,10 @@ export function TransactionForm({
     if (isIncomeCreate) {
       setIncomeAdditionalOptionsOpen(current => ({ ...current, receipt: true }))
     }
-  }, [attachmentError, attachmentFile, attachmentUploading, isEditMode, isIncomeCreate, lastUploadedAttachment])
+    if (isReceivableCreate) {
+      setOperationAdditionalOptionsOpen(current => ({ ...current, receipt: true }))
+    }
+  }, [attachmentError, attachmentFile, attachmentUploading, isEditMode, isIncomeCreate, isReceivableCreate, lastUploadedAttachment])
 
   useEffect(() => {
     if (!isIncomeCreate) return
@@ -1567,7 +1577,12 @@ export function TransactionForm({
     const syncOverflow = () => {
       const isDesktop = window.matchMedia('(min-width: 860px)').matches
       const isShortViewport = window.innerHeight < 720
-      const shouldForceAuto = !usesProgressiveOptionalSection || advancedSectionOpen || !isDesktop || isShortViewport
+      const receivableOptionsExpanded = isReceivableCreate && (
+        operationAdditionalOptionsOpen.notes ||
+        operationAdditionalOptionsOpen.receipt ||
+        (isReceivableIssueCreate && operationAdditionalOptionsOpen.recurrence)
+      )
+      const shouldForceAuto = !usesProgressiveOptionalSection || advancedSectionOpen || receivableOptionsExpanded || !isDesktop || isShortViewport
 
       if (shouldForceAuto) {
         modalBody.style.overflowY = ''
@@ -1593,7 +1608,15 @@ export function TransactionForm({
       window.removeEventListener('resize', syncOverflow)
       modalBody.style.overflowY = ''
     }
-  }, [advancedSectionOpen, usesProgressiveOptionalSection])
+  }, [
+    advancedSectionOpen,
+    isReceivableCreate,
+    isReceivableIssueCreate,
+    operationAdditionalOptionsOpen.notes,
+    operationAdditionalOptionsOpen.receipt,
+    operationAdditionalOptionsOpen.recurrence,
+    usesProgressiveOptionalSection,
+  ])
 
   // ── Si hay éxito y showSuccessSummary, mostrar summary en lugar del form ──
 
@@ -1612,7 +1635,15 @@ export function TransactionForm({
   const amountCurrencyField = (
     <div className={`${isCompactLayout ? 'grid grid-cols-[1fr_100px] gap-2' : 'grid grid-cols-[1fr_110px] gap-3'} ${usesApprovedCreateControls ? incomeStyles.incomeAmountCurrency : ''} ${isStageACreate && layoutMode === 'transfer' ? incomeStyles.operationTransferAmountCurrency : ''}`}>
       <FieldWrapper
-        label={layoutMode === 'asset_purchase' ? 'Valor de compra' : isStageACreate && layoutMode === 'transfer' ? 'Monto enviado' : 'Monto'}
+        label={layoutMode === 'asset_purchase'
+          ? 'Valor de compra'
+          : isStageACreate && layoutMode === 'transfer'
+            ? 'Monto enviado'
+            : isReceivableIssueCreate
+              ? 'Monto prestado'
+              : isReceivableCollectCreate
+                ? 'Monto que recibirás'
+                : 'Monto'}
         required
         error={errors.amount?.message}
       >
@@ -1664,7 +1695,9 @@ export function TransactionForm({
       </FieldWrapper>
 
       <FieldWrapper
-        label={isStageACreate && layoutMode === 'transfer' ? 'Moneda de origen' : 'Moneda'}
+        label={isStageACreate && layoutMode === 'transfer'
+          ? 'Moneda de origen'
+          : isReceivableCollectCreate ? 'Moneda del pendiente' : 'Moneda'}
         hint={usesApprovedCreateControls
           ? undefined
           : isExpenseCreditPayment
@@ -1674,7 +1707,7 @@ export function TransactionForm({
         <div className={usesApprovedCreateControls ? incomeStyles.incomeCurrencyControl : undefined}>
           <Select
             {...register('currency')}
-            value={isIncomeCreate || isAssetPurchaseCreate ? currency : undefined}
+            value={isIncomeCreate || isAssetPurchaseCreate || isReceivableIssueCreate || isReceivableCollectCreate ? currency : undefined}
             compact={!usesApprovedCreateControls}
             matchTriggerWidth={usesApprovedCreateControls}
             data-testid="transaction-currency-select"
@@ -1693,6 +1726,10 @@ export function TransactionForm({
                     ? 'La moneda del importe se sincroniza con la cuenta origen. El resumen muestra la moneda de destino cuando son distintas.'
                     : layoutMode === 'asset_purchase'
                       ? 'La moneda de la compra se sincroniza con la cuenta de origen seleccionada.'
+                      : isReceivableCollectCreate
+                        ? 'La moneda corresponde al pendiente seleccionado y solo se muestran cuentas compatibles.'
+                        : isReceivableIssueCreate
+                          ? 'La moneda del préstamo se sincroniza con la cuenta de origen seleccionada.'
                       : 'La moneda del egreso se sincroniza con la cuenta origen seleccionada.'}
             </IncomeInfoHint>
           ) : null}
@@ -1748,7 +1785,7 @@ export function TransactionForm({
     </div>
   )
 
-  const usesApprovedEquivalence = isIncomeCreate || isStageAExpenseCreate || isAssetPurchaseCreate || (isStageACreate && layoutMode === 'transfer' && !isCrossCurrencyTransfer)
+  const usesApprovedEquivalence = isIncomeCreate || isStageAExpenseCreate || isAssetPurchaseCreate || isReceivableIssueCreate || (isStageACreate && layoutMode === 'transfer' && !isCrossCurrencyTransfer)
   const equivalenceField = usesApprovedEquivalence ? (
     <div className={incomeStyles.incomeEquivalence}>
       <div className={incomeStyles.incomeEquivalenceHeading}>
@@ -2047,7 +2084,7 @@ export function TransactionForm({
         </FieldWrapper>
       )}
 
-      <div className={`
+      {!isReceivableCreate ? <div className={`
         overflow-hidden transition-all duration-300 ease-out
         ${sections.destinationAccount ? 'max-h-24 opacity-100' : 'max-h-0 opacity-0 w-0'}
       `}>
@@ -2074,7 +2111,7 @@ export function TransactionForm({
             ))}
           </Select>
         </FieldWrapper>
-      </div>
+      </div> : null}
     </div>
   ) : null
 
@@ -2756,6 +2793,26 @@ export function TransactionForm({
     </FieldWrapper>
   )
 
+  const receivableDueField = isReceivableIssueCreate ? (
+    <FieldWrapper label="Vencimiento" optional error={errors.receivable_due?.message}>
+      <input type="hidden" {...register('receivable_due')} />
+      <IncomeDatePicker
+        value={watch('receivable_due') ?? ''}
+        error={errors.receivable_due?.message}
+        inputLabel="Fecha de vencimiento, día, mes y año"
+        inputTestId="transaction-receivable-due-input"
+        onChange={nextDate => {
+          setValue('receivable_due', nextDate || undefined, { shouldDirty: true, shouldValidate: true })
+          if (nextDate) clearErrors('receivable_due')
+        }}
+        onInvalidInput={message => {
+          if (message) setError('receivable_due', { type: 'validate', message })
+          else clearErrors('receivable_due')
+        }}
+      />
+    </FieldWrapper>
+  ) : null
+
   const descriptionField = (
     <FieldWrapper
       label="Descripción"
@@ -2808,6 +2865,14 @@ export function TransactionForm({
     },
     { key: 'supplier' as const, label: 'Proveedor', hasValue: Boolean(watch('recipient')?.trim()), hasError: Boolean(errors.recipient?.message) },
     { key: 'notes' as const, label: 'Notas', hasValue: Boolean(watch('notes')?.trim()), hasError: Boolean(errors.notes?.message) },
+    { key: 'receipt' as const, label: 'Comprobante', hasValue: Boolean(attachmentFile || lastUploadedAttachment), hasError: Boolean(attachmentError) },
+  ] : []
+
+  const receivableOptionalItems = isReceivableCreate ? [
+    { key: 'notes' as const, label: 'Notas', hasValue: Boolean(watch('notes')?.trim()), hasError: Boolean(errors.notes?.message) },
+    ...(isReceivableIssueCreate
+      ? [{ key: 'recurrence' as const, label: 'Recurrencia', hasValue: Boolean(watch('is_recurring') || watch('recurring_name')?.trim()), hasError: Boolean(errors.recurring_name?.message) }]
+      : []),
     { key: 'receipt' as const, label: 'Comprobante', hasValue: Boolean(attachmentFile || lastUploadedAttachment), hasError: Boolean(attachmentError) },
   ] : []
 
@@ -3193,6 +3258,154 @@ export function TransactionForm({
                   ) : null}
                 </div>
               ) : null}
+            </div>
+          ) : null}
+        </div>
+      </section>
+    ) : isReceivableCreate ? (
+      <section className={`${incomeStyles.incomeOptionalSection} ${incomeStyles.receivableOptional}`} aria-label="Información adicional">
+        <div className={incomeStyles.incomeOptionsHeader}>
+          <div>
+            <h3 className={incomeStyles.incomeSectionHeading}>Información adicional</h3>
+            <p className={incomeStyles.incomeOptionsDescription}>Opcional · conserva el contexto de la operación</p>
+          </div>
+          {hasOptionalSectionError || attachmentError ? <span className={incomeStyles.incomeReviewBadge}>Revisar</span> : null}
+        </div>
+
+        <div className={incomeStyles.incomeOptionControls} role="group" aria-label={`Opciones de ${isReceivableIssueCreate ? 'préstamo' : 'cobro'}`}>
+          {receivableOptionalItems.map(option => {
+            const isOpen = operationAdditionalOptionsOpen[option.key] || option.hasError
+            const panelId = `${incomeOptionsId}-receivable-${option.key}`
+            return (
+              <button
+                key={option.key}
+                type="button"
+                aria-expanded={isOpen}
+                aria-controls={panelId}
+                data-active={isOpen ? 'true' : 'false'}
+                data-has-value={option.hasValue ? 'true' : 'false'}
+                data-has-error={option.hasError ? 'true' : 'false'}
+                className={incomeStyles.incomeOptionButton}
+                onClick={() => setOperationAdditionalOptionsOpen(current => ({ ...current, [option.key]: !current[option.key] }))}
+              >
+                <span aria-hidden="true" className={incomeStyles.incomeOptionMark}>{isOpen ? '−' : '+'}</span>
+                <span>{option.label}</span>
+                {option.hasError ? <span className={incomeStyles.incomeOptionError}>Revisar</span> : null}
+              </button>
+            )
+          })}
+        </div>
+
+        <div className={incomeStyles.incomeOptionPanels}>
+          <div
+            id={`${incomeOptionsId}-receivable-notes`}
+            data-income-option="notes"
+            hidden={!operationAdditionalOptionsOpen.notes && !errors.notes?.message}
+            className={incomeStyles.incomeOptionPanel}
+          >
+            <FieldWrapper label="Notas" optional>
+              <Textarea rows={2} placeholder="Observaciones adicionales…" data-testid="transaction-notes-input" {...register('notes')} />
+            </FieldWrapper>
+          </div>
+
+          {isReceivableIssueCreate ? (
+            <div
+              id={`${incomeOptionsId}-receivable-recurrence`}
+              data-income-option="recurrence"
+              hidden={!operationAdditionalOptionsOpen.recurrence && !errors.recurring_name?.message}
+              className={incomeStyles.incomeOptionPanel}
+            >
+              <CheckboxToggle
+                label="Transacción recurrente"
+                description="Guarda esta configuración como plantilla reutilizable."
+                checked={!!watch('is_recurring')}
+                onChange={value => {
+                  setValue('is_recurring', value)
+                  if (value) setOperationAdditionalOptionsOpen(current => ({ ...current, recurrence: true }))
+                }}
+              />
+              {watch('is_recurring') ? (
+                <div className={incomeStyles.incomeRecurringName}>
+                  <FieldWrapper label="Nombre de la recurrente" required error={errors.recurring_name?.message}>
+                    <Input
+                      type="text"
+                      placeholder="Ej. Préstamo recurrente"
+                      data-testid="transaction-recurring-name-input"
+                      error={errors.recurring_name?.message}
+                      {...register('recurring_name', {
+                        maxLength: { value: 150, message: 'Máximo 150 caracteres' },
+                        validate: value => !watch('is_recurring') || (value ?? '').trim().length > 0 || 'Ingresa un nombre para la plantilla recurrente',
+                      })}
+                    />
+                  </FieldWrapper>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {!isEditMode ? (
+            <div
+              id={`${incomeOptionsId}-receivable-receipt`}
+              data-income-option="receipt"
+              hidden={!operationAdditionalOptionsOpen.receipt && !attachmentError && !attachmentUploading}
+              className={incomeStyles.incomeAttachmentPanel}
+            >
+              <label className={incomeStyles.incomeAttachmentAction}>
+                <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
+                  <path d="M7.5 10.8 12.9 5.4a2.5 2.5 0 0 1 3.5 3.5L9.6 15.7a4 4 0 0 1-5.7-5.7l7.2-7.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+                <span>{attachmentFile || lastUploadedAttachment ? 'Reemplazar comprobante' : 'Adjuntar comprobante'}</span>
+                <input
+                  ref={incomeAttachmentInputRef}
+                  type="file"
+                  accept={ATTACHMENT_ACCEPT}
+                  data-testid="transaction-attachment-input"
+                  className="sr-only"
+                  onChange={event => {
+                    const nextFile = event.target.files?.[0] ?? null
+                    setAttachmentFile(nextFile)
+                    setAttachmentError(null)
+                    setLastAttachmentTxId(null)
+                    setLastUploadedAttachment(null)
+                    lastAutoUploadTxId.current = null
+                  }}
+                />
+              </label>
+              {attachmentFile ? (
+                <div className={incomeStyles.incomeAttachmentFile}>
+                  <span aria-hidden="true" className={incomeStyles.incomeAttachmentFileIcon}>
+                    <svg viewBox="0 0 20 20" fill="none"><path d="M7.5 10.8 12.9 5.4a2.5 2.5 0 0 1 3.5 3.5L9.6 15.7a4 4 0 0 1-5.7-5.7l7.2-7.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+                  </span>
+                  <span className={incomeStyles.incomeAttachmentFileName} title={attachmentFile.name}>{attachmentFile.name}</span>
+                  <span className={incomeStyles.incomeAttachmentFileSize}>{formatAttachmentSize(attachmentFile.size)}</span>
+                  <button
+                    type="button"
+                    className={incomeStyles.incomeAttachmentRemove}
+                    onClick={() => {
+                      setAttachmentFile(null)
+                      setAttachmentError(null)
+                      setLastAttachmentTxId(null)
+                      setLastUploadedAttachment(null)
+                      lastAutoUploadTxId.current = null
+                      if (incomeAttachmentInputRef.current) incomeAttachmentInputRef.current.value = ''
+                    }}
+                  >
+                    Quitar
+                  </button>
+                </div>
+              ) : null}
+              {!attachmentFile && !lastUploadedAttachment ? (
+                <p className={incomeStyles.incomeAttachmentHint}>Imagen, PDF o documento · máximo {formatAttachmentSize(MAX_FINANCIAL_ATTACHMENT_BYTES)}.</p>
+              ) : null}
+              <p className={incomeStyles.incomeAttachmentHint}>Se subirá después de registrar el movimiento.</p>
+              {attachmentUploading ? <p role="status" className={incomeStyles.incomeAttachmentStatus}>Subiendo comprobante…</p> : null}
+              {lastUploadedAttachment && !attachmentUploading && !attachmentError ? (
+                <p role="status" className={incomeStyles.incomeAttachmentSuccess}>
+                  {lastUploadedAttachment.availability === 'AVAILABLE' ? 'Comprobante asociado:' : 'Comprobante asociado sin vista verificada:'} {lastUploadedAttachment.file_name}
+                  {lastUploadedAttachment.signed_url ? <>{' · '}<a href={lastUploadedAttachment.signed_url} target="_blank" rel="noreferrer">Ver</a></> : null}
+                </p>
+              ) : null}
+              {attachmentError ? <div className={incomeStyles.incomeAttachmentError}><p role="alert">{attachmentError}</p></div> : null}
             </div>
           ) : null}
         </div>
@@ -3667,6 +3880,22 @@ export function TransactionForm({
     </FieldWrapper>
   ) : null
 
+  const receivableIssueSummary = isReceivableIssueCreate ? (
+    <div className={incomeStyles.receivableIssueSummary} aria-label="Resumen de la cuenta por cobrar">
+      <div className={incomeStyles.receivableIssueOutcome}>
+        <span>Salida de fondos</span>
+        <strong>{hasAmount ? formatCurrency(numericAmount, currency as 'PEN' | 'USD') : 'Completa el monto'}</strong>
+        <small>{sourceAccountOption?.label ?? 'Cuenta de origen'}</small>
+      </div>
+      <div className={incomeStyles.receivableIssueOutcome}>
+        <span>Nueva cuenta por cobrar</span>
+        <strong>{hasAmount ? formatCurrency(numericAmount, currency as 'PEN' | 'USD') : 'Completa el monto'}</strong>
+        <small>{debtorOptions.find(option => option.value === watch('receivable_debtor_id'))?.label ?? 'Selecciona el deudor'}</small>
+      </div>
+      <p>El mismo importe registra la salida y el saldo inicial por cobrar.</p>
+    </div>
+  ) : null
+
   const receivableCollectField = operationType === 'receivable_collect' ? (
     <div className="space-y-3">
       <FieldWrapper
@@ -3701,22 +3930,34 @@ export function TransactionForm({
       </FieldWrapper>
 
       {selectedSettlementReceivable && (
-        <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3.5 py-3">
-          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-            Saldo a cobrar
-          </p>
-          <p className="mt-1 text-[15px] font-semibold tabular-nums text-[var(--c-primary)]">
-            {formatCurrency(selectedSettlementPendingAmount, selectedSettlementCurrency ?? 'PEN')}
-          </p>
-          <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">
-            {selectedSettlementCounterparty}{selectedSettlementConcept ? ` · ${selectedSettlementConcept}` : ''}
-          </p>
-          {selectedReceivableSettlementKind === 'debtor_total' && selectedReceivableSettlementLinesCount > 1 ? (
-            <p className="mt-1 text-[10px] text-[var(--c-text-faint)]">
-              El cobro se aplicará automáticamente a {selectedReceivableSettlementLinesCount} cuentas abiertas, empezando por las más antiguas.
+        isReceivableCollectCreate ? (
+          <div className={incomeStyles.receivablePendingSummary}>
+            <div>
+              <span>{selectedReceivableSettlementKind === 'debtor_total' ? 'Cobro general' : 'Cuenta puntual'}</span>
+              <strong>{formatCurrency(selectedSettlementPendingAmount, selectedSettlementCurrency ?? 'PEN')}</strong>
+            </div>
+            <p>{selectedSettlementCounterparty}{selectedSettlementConcept ? ` · ${selectedSettlementConcept}` : ''}</p>
+            <small>Saldo pendiente · {selectedSettlementCurrency ?? 'PEN'}</small>
+            {selectedReceivableSettlementKind === 'debtor_total' && selectedReceivableSettlementLinesCount > 1 ? (
+              <small>Se distribuirá entre {selectedReceivableSettlementLinesCount} cuentas abiertas, empezando por las más antiguas.</small>
+            ) : null}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3.5 py-3">
+            <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Saldo a cobrar</p>
+            <p className="mt-1 text-[15px] font-semibold tabular-nums text-[var(--c-primary)]">
+              {formatCurrency(selectedSettlementPendingAmount, selectedSettlementCurrency ?? 'PEN')}
             </p>
-          ) : null}
-        </div>
+            <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">
+              {selectedSettlementCounterparty}{selectedSettlementConcept ? ` · ${selectedSettlementConcept}` : ''}
+            </p>
+            {selectedReceivableSettlementKind === 'debtor_total' && selectedReceivableSettlementLinesCount > 1 ? (
+              <p className="mt-1 text-[10px] text-[var(--c-text-faint)]">
+                El cobro se aplicará automáticamente a {selectedReceivableSettlementLinesCount} cuentas abiertas, empezando por las más antiguas.
+              </p>
+            ) : null}
+          </div>
+        )
       )}
     </div>
   ) : null
@@ -4055,7 +4296,8 @@ export function TransactionForm({
         data-testid="transaction-form"
         data-stage-a-operation={isStageACreate ? layoutMode : undefined}
         data-asset-purchase-create={isAssetPurchaseCreate ? 'true' : undefined}
-        className={`${isCompactLayout ? 'space-y-2.5' : 'space-y-5'} ${isStageACreate || isAssetPurchaseCreate ? incomeStyles.operationCreateFormRoot : ''} ${className}`}
+        data-receivable-create={isReceivableCreate ? layoutMode : undefined}
+        className={`${isCompactLayout ? 'space-y-2.5' : 'space-y-5'} ${isStageACreate || isAssetPurchaseCreate || isReceivableCreate ? incomeStyles.operationCreateFormRoot : ''} ${className}`}
       >
         {!hideTypeSelector && (
           <div data-testid="transaction-type-selector">
@@ -4078,7 +4320,7 @@ export function TransactionForm({
           />
         )}
 
-        <div className={isIncomeCreate ? incomeStyles.incomeForm : isStageACreate || isAssetPurchaseCreate ? incomeStyles.operationCreateForm : 'astra-form-grid grid grid-cols-1 gap-4 min-[860px]:grid-cols-[minmax(0,1.04fr)_minmax(320px,0.96fr)] min-[860px]:items-start min-[860px]:gap-5'}>
+        <div className={isIncomeCreate ? incomeStyles.incomeForm : isStageACreate || isAssetPurchaseCreate || isReceivableCreate ? incomeStyles.operationCreateForm : 'astra-form-grid grid grid-cols-1 gap-4 min-[860px]:grid-cols-[minmax(0,1.04fr)_minmax(320px,0.96fr)] min-[860px]:items-start min-[860px]:gap-5'}>
           {isIncomeCreate ? (
             <>
               <section className={incomeStyles.incomeSection} aria-label="Movimiento">
@@ -4124,6 +4366,49 @@ export function TransactionForm({
               <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Activo">
                 <h3 className={incomeStyles.incomeSectionHeading}>Activo</h3>
                 {assetPurchaseField}
+              </section>
+            </>
+          ) : isReceivableIssueCreate ? (
+            <>
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Salida de fondos">
+                <h3 className={incomeStyles.incomeSectionHeading}>Salida de fondos</h3>
+                <div className={incomeStyles.receivableIssueMovementFields}>
+                  {accountField}
+                  {amountCurrencyField}
+                  {transactionDateField}
+                </div>
+                {exchangeRateField}
+                {equivalenceField}
+              </section>
+
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Cuenta por cobrar">
+                <h3 className={incomeStyles.incomeSectionHeading}>Cuenta por cobrar</h3>
+                <div className={incomeStyles.receivableIssueFields}>
+                  {receivableIssueField}
+                  {receivableDueField}
+                  <div className={incomeStyles.receivableIssueDescription}>{descriptionField}</div>
+                </div>
+                {receivableIssueSummary}
+              </section>
+            </>
+          ) : isReceivableCollectCreate ? (
+            <>
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Pendiente por cobrar">
+                <h3 className={incomeStyles.incomeSectionHeading}>Pendiente por cobrar</h3>
+                {receivableCollectField}
+              </section>
+
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Registrar cobro">
+                <h3 className={incomeStyles.incomeSectionHeading}>Registrar cobro</h3>
+                <div className={incomeStyles.incomePrimaryFields}>
+                  {accountField}
+                  {amountCurrencyField}
+                  {exchangeRateField}
+                </div>
+                <div className={incomeStyles.receivableCollectRecordFields}>
+                  {transactionDateField}
+                  {descriptionField}
+                </div>
               </section>
             </>
           ) : isStageACreate && layoutMode === 'expense' ? (
@@ -4184,13 +4469,13 @@ export function TransactionForm({
           )}
 
           {progressiveOptionalField ? (
-            <div className={isIncomeCreate ? incomeStyles.incomeOptionalSlot : isStageACreate || isAssetPurchaseCreate ? incomeStyles.operationCreateFullWidth : 'min-[860px]:col-span-2'}>
+            <div className={isIncomeCreate ? incomeStyles.incomeOptionalSlot : isStageACreate || isAssetPurchaseCreate || isReceivableCreate ? incomeStyles.operationCreateFullWidth : 'min-[860px]:col-span-2'}>
               {progressiveOptionalField}
             </div>
           ) : null}
 
           {inlineOptionalField ? (
-            <div className={isIncomeCreate ? incomeStyles.incomeOptionalSlot : isStageACreate || isAssetPurchaseCreate ? incomeStyles.operationCreateFullWidth : 'min-[860px]:col-span-2'}>
+            <div className={isIncomeCreate ? incomeStyles.incomeOptionalSlot : isStageACreate || isAssetPurchaseCreate || isReceivableCreate ? incomeStyles.operationCreateFullWidth : 'min-[860px]:col-span-2'}>
               {inlineOptionalField}
             </div>
           ) : null}
@@ -4228,7 +4513,7 @@ export function TransactionForm({
       {/* ── 9. SUBMIT ────────────────────────────────────────────────────── */}
       <RecordModalFooter>
         <FormActions
-          className={isStageACreate || isAssetPurchaseCreate ? incomeStyles.operationFormActions : ''}
+          className={isStageACreate || isAssetPurchaseCreate || isReceivableCreate ? incomeStyles.operationFormActions : ''}
           secondaryAction={onCancel ? (
             <Button
               type="button"

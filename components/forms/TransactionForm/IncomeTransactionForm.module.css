@@ -58,6 +58,17 @@
   filter: brightness(0.94);
 }
 
+.operationCreateFormRoot[data-receivable-create='receivable_issue'] :global([data-testid='transaction-submit-button']),
+.operationCreateFormRoot[data-receivable-create='receivable_collect'] :global([data-testid='transaction-submit-button']) {
+  background-color: var(--ft-primary);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--ft-primary) 18%, transparent);
+}
+
+.operationCreateFormRoot[data-receivable-create='receivable_issue'] :global([data-testid='transaction-submit-button']:hover:not(:disabled)),
+.operationCreateFormRoot[data-receivable-create='receivable_collect'] :global([data-testid='transaction-submit-button']:hover:not(:disabled)) {
+  filter: brightness(0.94);
+}
+
 .operationFormActions {
   position: sticky;
   z-index: 2;
@@ -121,6 +132,122 @@
 
 .assetPurchaseOptional .incomeOptionPanel,
 .assetPurchaseOptional .incomeAttachmentPanel {
+  grid-column: 1 / -1;
+}
+
+.receivableIssueMovementFields,
+.receivableIssueFields,
+.receivableCollectRecordFields {
+  display: grid;
+  align-items: start;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.receivableIssueMovementFields {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.12fr);
+}
+
+.receivableIssueFields {
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+}
+
+.receivableIssueDescription {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.receivableCollectRecordFields {
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr);
+}
+
+.receivableIssueSummary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--ft-form-border);
+  border-radius: var(--ft-form-radius);
+  background: var(--ft-surface-muted);
+}
+
+.receivableIssueOutcome {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.receivableIssueOutcome > span,
+.receivablePendingSummary > div > span {
+  color: var(--ft-form-muted);
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.045em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.receivableIssueOutcome > strong,
+.receivablePendingSummary > div > strong {
+  color: var(--ft-text-strong);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.receivableIssueOutcome > small,
+.receivablePendingSummary > small {
+  color: var(--ft-form-muted);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.receivableIssueSummary > p {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--ft-form-border);
+  color: var(--ft-form-muted);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+}
+
+.receivablePendingSummary {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--ft-primary-border);
+  border-radius: var(--ft-form-radius);
+  background: color-mix(in srgb, var(--ft-primary-soft) 48%, var(--ft-form-surface));
+}
+
+.receivablePendingSummary > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.receivablePendingSummary > p {
+  margin: 0;
+  color: var(--ft-text-strong);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.receivableOptional {
+  container: receivable-options / inline-size;
+}
+
+.receivableOptional .incomeOptionPanel[data-income-option='receipt'],
+.receivableOptional .incomeAttachmentPanel {
   grid-column: 1 / -1;
 }
 
@@ -409,8 +536,25 @@
 @container operation-create-section (max-width: 600px) {
   .assetPurchasePrimaryFields,
   .assetPurchaseFields,
-  .assetPurchaseIdentificationFields {
+  .assetPurchaseIdentificationFields,
+  .receivableIssueMovementFields,
+  .receivableIssueFields,
+  .receivableCollectRecordFields {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .receivableIssueDescription {
+    grid-column: 1;
+  }
+}
+
+@container receivable-options (max-width: 440px) {
+  .incomeOptionPanels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .incomeAttachmentPanel {
+    grid-column: 1;
   }
 }
 
@@ -446,6 +590,14 @@
   .operationTransferFxAmounts,
   .operationTransferFxRateGrid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .receivableIssueSummary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .receivableIssueSummary > p {
+    grid-column: 1;
   }
 
   .operationTransferFxLabel {
