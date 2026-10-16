@@ -1839,7 +1839,7 @@ export function TransactionForm({
     </div>
   )
 
-  const usesApprovedEquivalence = isIncomeCreate || isStageAExpenseCreate || isAssetPurchaseCreate || isReceivableIssueCreate || (isStageACreate && layoutMode === 'transfer' && !isCrossCurrencyTransfer)
+  const usesApprovedEquivalence = isIncomeCreate || isStageAExpenseCreate || isAssetPurchaseCreate || isReceivableIssueCreate || isPayableCreate || (isStageACreate && layoutMode === 'transfer' && !isCrossCurrencyTransfer)
   const equivalenceField = usesApprovedEquivalence ? (
     <div className={incomeStyles.incomeEquivalence}>
       <div className={incomeStyles.incomeEquivalenceHeading}>
