@@ -2137,7 +2137,7 @@ export function TransactionForm({
   ) : null
 
   const creditCardImpactField = creditMovementKind && activeCreditCardOption ? (
-    <div className={`${isStageACreate && layoutMode === 'transfer' ? incomeStyles.operationTransferCreditImpact : ''} rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3.5 py-3`}>
+    <div className={`${isStageACreate && layoutMode === 'transfer' ? incomeStyles.operationTransferCreditImpact : isReceivableIssueCreate ? incomeStyles.operationReceivableCreditImpact : ''} rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3.5 py-3`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
