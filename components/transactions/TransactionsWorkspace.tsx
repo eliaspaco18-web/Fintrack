@@ -17,6 +17,7 @@ import { fetchDashboardData } from '@/components/dashboard/api'
 import {
   OperationTypePopover,
   OperationTypeSelector,
+  OPERATION_TITLES,
   operationTypeToFormConfig,
   type OperationType,
 } from '@/components/transactions/OperationTypeSelector'
@@ -79,17 +80,6 @@ const EXPORT_PERIOD_OPTIONS: Array<{ value: ExportPeriod; label: string }> = [
   { value: '11', label: 'Noviembre' },
   { value: '12', label: 'Diciembre' },
 ]
-
-const ASTRA_FORM_TITLES: Record<OperationType, string> = {
-  income: 'Registrar ingreso',
-  expense: 'Registrar egreso',
-  transfer: 'Transferir entre cuentas',
-  asset_purchase: 'Comprar un activo',
-  receivable_issue: 'Prestar dinero',
-  receivable_collect: 'Registrar cobro',
-  payable_issue: 'Registrar dinero recibido a devolver',
-  payable_pay: 'Registrar pago',
-}
 
 const EXPORT_FORMAT_OPTIONS: Array<{ value: ExportFormat; label: string; hint: string }> = [
   { value: 'pdf', label: 'PDF', hint: 'Resumen visual + detalle tabular profesional.' },
@@ -343,7 +333,7 @@ export function TransactionsWorkspace({
   }, [openFromQuery, hasPrefillParams, initialValues, selectedOperationType])
 
   const modalTitle = modalStep === 'form' && selectedOperationType
-    ? ASTRA_FORM_TITLES[selectedOperationType]
+    ? OPERATION_TITLES[selectedOperationType]
     : '¿Qué vas a registrar?'
 
   const modalSubtitle = modalStep === 'form' && selectedOperationType

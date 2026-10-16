@@ -13,6 +13,17 @@ export type OperationType =
   | 'payable_issue'
   | 'payable_pay'
 
+export const OPERATION_TITLES: Record<OperationType, string> = {
+  income: 'Ingreso',
+  expense: 'Egreso',
+  receivable_collect: 'Registrar cobro',
+  payable_issue: 'Recibir préstamo',
+  receivable_issue: 'Prestar dinero',
+  payable_pay: 'Registrar pago',
+  asset_purchase: 'Comprar activo',
+  transfer: 'Transferencia',
+}
+
 type AstraIcon = 'up' | 'down' | 'moves' | 'box'
 
 interface OperationPopoverItem {
@@ -51,26 +62,26 @@ const OPERATION_GROUPS: Array<{
     id: 'income',
     label: 'Dinero que entra',
     items: [
-      { type: 'income', label: 'Ingreso', description: 'Dinero que recibes.', icon: 'down', flow: 'income' },
-      { type: 'receivable_collect', label: 'Registrar cobro', description: 'Cobras dinero que te debían.', icon: 'down', flow: 'income' },
-      { type: 'payable_issue', label: 'Recibir préstamo', description: 'Recibes dinero prestado y luego lo devuelves.', icon: 'down', flow: 'income' },
+      { type: 'income', label: OPERATION_TITLES.income, description: 'Dinero que recibes.', icon: 'down', flow: 'income' },
+      { type: 'receivable_collect', label: OPERATION_TITLES.receivable_collect, description: 'Cobras dinero que te debían.', icon: 'down', flow: 'income' },
+      { type: 'payable_issue', label: OPERATION_TITLES.payable_issue, description: 'Recibes dinero que luego devolverás.', icon: 'down', flow: 'income' },
     ],
   },
   {
     id: 'expense',
     label: 'Dinero que sale',
     items: [
-      { type: 'expense', label: 'Egreso', description: 'Dinero que gastas.', icon: 'up', flow: 'expense' },
-      { type: 'receivable_issue', label: 'Prestar dinero', description: 'Das dinero que te devolverán.', icon: 'up', flow: 'expense' },
-      { type: 'payable_pay', label: 'Registrar pago', description: 'Pagas una deuda pendiente.', icon: 'up', flow: 'expense' },
-      { type: 'asset_purchase', label: 'Comprar activo', description: 'Compras un bien para conservarlo.', icon: 'box', flow: 'asset' },
+      { type: 'expense', label: OPERATION_TITLES.expense, description: 'Dinero que gastas.', icon: 'up', flow: 'expense' },
+      { type: 'receivable_issue', label: OPERATION_TITLES.receivable_issue, description: 'Das dinero que te devolverán.', icon: 'up', flow: 'expense' },
+      { type: 'payable_pay', label: OPERATION_TITLES.payable_pay, description: 'Pagas una deuda pendiente.', icon: 'up', flow: 'expense' },
+      { type: 'asset_purchase', label: OPERATION_TITLES.asset_purchase, description: 'Compras un bien para conservarlo.', icon: 'box', flow: 'asset' },
     ],
   },
   {
     id: 'transfer',
     label: 'Entre tus cuentas',
     items: [
-      { type: 'transfer', label: 'Transferencia', description: 'Mueves dinero entre tus cuentas o tarjetas.', icon: 'moves', flow: 'transfer' },
+      { type: 'transfer', label: OPERATION_TITLES.transfer, description: 'Mueves dinero entre tus cuentas o tarjetas.', icon: 'moves', flow: 'transfer' },
     ],
   },
 ]

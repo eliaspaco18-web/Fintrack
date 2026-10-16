@@ -13,11 +13,12 @@ function operationSource(): string {
       `const React = window.React; const {${hooks}} = React`)
     .replace(/import styles from '@\/components\/tables\/TransactionsRound07.module.css'/, 'const styles = window.operationStyles')
     .replace(/export function /g, 'function ')
+    .replace(/export const /g, 'const ')
   const compiled = ts.transpileModule(source, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None, jsx: ts.JsxEmit.React },
   }).outputText
   const browserScript = compiled.replace(/^"use strict";\s*Object\.defineProperty\(exports, "__esModule", \{ value: true \}\);\s*/m, '')
-  return `(() => {\n${browserScript}\nwindow.FinTrackOperationPopover = OperationTypePopover; window.FinTrackOperationConfig = operationTypeToFormConfig;\n})()`
+  return `(() => {\n${browserScript}\nwindow.FinTrackOperationPopover = OperationTypePopover; window.FinTrackOperationConfig = operationTypeToFormConfig; window.FinTrackOperationTitles = OPERATION_TITLES;\n})()`
 }
 
 async function mount(page: import('@playwright/test').Page) {
@@ -40,20 +41,20 @@ async function mount(page: import('@playwright/test').Page) {
   ` })
   await page.addStyleTag({ path: join(process.cwd(), 'docs/redesign-v3/preview/design.css') })
   await page.addStyleTag({ content: `
-    .operation-popover { position:fixed; inset:auto; margin:0; box-sizing:border-box; border:1px solid #dce1e5; border-radius:14px; padding:11px; width:min(616px,calc(100vw - 24px)); min-width:min(520px,calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:min(520px,calc(100dvh - 24px)); overflow:auto; font-family:Manrope,sans-serif; font-size:12px; line-height:1.5; color:#242a30; background:#fff; box-shadow:0 3px 8px rgb(25 51 49 / 7%),0 16px 44px rgb(25 51 49 / 13%); }
+    .operation-popover { position:fixed; inset:auto; margin:0; box-sizing:border-box; border:1px solid #dce1e5; border-radius:14px; padding:11px; width:min(460px,calc(100vw - 24px)); min-width:min(360px,calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:min(560px,calc(100dvh - 24px)); overflow:auto; font-family:Manrope,sans-serif; font-size:12px; line-height:1.5; color:#242a30; background:#fff; box-shadow:0 3px 8px rgb(25 51 49 / 7%),0 16px 44px rgb(25 51 49 / 13%); }
     .operation-popover-heading { padding:1px 2px 9px; border-bottom:1px solid #dce1e5; margin:0 0 11px; font-size:11px; font-weight:700; }
-    .operation-groups { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px 16px; }
+    .operation-groups { display:grid; grid-template-columns:minmax(0,1fr); gap:8px; }
     .operation-group { min-width:0; }
-    .operation-group[data-operation-group="transfer"] { grid-column:1 / -1; }
-    .operation-group-heading { margin:0 0 8px; font-size:11.5px; font-weight:700; line-height:16px; }
-    .operation-group-items { display:grid; gap:7px; min-width:0; }
-    .operation { display:flex; align-items:center; gap:10px; width:100%; min-width:0; min-height:68px; border:1px solid #dce1e5; border-radius:10px; background:#fff; padding:9px 10px; text-align:left; }
-    .operation-icon { display:grid; width:34px; height:34px; flex:0 0 34px; place-items:center; border-radius:9px; }
+    .operation-group:not(:last-child) { padding-bottom:8px; border-bottom:1px solid #dce1e5; }
+    .operation-group-heading { margin:0 0 5px; font-size:11.5px; font-weight:700; line-height:16px; }
+    .operation-group-items { display:grid; gap:4px; min-width:0; }
+    .operation { display:flex; align-items:center; gap:9px; width:100%; min-width:0; min-height:50px; border:1px solid #dce1e5; border-radius:10px; background:#fff; padding:6px 9px; text-align:left; }
+    .operation-icon { display:grid; width:30px; height:30px; flex:0 0 30px; place-items:center; border-radius:9px; }
     .operation > span:last-child { min-width:0; }
     .operation strong, .operation small { display:block; }
     .operation strong { font-size:12.5px; line-height:17px; }
     .operation small { margin-top:2px; font-size:11.5px; line-height:16px; overflow-wrap:anywhere; }
-    @media (max-width:767px) { .operation-groups { grid-template-columns:minmax(0,1fr); } .operation-group[data-operation-group="transfer"] { grid-column:1; } .operation strong { font-size:13px; line-height:17px; } .operation small { font-size:12px; line-height:16px; } }
+    @media (max-width:767px) { .operation-groups { gap:7px; } .operation { padding:7px 9px; } }
   ` })
   await page.addScriptTag({ content: operationSource() })
   await page.addScriptTag({ content: `
@@ -105,7 +106,7 @@ test('operation menu groups all eight operation handlers by cash flow and preser
   await expect(items).toHaveText([
     'IngresoDinero que recibes.',
     'Registrar cobroCobras dinero que te debían.',
-    'Recibir préstamoRecibes dinero prestado y luego lo devuelves.',
+    'Recibir préstamoRecibes dinero que luego devolverás.',
     'EgresoDinero que gastas.',
     'Prestar dineroDas dinero que te devolverán.',
     'Registrar pagoPagas una deuda pendiente.',
@@ -163,13 +164,14 @@ test('operation popover stays anchored and the selector adapts to narrow viewpor
   const triggerBox = await integratedTrigger.boundingBox()
   expect(triggerBox).not.toBeNull()
   expect(Math.abs(integratedBox!.x + integratedBox!.width - (triggerBox!.x + triggerBox!.width))).toBeLessThan(3)
-  expect(integratedBox!.width).toBeGreaterThan(580)
+  expect(integratedBox!.width).toBeGreaterThanOrEqual(360)
+  expect(integratedBox!.width).toBeLessThanOrEqual(460)
   const desktopColumns = await integratedMenu.locator('.operation-groups').evaluate(element => getComputedStyle(element).gridTemplateColumns)
-  expect(desktopColumns.split(' ').length).toBe(2)
+  expect(desktopColumns.split(' ').length).toBe(1)
   expect(await integratedMenu.locator('.operation strong').first().evaluate(element => getComputedStyle(element).fontSize)).toBe('12.5px')
   expect(await integratedMenu.locator('.operation small').first().evaluate(element => getComputedStyle(element).fontSize)).toBe('11.5px')
   expect(await integratedMenu.evaluate(element => getComputedStyle(element).overflowY)).toBe('auto')
-  expect(await integratedMenu.evaluate(element => Number.parseFloat(getComputedStyle(element).maxHeight))).toBeLessThanOrEqual(520)
+  expect(await integratedMenu.evaluate(element => Number.parseFloat(getComputedStyle(element).maxHeight))).toBeLessThanOrEqual(560)
   const desktopTextOverflow = await integratedMenu.locator('.operation').evaluateAll(elements =>
     elements.some(element => element.scrollWidth > element.clientWidth),
   )
@@ -181,8 +183,8 @@ test('operation popover stays anchored and the selector adapts to narrow viewpor
   await expect(integratedMenu).toBeVisible()
   const mobileColumns = await integratedMenu.locator('.operation-groups').evaluate(element => getComputedStyle(element).gridTemplateColumns)
   expect(mobileColumns.split(' ').length).toBe(1)
-  expect(await integratedMenu.locator('.operation strong').first().evaluate(element => getComputedStyle(element).fontSize)).toBe('13px')
-  expect(await integratedMenu.locator('.operation small').first().evaluate(element => getComputedStyle(element).fontSize)).toBe('12px')
+  expect(await integratedMenu.locator('.operation strong').first().evaluate(element => getComputedStyle(element).fontSize)).toBe('12.5px')
+  expect(await integratedMenu.locator('.operation small').first().evaluate(element => getComputedStyle(element).fontSize)).toBe('11.5px')
   const mobileBox = await integratedMenu.boundingBox()
   expect(mobileBox).not.toBeNull()
   expect(mobileBox!.x).toBeGreaterThanOrEqual(0)
@@ -194,9 +196,42 @@ test('operation popover stays anchored and the selector adapts to narrow viewpor
   }
 })
 
+test('operation labels and creation modal titles share one exact title map', async ({ page }) => {
+  await mount(page)
+  await page.getByRole('button', { name: 'Nuevo movimiento' }).click()
+  const items = page.getByRole('menu', { name: 'Registrar una operación' }).getByRole('menuitem')
+  await expect(items).toHaveText([
+    'IngresoDinero que recibes.',
+    'Registrar cobroCobras dinero que te debían.',
+    'Recibir préstamoRecibes dinero que luego devolverás.',
+    'EgresoDinero que gastas.',
+    'Prestar dineroDas dinero que te devolverán.',
+    'Registrar pagoPagas una deuda pendiente.',
+    'Comprar activoCompras un bien para conservarlo.',
+    'TransferenciaMueves dinero entre tus cuentas o tarjetas.',
+  ])
+  const titles = await page.evaluate(() => (window as Window & {
+    FinTrackOperationTitles: Record<string, string>
+  }).FinTrackOperationTitles)
+  expect(titles).toEqual({
+    income: 'Ingreso',
+    expense: 'Egreso',
+    receivable_collect: 'Registrar cobro',
+    payable_issue: 'Recibir préstamo',
+    receivable_issue: 'Prestar dinero',
+    payable_pay: 'Registrar pago',
+    asset_purchase: 'Comprar activo',
+    transfer: 'Transferencia',
+  })
+  const workspaceSource = readFileSync(join(process.cwd(), 'components/transactions/TransactionsWorkspace.tsx'), 'utf8')
+  expect(workspaceSource).not.toContain('ASTRA_FORM_TITLES')
+  expect(workspaceSource).toContain('OPERATION_TITLES[selectedOperationType]')
+})
+
 declare global {
   interface Window {
     FinTrackOperationConfig: (type: string) => Record<string, unknown>
+    FinTrackOperationTitles: Record<string, string>
     selectedOperationTypes: string[]
   }
 }
