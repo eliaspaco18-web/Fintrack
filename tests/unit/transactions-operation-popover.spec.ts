@@ -1,7 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import * as ts from 'typescript'
 
 const reactPath = join(process.cwd(), 'node_modules/react/umd/react.development.js')
@@ -32,17 +31,29 @@ async function mount(page: import('@playwright/test').Page) {
   await page.addScriptTag({ content: `
     window.operationStyles = {
       operationPopover: 'operation-popover', operationPopoverHeading: 'operation-popover-heading',
-      operationMenuItem: 'operation-menu-item', operationSelector: 'operation-selector',
-      operationGrid: 'operation-grid', operation: 'operation',
+      operationSelector: 'operation-selector', operationGroups: 'operation-groups',
+      operationGroup: 'operation-group', operationGroupHeading: 'operation-group-heading',
+      operationGroupItems: 'operation-group-items', operation: 'operation', operationIcon: 'operation-icon',
+      operationIncome: 'operation-income', operationExpense: 'operation-expense',
+      operationTransfer: 'operation-transfer', operationAsset: 'operation-asset',
     };
   ` })
   await page.addStyleTag({ path: join(process.cwd(), 'docs/redesign-v3/preview/design.css') })
   await page.addStyleTag({ content: `
-    .operation-popover { position:fixed; inset:auto; margin:0; border:1px solid #dce1e5; border-radius:14px; padding:7px; min-width:220px; max-width:calc(100vw - 24px); max-height:min(460px,calc(100dvh - 32px)); overflow:auto; font-family:Manrope,sans-serif; font-size:12px; line-height:1.5; color:#242a30; background:#fff; box-shadow:0 3px 8px rgb(25 51 49 / 7%),0 16px 44px rgb(25 51 49 / 13%); }
-    .operation-popover-heading { padding:9px 9px 11px; border-bottom:1px solid #dce1e5; margin-bottom:5px; font-size:11px; font-weight:600; }
-    .operation-menu-item { display:flex; align-items:center; gap:10px; width:100%; min-height:38px; border:0; border-radius:8px; background:transparent; padding:10px; font:inherit; text-align:left; }
-    .operation-menu-item > span { flex:1; }
-    .operation-menu-item small { display:block; margin-top:2px; font-size:10px; line-height:16px; }
+    .operation-popover { position:fixed; inset:auto; margin:0; box-sizing:border-box; border:1px solid #dce1e5; border-radius:14px; padding:11px; width:min(616px,calc(100vw - 24px)); min-width:min(520px,calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:min(520px,calc(100dvh - 24px)); overflow:auto; font-family:Manrope,sans-serif; font-size:12px; line-height:1.5; color:#242a30; background:#fff; box-shadow:0 3px 8px rgb(25 51 49 / 7%),0 16px 44px rgb(25 51 49 / 13%); }
+    .operation-popover-heading { padding:1px 2px 9px; border-bottom:1px solid #dce1e5; margin:0 0 11px; font-size:11px; font-weight:700; }
+    .operation-groups { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px 16px; }
+    .operation-group { min-width:0; }
+    .operation-group[data-operation-group="transfer"] { grid-column:1 / -1; }
+    .operation-group-heading { margin:0 0 8px; font-size:11.5px; font-weight:700; line-height:16px; }
+    .operation-group-items { display:grid; gap:7px; min-width:0; }
+    .operation { display:flex; align-items:center; gap:10px; width:100%; min-width:0; min-height:68px; border:1px solid #dce1e5; border-radius:10px; background:#fff; padding:9px 10px; text-align:left; }
+    .operation-icon { display:grid; width:34px; height:34px; flex:0 0 34px; place-items:center; border-radius:9px; }
+    .operation > span:last-child { min-width:0; }
+    .operation strong, .operation small { display:block; }
+    .operation strong { font-size:12.5px; line-height:17px; }
+    .operation small { margin-top:2px; font-size:11.5px; line-height:16px; overflow-wrap:anywhere; }
+    @media (max-width:767px) { .operation-groups { grid-template-columns:minmax(0,1fr); } .operation-group[data-operation-group="transfer"] { grid-column:1; } .operation strong { font-size:13px; line-height:17px; } .operation small { font-size:12px; line-height:16px; } }
   ` })
   await page.addScriptTag({ content: operationSource() })
   await page.addScriptTag({ content: `
@@ -72,18 +83,18 @@ async function mount(page: import('@playwright/test').Page) {
   }
 }
 
-test('Astra operation menu is an anchored vertical popover and preserves all eight operation handlers', async ({ page }) => {
+test('operation menu groups all eight operation handlers by cash flow and preserves their mappings', async ({ page }) => {
   await mount(page)
   const trigger = page.getByRole('button', { name: 'Nuevo movimiento' })
   const operations = [
     ['Ingreso', 'income', { type: 'INCOME' }],
     ['Egreso', 'expense', { type: 'EXPENSE' }],
-    ['Transferencia interna', 'transfer', { type: 'TRANSFER' }],
+    ['Transferencia', 'transfer', { type: 'TRANSFER' }],
     ['Prestar dinero', 'receivable_issue', { type: 'EXPENSE', creates_receivable: true }],
     ['Registrar cobro', 'receivable_collect', { type: 'INCOME', creates_receivable: false }],
-    ['Dinero recibido a devolver', 'payable_issue', { type: 'INCOME', creates_payable: true }],
+    ['Recibir préstamo', 'payable_issue', { type: 'INCOME', creates_payable: true }],
     ['Registrar pago', 'payable_pay', { type: 'EXPENSE', creates_payable: false }],
-    ['Comprar un activo', 'asset_purchase', { type: 'EXPENSE', creates_asset: true }],
+    ['Comprar activo', 'asset_purchase', { type: 'EXPENSE', creates_asset: true }],
   ] as const
 
   await trigger.click()
@@ -92,21 +103,27 @@ test('Astra operation menu is an anchored vertical popover and preserves all eig
   const items = menu.getByRole('menuitem')
   await expect(items).toHaveCount(8)
   await expect(items).toHaveText([
-    'IngresoDinero que recibes',
-    'EgresoDinero que sale',
-    'Transferencia internaEntre tus propias cuentas',
-    'Prestar dinero',
-    'Registrar cobro',
-    'Dinero recibido a devolver',
-    'Registrar pago',
-    'Comprar un activo',
+    'IngresoDinero que recibes.',
+    'Registrar cobroCobras dinero que te debían.',
+    'Recibir préstamoRecibes dinero prestado y luego lo devuelves.',
+    'EgresoDinero que gastas.',
+    'Prestar dineroDas dinero que te devolverán.',
+    'Registrar pagoPagas una deuda pendiente.',
+    'Comprar activoCompras un bien para conservarlo.',
+    'TransferenciaMueves dinero entre tus cuentas o tarjetas.',
   ])
+  await expect(menu.getByRole('group', { name: 'Dinero que entra' }).getByRole('menuitem')).toHaveCount(3)
+  await expect(menu.getByRole('group', { name: 'Dinero que sale' }).getByRole('menuitem')).toHaveCount(4)
+  await expect(menu.getByRole('group', { name: 'Entre tus cuentas' }).getByRole('menuitem')).toHaveCount(1)
   const anchorBox = await trigger.boundingBox()
   const menuBox = await menu.boundingBox()
   expect(anchorBox).not.toBeNull()
   expect(menuBox).not.toBeNull()
   expect(Math.abs(menuBox!.x + menuBox!.width - (anchorBox!.x + anchorBox!.width))).toBeLessThan(3)
   expect(Math.abs(menuBox!.y - (anchorBox!.y + anchorBox!.height + 8))).toBeLessThan(1)
+  expect(menuBox!.x).toBeGreaterThanOrEqual(12)
+  expect(menuBox!.x + menuBox!.width).toBeLessThanOrEqual(1268)
+  expect(menuBox!.y + menuBox!.height).toBeLessThanOrEqual(788)
 
   for (const [label, operationType, expectedConfig] of operations) {
     if (!(await menu.isVisible())) await trigger.click()
@@ -134,46 +151,44 @@ test('operation popover opens for keyboard, supports roving arrows, Escape resto
   await expect(menu).toHaveCount(0)
 })
 
-test('Astra reference and React menu expose the same eight ordered options at the same viewport', async ({ page }) => {
+test('operation popover stays anchored and the selector adapts to narrow viewports', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.emulateMedia({ reducedMotion: 'reduce' })
-  await page.goto(pathToFileURL(join(process.cwd(), 'docs/redesign-v3/preview/index.html')).href)
-  const referenceTrigger = page.locator('#main button[data-action="create"]').first()
-  await referenceTrigger.waitFor()
-  await referenceTrigger.click()
-  const referenceMenu = page.locator('.context-popover[role="menu"]')
-  await expect(referenceMenu).toBeVisible()
-  const expected = [
-    'IngresoDinero que recibes',
-    'EgresoDinero que sale',
-    'Transferencia internaEntre tus propias cuentas',
-    'Prestar dinero',
-    'Registrar cobro',
-    'Dinero recibido a devolver',
-    'Registrar pago',
-    'Comprar un activo',
-  ]
-  await expect(referenceMenu.getByRole('menuitem')).toHaveText(expected)
-  const referenceBox = await referenceMenu.boundingBox()
-  const outputDir = process.env.OPERATION_MENU_COMPARISON_DIR
-  if (outputDir) {
-    await referenceMenu.screenshot({ path: join(outputDir, 'astra-operation-menu.png'), animations: 'disabled' })
-  }
-
   await mount(page)
   const integratedTrigger = page.getByRole('button', { name: 'Nuevo movimiento' })
-  await integratedTrigger.evaluate(element => {
-    ;(element as HTMLButtonElement).style.marginLeft = '1000px'
-    ;(element as HTMLButtonElement).style.marginTop = '80px'
-  })
   await integratedTrigger.click()
   const integratedMenu = page.getByRole('menu', { name: 'Registrar una operación' })
-  await expect(integratedMenu.getByRole('menuitem')).toHaveText(expected)
   const integratedBox = await integratedMenu.boundingBox()
-  expect(referenceBox).not.toBeNull()
   expect(integratedBox).not.toBeNull()
-  expect(Math.abs(referenceBox!.width - integratedBox!.width)).toBeLessThan(2)
-  expect(Math.abs(referenceBox!.height - integratedBox!.height)).toBeLessThan(2)
+  const triggerBox = await integratedTrigger.boundingBox()
+  expect(triggerBox).not.toBeNull()
+  expect(Math.abs(integratedBox!.x + integratedBox!.width - (triggerBox!.x + triggerBox!.width))).toBeLessThan(3)
+  expect(integratedBox!.width).toBeGreaterThan(580)
+  const desktopColumns = await integratedMenu.locator('.operation-groups').evaluate(element => getComputedStyle(element).gridTemplateColumns)
+  expect(desktopColumns.split(' ').length).toBe(2)
+  expect(await integratedMenu.locator('.operation strong').first().evaluate(element => getComputedStyle(element).fontSize)).toBe('12.5px')
+  expect(await integratedMenu.locator('.operation small').first().evaluate(element => getComputedStyle(element).fontSize)).toBe('11.5px')
+  expect(await integratedMenu.evaluate(element => getComputedStyle(element).overflowY)).toBe('auto')
+  expect(await integratedMenu.evaluate(element => Number.parseFloat(getComputedStyle(element).maxHeight))).toBeLessThanOrEqual(520)
+  const desktopTextOverflow = await integratedMenu.locator('.operation').evaluateAll(elements =>
+    elements.some(element => element.scrollWidth > element.clientWidth),
+  )
+  expect(desktopTextOverflow).toBe(false)
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await integratedTrigger.evaluate(element => { (element as HTMLButtonElement).style.marginLeft = '0' })
+  await integratedTrigger.click()
+  await expect(integratedMenu).toBeVisible()
+  const mobileColumns = await integratedMenu.locator('.operation-groups').evaluate(element => getComputedStyle(element).gridTemplateColumns)
+  expect(mobileColumns.split(' ').length).toBe(1)
+  expect(await integratedMenu.locator('.operation strong').first().evaluate(element => getComputedStyle(element).fontSize)).toBe('13px')
+  expect(await integratedMenu.locator('.operation small').first().evaluate(element => getComputedStyle(element).fontSize)).toBe('12px')
+  const mobileBox = await integratedMenu.boundingBox()
+  expect(mobileBox).not.toBeNull()
+  expect(mobileBox!.x).toBeGreaterThanOrEqual(0)
+  expect(mobileBox!.x + mobileBox!.width).toBeLessThanOrEqual(390)
+
+  const outputDir = process.env.OPERATION_MENU_COMPARISON_DIR
   if (outputDir) {
     await integratedMenu.screenshot({ path: join(outputDir, 'fintrack-operation-menu.png'), animations: 'disabled' })
   }

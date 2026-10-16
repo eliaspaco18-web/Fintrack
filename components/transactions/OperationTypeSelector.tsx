@@ -15,18 +15,12 @@ export type OperationType =
 
 type AstraIcon = 'up' | 'down' | 'moves' | 'box'
 
-interface OperationCard {
-  type: OperationType
-  label: string
-  description: string
-  icon: AstraIcon
-}
-
 interface OperationPopoverItem {
   type: OperationType
   label: string
   description?: string
   icon: AstraIcon
+  flow: 'income' | 'expense' | 'transfer' | 'asset'
 }
 
 interface OperationTypeSelectorProps {
@@ -48,28 +42,37 @@ const ASTRA_ICONS: Record<AstraIcon, React.ReactNode> = {
   box: <path d="m12 3 9 5v9l-9 5-9-5V8l9-5ZM3 8l9 5 9-5M12 13v9M7 5.8l9 5" />,
 }
 
-// Desktop is the effective Round 07 refinement.js menu. The older dialog in
-// app.js remains the reference fallback used below 768px.
-const ASTRA_POPOVER_ITEMS: OperationPopoverItem[] = [
-  { type: 'income', label: 'Ingreso', description: 'Dinero que recibes', icon: 'down' },
-  { type: 'expense', label: 'Egreso', description: 'Dinero que sale', icon: 'up' },
-  { type: 'transfer', label: 'Transferencia interna', description: 'Entre tus propias cuentas', icon: 'moves' },
-  { type: 'receivable_issue', label: 'Prestar dinero', description: '', icon: 'down' },
-  { type: 'receivable_collect', label: 'Registrar cobro', description: '', icon: 'down' },
-  { type: 'payable_issue', label: 'Dinero recibido a devolver', description: '', icon: 'up' },
-  { type: 'payable_pay', label: 'Registrar pago', description: '', icon: 'up' },
-  { type: 'asset_purchase', label: 'Comprar un activo', description: '', icon: 'box' },
-]
-
-const ASTRA_DRAWER_ITEMS: OperationCard[] = [
-  { type: 'income', label: 'Ingreso', description: 'Dinero que recibiste', icon: 'down' },
-  { type: 'expense', label: 'Egreso', description: 'Un gasto de tu día a día', icon: 'up' },
-  { type: 'transfer', label: 'Transferencia', description: 'Entre tus cuentas', icon: 'moves' },
-  { type: 'asset_purchase', label: 'Compra de activo', description: 'Un bien que conservarás', icon: 'box' },
-  { type: 'receivable_issue', label: 'Prestar dinero', description: 'Crea un pendiente por cobrar', icon: 'up' },
-  { type: 'receivable_collect', label: 'Cobrar', description: 'Reduce un pendiente registrado', icon: 'down' },
-  { type: 'payable_issue', label: 'Recibir un préstamo', description: 'Crea un pendiente por pagar', icon: 'down' },
-  { type: 'payable_pay', label: 'Pagar un pendiente', description: 'Reduce una obligación registrada', icon: 'up' },
+const OPERATION_GROUPS: Array<{
+  id: 'income' | 'expense' | 'transfer'
+  label: string
+  items: OperationPopoverItem[]
+}> = [
+  {
+    id: 'income',
+    label: 'Dinero que entra',
+    items: [
+      { type: 'income', label: 'Ingreso', description: 'Dinero que recibes.', icon: 'down', flow: 'income' },
+      { type: 'receivable_collect', label: 'Registrar cobro', description: 'Cobras dinero que te debían.', icon: 'down', flow: 'income' },
+      { type: 'payable_issue', label: 'Recibir préstamo', description: 'Recibes dinero prestado y luego lo devuelves.', icon: 'down', flow: 'income' },
+    ],
+  },
+  {
+    id: 'expense',
+    label: 'Dinero que sale',
+    items: [
+      { type: 'expense', label: 'Egreso', description: 'Dinero que gastas.', icon: 'up', flow: 'expense' },
+      { type: 'receivable_issue', label: 'Prestar dinero', description: 'Das dinero que te devolverán.', icon: 'up', flow: 'expense' },
+      { type: 'payable_pay', label: 'Registrar pago', description: 'Pagas una deuda pendiente.', icon: 'up', flow: 'expense' },
+      { type: 'asset_purchase', label: 'Comprar activo', description: 'Compras un bien para conservarlo.', icon: 'box', flow: 'asset' },
+    ],
+  },
+  {
+    id: 'transfer',
+    label: 'Entre tus cuentas',
+    items: [
+      { type: 'transfer', label: 'Transferencia', description: 'Mueves dinero entre tus cuentas o tarjetas.', icon: 'moves', flow: 'transfer' },
+    ],
+  },
 ]
 
 function AstraIconView({ name, size = 16 }: { name: AstraIcon; size?: number }) {
@@ -129,9 +132,10 @@ export function OperationTypePopover({
     const popoverBox = popover.getBoundingClientRect()
     const below = anchorBox.bottom + 8 + popoverBox.height <= window.innerHeight - 12
     const left = Math.max(12, Math.min(anchorBox.right - popoverBox.width, window.innerWidth - popoverBox.width - 12))
+    const maxTop = Math.max(12, window.innerHeight - popoverBox.height - 12)
     const top = below
       ? anchorBox.bottom + 8
-      : Math.max(12, anchorBox.top - popoverBox.height - 8)
+      : Math.max(12, Math.min(anchorBox.top - popoverBox.height - 8, maxTop))
     const originX = Math.max(12, Math.min(popoverBox.width - 12, anchorBox.left + anchorBox.width / 2 - left))
 
     popover.style.left = `${left}px`
@@ -221,42 +225,38 @@ export function OperationTypePopover({
       data-testid="operation-type-menu"
       className={styles.operationPopover}
     >
-      <div className={styles.operationPopoverHeading}>Registrar una operación</div>
-      {ASTRA_POPOVER_ITEMS.map(item => (
-        <button
-          key={item.type}
-          type="button"
-          role="menuitem"
-          data-testid={`operation-type-${item.type}`}
-          className={styles.operationMenuItem}
-          onClick={() => selectOperation(item.type)}
-        >
-          <AstraIconView name={item.icon} />
-          <span>
-            {item.label}
-            {item.description ? <small>{item.description}</small> : null}
-          </span>
-        </button>
-      ))}
+      <div className={styles.operationPopoverHeading}>Elige una operación</div>
+      <OperationGroups onSelect={selectOperation} menuItem />
     </div>
   )
 }
 
-function OperationCardButton({
+function OperationButton({
   card,
   onSelect,
+  menuItem = false,
 }: {
-  card: OperationCard
+  card: OperationPopoverItem
   onSelect: (type: OperationType) => void
+  menuItem?: boolean
 }) {
+  const flowClass = {
+    income: styles.operationIncome,
+    expense: styles.operationExpense,
+    transfer: styles.operationTransfer,
+    asset: styles.operationAsset,
+  }[card.flow]
+
   return (
     <button
       type="button"
       onClick={() => onSelect(card.type)}
       data-testid={`operation-type-${card.type}`}
-      className={styles.operation}
+      className={`${styles.operation} ${flowClass}`}
+      data-operation-flow={card.flow}
+      role={menuItem ? 'menuitem' : undefined}
     >
-      <AstraIconView name={card.icon} size={18} />
+      <span className={styles.operationIcon}><AstraIconView name={card.icon} size={18} /></span>
       <span>
         <strong>{card.label}</strong>
         <small>{card.description}</small>
@@ -265,14 +265,39 @@ function OperationCardButton({
   )
 }
 
+function OperationGroups({
+  onSelect,
+  menuItem = false,
+}: {
+  onSelect: (type: OperationType) => void
+  menuItem?: boolean
+}) {
+  return (
+    <div className={styles.operationGroups}>
+      {OPERATION_GROUPS.map(group => (
+        <section
+          key={group.id}
+          className={styles.operationGroup}
+          data-operation-group={group.id}
+          role="group"
+          aria-label={group.label}
+        >
+          <h3 className={styles.operationGroupHeading}>{group.label}</h3>
+          <div className={styles.operationGroupItems}>
+            {group.items.map(card => (
+              <OperationButton key={card.type} card={card} onSelect={onSelect} menuItem={menuItem} />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  )
+}
+
 export function OperationTypeSelector({ onSelect }: OperationTypeSelectorProps) {
   return (
     <div className={styles.operationSelector}>
-      <div className={styles.operationGrid}>
-        {ASTRA_DRAWER_ITEMS.map(card => (
-          <OperationCardButton key={card.type} card={card} onSelect={onSelect} />
-        ))}
-      </div>
+      <OperationGroups onSelect={onSelect} />
     </div>
   )
 }
