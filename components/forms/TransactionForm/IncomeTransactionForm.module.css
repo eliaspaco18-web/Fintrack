@@ -81,6 +81,20 @@
   line-height: 1.25;
 }
 
+.operationCreateFormRoot[data-payable-create] :global([data-testid='transaction-submit-button']) {
+  min-width: 14rem;
+  min-height: 2.875rem;
+  padding: 0.75rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.005em;
+  line-height: 1.25;
+}
+
+.operationCreateFormRoot[data-payable-create] :global([data-testid='transaction-submit-button']:hover:not(:disabled)) {
+  filter: brightness(0.94);
+}
+
 .operationFormActions {
   position: sticky;
   z-index: 2;
@@ -93,6 +107,49 @@
 
 .operationCreateSection {
   container: operation-create-section / inline-size;
+}
+
+.operationCreateFormRoot[data-payable-create] .incomeAmountCurrency {
+  align-items: start;
+}
+
+.payableIssueFields,
+.payableIssueRecordFields {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.payableIssueCreditorControl,
+.payablePaySelectControl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.payableIssueCreditorControl > div:first-child,
+.payablePaySelectControl > div:first-child,
+.payableIssueCreditorControl :global(.app-select),
+.payablePaySelectControl :global(.app-select) {
+  width: 100%;
+  min-width: 0;
+}
+
+.payableIssueCreditorControl :global(.app-select-trigger),
+.payablePaySelectControl :global(.app-select-trigger),
+.payableIssueCreditorControl :global(.app-select-trigger-copy),
+.payablePaySelectControl :global(.app-select-trigger-copy),
+.payableIssueCreditorControl :global(.app-select-trigger-label),
+.payablePaySelectControl :global(.app-select-trigger-label) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.receivablePendingAmount > .payablePendingAmount {
+  color: var(--ft-danger);
+  font-variant-numeric: tabular-nums;
 }
 
 .assetPurchasePrimaryFields {
@@ -617,7 +674,9 @@
   .assetPurchaseFields,
   .assetPurchaseIdentificationFields,
   .receivableIssueFields,
-  .receivableCollectRecordFields {
+  .receivableCollectRecordFields,
+  .payableIssueFields,
+  .payableIssueRecordFields {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -678,6 +737,11 @@
   }
 
   .operationCreateFormRoot[data-receivable-create='receivable_issue'] :global([data-testid='transaction-submit-button']) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .operationCreateFormRoot[data-payable-create] :global([data-testid='transaction-submit-button']) {
     width: 100%;
     min-width: 0;
   }
