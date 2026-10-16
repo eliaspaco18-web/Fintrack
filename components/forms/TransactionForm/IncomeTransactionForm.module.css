@@ -331,8 +331,13 @@
   font-family: inherit;
 }
 
+.operationAssetPurchaseCreditImpact {
+  font-family: inherit;
+}
+
 .operationTransferCreditImpact :global(.font-mono),
-.operationReceivableCreditImpact :global(.font-mono) {
+.operationReceivableCreditImpact :global(.font-mono),
+.operationAssetPurchaseCreditImpact :global(.font-mono) {
   font-family: inherit;
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -340,14 +345,16 @@
 }
 
 .operationTransferCreditImpact :global(p[class*='uppercase']),
-.operationReceivableCreditImpact :global(p[class*='uppercase']) {
+.operationReceivableCreditImpact :global(p[class*='uppercase']),
+.operationAssetPurchaseCreditImpact :global(p[class*='uppercase']) {
   font-size: 0.625rem;
   font-weight: 600;
   letter-spacing: 0.065em;
   line-height: 1.35;
 }
 
-.operationReceivableCreditImpact :global(p.truncate) {
+.operationReceivableCreditImpact :global(p.truncate),
+.operationAssetPurchaseCreditImpact :global(p.truncate) {
   overflow: visible;
   overflow-wrap: anywhere;
   text-overflow: clip;

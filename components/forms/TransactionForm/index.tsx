@@ -1880,19 +1880,30 @@ export function TransactionForm({
     </div>
   )
 
-  const usesApprovedPaymentMethod = isStageAExpenseCreate || isReceivableIssueCreate
-  const paymentMethodField = type === 'EXPENSE' && operationType !== 'transfer' && operationType !== 'asset_purchase' && operationType !== 'payable_issue' && operationType !== 'receivable_collect' && (isReceivableIssueCreate || operationType !== 'receivable_issue') ? (
+  const usesCashCreditPaymentMethod = isReceivableIssueCreate || isAssetPurchaseCreate
+  const usesApprovedPaymentMethod = isStageAExpenseCreate || usesCashCreditPaymentMethod
+  const shouldShowPaymentMethodField = type === 'EXPENSE'
+    && operationType !== 'transfer'
+    && operationType !== 'asset_purchase'
+    && operationType !== 'payable_issue'
+    && operationType !== 'receivable_collect'
+    && (isReceivableIssueCreate || operationType !== 'receivable_issue')
+  const showPaymentMethodField = shouldShowPaymentMethodField || isAssetPurchaseCreate
+  const paymentMethodField = showPaymentMethodField ? (
     <div
       className={usesApprovedPaymentMethod ? incomeStyles.operationPaymentMethod : `rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] ${isCompactLayout ? 'px-3 py-2' : 'px-3.5 py-3'}`}
       data-receivable-payment-method={isReceivableIssueCreate ? 'true' : undefined}
+      data-asset-purchase-payment-method={isAssetPurchaseCreate ? 'true' : undefined}
     >
       <div className="flex items-center gap-1.5">
         <p className={usesApprovedPaymentMethod ? incomeStyles.operationPaymentMethodLabel : 'text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]'}>
           {isReceivableIssueCreate ? 'Forma de salida' : 'Forma de pago'}
         </p>
-        {isReceivableIssueCreate ? (
+        {usesCashCreditPaymentMethod ? (
           <IncomeInfoHint label="Ayuda sobre la forma de salida">
-            Contado usa una cuenta propia. Crédito registra el préstamo como consumo en una tarjeta disponible.
+            {isAssetPurchaseCreate
+              ? 'Contado usa una cuenta propia. Crédito registra la compra como consumo en una tarjeta disponible.'
+              : 'Contado usa una cuenta propia. Crédito registra el préstamo como consumo en una tarjeta disponible.'}
           </IncomeInfoHint>
         ) : null}
       </div>
@@ -1902,7 +1913,7 @@ export function TransactionForm({
           aria-pressed={usesApprovedPaymentMethod ? !isExpenseCreditPayment : undefined}
           disabled={lockSettlementEdit}
           onClick={() => {
-            if (isReceivableIssueCreate && isExpenseCreditPayment) {
+            if (usesCashCreditPaymentMethod && isExpenseCreditPayment) {
               setValue('source_account_id', '' as TransactionFormValues['source_account_id'], { shouldDirty: true, shouldValidate: false })
             }
             setValue('payment_method', 'DEBIT', { shouldDirty: true, shouldValidate: false })
@@ -1916,14 +1927,14 @@ export function TransactionForm({
               : 'border-[var(--c-border)] bg-[var(--c-surface)] text-[var(--c-text-muted)] hover:text-[var(--c-text)]'
           }`}
         >
-          {isReceivableIssueCreate ? 'Contado' : 'Cuenta propia'}
+          {usesCashCreditPaymentMethod ? 'Contado' : 'Cuenta propia'}
         </button>
         <button
           type="button"
           aria-pressed={usesApprovedPaymentMethod ? isExpenseCreditPayment : undefined}
           disabled={lockSettlementEdit}
           onClick={() => {
-            if (isReceivableIssueCreate && !isExpenseCreditPayment) {
+            if (usesCashCreditPaymentMethod && !isExpenseCreditPayment) {
               setValue('source_account_id', '' as TransactionFormValues['source_account_id'], { shouldDirty: true, shouldValidate: false })
               setValue('credit_card_id', undefined, { shouldDirty: true, shouldValidate: false })
             }
@@ -1937,7 +1948,7 @@ export function TransactionForm({
               : 'border-[var(--c-border)] bg-[var(--c-surface)] text-[var(--c-text-muted)] hover:text-[var(--c-text)]'
           }`}
         >
-          {isReceivableIssueCreate ? 'Crédito' : 'Tarjeta'}
+          {usesCashCreditPaymentMethod ? 'Crédito' : 'Tarjeta'}
         </button>
       </div>
       {!isCompactLayout && !isReceivableIssueCreate && (
@@ -2020,7 +2031,7 @@ export function TransactionForm({
           <Select
             placeholder="Seleccionar tarjeta…"
             error={errors.credit_card_id?.message || errors.source_account_id?.message}
-            matchTriggerWidth={isStageACreate || isReceivableIssueCreate}
+            matchTriggerWidth={isStageACreate || isReceivableIssueCreate || isAssetPurchaseCreate}
             data-testid="transaction-credit-card-select"
             value={selectedCreditCardId ?? ''}
             disabled={lockSettlementEdit}
@@ -2071,7 +2082,7 @@ export function TransactionForm({
             placeholder="Seleccionar cuenta…"
             error={errors.source_account_id?.message}
             matchTriggerWidth={usesApprovedCreateControls}
-            value={isReceivableIssueCreate ? sourceAccountId : undefined}
+            value={isReceivableIssueCreate || isAssetPurchaseCreate ? sourceAccountId : undefined}
             data-testid="transaction-source-account-select"
             disabled={lockSettlementEdit}
             {...register('source_account_id', { required: 'La cuenta es requerida' })}
@@ -2137,7 +2148,7 @@ export function TransactionForm({
   ) : null
 
   const creditCardImpactField = creditMovementKind && activeCreditCardOption ? (
-    <div className={`${isStageACreate && layoutMode === 'transfer' ? incomeStyles.operationTransferCreditImpact : isReceivableIssueCreate ? incomeStyles.operationReceivableCreditImpact : ''} rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3.5 py-3`}>
+    <div className={`${isStageACreate && layoutMode === 'transfer' ? incomeStyles.operationTransferCreditImpact : isReceivableIssueCreate ? incomeStyles.operationReceivableCreditImpact : isAssetPurchaseCreate ? incomeStyles.operationAssetPurchaseCreditImpact : ''} rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3.5 py-3`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
@@ -4401,7 +4412,9 @@ export function TransactionForm({
               <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Compra">
                 <h3 className={incomeStyles.incomeSectionHeading}>Compra</h3>
                 <div className={incomeStyles.assetPurchasePrimaryFields}>
+                  {paymentMethodField}
                   {accountField}
+                  {creditCardImpactField}
                   {amountCurrencyField}
                 </div>
                 {exchangeRateField}
