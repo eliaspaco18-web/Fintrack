@@ -54,6 +54,7 @@ import { Button }                    from '@/components/ui/Button'
 import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
 import { AnchoredActionMenu }        from '@/components/ui/AnchoredActionMenu'
 import { TransactionEditModal }      from '@/components/forms/TransactionEditModal'
+import { OperationTypeIcon, resolveTransactionOperationIconType } from '@/components/transactions/OperationTypeIcon'
 import styles                       from './TransactionsRound07.module.css'
 import type { TransactionType }      from '@/types/database.types'
 import type { TransactionFormOptions } from '@/lib/contracts/ui.contracts'
@@ -139,21 +140,18 @@ function TransactionContext({ transaction }: { transaction: TransactionListItem 
 }
 
 function TransactionIdentityMark({ transaction }: { transaction: TransactionListItem }) {
+  const operationType = resolveTransactionOperationIconType(transaction)
   const tone = transaction.type === 'INCOME'
-    ? 'text-[var(--ft-success)] bg-[var(--ft-success-soft)]'
+    ? styles.identityIncome
     : transaction.type === 'EXPENSE'
-      ? 'text-[var(--ft-danger)] bg-[var(--ft-danger-soft)]'
-      : 'text-[var(--ft-text-muted)] bg-[var(--ft-surface-muted)]'
+      ? styles.identityExpense
+      : styles.identityTransfer
   return (
     <span
       aria-hidden="true"
-      className={`inline-flex h-7 w-7 shrink-0 items-center justify-center border border-[var(--ft-border)] ${styles.identityMark} ${transaction.type === 'INCOME' ? styles.identityIncome : transaction.type === 'EXPENSE' ? styles.identityExpense : styles.identityTransfer} ${tone}`}
+      className={`inline-flex h-7 w-7 shrink-0 items-center justify-center border border-[var(--ft-border)] ${styles.identityMark} ${tone}`}
     >
-      {transaction.type === 'TRANSFER' ? (
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 7h13l-3-3m3 3-3 3M17 17H4l3 3m-3-3 3-3" /></svg>
-      ) : (
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d={transaction.type === 'INCOME' ? 'M7 7h10v10M17 7 7 17' : 'M7 17h10V7M7 17 17 7'} /></svg>
-      )}
+      <OperationTypeIcon operationType={operationType} size={16} />
     </span>
   )
 }

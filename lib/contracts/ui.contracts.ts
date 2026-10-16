@@ -6,7 +6,7 @@
 
 import type {
   TransactionType, CurrencyCode, AccountType,
-  AssetType, CreditType, ReceivableStatus, PayableStatus,
+  AssetType, CreditType, ReceivableStatus, PayableStatus, Enums,
 } from '@/types/database.types'
 
 // ─── ERRORES DE FORMULARIO ────────────────────────────────────────────────────
@@ -404,7 +404,12 @@ export interface TransactionListItem {
   source_account: { id: string; name: string; color: string; icon: string } | null
   destinationAccount: { id: string; name: string; color: string; icon: string } | null
   destination_account: { id: string; name: string; color: string; icon: string } | null
-  category: { id: string; name: string; icon: string; color: string } | null
+  category: { id: string; name: string; icon: string; color: string; system_key?: string | null } | null
+  /** Persisted discriminator and module relations selected by the paginated API. */
+  sub_type?: Enums<'transaction_sub_type'> | null
+  linked_asset?: { id: string } | Array<{ id: string }> | null
+  linked_receivable?: { id: string } | Array<{ id: string }> | null
+  linked_payable?: { id: string } | Array<{ id: string }> | null
   hasAsset?:      boolean
   hasCredit?:     boolean
   hasReceivable?: boolean

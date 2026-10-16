@@ -1,17 +1,9 @@
 'use client'
 
 import React, { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
+import { OperationTypeIcon, type OperationType } from '@/components/transactions/OperationTypeIcon'
 import styles from '@/components/tables/TransactionsRound07.module.css'
-
-export type OperationType =
-  | 'income'
-  | 'expense'
-  | 'transfer'
-  | 'asset_purchase'
-  | 'receivable_issue'
-  | 'receivable_collect'
-  | 'payable_issue'
-  | 'payable_pay'
+export type { OperationType } from '@/components/transactions/OperationTypeIcon'
 
 export const OPERATION_TITLES: Record<OperationType, string> = {
   income: 'Ingreso',
@@ -24,14 +16,11 @@ export const OPERATION_TITLES: Record<OperationType, string> = {
   transfer: 'Transferencia',
 }
 
-type AstraIcon = 'up' | 'down' | 'moves' | 'box'
-
 interface OperationPopoverItem {
   type: OperationType
   label: string
   description?: string
-  icon: AstraIcon
-  flow: 'income' | 'expense' | 'transfer' | 'asset'
+  flow: 'income' | 'expense' | 'transfer'
 }
 
 interface OperationTypeSelectorProps {
@@ -46,13 +35,6 @@ interface OperationTypePopoverProps {
   onSelect: (type: OperationType) => void
 }
 
-const ASTRA_ICONS: Record<AstraIcon, React.ReactNode> = {
-  down: <path d="M7 7h10v10M17 7 7 17" />,
-  up: <path d="M7 17h10V7M7 17 17 7" />,
-  moves: <path d="M4 7h15m-4-4 4 4-4 4M20 17H5m4-4-4 4 4 4" />,
-  box: <path d="m12 3 9 5v9l-9 5-9-5V8l9-5ZM3 8l9 5 9-5M12 13v9M7 5.8l9 5" />,
-}
-
 const OPERATION_GROUPS: Array<{
   id: 'income' | 'expense' | 'transfer'
   label: string
@@ -62,47 +44,29 @@ const OPERATION_GROUPS: Array<{
     id: 'income',
     label: 'Dinero que entra',
     items: [
-      { type: 'income', label: OPERATION_TITLES.income, description: 'Dinero que recibes.', icon: 'down', flow: 'income' },
-      { type: 'receivable_collect', label: OPERATION_TITLES.receivable_collect, description: 'Cobras dinero que te debían.', icon: 'down', flow: 'income' },
-      { type: 'payable_issue', label: OPERATION_TITLES.payable_issue, description: 'Recibes dinero que luego devolverás.', icon: 'down', flow: 'income' },
+      { type: 'income', label: OPERATION_TITLES.income, description: 'Dinero que recibes.', flow: 'income' },
+      { type: 'receivable_collect', label: OPERATION_TITLES.receivable_collect, description: 'Cobras dinero que te debían.', flow: 'income' },
+      { type: 'payable_issue', label: OPERATION_TITLES.payable_issue, description: 'Recibes dinero que luego devolverás.', flow: 'income' },
     ],
   },
   {
     id: 'expense',
     label: 'Dinero que sale',
     items: [
-      { type: 'expense', label: OPERATION_TITLES.expense, description: 'Dinero que gastas.', icon: 'up', flow: 'expense' },
-      { type: 'receivable_issue', label: OPERATION_TITLES.receivable_issue, description: 'Das dinero que te devolverán.', icon: 'up', flow: 'expense' },
-      { type: 'payable_pay', label: OPERATION_TITLES.payable_pay, description: 'Pagas una deuda pendiente.', icon: 'up', flow: 'expense' },
-      { type: 'asset_purchase', label: OPERATION_TITLES.asset_purchase, description: 'Compras un bien para conservarlo.', icon: 'box', flow: 'asset' },
+      { type: 'expense', label: OPERATION_TITLES.expense, description: 'Dinero que gastas.', flow: 'expense' },
+      { type: 'receivable_issue', label: OPERATION_TITLES.receivable_issue, description: 'Das dinero que te devolverán.', flow: 'expense' },
+      { type: 'payable_pay', label: OPERATION_TITLES.payable_pay, description: 'Pagas una deuda pendiente.', flow: 'expense' },
+      { type: 'asset_purchase', label: OPERATION_TITLES.asset_purchase, description: 'Compras un bien para conservarlo.', flow: 'expense' },
     ],
   },
   {
     id: 'transfer',
     label: 'Entre tus cuentas',
     items: [
-      { type: 'transfer', label: OPERATION_TITLES.transfer, description: 'Mueves dinero entre tus cuentas o tarjetas.', icon: 'moves', flow: 'transfer' },
+      { type: 'transfer', label: OPERATION_TITLES.transfer, description: 'Mueves dinero entre tus cuentas o tarjetas.', flow: 'transfer' },
     ],
   },
 ]
-
-function AstraIconView({ name, size = 16 }: { name: AstraIcon; size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {ASTRA_ICONS[name]}
-    </svg>
-  )
-}
 
 export function OperationTypePopover({
   anchorRef,
@@ -267,7 +231,7 @@ function OperationButton({
       data-operation-flow={card.flow}
       role={menuItem ? 'menuitem' : undefined}
     >
-      <span className={styles.operationIcon}><AstraIconView name={card.icon} size={18} /></span>
+      <span className={styles.operationIcon}><OperationTypeIcon operationType={card.type} size={18} /></span>
       <span>
         <strong>{card.label}</strong>
         <small>{card.description}</small>

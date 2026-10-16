@@ -11,6 +11,7 @@ function operationSource(): string {
     .replace(/^'use client'\s*/, '')
     .replace(/import React, \{([^}]*)\} from 'react'/, (_match, hooks: string) =>
       `const React = window.React; const {${hooks}} = React`)
+    .replace(/import \{ OperationTypeIcon, type OperationType \} from '@\/components\/transactions\/OperationTypeIcon'/, 'const OperationTypeIcon = window.FinTrackOperationIcon')
     .replace(/import styles from '@\/components\/tables\/TransactionsRound07.module.css'/, 'const styles = window.operationStyles')
     .replace(/export function /g, 'function ')
     .replace(/export const /g, 'const ')
@@ -19,6 +20,18 @@ function operationSource(): string {
   }).outputText
   const browserScript = compiled.replace(/^"use strict";\s*Object\.defineProperty\(exports, "__esModule", \{ value: true \}\);\s*/m, '')
   return `(() => {\n${browserScript}\nwindow.FinTrackOperationPopover = OperationTypePopover; window.FinTrackOperationConfig = operationTypeToFormConfig; window.FinTrackOperationTitles = OPERATION_TITLES;\n})()`
+}
+
+function operationIconSource(): string {
+  const source = readFileSync(join(process.cwd(), 'components/transactions/OperationTypeIcon.tsx'), 'utf8')
+    .replace(/import React from 'react'/, 'const React = window.React')
+    .replace(/import \{ CategoryKeys \} from '@\/lib\/constants\/category-keys'/, 'const CategoryKeys = window.FinTrackCategoryKeys')
+    .replace(/export function /g, 'function ')
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None, jsx: ts.JsxEmit.React },
+  }).outputText
+  const browserScript = compiled.replace(/^"use strict";\s*Object\.defineProperty\(exports, "__esModule", \{ value: true \}\);\s*/m, '')
+  return `(() => {\n${browserScript}\nwindow.FinTrackOperationIcon = OperationTypeIcon; window.FinTrackResolveTransactionIconType = resolveTransactionOperationIconType;\n})()`
 }
 
 async function mount(page: import('@playwright/test').Page) {
@@ -30,6 +43,13 @@ async function mount(page: import('@playwright/test').Page) {
   await page.addScriptTag({ path: reactPath })
   await page.addScriptTag({ path: reactDomPath })
   await page.addScriptTag({ content: `
+    window.FinTrackCategoryKeys = {
+      INCOME_RECEIVABLE_COLLECTION: 'income_receivable_collection',
+      INCOME_PAYABLE_ISSUE: 'income_payable_issue',
+      EXPENSE_PAYABLE_PAYMENT: 'expense_payable_payment',
+      EXPENSE_ASSET: 'expense_asset',
+      EXPENSE_RECEIVABLE_ISSUE: 'expense_receivable_issue',
+    };
     window.operationStyles = {
       operationPopover: 'operation-popover', operationPopoverHeading: 'operation-popover-heading',
       operationSelector: 'operation-selector', operationGroups: 'operation-groups',
@@ -41,21 +61,22 @@ async function mount(page: import('@playwright/test').Page) {
   ` })
   await page.addStyleTag({ path: join(process.cwd(), 'docs/redesign-v3/preview/design.css') })
   await page.addStyleTag({ content: `
-    .operation-popover { position:fixed; inset:auto; margin:0; box-sizing:border-box; border:1px solid #dce1e5; border-radius:14px; padding:11px; width:min(460px,calc(100vw - 24px)); min-width:min(360px,calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:min(560px,calc(100dvh - 24px)); overflow:auto; font-family:Manrope,sans-serif; font-size:12px; line-height:1.5; color:#242a30; background:#fff; box-shadow:0 3px 8px rgb(25 51 49 / 7%),0 16px 44px rgb(25 51 49 / 13%); }
+    .operation-popover { position:fixed; inset:auto; margin:0; box-sizing:border-box; border:1px solid #dce1e5; border-radius:14px; padding:9px; width:min(392px,calc(100vw - 24px)); min-width:min(336px,calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:min(620px,calc(100dvh - 24px)); overflow-x:hidden; overflow-y:auto; font-family:Manrope,sans-serif; font-size:12px; line-height:1.5; color:#242a30; background:#fff; box-shadow:0 3px 8px rgb(25 51 49 / 7%),0 16px 44px rgb(25 51 49 / 13%); }
     .operation-popover-heading { padding:1px 2px 9px; border-bottom:1px solid #dce1e5; margin:0 0 11px; font-size:11px; font-weight:700; }
-    .operation-groups { display:grid; grid-template-columns:minmax(0,1fr); gap:8px; }
+    .operation-groups { display:grid; grid-template-columns:minmax(0,1fr); gap:6px; }
     .operation-group { min-width:0; }
-    .operation-group:not(:last-child) { padding-bottom:8px; border-bottom:1px solid #dce1e5; }
-    .operation-group-heading { margin:0 0 5px; font-size:11.5px; font-weight:700; line-height:16px; }
-    .operation-group-items { display:grid; gap:4px; min-width:0; }
-    .operation { display:flex; align-items:center; gap:9px; width:100%; min-width:0; min-height:50px; border:1px solid #dce1e5; border-radius:10px; background:#fff; padding:6px 9px; text-align:left; }
-    .operation-icon { display:grid; width:30px; height:30px; flex:0 0 30px; place-items:center; border-radius:9px; }
+    .operation-group:not(:last-child) { padding-bottom:6px; border-bottom:1px solid #dce1e5; }
+    .operation-group-heading { margin:0 0 4px; font-size:11.5px; font-weight:700; line-height:16px; }
+    .operation-group-items { display:grid; gap:3px; min-width:0; }
+    .operation { display:flex; align-items:center; gap:9px; width:100%; min-width:0; min-height:46px; border:1px solid #dce1e5; border-radius:10px; background:#fff; padding:5px 8px; text-align:left; }
+    .operation-icon { display:grid; width:32px; height:32px; flex:0 0 32px; place-items:center; border-radius:8px; }
     .operation > span:last-child { min-width:0; }
     .operation strong, .operation small { display:block; }
     .operation strong { font-size:12.5px; line-height:17px; }
     .operation small { margin-top:2px; font-size:11.5px; line-height:16px; overflow-wrap:anywhere; }
-    @media (max-width:767px) { .operation-groups { gap:7px; } .operation { padding:7px 9px; } }
+    @media (max-width:767px) { .operation-groups { gap:6px; } .operation { padding:6px 8px; } }
   ` })
+  await page.addScriptTag({ content: operationIconSource() })
   await page.addScriptTag({ content: operationSource() })
   await page.addScriptTag({ content: `
     window.selectedOperationTypes = [];
@@ -113,6 +134,9 @@ test('operation menu groups all eight operation handlers by cash flow and preser
     'Comprar activoCompras un bien para conservarlo.',
     'TransferenciaMueves dinero entre tus cuentas o tarjetas.',
   ])
+  expect(await items.locator('svg').evaluateAll(elements => elements.map(element => element.getAttribute('data-operation-icon')))).toEqual([
+    'income', 'receivable_collect', 'payable_issue', 'expense', 'receivable_issue', 'payable_pay', 'asset_purchase', 'transfer',
+  ])
   await expect(menu.getByRole('group', { name: 'Dinero que entra' }).getByRole('menuitem')).toHaveCount(3)
   await expect(menu.getByRole('group', { name: 'Dinero que sale' }).getByRole('menuitem')).toHaveCount(4)
   await expect(menu.getByRole('group', { name: 'Entre tus cuentas' }).getByRole('menuitem')).toHaveCount(1)
@@ -164,14 +188,15 @@ test('operation popover stays anchored and the selector adapts to narrow viewpor
   const triggerBox = await integratedTrigger.boundingBox()
   expect(triggerBox).not.toBeNull()
   expect(Math.abs(integratedBox!.x + integratedBox!.width - (triggerBox!.x + triggerBox!.width))).toBeLessThan(3)
-  expect(integratedBox!.width).toBeGreaterThanOrEqual(360)
-  expect(integratedBox!.width).toBeLessThanOrEqual(460)
+  expect(integratedBox!.width).toBeGreaterThanOrEqual(336)
+  expect(integratedBox!.width).toBeLessThanOrEqual(392)
+  expect(await integratedMenu.evaluate(element => element.scrollHeight)).toBe(await integratedMenu.evaluate(element => element.clientHeight))
   const desktopColumns = await integratedMenu.locator('.operation-groups').evaluate(element => getComputedStyle(element).gridTemplateColumns)
   expect(desktopColumns.split(' ').length).toBe(1)
   expect(await integratedMenu.locator('.operation strong').first().evaluate(element => getComputedStyle(element).fontSize)).toBe('12.5px')
   expect(await integratedMenu.locator('.operation small').first().evaluate(element => getComputedStyle(element).fontSize)).toBe('11.5px')
   expect(await integratedMenu.evaluate(element => getComputedStyle(element).overflowY)).toBe('auto')
-  expect(await integratedMenu.evaluate(element => Number.parseFloat(getComputedStyle(element).maxHeight))).toBeLessThanOrEqual(560)
+  expect(await integratedMenu.evaluate(element => Number.parseFloat(getComputedStyle(element).maxHeight))).toBeLessThanOrEqual(620)
   const desktopTextOverflow = await integratedMenu.locator('.operation').evaluateAll(elements =>
     elements.some(element => element.scrollWidth > element.clientWidth),
   )
@@ -194,6 +219,79 @@ test('operation popover stays anchored and the selector adapts to narrow viewpor
   if (outputDir) {
     await integratedMenu.screenshot({ path: join(outputDir, 'fintrack-operation-menu.png'), animations: 'disabled' })
   }
+})
+
+test('transaction rows classify operations from the paginated API persisted-field shape', async ({ page }) => {
+  await mount(page)
+  const resolvedTypes = await page.evaluate(() => {
+    const resolve = (window as Window & {
+      FinTrackResolveTransactionIconType: (transaction: Record<string, unknown>) => string
+    }).FinTrackResolveTransactionIconType
+    // These are representative rows from GET /api/transactions after
+    // normalizeTransactionRow: raw persisted columns and PostgREST relations
+    // survive its `...row` spread, while account/date aliases are added.
+    const apiRows = [
+      { type: 'INCOME', sub_type: null, category: { system_key: 'income_salary' }, description: 'ordinary' },
+      { type: 'INCOME', sub_type: null, category: { system_key: 'income_receivable_collection' }, description: 'ordinary' },
+      { type: 'INCOME', sub_type: null, category: { system_key: 'income_payable_issue' }, linked_payable: [{ id: 'payable-1' }], description: 'ordinary' },
+      { type: 'EXPENSE', sub_type: null, category: { system_key: 'expense_food' }, description: 'ordinary' },
+      { type: 'EXPENSE', sub_type: null, category: { system_key: 'expense_receivable_issue' }, linked_receivable: [{ id: 'receivable-1' }], description: 'ordinary' },
+      { type: 'EXPENSE', sub_type: 'PAYABLE_PAYMENT', category: { system_key: 'expense_payable_payment' }, description: 'ordinary' },
+      { type: 'EXPENSE', sub_type: 'ASSET_PURCHASE', category: { system_key: 'expense_asset' }, linked_asset: { id: 'asset-1' }, description: 'ordinary' },
+      { type: 'TRANSFER', sub_type: null, category: null, description: 'ordinary' },
+    ]
+    return apiRows.map(resolve)
+  })
+  expect(resolvedTypes).toEqual([
+    'income', 'receivable_collect', 'payable_issue', 'expense',
+    'receivable_issue', 'payable_pay', 'asset_purchase', 'transfer',
+  ])
+
+  const collectionAndPaymentTypes = await page.evaluate(() => {
+    const resolve = (window as Window & {
+      FinTrackResolveTransactionIconType: (transaction: Record<string, unknown>) => string
+    }).FinTrackResolveTransactionIconType
+    return [
+      resolve({ type: 'INCOME', sub_type: null, category: { system_key: 'income_receivable_collection' } }),
+      resolve({ type: 'EXPENSE', sub_type: null, category: { system_key: 'expense_payable_payment' } }),
+    ]
+  })
+  expect(collectionAndPaymentTypes).toEqual(['receivable_collect', 'payable_pay'])
+
+  const legacyFlagsIgnored = await page.evaluate(() => {
+    const resolve = (window as Window & {
+      FinTrackResolveTransactionIconType: (transaction: Record<string, unknown>) => string
+    }).FinTrackResolveTransactionIconType
+    return [
+      resolve({ type: 'INCOME', hasReceivable: true }),
+      resolve({ type: 'EXPENSE', hasPayable: true }),
+    ]
+  })
+  expect(legacyFlagsIgnored).toEqual(['income', 'expense'])
+
+  const repositorySource = readFileSync(join(process.cwd(), 'modules/transactions/transaction.repository.ts'), 'utf8')
+  expect(repositorySource).toContain('category:categories(id, name, icon, color, system_key)')
+  expect(repositorySource).toContain('linked_asset:assets(id)')
+  expect(repositorySource).toContain('linked_receivable:accounts_receivable(id)')
+  expect(repositorySource).toContain('linked_payable:accounts_payable(id)')
+  expect(repositorySource).toContain('.select(`\n        *,')
+  const serviceSource = readFileSync(join(process.cwd(), 'modules/transactions/transaction.service.ts'), 'utf8')
+  expect(serviceSource).toContain('return this.txRepo.findMany(userId, filters)')
+  const apiSource = readFileSync(join(process.cwd(), 'app/api/transactions/route.ts'), 'utf8')
+  expect(apiSource).toContain('...row,')
+
+  const cssSource = readFileSync(join(process.cwd(), 'components/tables/TransactionsRound07.module.css'), 'utf8')
+  expect(cssSource).toContain('width: min(392px, calc(100vw - 24px))')
+  expect(cssSource).toContain('min-width: min(336px, calc(100vw - 24px))')
+  expect(cssSource).toContain('max-height: min(620px, calc(100dvh - 24px))')
+  expect(cssSource).toContain('overflow-y: auto')
+  expect(cssSource).toContain('min-height: 46px')
+  expect(cssSource).toContain('--operation-accent: var(--ft-success')
+  expect(cssSource).toContain('--operation-accent: var(--ft-danger')
+  expect(cssSource).toContain('--operation-accent: var(--ft-info')
+  const tableSource = readFileSync(join(process.cwd(), 'components/tables/TransactionTable.tsx'), 'utf8')
+  expect(tableSource).toContain('OperationTypeIcon operationType={operationType}')
+  expect(tableSource).toContain('resolveTransactionOperationIconType(transaction)')
 })
 
 test('operation labels and creation modal titles share one exact title map', async ({ page }) => {
@@ -232,6 +330,7 @@ declare global {
   interface Window {
     FinTrackOperationConfig: (type: string) => Record<string, unknown>
     FinTrackOperationTitles: Record<string, string>
+    FinTrackResolveTransactionIconType: (transaction: Record<string, unknown>) => string
     selectedOperationTypes: string[]
   }
 }

@@ -91,7 +91,10 @@ export class TransactionRepository extends BaseRepository {
         *,
         source_account:accounts!source_account_id(id, name, color, icon),
         destination_account:accounts!destination_account_id(id, name, color, icon),
-        category:categories(id, name, icon, color)
+        category:categories(id, name, icon, color, system_key),
+        linked_asset:assets(id),
+        linked_receivable:accounts_receivable(id),
+        linked_payable:accounts_payable(id)
       `, { count: 'exact' })
       .eq('user_id', userId)
       .range(from, to)
