@@ -61,20 +61,20 @@ async function mount(page: import('@playwright/test').Page) {
   ` })
   await page.addStyleTag({ path: join(process.cwd(), 'docs/redesign-v3/preview/design.css') })
   await page.addStyleTag({ content: `
-    .operation-popover { position:fixed; inset:auto; margin:0; box-sizing:border-box; border:1px solid #dce1e5; border-radius:14px; padding:9px; width:min(392px,calc(100vw - 24px)); min-width:min(336px,calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:min(620px,calc(100dvh - 24px)); overflow-x:hidden; overflow-y:auto; font-family:Manrope,sans-serif; font-size:12px; line-height:1.5; color:#242a30; background:#fff; box-shadow:0 3px 8px rgb(25 51 49 / 7%),0 16px 44px rgb(25 51 49 / 13%); }
+    .operation-popover { position:fixed; inset:auto; margin:0; box-sizing:border-box; border:1px solid #dce1e5; border-radius:14px; padding:10px; width:min(356px,calc(100vw - 24px)); min-width:min(320px,calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:calc(100vh - 24px); max-height:calc(100dvh - 24px); overflow-x:hidden; overflow-y:auto; font-family:Manrope,sans-serif; font-size:12px; line-height:1.5; color:#242a30; background:#fff; box-shadow:0 3px 8px rgb(25 51 49 / 7%),0 16px 44px rgb(25 51 49 / 13%); }
     .operation-popover-heading { padding:1px 2px 9px; border-bottom:1px solid #dce1e5; margin:0 0 11px; font-size:11px; font-weight:700; }
-    .operation-groups { display:grid; grid-template-columns:minmax(0,1fr); gap:6px; }
+    .operation-groups { display:grid; grid-template-columns:minmax(0,1fr); gap:8px; }
     .operation-group { min-width:0; }
-    .operation-group:not(:last-child) { padding-bottom:6px; border-bottom:1px solid #dce1e5; }
-    .operation-group-heading { margin:0 0 4px; font-size:11.5px; font-weight:700; line-height:16px; }
-    .operation-group-items { display:grid; gap:3px; min-width:0; }
-    .operation { display:flex; align-items:center; gap:9px; width:100%; min-width:0; min-height:46px; border:1px solid #dce1e5; border-radius:10px; background:#fff; padding:5px 8px; text-align:left; }
+    .operation-group:not(:last-child) { padding-bottom:8px; border-bottom:1px solid #dce1e5; }
+    .operation-group-heading { margin:0 0 5px; font-size:11.5px; font-weight:700; line-height:16px; }
+    .operation-group-items { display:grid; gap:5px; min-width:0; }
+    .operation { display:flex; align-items:center; gap:9px; width:100%; min-width:0; min-height:54px; border:1px solid #dce1e5; border-radius:10px; background:#fff; padding:7px 9px; text-align:left; }
     .operation-icon { display:grid; width:32px; height:32px; flex:0 0 32px; place-items:center; border-radius:8px; }
     .operation > span:last-child { min-width:0; }
     .operation strong, .operation small { display:block; }
     .operation strong { font-size:12.5px; line-height:17px; }
     .operation small { margin-top:2px; font-size:11.5px; line-height:16px; overflow-wrap:anywhere; }
-    @media (max-width:767px) { .operation-groups { gap:6px; } .operation { padding:6px 8px; } }
+    @media (max-width:767px) { .operation-groups { gap:8px; } .operation { padding:6px 8px; } }
   ` })
   await page.addScriptTag({ content: operationIconSource() })
   await page.addScriptTag({ content: operationSource() })
@@ -188,15 +188,16 @@ test('operation popover stays anchored and the selector adapts to narrow viewpor
   const triggerBox = await integratedTrigger.boundingBox()
   expect(triggerBox).not.toBeNull()
   expect(Math.abs(integratedBox!.x + integratedBox!.width - (triggerBox!.x + triggerBox!.width))).toBeLessThan(3)
-  expect(integratedBox!.width).toBeGreaterThanOrEqual(336)
-  expect(integratedBox!.width).toBeLessThanOrEqual(392)
+  expect(integratedBox!.width).toBeGreaterThanOrEqual(320)
+  expect(integratedBox!.width).toBeLessThanOrEqual(356)
   expect(await integratedMenu.evaluate(element => element.scrollHeight)).toBe(await integratedMenu.evaluate(element => element.clientHeight))
   const desktopColumns = await integratedMenu.locator('.operation-groups').evaluate(element => getComputedStyle(element).gridTemplateColumns)
   expect(desktopColumns.split(' ').length).toBe(1)
   expect(await integratedMenu.locator('.operation strong').first().evaluate(element => getComputedStyle(element).fontSize)).toBe('12.5px')
   expect(await integratedMenu.locator('.operation small').first().evaluate(element => getComputedStyle(element).fontSize)).toBe('11.5px')
   expect(await integratedMenu.evaluate(element => getComputedStyle(element).overflowY)).toBe('auto')
-  expect(await integratedMenu.evaluate(element => Number.parseFloat(getComputedStyle(element).maxHeight))).toBeLessThanOrEqual(620)
+  expect(await integratedMenu.evaluate(element => Number.parseFloat(getComputedStyle(element).maxHeight))).toBeLessThanOrEqual(776)
+  expect(await integratedMenu.locator('.operation').first().evaluate(element => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(54)
   const desktopTextOverflow = await integratedMenu.locator('.operation').evaluateAll(elements =>
     elements.some(element => element.scrollWidth > element.clientWidth),
   )
@@ -214,6 +215,17 @@ test('operation popover stays anchored and the selector adapts to narrow viewpor
   expect(mobileBox).not.toBeNull()
   expect(mobileBox!.x).toBeGreaterThanOrEqual(0)
   expect(mobileBox!.x + mobileBox!.width).toBeLessThanOrEqual(390)
+  expect(await integratedMenu.evaluate(element => element.scrollHeight)).toBe(await integratedMenu.evaluate(element => element.clientHeight))
+
+  await page.setViewportSize({ width: 390, height: 480 })
+  await expect(integratedMenu).toBeHidden()
+  await integratedTrigger.click()
+  await expect(integratedMenu).toBeVisible()
+  expect(await integratedMenu.evaluate(element => element.scrollHeight)).toBeGreaterThan(await integratedMenu.evaluate(element => element.clientHeight))
+  const compactViewportBox = await integratedMenu.boundingBox()
+  expect(compactViewportBox).not.toBeNull()
+  expect(compactViewportBox!.y).toBeGreaterThanOrEqual(0)
+  expect(compactViewportBox!.y + compactViewportBox!.height).toBeLessThanOrEqual(480)
 
   const outputDir = process.env.OPERATION_MENU_COMPARISON_DIR
   if (outputDir) {
@@ -281,11 +293,12 @@ test('transaction rows classify operations from the paginated API persisted-fiel
   expect(apiSource).toContain('...row,')
 
   const cssSource = readFileSync(join(process.cwd(), 'components/tables/TransactionsRound07.module.css'), 'utf8')
-  expect(cssSource).toContain('width: min(392px, calc(100vw - 24px))')
-  expect(cssSource).toContain('min-width: min(336px, calc(100vw - 24px))')
-  expect(cssSource).toContain('max-height: min(620px, calc(100dvh - 24px))')
+  expect(cssSource).toContain('width: min(356px, calc(100vw - 24px))')
+  expect(cssSource).toContain('min-width: min(320px, calc(100vw - 24px))')
+  expect(cssSource).toContain('max-height: calc(100dvh - 24px)')
   expect(cssSource).toContain('overflow-y: auto')
-  expect(cssSource).toContain('min-height: 46px')
+  expect(cssSource).toContain('min-height: 54px')
+  expect(cssSource).toContain('gap: 5px')
   expect(cssSource).toContain('--operation-accent: var(--ft-success')
   expect(cssSource).toContain('--operation-accent: var(--ft-danger')
   expect(cssSource).toContain('--operation-accent: var(--ft-info')

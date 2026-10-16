@@ -35,7 +35,7 @@
 .operationGroups {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -62,7 +62,7 @@
 }
 
 .operationGroup:not(:last-child) {
-  padding-bottom: 6px;
+  padding-bottom: 8px;
   border-bottom: 1px solid var(--ft-border, #dce1e5);
 }
 
@@ -70,7 +70,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  margin: 0 0 4px;
+  margin: 0 0 5px;
   color: var(--ft-text-muted, #59636d);
   font-size: 11.5px;
   font-weight: 700;
@@ -89,7 +89,7 @@
 
 .operationGroupItems {
   display: grid;
-  gap: 3px;
+  gap: 5px;
   min-width: 0;
 }
 
@@ -99,11 +99,11 @@
   gap: 9px;
   min-width: 0;
   width: 100%;
-  min-height: 46px;
+  min-height: 54px;
   border: 1px solid var(--ft-border, #dce1e5);
   border-radius: 10px;
   background: var(--ft-surface);
-  padding: 5px 8px;
+  padding: 7px 9px;
   color: var(--ft-text-strong);
   text-align: left;
   cursor: pointer;
@@ -156,7 +156,7 @@
 .operationTransfer { --operation-accent: var(--ft-info, #426f9f); --operation-tint: var(--ft-info-soft, #ebf2fb); }
 
 .operationGroup[data-operation-group='transfer'] .operation {
-  min-height: 46px;
+  min-height: 54px;
 }
 
 /* Round 07 desktop "Nuevo movimiento" context-popover, ported from
@@ -173,10 +173,11 @@
   border: 1px solid var(--operation-line);
   border-radius: 14px;
   padding: 10px;
-  width: min(392px, calc(100vw - 24px));
-  min-width: min(336px, calc(100vw - 24px));
+  width: min(356px, calc(100vw - 24px));
+  min-width: min(320px, calc(100vw - 24px));
   max-width: calc(100vw - 24px);
-  max-height: min(620px, calc(100dvh - 24px));
+  max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
   overflow-x: hidden;
   overflow-y: auto;
   background: var(--operation-surface);
@@ -305,7 +306,7 @@
 }
 
 @media (max-width: 767px) {
-  .operationGroups { gap: 6px; }
+  .operationGroups { gap: 8px; }
   .operation { padding: 6px 8px; }
 
   .transactionsContent:global(.ft-shell-content) { padding: 24px 20px 100px; }
