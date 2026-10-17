@@ -248,6 +248,13 @@
   --ft-chart-expense: #74828c;
   --ft-overlay: rgb(24 34 52 / 36%);
   --ft-modal-bg: #ffffff;
+  --ft-r07-canvas: var(--ft-canvas);
+  --ft-r07-surface: var(--ft-surface);
+  --ft-r07-subtle: var(--ft-surface-muted);
+  --ft-r07-hover: var(--ft-surface-hover);
+  --ft-r07-ink: var(--ft-text-strong);
+  --ft-r07-muted: var(--ft-text-muted);
+  --ft-r07-line: var(--ft-border);
   --ft-radius-control: 10px;
   --ft-radius-menu: 14px;
   --ft-radius-badge: 6px;
@@ -386,6 +393,10 @@
 }
 
 .portfolioControls { margin-bottom: 20px; }
+
+.portfolioControls :global(input[aria-label='Buscar por cuenta o entidad']) {
+  height: 38px;
+}
 
 .summaryDetail {
   display: block;

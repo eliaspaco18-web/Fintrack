@@ -925,7 +925,7 @@ export function PortfolioManager({
   return (
     <>
       <PageLayout
-        className="max-w-none gap-0"
+        className="max-w-none !gap-0"
         header={
           <div className={styles.pageOverview} data-testid="portfolio-page-overview">
             <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1010,7 +1010,7 @@ export function PortfolioManager({
                 className="w-full sm:w-[230px]"
               />
               <details className="group relative">
-                <summary className="flex h-[38px] cursor-pointer list-none items-center gap-2 rounded-control border border-[var(--ft-border)] bg-[var(--ft-surface)] px-3 text-[12px] font-semibold text-[var(--ft-text-strong)] hover:bg-[var(--ft-surface-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ft-primary)] [&::-webkit-details-marker]:hidden">
+                <summary className="flex h-9 cursor-pointer list-none items-center gap-2 rounded-control border border-[var(--ft-border)] bg-[var(--ft-surface)] px-3 text-[12px] font-semibold text-[var(--ft-text-strong)] hover:bg-[var(--ft-surface-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ft-primary)] [&::-webkit-details-marker]:hidden">
                   <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16M7 12h10m-7 6h4" /></svg>
                   Moneda y tipo
                 </summary>
