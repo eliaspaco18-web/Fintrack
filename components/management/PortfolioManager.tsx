@@ -30,7 +30,6 @@ import {
   DataTable,
   EmptyState,
   PageLayout,
-  StatusBadge,
 } from '@/components/finance'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { fetchWithTimeout } from '@/lib/client/fetch-with-timeout'
@@ -441,7 +440,7 @@ function PortfolioOpeningFact({
   currencies: readonly UserCurrencyItem[]
 }) {
   return (
-    <div className="mt-3 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1 border-t border-[var(--ft-border)] pt-3">
+    <div className="mt-2 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1">
       <p className="text-[11px] leading-4 text-[var(--ft-text-muted)]">Saldo de apertura</p>
       <p className="text-right text-[11px] leading-4 text-[var(--ft-text-muted)]">{formatStoredPortfolioDate(account.initial_balance_date)}</p>
       <p className="min-w-0 break-words text-[13px] font-semibold leading-5 tabular-nums text-[var(--ft-text-strong)] [overflow-wrap:anywhere]">
@@ -1135,21 +1134,20 @@ export function PortfolioManager({
               </button>
             </div>
 
-            <div className="mb-3 grid min-w-0 grid-cols-2 gap-x-2.5 gap-y-2 sm:grid-cols-2 lg:grid-cols-[minmax(180px,1.2fr)_repeat(3,minmax(115px,1fr))_auto] lg:items-end">
+            <div className={`${styles.controls} ${styles.portfolioFilterBar} min-w-0`}>
               <DataSearchField
                 value={query}
                 onChange={setQuery}
                 placeholder="Buscar por cuenta o entidad"
                 aria-label="Buscar por cuenta o entidad"
-                className="col-span-2 w-full min-w-0 lg:col-span-1"
+                data-testid="portfolio-search-input"
+                className={`${styles.searchControl} min-w-0 flex-[1_1_230px]`}
               />
-              <div className="grid min-w-0 gap-1">
-                <span className="pl-0.5 text-[10px] font-semibold leading-4 text-[var(--ft-text-muted)]">Moneda</span>
                 <AppSelect
                   ariaLabel="Filtrar cuentas por moneda"
                   value={currencyFilter}
                   onChange={value => setCurrencyFilter(value as CurrencyFilter)}
-                  className="w-full min-w-0"
+                  className={`${styles.portfolioFilter} ${styles.portfolioFilterCurrency} filters-control`}
                   compact
                   disabled={!dataState.currenciesAvailable}
                   options={[
@@ -1158,14 +1156,11 @@ export function PortfolioManager({
                   ]}
                   testId="portfolio-currency-filter"
                 />
-              </div>
-              <div className="grid min-w-0 gap-1">
-                <span className="pl-0.5 text-[10px] font-semibold leading-4 text-[var(--ft-text-muted)]">Tipo</span>
                 <AppSelect
                   ariaLabel="Filtrar cuentas por tipo"
                   value={typeFilter}
                   onChange={value => setTypeFilter(value as TypeFilter)}
-                  className="w-full min-w-0"
+                  className={`${styles.portfolioFilter} ${styles.portfolioFilterType} filters-control`}
                   compact
                   searchPlaceholder="Buscar tipo…"
                   options={[
@@ -1174,14 +1169,11 @@ export function PortfolioManager({
                   ]}
                   testId="portfolio-type-filter"
                 />
-              </div>
-              <div className="col-span-2 grid min-w-0 gap-1 sm:col-span-1 lg:col-span-1">
-                <span className="pl-0.5 text-[10px] font-semibold leading-4 text-[var(--ft-text-muted)]">Institución</span>
                 <AppSelect
                   ariaLabel="Filtrar cuentas por institución"
                   value={bankFilter}
                   onChange={setBankFilter}
-                  className="w-full min-w-0"
+                  className={`${styles.portfolioFilter} ${styles.portfolioFilterInstitution} filters-control col-span-2 lg:col-span-1`}
                   disabled={!dataState.banksAvailable}
                   compact
                   searchPlaceholder="Buscar institución…"
@@ -1192,9 +1184,7 @@ export function PortfolioManager({
                   ]}
                   testId="portfolio-institution-filter"
                 />
-              </div>
-              <div className="col-span-2 flex min-w-0 items-center justify-between gap-3 sm:col-span-2 lg:col-span-1 lg:justify-end">
-                <span className="hidden text-[11px] text-[var(--ft-text-muted)] xl:inline">Apertura y posición actual</span>
+              <div className={styles.controlsActions}>
                 <span title="Cambiar vista de las cuentas">
                   <ViewToggle value={viewMode} onChange={setViewMode} id="portfolio-view-toggle" />
                 </span>
@@ -1449,14 +1439,14 @@ export function PortfolioManager({
                 <article
                   key={account.id}
                   data-testid={`portfolio-card-${account.id}`}
-                  className="flex min-w-0 flex-col rounded-[10px] border border-[var(--ft-border)] bg-[var(--ft-surface)] shadow-elevation-sm transition-colors hover:border-[var(--ft-border-strong)]"
+                  className="flex min-w-0 flex-col rounded-[10px] border border-[var(--ft-border)] bg-[var(--ft-surface)] shadow-none transition-colors hover:border-[var(--ft-border-strong)]"
                 >
-                  <div className="min-w-0 p-4">
+                  <div className="min-w-0 p-4 pb-3">
                     <div className="flex min-w-0 items-start justify-between gap-3">
                       <div className="flex min-w-0 items-start gap-2.5">
                         <span
                           aria-hidden="true"
-                          className="grid h-9 w-9 shrink-0 place-items-center rounded-control border text-[var(--ft-text-strong)]"
+                          className="grid h-8 w-8 shrink-0 place-items-center rounded-control border text-[var(--ft-text-strong)]"
                           style={{
                             borderColor: withAlpha(account.color, '38'),
                             backgroundColor: withAlpha(account.color, '12'),
@@ -1466,35 +1456,36 @@ export function PortfolioManager({
                           <FinancialIcon name={account.icon} size={16} />
                         </span>
                         <div className="min-w-0">
-                          <p title={account.name} className="break-words text-[14px] font-semibold leading-[19px] text-[var(--ft-text-strong)] [overflow-wrap:anywhere]">
+                          <p title={account.name} className="break-words text-[13px] font-semibold leading-[18px] text-[var(--ft-text-strong)] [overflow-wrap:anywhere]">
                             {account.name}
                           </p>
                           <p title={getPortfolioBankDisplayName(account)} className="mt-0.5 truncate text-[11px] leading-4 text-[var(--ft-text-muted)]">
                             {getPortfolioBankDisplayName(account)}
                           </p>
-                          <p className="mt-0.5 truncate text-[10px] leading-4 text-[var(--ft-text-faint)]">
-                            {ACCOUNT_TYPE_LABEL[account.type]} · {currencyPresentation.code}{currencyPresentation.kind === 'custom' ? ' · Personalizada' : currencyPresentation.kind === 'unavailable' ? ' · Código registrado' : ''}
+                          <p className="mt-1 truncate text-[11px] leading-4 text-[var(--ft-text-muted)]">
+                            {ACCOUNT_TYPE_LABEL[account.type]} · {currencyPresentation.code}{currencyPresentation.kind === 'custom' ? ' personalizada' : currencyPresentation.kind === 'unavailable' ? ' · código registrado' : ''}
                           </p>
                         </div>
                       </div>
-                      <StatusBadge tone={account.is_active ? 'success' : 'muted'} className="shrink-0">
+                      <span className={`mt-1 inline-flex shrink-0 items-center gap-1.5 text-[10px] font-medium leading-4 ${account.is_active ? 'text-[var(--ft-text-muted)]' : 'text-[var(--ft-text-faint)]'}`}>
+                        <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${account.is_active ? 'bg-[var(--ft-success)]' : 'bg-[var(--ft-text-faint)]'}`} />
                         {account.is_active ? 'Activa' : 'Inactiva'}
-                      </StatusBadge>
+                      </span>
                     </div>
 
-                    <div className="mt-4 border-y border-[var(--ft-border)] py-3">
+                    <div className="mt-3">
                       <p className="text-[10px] font-semibold leading-4 text-[var(--ft-text-muted)]">
                         {technical ? 'Cuenta técnica' : 'Saldo actual'}
                       </p>
                       {technical ? (
                         <div className="mt-0.5 flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                          <p className="text-[17px] font-semibold leading-6 text-[var(--ft-text-strong)]">No patrimonial</p>
+                          <p className="text-[16px] font-semibold leading-6 text-[var(--ft-text-strong)]">No patrimonial</p>
                           <Link href="/credits" className="text-[11px] font-semibold text-[var(--ft-primary)] hover:underline">
                             Gestionar en Créditos
                           </Link>
                         </div>
                       ) : (
-                        <p className={`mt-0.5 min-w-0 break-words text-[21px] font-semibold leading-7 tabular-nums [overflow-wrap:anywhere] ${
+                        <p className={`mt-0.5 min-w-0 break-words text-[20px] font-semibold leading-[27px] tabular-nums [overflow-wrap:anywhere] ${
                           account.balance < 0 ? 'text-[var(--ft-danger)]' : 'text-[var(--ft-text-strong)]'
                         }`}>
                           {formatPortfolioAmount(account.balance, account.currency, currencies)}
@@ -1503,7 +1494,7 @@ export function PortfolioManager({
                     </div>
 
                     {technical ? (
-                      <p className="mt-3 text-[11px] leading-4 text-[var(--ft-text-muted)]">
+                      <p className="mt-2.5 text-[11px] leading-4 text-[var(--ft-text-muted)]">
                         El crédito disponible se consulta en Créditos, no es dinero propio.
                       </p>
                     ) : (
@@ -1511,12 +1502,12 @@ export function PortfolioManager({
                     )}
                   </div>
 
-                  <div className="mt-auto flex min-w-0 items-center justify-between gap-2 border-t border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-3.5 py-2.5">
+                  <div className="mt-auto flex min-w-0 items-center justify-between gap-2 border-t border-[var(--ft-border)] px-3.5 py-2">
                     <button
                       type="button"
                       data-testid={`portfolio-card-detail-${account.id}`}
                       onClick={() => setViewingAccountId(account.id)}
-                      className="min-h-9 rounded-control px-2.5 text-[11px] font-semibold text-[var(--ft-primary)] hover:bg-[var(--ft-surface-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ft-primary)]"
+                      className="min-h-9 rounded-control px-2.5 text-[11px] font-semibold text-[var(--ft-primary)] hover:bg-[var(--ft-surface-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ft-primary)]"
                     >
                       Ver detalle
                     </button>
@@ -1526,7 +1517,7 @@ export function PortfolioManager({
                         onClick={() => startEdit(account)}
                         disabled={saving || loading || rowActionId !== null}
                         data-testid={`portfolio-edit-card-${account.id}`}
-                        className="min-h-9 rounded-control px-2.5 text-[11px] font-semibold text-[var(--ft-text-muted)] hover:bg-[var(--ft-surface-hover)] hover:text-[var(--ft-text-strong)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ft-primary)] disabled:opacity-50"
+                        className="min-h-9 rounded-control px-2.5 text-[11px] font-semibold text-[var(--ft-text-muted)] hover:bg-[var(--ft-surface-muted)] hover:text-[var(--ft-text-strong)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ft-primary)] disabled:opacity-50"
                       >
                         Editar
                       </button>

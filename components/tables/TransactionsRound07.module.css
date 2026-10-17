@@ -392,14 +392,108 @@
   height: 15px;
 }
 
-.portfolioControls { margin-bottom: 34px; }
+.portfolioControls { margin-bottom: 0; }
 
-@media (max-width: 767px) {
-  .portfolioControls { margin-bottom: 20px; }
+.portfolioFilterBar {
+  margin-bottom: 12px;
 }
 
-.portfolioControls :global(input[aria-label='Buscar por cuenta o entidad']) {
+.portfolioFilterBar .portfolioFilter.filters-control {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: none;
+}
+
+.portfolioFilterBar .portfolioFilterCurrency.filters-control { width: 132px; }
+.portfolioFilterBar .portfolioFilterType.filters-control { width: 148px; }
+.portfolioFilterBar .portfolioFilterInstitution.filters-control { width: 208px; }
+
+.portfolioFilterCurrency :global(.app-select-trigger)::before,
+.portfolioFilterType :global(.app-select-trigger)::before,
+.portfolioFilterInstitution :global(.app-select-trigger)::before {
+  flex: 0 0 auto;
+  margin-right: 2px;
+  color: var(--ft-r07-muted);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.portfolioFilterCurrency :global(.app-select-trigger)::before { content: 'Moneda'; }
+.portfolioFilterType :global(.app-select-trigger)::before { content: 'Tipo'; }
+.portfolioFilterInstitution :global(.app-select-trigger)::before { content: 'Institución'; }
+
+.portfolioFilterBar :global(.app-select-trigger-compact) {
   height: 38px;
+  min-height: 38px;
+  border-color: var(--ft-r07-line);
+  border-radius: 10px;
+  background: var(--ft-r07-surface);
+  padding: 0 9px;
+  color: var(--ft-r07-ink);
+  font-size: 12px;
+}
+
+.portfolioFilterBar :global(.app-select-trigger-compact:hover) {
+  background: var(--ft-r07-hover);
+}
+
+.portfolioFilterBar :global(.app-select-trigger-compact:focus-visible) {
+  outline: 2px solid var(--ft-primary);
+  outline-offset: 3px;
+}
+
+.portfolioFilterBar :global(.app-select-trigger-copy) {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.portfolioFilterBar :global(.app-select-trigger-label) {
+  min-width: 0;
+  color: var(--ft-r07-ink);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.portfolioFilterBar :global(input[data-testid='portfolio-search-input']) {
+  height: 20px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--ft-r07-ink);
+  font-size: 12px;
+  line-height: 18px;
+  box-shadow: none;
+}
+
+.portfolioFilterBar :global(input[data-testid='portfolio-search-input']:hover),
+.portfolioFilterBar :global(input[data-testid='portfolio-search-input']:focus) {
+  border: 0;
+  box-shadow: none;
+  outline: 0;
+}
+
+@media (max-width: 767px) {
+  .portfolioFilterBar { margin-bottom: 12px; }
+
+  .portfolioFilterBar .portfolioFilter.filters-control {
+    width: 100%;
+    max-width: none;
+  }
+
+  .portfolioFilterBar :global(.app-select-trigger-compact) {
+    height: 44px;
+    min-height: 44px;
+  }
+
+  .portfolioFilterBar :global(input[data-testid='portfolio-search-input']) {
+    height: 42px;
+    font-size: 16px;
+  }
 }
 
 .summaryDetail {
