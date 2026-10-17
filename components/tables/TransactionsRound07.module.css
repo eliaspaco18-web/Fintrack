@@ -739,7 +739,7 @@
   height: 48px;
   padding: 6px 14px;
   color: var(--ft-r07-ink);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 18px;
 }
 
@@ -757,12 +757,12 @@
 .workspace :global([data-ft-density='movement'] .row-button) {
   min-height: 32px;
   color: var(--ft-r07-ink);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
 }
 
 .workspace :global([data-ft-density='movement'] tbody td:nth-child(2) p) {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 18px;
 }
@@ -770,11 +770,11 @@
 .workspace :global([data-ft-density='movement'] tbody td:nth-child(3)),
 .workspace :global([data-ft-density='movement'] tbody td:nth-child(4)),
 .workspace :global([data-ft-density='movement'] tbody td:nth-child(5)) {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .workspace :global([data-ft-density='movement'] tbody td:nth-child(6) p) {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -802,7 +802,7 @@
 
 .workspace :global([data-ft-density='movement'] tbody td) {
   padding: 6px 14px;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 18px;
 }
 
