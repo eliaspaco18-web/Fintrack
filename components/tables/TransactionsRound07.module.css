@@ -392,7 +392,7 @@
   height: 15px;
 }
 
-.portfolioControls { margin-bottom: 34px; }
+.portfolioControls { margin-bottom: 28px; }
 
 @media (max-width: 767px) {
   .portfolioControls { margin-bottom: 20px; }
