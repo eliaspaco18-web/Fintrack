@@ -6,8 +6,10 @@ import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { AccountType, CurrencyCode } from '@/types/database.types'
 import { useToast } from '@/lib/toast/toast'
-import { FormActions, FormField, FormSection, OptionalSection } from '@/components/forms/primitives'
+import { FormActions, FormField, FormSection } from '@/components/forms/primitives'
+import { FieldWrapper, Textarea } from '@/components/forms/TransactionForm/FormFields'
 import { IncomeDatePicker } from '@/components/forms/TransactionForm/IncomeDatePicker'
+import incomeStyles from '@/components/forms/TransactionForm/IncomeTransactionForm.module.css'
 import { FinancialIcon } from '@/components/ui/FinancialIcon'
 import { ColorSwatchPicker, IconGridPicker } from '@/components/ui/VisualPickers'
 import { ACCOUNT_COLOR_OPTIONS, ACCOUNT_ICON_OPTIONS } from '@/lib/constants/visual-options'
@@ -530,6 +532,12 @@ export function PortfolioManager({
   const [form, setForm] = useState<AccountForm>(EMPTY_FORM)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const accountAdditionalOptionsId = useId()
+  const [accountAdditionalOptionsOpen, setAccountAdditionalOptionsOpen] = useState({
+    notes: false,
+    color: false,
+    icon: false,
+  })
   const [query, setQuery] = useState('')
   const [currencyFilter, setCurrencyFilter] = useState<CurrencyFilter>('all')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
@@ -633,6 +641,7 @@ export function PortfolioManager({
       initial_balance_date: isoToday(),
     })
     setDateInputError(null)
+    setAccountAdditionalOptionsOpen({ notes: false, color: false, icon: false })
     setEditingId(null)
   }, [])
 
@@ -738,6 +747,7 @@ export function PortfolioManager({
   const openCreateModal = useCallback(() => {
     setEditingId(null)
     setDateInputError(null)
+    setAccountAdditionalOptionsOpen({ notes: false, color: false, icon: false })
     setForm({
       ...EMPTY_FORM,
       currency: (currencyOptions[0]?.value ?? '') as CurrencyCode,
@@ -785,6 +795,7 @@ export function PortfolioManager({
   const startEdit = useCallback((account: AccountItem) => {
     setEditingId(account.id)
     setDateInputError(null)
+    setAccountAdditionalOptionsOpen({ notes: false, color: false, icon: false })
     setForm({
       name: account.name,
       institution: account.institution ?? '',
@@ -1066,6 +1077,21 @@ export function PortfolioManager({
     () => (editingId ? accounts.find(account => account.id === editingId) ?? null : null),
     [accounts, editingId],
   )
+  const accountAdditionalOptions = [
+    { key: 'notes' as const, label: 'Notas', hasValue: Boolean(form.notes.trim()), hasError: false },
+    {
+      key: 'color' as const,
+      label: 'Color',
+      hasValue: Boolean(editingAccount?.color) || form.color !== EMPTY_FORM.color,
+      hasError: false,
+    },
+    {
+      key: 'icon' as const,
+      label: 'Icono',
+      hasValue: Boolean(editingAccount?.icon) || form.icon !== EMPTY_FORM.icon,
+      hasError: false,
+    },
+  ]
   const viewingAccount = useMemo(
     () => (viewingAccountId ? accounts.find(account => account.id === viewingAccountId) ?? null : null),
     [accounts, viewingAccountId],
@@ -1913,46 +1939,97 @@ export function PortfolioManager({
             </AccountInfoHint>
           </div>
 
-          <OptionalSection
-            title="Más opciones"
-            summary={[form.notes.trim() ? 'Notas' : '']}
-          >
-            <div className="space-y-3">
-              <FormField label="Notas" optional>
-                <textarea
-                  value={form.notes}
-                  onChange={event => setForm(prev => ({ ...prev, notes: event.target.value }))}
-                  className="field-base ft-form-textarea w-full resize-y"
-                  placeholder="Ej: Cuenta para gastos operativos"
-                />
-              </FormField>
+          <section className={incomeStyles.incomeOptionalSection} aria-label="Información adicional">
+            <div className={incomeStyles.incomeOptionsHeader}>
+              <div>
+                <h3 className={incomeStyles.incomeSectionHeading}>Información adicional</h3>
+                <p className={incomeStyles.incomeOptionsDescription}>Opcional · agrega detalles cuando los necesites</p>
+              </div>
             </div>
-          </OptionalSection>
 
-          <OptionalSection title="Apariencia" summary={['Color', 'Icono']}>
-            <div className="space-y-4">
-              <FormField label="Color" optional>
-                <ColorSwatchPicker
-                  value={form.color}
-                  onChange={color => setForm(prev => ({ ...prev, color }))}
-                  palette={ACCOUNT_COLOR_OPTIONS}
-                  wrapperTestId="portfolio-color-options"
-                  swatchTestIdPrefix="portfolio-color"
-                  customInputTestId="portfolio-color-picker"
-                />
-              </FormField>
-
-              <FormField label="Icono" optional>
-                <IconGridPicker
-                  value={form.icon}
-                  onChange={icon => setForm(prev => ({ ...prev, icon }))}
-                  options={ACCOUNT_ICON_OPTIONS}
-                  wrapperTestId="portfolio-icon-input"
-                  optionTestIdPrefix="portfolio-icon-option"
-                />
-              </FormField>
+            <div className={incomeStyles.incomeOptionControls} role="group" aria-label="Opciones de cuenta">
+              {accountAdditionalOptions.map(option => {
+                const isOpen = accountAdditionalOptionsOpen[option.key] || option.hasError
+                const panelId = `${accountAdditionalOptionsId}-${option.key}`
+                return (
+                  <button
+                    key={option.key}
+                    type="button"
+                    aria-expanded={isOpen}
+                    aria-controls={panelId}
+                    data-active={isOpen ? 'true' : 'false'}
+                    data-has-value={option.hasValue ? 'true' : 'false'}
+                    data-has-error={option.hasError ? 'true' : 'false'}
+                    className={incomeStyles.incomeOptionButton}
+                    onClick={() => setAccountAdditionalOptionsOpen(current => ({
+                      ...current,
+                      [option.key]: !current[option.key],
+                    }))}
+                  >
+                    <span aria-hidden="true" className={incomeStyles.incomeOptionMark}>{isOpen ? '−' : '+'}</span>
+                    <span>{option.label}</span>
+                    {option.hasError ? <span className={incomeStyles.incomeOptionError}>Revisar</span> : null}
+                  </button>
+                )
+              })}
             </div>
-          </OptionalSection>
+
+            <div
+              className={incomeStyles.incomeOptionPanels}
+              style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}
+            >
+              <div
+                id={`${accountAdditionalOptionsId}-notes`}
+                data-income-option="notes"
+                hidden={!accountAdditionalOptionsOpen.notes}
+                className={incomeStyles.incomeOptionPanel}
+              >
+                <FieldWrapper label="Notas" optional>
+                  <Textarea
+                    rows={2}
+                    value={form.notes}
+                    onChange={event => setForm(prev => ({ ...prev, notes: event.target.value }))}
+                    placeholder="Ej: Cuenta para gastos operativos"
+                  />
+                </FieldWrapper>
+              </div>
+
+              <div
+                id={`${accountAdditionalOptionsId}-color`}
+                data-income-option="color"
+                hidden={!accountAdditionalOptionsOpen.color}
+                className={incomeStyles.incomeOptionPanel}
+              >
+                <FieldWrapper label="Color" optional>
+                  <ColorSwatchPicker
+                    value={form.color}
+                    onChange={color => setForm(prev => ({ ...prev, color }))}
+                    palette={ACCOUNT_COLOR_OPTIONS}
+                    wrapperTestId="portfolio-color-options"
+                    swatchTestIdPrefix="portfolio-color"
+                    customInputTestId="portfolio-color-picker"
+                  />
+                </FieldWrapper>
+              </div>
+
+              <div
+                id={`${accountAdditionalOptionsId}-icon`}
+                data-income-option="icon"
+                hidden={!accountAdditionalOptionsOpen.icon}
+                className={incomeStyles.incomeOptionPanel}
+              >
+                <FieldWrapper label="Icono" optional>
+                  <IconGridPicker
+                    value={form.icon}
+                    onChange={icon => setForm(prev => ({ ...prev, icon }))}
+                    options={ACCOUNT_ICON_OPTIONS}
+                    wrapperTestId="portfolio-icon-input"
+                    optionTestIdPrefix="portfolio-icon-option"
+                  />
+                </FieldWrapper>
+              </div>
+            </div>
+          </section>
 
           <RecordModalFooter>
             <FormActions
