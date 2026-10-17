@@ -2,10 +2,12 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { AccountType, CurrencyCode } from '@/types/database.types'
 import { useToast } from '@/lib/toast/toast'
 import { FormActions, FormField, FormSection, OptionalSection } from '@/components/forms/primitives'
+import { IncomeDatePicker } from '@/components/forms/TransactionForm/IncomeDatePicker'
 import { FinancialIcon } from '@/components/ui/FinancialIcon'
 import { ColorSwatchPicker, IconGridPicker } from '@/components/ui/VisualPickers'
 import { ACCOUNT_COLOR_OPTIONS, ACCOUNT_ICON_OPTIONS } from '@/lib/constants/visual-options'
@@ -18,6 +20,7 @@ import { ViewToggle, type ViewMode } from '@/components/ui/ViewToggle'
 import { Button } from '@/components/ui/Button'
 import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
 import styles from '@/components/tables/TransactionsRound07.module.css'
+import formStyles from './PortfolioAccountForm.module.css'
 import { listCurrenciesAction } from '@/app/actions/admin.actions'
 import {
   ConfirmDialog,
@@ -221,6 +224,167 @@ const EMPTY_FORM: AccountForm = {
   notes: '',
 }
 
+function AccountInfoHint({ label, children }: { label: string; children: string }) {
+  const tooltipId = useId()
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const tooltipRef = useRef<HTMLSpanElement>(null)
+  const lastInputRef = useRef<'mouse' | 'touch' | 'keyboard'>('mouse')
+  const [open, setOpen] = useState(false)
+  const [position, setPosition] = useState<{ left: number; top: number } | null>(null)
+
+  const updatePosition = useCallback(() => {
+    const trigger = triggerRef.current
+    const tooltip = tooltipRef.current
+    if (!trigger || !tooltip) return
+
+    const margin = 12
+    const gap = 8
+    const triggerRect = trigger.getBoundingClientRect()
+    const tooltipRect = tooltip.getBoundingClientRect()
+    const left = Math.min(
+      Math.max(margin, window.innerWidth - tooltipRect.width - margin),
+      Math.max(margin, triggerRect.left + triggerRect.width / 2 - tooltipRect.width / 2),
+    )
+    const spaceAbove = triggerRect.top - margin
+    const spaceBelow = window.innerHeight - triggerRect.bottom - margin
+    const placeAbove = spaceAbove >= tooltipRect.height + gap || spaceAbove > spaceBelow
+    const top = placeAbove
+      ? Math.max(margin, triggerRect.top - tooltipRect.height - gap)
+      : Math.min(window.innerHeight - tooltipRect.height - margin, triggerRect.bottom + gap)
+
+    setPosition(previous => previous?.left === left && previous.top === top ? previous : { left, top })
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!open) return
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [open, updatePosition])
+
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      setOpen(false)
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (!triggerRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    document.addEventListener('pointerdown', onPointerDown, true)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, true)
+      document.removeEventListener('pointerdown', onPointerDown, true)
+    }
+  }, [open])
+
+  const triggerIsV3 = Boolean(triggerRef.current?.closest('[data-ft-v3], [data-ft-v3-shell]'))
+
+  return (
+    <span className={formStyles.infoHint}>
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-label={label}
+        aria-describedby={open ? tooltipId : undefined}
+        aria-expanded={open}
+        className={formStyles.infoHintTrigger}
+        onPointerDown={event => {
+          lastInputRef.current = event.pointerType === 'touch' ? 'touch' : 'mouse'
+        }}
+        onPointerEnter={event => {
+          if (event.pointerType !== 'mouse') return
+          lastInputRef.current = 'mouse'
+          setOpen(true)
+        }}
+        onPointerLeave={event => {
+          if (event.pointerType === 'mouse' && lastInputRef.current === 'mouse') setOpen(false)
+        }}
+        onFocus={event => {
+          if (lastInputRef.current === 'touch') return
+          lastInputRef.current = event.currentTarget.matches(':focus-visible') ? 'keyboard' : 'mouse'
+          setOpen(true)
+        }}
+        onBlur={() => {
+          if (lastInputRef.current === 'keyboard') setOpen(false)
+        }}
+        onKeyDown={event => {
+          if (event.key !== 'Escape') lastInputRef.current = 'keyboard'
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            event.stopPropagation()
+            setOpen(false)
+          }
+        }}
+        onClick={event => {
+          if (event.detail > 0 && lastInputRef.current === 'touch') setOpen(value => !value)
+        }}
+      >
+        <svg aria-hidden="true" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="6.25" />
+          <path d="M8 7.1v3.7M8 5.2h.01" />
+        </svg>
+      </button>
+      {open && typeof document !== 'undefined' ? createPortal(
+        <span
+          ref={tooltipRef}
+          id={tooltipId}
+          role="tooltip"
+          className={formStyles.infoTooltip}
+          data-ft-v3={triggerIsV3 ? '' : undefined}
+          style={{
+            left: position?.left ?? 12,
+            top: position?.top ?? 12,
+            visibility: position ? 'visible' : 'hidden',
+          }}
+        >
+          {children}
+        </span>,
+        document.body,
+      ) : null}
+    </span>
+  )
+}
+
+function AccountFormField({
+  label,
+  help,
+  note,
+  optional = false,
+  className = '',
+  children,
+}: {
+  label: string
+  help?: string
+  note?: string
+  optional?: boolean
+  className?: string
+  children: (labelId: string) => ReactNode
+}) {
+  const labelId = useId()
+
+  return (
+    <div className={`flex min-w-0 flex-col gap-[var(--ft-form-label-gap)] ${className}`.trim()}>
+      <div className="flex min-h-6 items-center gap-1.5">
+        <span id={labelId} className="text-[13px] font-semibold leading-[1.3] tracking-[-0.01em] text-[var(--ft-text-strong)]">
+          {label}
+          {optional ? <span className="ml-2 text-[12px] font-medium text-[var(--ft-form-muted)]">Opcional</span> : null}
+        </span>
+        {help ? <AccountInfoHint label={`Ayuda sobre ${label.toLowerCase()}`}>{help}</AccountInfoHint> : null}
+      </div>
+      <div className="min-w-0">{children(labelId)}</div>
+      {note ? <p role="status" className="text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">{note}</p> : null}
+    </div>
+  )
+}
+
 function withAlpha(color: string, alpha: string) {
   return /^#[0-9a-f]{6}$/i.test(color) ? `${color}${alpha}` : color
 }
@@ -362,6 +526,7 @@ export function PortfolioManager({
   const [banksError, setBanksError] = useState<string | null>(null)
   const [currenciesError, setCurrenciesError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [dateInputError, setDateInputError] = useState<string | null>(null)
   const [form, setForm] = useState<AccountForm>(EMPTY_FORM)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
@@ -467,6 +632,7 @@ export function PortfolioManager({
       ...EMPTY_FORM,
       initial_balance_date: isoToday(),
     })
+    setDateInputError(null)
     setEditingId(null)
   }, [])
 
@@ -571,6 +737,7 @@ export function PortfolioManager({
 
   const openCreateModal = useCallback(() => {
     setEditingId(null)
+    setDateInputError(null)
     setForm({
       ...EMPTY_FORM,
       currency: (currencyOptions[0]?.value ?? '') as CurrencyCode,
@@ -617,6 +784,7 @@ export function PortfolioManager({
 
   const startEdit = useCallback((account: AccountItem) => {
     setEditingId(account.id)
+    setDateInputError(null)
     setForm({
       name: account.name,
       institution: account.institution ?? '',
@@ -708,6 +876,7 @@ export function PortfolioManager({
     const trimmedInitialBalanceDate = form.initial_balance_date.trim()
     if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmedInitialBalanceDate)) {
       const message = 'Indica una fecha valida para el saldo inicial.'
+      setDateInputError(message)
       setError(message)
       toast.error('No se pudo guardar la cuenta', message)
       return
@@ -1539,14 +1708,14 @@ export function PortfolioManager({
         onClose={closeModal}
         eyebrow="Cuentas"
         title={editingId ? 'Editar cuenta' : 'Añadir cuenta'}
-        subtitle={editingId ? 'Actualiza los datos permitidos sin perder el historial.' : 'Comienza con el saldo que conoces y la fecha a la que corresponde.'}
+        subtitle={editingId ? 'Actualiza los datos permitidos de la cuenta.' : 'Define la cuenta y su saldo de apertura.'}
         widthClassName="w-[calc(100vw-32px)] max-w-[580px]"
         presentation="workbench"
       >
         <form
           onSubmit={handleSubmit}
           data-testid="portfolio-form"
-          className="flex flex-col gap-4"
+          className="flex flex-col gap-3"
         >
           {error ? (
             <div className="rounded-[var(--ft-form-radius)] border border-[color:var(--ft-form-error)]/20 bg-[var(--ft-danger-soft)] px-3.5 py-3">
@@ -1569,181 +1738,186 @@ export function PortfolioManager({
                 placeholder="Ej.: Cuenta principal"
               />
             </FormField>
-            <FormField
+            <AccountFormField
               label="Tipo"
-              description={
-                editingAccount?.type === 'CREDIT_CARD'
-                  ? 'La tarjeta conserva su identidad técnica. Para otro uso, crea una cuenta nueva.'
-                  : editingAccount
-                    ? 'Puedes ajustar el tipo operativo, pero no convertir esta cuenta en tarjeta.'
-                    : undefined
-              }
+              help={editingAccount?.type === 'CREDIT_CARD'
+                ? 'Las tarjetas conservan su tipo técnico. Para otro uso, crea una cuenta operativa.'
+                : editingAccount
+                  ? 'Puedes cambiar el tipo operativo, pero no convertir una cuenta en tarjeta.'
+                  : 'Define cómo se clasifica esta cuenta en Cuentas.'}
             >
-              <AppSelect
-                value={form.type}
-                onChange={handleSelectAccountType}
-                testId="portfolio-type-select"
-                options={ACCOUNT_TYPE_OPTIONS.map(option => ({
-                  value: option.value,
-                  label: option.label,
-                  disabled: editingAccount
-                    ? crossesTechnicalAccountBoundary(editingAccount.type, option.value)
-                    : false,
-                }))}
-              />
-            </FormField>
-            <FormField
+              {labelId => (
+                <AppSelect
+                  value={form.type}
+                  onChange={handleSelectAccountType}
+                  ariaLabelledBy={labelId}
+                  matchTriggerWidth
+                  testId="portfolio-type-select"
+                  options={ACCOUNT_TYPE_OPTIONS.map(option => ({
+                    value: option.value,
+                    label: option.label,
+                    disabled: editingAccount
+                      ? crossesTechnicalAccountBoundary(editingAccount.type, option.value)
+                      : false,
+                  }))}
+                />
+              )}
+            </AccountFormField>
+            <AccountFormField
               label="Institución financiera"
               optional
-              description={
-                banksError
-                  ? 'El catálogo bancario no está disponible. No se puede cambiar ni verificar esta asociación hasta reintentar la carga.'
-                  : undefined
-              }
+              help="Vincula la cuenta con una entidad registrada. También puedes dejarla sin institución."
+              note={banksError ? 'Catálogo no disponible. Reintenta para cambiar esta asociación.' : undefined}
+              className="min-w-0"
             >
-              <AppSelect
-                value={form.bank_entity_id}
-                onChange={handleSelectBank}
-                className="w-full"
-                disabled={!dataState.banksAvailable}
-                testId="portfolio-bank-entity-select"
-                searchPlaceholder="Buscar entidad..."
-                options={[
-                  { value: '', label: 'Sin institución' },
-                  ...banks.map(bank => ({
-                    value: bank.id,
-                    label: bank.name ?? bank.short_name ?? 'Entidad sin nombre',
-                  })),
-                ]}
-              />
-            </FormField>
+              {labelId => (
+                <AppSelect
+                  value={form.bank_entity_id}
+                  onChange={handleSelectBank}
+                  ariaLabelledBy={labelId}
+                  matchTriggerWidth
+                  className="w-full"
+                  disabled={!dataState.banksAvailable}
+                  testId="portfolio-bank-entity-select"
+                  searchPlaceholder="Buscar entidad..."
+                  options={[
+                    { value: '', label: 'Sin institución' },
+                    ...banks.map(bank => ({
+                      value: bank.id,
+                      label: bank.name ?? bank.short_name ?? 'Entidad sin nombre',
+                    })),
+                  ]}
+                />
+              )}
+            </AccountFormField>
           </FormSection>
 
           <FormSection
             title="Saldo de apertura"
-            description={editingId
-              ? 'El saldo actual y el saldo de apertura son distintos. Ajusta la base respetando las restricciones del historial.'
-              : 'Indica el saldo y la fecha que marcan el punto de partida de esta cuenta.'}
             columns="2"
             className="[--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
           >
-
-            <FormField
+            <AccountFormField
               label="Moneda"
-              description={
-                currenciesError
-                  ? 'El catálogo de monedas no está disponible. Los códigos existentes se conservan, pero no se puede elegir una moneda nueva.'
-                  : !editingAccount && !currenciesLoading && currencyOptions.length === 0
-                    ? 'No hay monedas disponibles para registrar una cuenta.'
-                    : editingAccount
-                  ? 'La moneda se fijó al crear la cuenta. Crea otra cuenta para usar una moneda distinta.'
-                  : undefined
-              }
+              help={editingAccount
+                ? 'La moneda se fija al crear la cuenta. Para usar otra, crea una cuenta nueva.'
+                : 'El saldo y los movimientos de esta cuenta se registran en esta moneda.'}
+              note={currenciesError
+                ? 'Catálogo de monedas no disponible. Reintenta antes de elegir una moneda nueva.'
+                : !editingAccount && !currenciesLoading && currencyOptions.length === 0
+                  ? 'No hay monedas disponibles para crear una cuenta.'
+                  : undefined}
             >
-              <AppSelect
-                value={form.currency}
-                onChange={value => setForm(prev => ({ ...prev, currency: value as CurrencyCode }))}
-                testId="portfolio-currency-select"
-                disabled={!dataState.currenciesAvailable || Boolean(editingAccount) || currencyOptions.length === 0}
-                searchable={false}
-                options={[
-                  ...currencyOptions,
-                  ...(
-                    !editingAccount || currencyOptions.some(option => option.value === form.currency)
-                      ? []
-                      : [{ value: form.currency, label: form.currency }]
-                  ),
-                ]}
-              />
-            </FormField>
+              {labelId => (
+                <AppSelect
+                  value={form.currency}
+                  onChange={value => setForm(prev => ({ ...prev, currency: value as CurrencyCode }))}
+                  ariaLabelledBy={labelId}
+                  matchTriggerWidth
+                  testId="portfolio-currency-select"
+                  disabled={!dataState.currenciesAvailable || Boolean(editingAccount) || currencyOptions.length === 0}
+                  searchable={false}
+                  options={[
+                    ...currencyOptions,
+                    ...(
+                      !editingAccount || currencyOptions.some(option => option.value === form.currency)
+                        ? []
+                        : [{ value: form.currency, label: form.currency }]
+                    ),
+                  ]}
+                />
+              )}
+            </AccountFormField>
 
-            <FormField
+            <AccountFormField
               label={formIsTechnicalAccount ? 'Saldo técnico' : 'Saldo inicial'}
+              help={formIsTechnicalAccount
+                ? 'Las tarjetas son cuentas técnicas. El cupo, uso y disponible se gestionan en Créditos.'
+                : editingId
+                  ? 'Es el punto de partida de la cuenta. Su ajuste conserva las restricciones del historial.'
+                  : 'Es el punto de partida antes de los movimientos registrados; no representa el saldo actual.'}
               className="md:col-span-1"
-              description={
-                formIsTechnicalAccount
-                  ? 'Las tarjetas no tienen saldo propio. El cupo, uso y disponible se gestionan en Créditos.'
-                  : editingId
-                  ? 'Corrige el saldo de apertura y la fecha desde la que ese valor representa el punto de partida de la cuenta.'
-                  : 'Usalo para reflejar el punto de partida exacto antes de comenzar a registrar movimientos.'
-              }
             >
-              <NumericInput
-                step="0.01"
-                decimals={2}
-                value={formIsTechnicalAccount ? '0.00' : form.initial_balance}
-                onValueChange={value => setForm(prev => ({ ...prev, initial_balance: value }))}
-                disabled={formIsTechnicalAccount}
-                data-testid="portfolio-initial-balance-input"
-                className="field-base ft-form-amount-input w-full"
-              />
-            </FormField>
+              {labelId => (
+                <NumericInput
+                  aria-labelledby={labelId}
+                  step="0.01"
+                  decimals={2}
+                  value={formIsTechnicalAccount ? '0.00' : form.initial_balance}
+                  onValueChange={value => setForm(prev => ({ ...prev, initial_balance: value }))}
+                  disabled={formIsTechnicalAccount}
+                  data-testid="portfolio-initial-balance-input"
+                  className="field-base ft-form-amount-input w-full"
+                />
+              )}
+            </AccountFormField>
 
-            <FormField
+            <AccountFormField
               label="Fecha del saldo inicial"
+              help={editingId
+                ? 'Debe ser igual o anterior al primer movimiento registrado en esta cuenta.'
+                : 'Indica la fecha a la que corresponde el saldo de apertura.'}
               className="md:col-span-1"
-              description={
-                editingId
-                  ? 'Debe ser igual o anterior al primer movimiento registrado en esta cuenta.'
-                  : 'Usaremos esta fecha como corte del saldo base para reconstruir el historial correctamente.'
-              }
             >
-              <input
-                type="date"
-                value={form.initial_balance_date}
-                onChange={event => setForm(prev => ({ ...prev, initial_balance_date: event.target.value }))}
-                data-testid="portfolio-initial-balance-date-input"
-                className="field-base ft-form-input w-full"
-              />
-            </FormField>
+              {() => (
+                <IncomeDatePicker
+                  value={form.initial_balance_date}
+                  onChange={value => setForm(prev => ({ ...prev, initial_balance_date: value }))}
+                  onInvalidInput={setDateInputError}
+                  error={dateInputError ?? undefined}
+                  inputLabel="Fecha del saldo inicial, día, mes y año"
+                  inputTestId="portfolio-initial-balance-date-input"
+                />
+              )}
+            </AccountFormField>
 
             {editingId ? (
-              <div className="border-t border-[var(--ft-form-border)] pt-3 md:col-span-2">
-                <p className="text-[11px] font-medium text-[var(--ft-form-muted)]">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-[var(--ft-form-border)] pt-3 md:col-span-2">
+                <span className="inline-flex items-center gap-1 text-[12px] font-medium text-[var(--ft-form-muted)]">
                   {formIsTechnicalAccount ? 'Lectura técnica' : 'Saldo actual'}
-                </p>
-                <p className="mt-1 text-[1.05rem] font-semibold tracking-[-0.02em] text-[var(--c-text)] tabular-nums">
+                  <AccountInfoHint label="Ayuda sobre el saldo actual">
+                    {formIsTechnicalAccount
+                      ? 'El saldo técnico no es dinero propio. La línea disponible se consulta en Créditos.'
+                      : 'Al guardar un cambio de apertura, el saldo operativo se recalcula con esa base y los movimientos registrados.'}
+                  </AccountInfoHint>
+                </span>
+                <strong className="text-[14px] font-semibold tracking-[-0.01em] text-[var(--ft-text-strong)] tabular-nums">
                   {formIsTechnicalAccount
                     ? 'No patrimonial'
                     : editingAccount
                       ? formatPortfolioAmount(editingAccount.balance, editingAccount.currency, currencies)
                       : '--'}
-                </p>
-                <p className="mt-2 text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-                  {formIsTechnicalAccount
-                    ? 'Esta cuenta solo permite registrar consumos de tarjeta. La línea disponible vive en Créditos.'
-                    : 'El saldo operativo vigente se recalculará usando la nueva base de apertura, sin perder la referencia del valor actual.'}
-                </p>
+                </strong>
               </div>
             ) : null}
 
           </FormSection>
 
-          <label className="flex items-start gap-3 border-t border-[var(--ft-form-border)] pt-4">
-            <input
-              type="checkbox"
-              checked={formIsTechnicalAccount ? false : form.include_in_net_worth}
-              disabled={formIsTechnicalAccount}
-              onChange={event => setForm(prev => ({ ...prev, include_in_net_worth: event.target.checked }))}
-              className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--c-border)] text-[var(--c-primary)] focus:ring-[var(--c-primary-soft)] disabled:cursor-not-allowed disabled:opacity-60"
-            />
-            <span className="space-y-1">
-              <span className="block text-[12px] font-semibold text-[var(--c-text)]">
+          <div className="flex items-start justify-between gap-2 border-t border-[var(--ft-form-border)] pt-3">
+            <label className="flex min-h-11 items-start gap-3">
+              <input
+                type="checkbox"
+                checked={formIsTechnicalAccount ? false : form.include_in_net_worth}
+                disabled={formIsTechnicalAccount}
+                onChange={event => setForm(prev => ({ ...prev, include_in_net_worth: event.target.checked }))}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--c-border)] text-[var(--c-primary)] focus:ring-[var(--c-primary-soft)] disabled:cursor-not-allowed disabled:opacity-60"
+              />
+              <span className="pt-px text-[12px] font-semibold text-[var(--c-text)]">
                 Incluir en el cálculo actual de cuentas
               </span>
-              <span className="block text-[11px] leading-[1.45] text-[var(--ft-form-muted)]">
-                {formIsTechnicalAccount
-                  ? 'Las cuentas técnicas de tarjeta no representan dinero propio.'
-                  : 'Mantiene la configuración con la que esta cuenta participa en los totales actuales.'}
-              </span>
-            </span>
-          </label>
+            </label>
+            <AccountInfoHint label="Ayuda sobre la inclusión en el cálculo de cuentas">
+              {formIsTechnicalAccount
+                ? 'Las cuentas técnicas de tarjeta no representan dinero propio y no se incluyen en este cálculo.'
+                : 'Define si esta cuenta operativa participa en los totales actuales.'}
+            </AccountInfoHint>
+          </div>
 
           <OptionalSection
             title="Más opciones"
             summary={[form.notes.trim() ? 'Notas' : '']}
           >
-            <div className="space-y-4">
+            <div className="space-y-3">
               <FormField label="Notas" optional>
                 <textarea
                   value={form.notes}

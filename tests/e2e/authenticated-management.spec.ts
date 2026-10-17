@@ -385,7 +385,7 @@ test.describe('authenticated management connectivity', () => {
     await expect(page.getByTestId('portfolio-form')).toBeVisible()
 
     await page.getByTestId('portfolio-initial-balance-input').fill('400')
-    await page.getByTestId('portfolio-initial-balance-date-input').fill('2026-01-01')
+    await page.getByTestId('portfolio-initial-balance-date-input').fill('01/01/2026')
     await page.getByTestId('portfolio-submit-button').click()
 
     await expect(row).toContainText('S/ 400.00', { timeout: 20_000 })
