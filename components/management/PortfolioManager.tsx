@@ -11,6 +11,7 @@ import { ColorSwatchPicker, IconGridPicker } from '@/components/ui/VisualPickers
 import { ACCOUNT_COLOR_OPTIONS, ACCOUNT_ICON_OPTIONS } from '@/lib/constants/visual-options'
 import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
 import { ActionIconButton } from '@/components/ui/ActionIconButton'
+import { AnchoredActionMenu, type AnchoredAction } from '@/components/ui/AnchoredActionMenu'
 import { AppSelect } from '@/components/ui/AppSelect'
 import { NumericInput } from '@/components/ui/NumericInput'
 import { ViewToggle, type ViewMode } from '@/components/ui/ViewToggle'
@@ -18,15 +19,11 @@ import { Button } from '@/components/ui/Button'
 import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
 import { listCurrenciesAction } from '@/app/actions/admin.actions'
 import {
-  AmountCell,
   ConfirmDialog,
-  ControlsBar,
   DataErrorBanner,
-  DataFilterPreset,
   DataSearchField,
   DataTable,
   EmptyState,
-  FilterBar,
   ModuleHeader,
   PageLayout,
   StatusBadge,
@@ -50,7 +47,6 @@ import {
   groupPortfolioBalancesByCurrency,
 } from '@/modules/portfolio/currency-display'
 import {
-  getIdentifiedPortfolioInstitution,
   getPortfolioBankDisplayName,
   getPortfolioReferenceDataState,
   resolveCreateAccountCurrency,
@@ -229,12 +225,21 @@ function withAlpha(color: string, alpha: string) {
   return /^#[0-9a-f]{6}$/i.test(color) ? `${color}${alpha}` : color
 }
 
-function getIconLabel(icon: string): string {
-  return ACCOUNT_ICON_OPTIONS.find(option => option.value === icon)?.label ?? icon
-}
+function getPortfolioInstitutionMark(account: AccountItem): string {
+  const shortName = account.bank_entity?.short_name?.trim()
+  const source = shortName || getPortfolioBankDisplayName(account)
+  if (source === 'Sin banco') {
+    return account.type === 'CASH' ? 'EF' : account.name.trim().slice(0, 2).toUpperCase()
+  }
 
-function balanceTone(balance: number): 'neutral' | 'danger' {
-  return balance < 0 ? 'danger' : 'neutral'
+  return source
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
 }
 
 function stackIcon() {
@@ -363,13 +368,14 @@ export function PortfolioManager({
   const [query, setQuery] = useState('')
   const [currencyFilter, setCurrencyFilter] = useState<CurrencyFilter>('all')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
   const [bankFilter, setBankFilter] = useState<string>('all')
   const [showTechnicalAccounts, setShowTechnicalAccounts] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [rowActionId, setRowActionId] = useState<string | null>(null)
   const [pendingDeactivateAccount, setPendingDeactivateAccount] = useState<AccountItem | null>(null)
   const [pendingDeleteAccount, setPendingDeleteAccount] = useState<AccountItem | null>(null)
+  const [viewingAccountId, setViewingAccountId] = useState<string | null>(null)
 
   const handledQueryOpenRef = useRef(false)
   const openFromHeroQuery = searchParams.get('new') === 'portfolio'
@@ -515,15 +521,6 @@ export function PortfolioManager({
     return groupPortfolioBalancesByCurrency(activeOperationalAccounts)
   }, [activeOperationalAccounts])
 
-  const activeInstitutions = useMemo(() => {
-    const names = new Set<string>()
-    for (const account of activeOperationalAccounts) {
-      const institutionName = getIdentifiedPortfolioInstitution(account)
-      if (institutionName) names.add(institutionName)
-    }
-    return names.size
-  }, [activeOperationalAccounts])
-
   const currencyOptions = useMemo(() => {
     const activeCurrencies = currencies
       .filter(currency => currency.is_active)
@@ -538,6 +535,13 @@ export function PortfolioManager({
       label: `${currency.code} · ${currency.name}${currency.is_system ? '' : ' · Personalizada'}`,
     }))
   }, [currencies])
+
+  const otherCurrencyTotals = useMemo(
+    () => [...totalBalanceByCurrency.entries()]
+      .filter(([currency]) => currency !== 'PEN' && currency !== 'USD')
+      .sort(([a], [b]) => a.localeCompare(b)),
+    [totalBalanceByCurrency],
+  )
 
   const filteredAccounts = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -893,6 +897,10 @@ export function PortfolioManager({
     () => (editingId ? accounts.find(account => account.id === editingId) ?? null : null),
     [accounts, editingId],
   )
+  const viewingAccount = useMemo(
+    () => (viewingAccountId ? accounts.find(account => account.id === viewingAccountId) ?? null : null),
+    [accounts, viewingAccountId],
+  )
   const dataState = useMemo(() => getPortfolioReferenceDataState({
     accountCount: accounts.length,
     accountsLoading: loading,
@@ -921,7 +929,7 @@ export function PortfolioManager({
         header={
           <ModuleHeader
             title="Cuentas"
-            description="Cada saldo en su moneda. Consulta el valor de apertura y la posición actual sin confundirlos."
+            description="Cada saldo en su moneda. Cada cuenta con su propósito."
             actions={(
               <CreateModuleButton
                 onClick={openCreateModal}
@@ -933,175 +941,143 @@ export function PortfolioManager({
         }
         stats={(
           <section
-            aria-label="Saldos actuales por moneda"
-            className="border-y border-[var(--ft-border)] py-4 md:py-5"
+            aria-label="Saldos por moneda"
+            className="mb-1 grid grid-cols-2 gap-x-5 gap-y-5 border-b border-[var(--ft-border)] pb-[18px] sm:grid-cols-[minmax(130px,1fr)_minmax(130px,1fr)_minmax(240px,2fr)] sm:gap-x-10 sm:gap-y-0"
           >
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between md:gap-8">
-              <div className="min-w-0">
-                <p className="text-[13px] font-semibold text-[var(--ft-text-strong)]">Saldos actuales</p>
-                <p className="mt-1 text-[12px] leading-5 text-[var(--ft-text-muted)]">
-                  {accountsSummaryAvailable
-                    ? `${activeCount} cuenta${activeCount === 1 ? '' : 's'} activa${activeCount === 1 ? '' : 's'} · ${activeInstitutions} entidad${activeInstitutions === 1 ? '' : 'es'}`
-                    : loading ? 'Cargando cuentas...' : 'Totales no disponibles'}
-                </p>
-              </div>
-
-              <div className="flex min-w-0 flex-wrap items-end gap-x-8 gap-y-3">
-                {!accountsSummaryAvailable ? (
-                  <p className="text-[14px] font-medium text-[var(--ft-text-muted)]">
-                    {loading ? 'Cargando...' : 'No disponible'}
-                  </p>
-                ) : totalBalanceByCurrency.size === 0 ? (
-                  <p className="text-[13px] text-[var(--ft-text-muted)]">
-                    No hay cuentas operativas activas para resumir.
-                  </p>
-                ) : [...totalBalanceByCurrency.entries()].map(([currency, total]) => {
-                  const presentation = getPortfolioCurrencyPresentation(currency, currencies)
-                  const currencyLabel = presentation.name
-                    ? `${presentation.code} · ${presentation.name}`
-                    : presentation.kind === 'unavailable'
-                      ? `${presentation.code} · código registrado`
-                      : presentation.code
-
-                  return (
-                    <div key={currency} className="min-w-[150px]">
-                      <p className="text-[11px] font-medium text-[var(--ft-text-muted)]">{currencyLabel}</p>
-                      <p className="mt-1 text-[20px] font-semibold tracking-[-0.025em] tabular-nums text-[var(--ft-text-strong)] sm:text-[22px]">
-                        {formatPortfolioAmount(total, currency, currencies)}
-                      </p>
-                    </div>
-                  )
-                })}
-              </div>
+            <div className="min-w-0">
+              <p className="mb-1.5 text-[11px] text-[var(--ft-text-muted)]">Saldos en soles</p>
+              <p className="text-[24px] font-semibold leading-8 tracking-[-0.025em] tabular-nums text-[var(--ft-text-strong)]">
+                {!accountsSummaryAvailable ? loading ? 'Cargando…' : 'No disponible' : totalBalanceByCurrency.has('PEN') ? formatPortfolioAmount(totalBalanceByCurrency.get('PEN')!, 'PEN', currencies) : '—'}
+              </p>
+              <p className="mt-0.5 text-[11px] text-[var(--ft-text-muted)]">
+                {accountsSummaryAvailable
+                  ? `${activeOperationalAccounts.filter(account => account.currency === 'PEN').length} cuenta${activeOperationalAccounts.filter(account => account.currency === 'PEN').length === 1 ? '' : 's'} activa${activeOperationalAccounts.filter(account => account.currency === 'PEN').length === 1 ? '' : 's'}`
+                  : loading ? 'Cargando cuentas…' : 'Totales no disponibles'}
+              </p>
             </div>
-            <p className="mt-3 text-[11px] leading-5 text-[var(--ft-text-subtle)]">
-              Suma de saldos actuales en cuentas operativas activas. Cada moneda se muestra por separado; las cuentas técnicas de tarjetas no se incluyen.
-            </p>
+            <div className="min-w-0">
+              <p className="mb-1.5 text-[11px] text-[var(--ft-text-muted)]">Saldos en dólares</p>
+              <p className="text-[24px] font-semibold leading-8 tracking-[-0.025em] tabular-nums text-[var(--ft-text-strong)]">
+                {!accountsSummaryAvailable ? loading ? 'Cargando…' : 'No disponible' : totalBalanceByCurrency.has('USD') ? formatPortfolioAmount(totalBalanceByCurrency.get('USD')!, 'USD', currencies) : '—'}
+              </p>
+              <p className="mt-0.5 text-[11px] text-[var(--ft-text-muted)]">
+                {accountsSummaryAvailable
+                  ? `${activeOperationalAccounts.filter(account => account.currency === 'USD').length} cuenta${activeOperationalAccounts.filter(account => account.currency === 'USD').length === 1 ? '' : 's'} activa${activeOperationalAccounts.filter(account => account.currency === 'USD').length === 1 ? '' : 's'}`
+                  : loading ? 'Cargando cuentas…' : 'Totales no disponibles'}
+              </p>
+            </div>
+            <div className="col-span-2 min-w-0 sm:col-span-1">
+              <p className="mb-1.5 text-[11px] text-[var(--ft-text-muted)]">Registro separado</p>
+              <p className="text-[16px] font-semibold leading-8 tracking-[-0.02em] text-[var(--ft-text-strong)]">Sin consolidar monedas</p>
+              <p className="text-[11px] leading-[18px] text-[var(--ft-text-muted)]">El crédito disponible no es un saldo propio</p>
+              {accountsSummaryAvailable && otherCurrencyTotals.length > 0 ? (
+                <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] leading-[18px] text-[var(--ft-text-muted)]">
+                  {otherCurrencyTotals.map(([currency, total]) => (
+                    <span key={currency} className="tabular-nums">{formatPortfolioAmount(total, currency, currencies)}</span>
+                  ))}
+                </p>
+              ) : null}
+            </div>
           </section>
         )}
         controls={(
-          <ControlsBar
-            presets={(
-              <>
-                <DataFilterPreset
-                  label="Todas"
-                  active={statusFilter === 'all' && !showTechnicalAccounts}
-                  count={operationalAccounts.length}
-                  onClick={() => {
-                    setShowTechnicalAccounts(false)
-                    setStatusFilter('all')
-                  }}
-                />
-                <DataFilterPreset
-                  label="Activas"
-                  active={statusFilter === 'active' && !showTechnicalAccounts}
-                  count={activeCount}
-                  onClick={() => {
-                    setShowTechnicalAccounts(false)
-                    setStatusFilter('active')
-                  }}
-                />
-                <DataFilterPreset
-                  label="Inactivas"
-                  active={statusFilter === 'inactive' && !showTechnicalAccounts}
-                  count={inactiveCount}
-                  onClick={() => {
-                    setShowTechnicalAccounts(false)
-                    setStatusFilter('inactive')
-                  }}
-                />
-                <DataFilterPreset
-                  label="Cuentas técnicas"
-                  active={showTechnicalAccounts}
-                  count={technicalCount}
-                  onClick={() => {
-                    const next = !showTechnicalAccounts
-                    setShowTechnicalAccounts(next)
-                    if (next) setStatusFilter('all')
-                  }}
-                />
-              </>
-            )}
-            search={(
+          <div className="min-w-0">
+            <div role="group" aria-label="Tipo de cuenta" className="mb-[18px] flex min-w-0 gap-6 overflow-x-auto border-b border-[var(--ft-border)]">
+              <button type="button" aria-pressed={!showTechnicalAccounts && statusFilter === 'active'} onClick={() => { setShowTechnicalAccounts(false); setStatusFilter('active') }} className={`min-h-9 shrink-0 border-b-2 px-0 pb-[10px] text-[12px] font-semibold transition-colors ${!showTechnicalAccounts && statusFilter === 'active' ? 'border-[var(--ft-primary)] text-[var(--ft-primary)]' : 'border-transparent text-[var(--ft-text-muted)] hover:text-[var(--ft-text-strong)]'}`}>
+                Activas <span className="ml-1.5 text-[10px] font-medium text-[var(--ft-text-faint)]">{activeCount}</span>
+              </button>
+              <button type="button" aria-pressed={!showTechnicalAccounts && statusFilter === 'inactive'} onClick={() => { setShowTechnicalAccounts(false); setStatusFilter('inactive') }} className={`min-h-9 shrink-0 border-b-2 px-0 pb-[10px] text-[12px] font-semibold transition-colors ${!showTechnicalAccounts && statusFilter === 'inactive' ? 'border-[var(--ft-primary)] text-[var(--ft-primary)]' : 'border-transparent text-[var(--ft-text-muted)] hover:text-[var(--ft-text-strong)]'}`}>
+                Inactivas <span className="ml-1.5 text-[10px] font-medium text-[var(--ft-text-faint)]">{inactiveCount}</span>
+              </button>
+              <button type="button" aria-pressed={showTechnicalAccounts} onClick={() => { setShowTechnicalAccounts(true); setStatusFilter('all') }} className={`min-h-9 shrink-0 border-b-2 px-0 pb-[10px] text-[12px] font-semibold transition-colors ${showTechnicalAccounts ? 'border-[var(--ft-primary)] text-[var(--ft-primary)]' : 'border-transparent text-[var(--ft-text-muted)] hover:text-[var(--ft-text-strong)]'}`}>
+                Cuentas técnicas <span className="ml-1.5 text-[10px] font-medium text-[var(--ft-text-faint)]">{technicalCount}</span>
+              </button>
+            </div>
+
+            <div className="mb-3 flex flex-wrap items-center gap-2">
               <DataSearchField
                 value={query}
                 onChange={setQuery}
-                placeholder="Buscar cuenta, banco, tipo o moneda"
+                placeholder="Buscar por cuenta o entidad"
+                aria-label="Buscar por cuenta o entidad"
+                className="w-full sm:w-[230px]"
               />
-            )}
-            filters={(
-              <FilterBar>
-                <AppSelect
-                  value={currencyFilter}
-                  onChange={value => setCurrencyFilter(value as CurrencyFilter)}
-                  className="filters-control sm:w-[120px]"
-                  compact
-                  disabled={!dataState.currenciesAvailable}
-                  searchable={false}
-                  options={[
-                    {
-                      value: 'all',
-                      label: currenciesLoading
-                        ? 'Cargando...'
-                        : currenciesError
-                          ? 'Monedas no disponibles'
-                          : 'Moneda',
-                    },
-                    ...currencyOptions.map(option => ({
-                      value: option.value,
-                      label: option.value,
-                    })),
-                  ]}
-                />
-                <AppSelect
-                  value={typeFilter}
-                  onChange={value => setTypeFilter(value as TypeFilter)}
-                  className="filters-control sm:w-[190px]"
-                  compact
-                  searchPlaceholder="Buscar tipo..."
-                  options={[
-                    { value: 'all', label: 'Tipo' },
-                    ...ACCOUNT_TYPE_OPTIONS.map(option => ({
-                      value: option.value,
-                      label: option.label,
-                    })),
-                  ]}
-                />
-                <AppSelect
-                  value={bankFilter}
-                  onChange={setBankFilter}
-                  className="filters-control sm:w-[220px]"
-                  disabled={!dataState.banksAvailable}
-                  compact
-                  searchPlaceholder="Buscar banco..."
-                  options={[
-                    {
-                      value: 'all',
-                      label: banksLoading
-                        ? 'Cargando...'
-                        : banksError
-                          ? 'Bancos no disponibles'
-                          : 'Banco',
-                    },
-                    { value: 'none', label: 'Sin banco' },
-                    ...banks.map(bank => ({
-                      value: bank.id,
-                      label: bank.name ?? bank.short_name ?? 'Entidad sin nombre',
-                    })),
-                  ]}
-                />
-              </FilterBar>
-            )}
-            viewToggle={<ViewToggle value={viewMode} onChange={setViewMode} id="portfolio-view-toggle" />}
-            actions={(
-              <StatusBadge tone="muted" dot={false}>
-                {filteredAccounts.length} cuenta{filteredAccounts.length === 1 ? '' : 's'}
-                {technicalCount > 0 && !showTechnicalAccounts && typeFilter !== 'CREDIT_CARD'
-                  ? ` · ${technicalCount} técnica${technicalCount === 1 ? '' : 's'} oculta${technicalCount === 1 ? '' : 's'}`
-                  : ''}
-              </StatusBadge>
-            )}
-          />
+              <details className="group relative">
+                <summary className="flex h-[38px] cursor-pointer list-none items-center gap-2 rounded-control border border-[var(--ft-border)] bg-[var(--ft-surface)] px-3 text-[12px] font-semibold text-[var(--ft-text-strong)] hover:bg-[var(--ft-surface-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ft-primary)] [&::-webkit-details-marker]:hidden">
+                  <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16M7 12h10m-7 6h4" /></svg>
+                  Moneda y tipo
+                </summary>
+                <div className="absolute left-0 top-[calc(100%+8px)] z-30 grid w-[min(440px,calc(100vw-32px))] gap-4 rounded-panel border border-[var(--ft-border)] bg-[var(--ft-surface)] p-4 shadow-elevation-lg sm:grid-cols-2">
+                  <label className="grid min-w-0 gap-1.5 text-[11px] font-semibold text-[var(--ft-text-muted)]">
+                    Moneda
+                    <AppSelect
+                      value={currencyFilter}
+                      onChange={value => setCurrencyFilter(value as CurrencyFilter)}
+                      className="w-full"
+                      compact
+                      disabled={!dataState.currenciesAvailable}
+                      searchable={false}
+                      options={[
+                        { value: 'all', label: currenciesLoading ? 'Cargando…' : currenciesError ? 'Monedas no disponibles' : 'Todas las monedas' },
+                        ...currencyOptions.map(option => ({ value: option.value, label: option.value })),
+                      ]}
+                    />
+                  </label>
+                  <label className="grid min-w-0 gap-1.5 text-[11px] font-semibold text-[var(--ft-text-muted)]">
+                    Tipo
+                    <AppSelect
+                      value={typeFilter}
+                      onChange={value => setTypeFilter(value as TypeFilter)}
+                      className="w-full"
+                      compact
+                      searchPlaceholder="Buscar tipo…"
+                      options={[
+                        { value: 'all', label: 'Todos los tipos' },
+                        ...ACCOUNT_TYPE_OPTIONS.map(option => ({ value: option.value, label: option.label })),
+                      ]}
+                    />
+                  </label>
+                  <label className="grid min-w-0 gap-1.5 text-[11px] font-semibold text-[var(--ft-text-muted)]">
+                    Institución
+                    <AppSelect
+                      value={bankFilter}
+                      onChange={setBankFilter}
+                      className="w-full"
+                      disabled={!dataState.banksAvailable}
+                      compact
+                      searchPlaceholder="Buscar institución…"
+                      options={[
+                        { value: 'all', label: banksLoading ? 'Cargando…' : banksError ? 'Instituciones no disponibles' : 'Todas las instituciones' },
+                        { value: 'none', label: 'Sin institución' },
+                        ...banks.map(bank => ({ value: bank.id, label: bank.name ?? bank.short_name ?? 'Entidad sin nombre' })),
+                      ]}
+                    />
+                  </label>
+                  <label className="grid min-w-0 gap-1.5 text-[11px] font-semibold text-[var(--ft-text-muted)]">
+                    Estado
+                    <AppSelect
+                      value={statusFilter}
+                      onChange={value => { setShowTechnicalAccounts(false); setStatusFilter(value as StatusFilter) }}
+                      className="w-full"
+                      compact
+                      searchable={false}
+                      options={[
+                        { value: 'all', label: 'Todos los estados' },
+                        { value: 'active', label: 'Activas' },
+                        { value: 'inactive', label: 'Inactivas' },
+                      ]}
+                    />
+                  </label>
+                  <div className="flex min-w-0 items-center justify-between gap-3 border-t border-[var(--ft-border)] pt-3 sm:col-span-2">
+                    <span className="text-[11px] font-semibold text-[var(--ft-text-muted)]">Vista</span>
+                    <ViewToggle value={viewMode} onChange={setViewMode} id="portfolio-view-toggle" />
+                  </div>
+                </div>
+              </details>
+              <span className="ml-auto hidden text-[11px] text-[var(--ft-text-muted)] sm:inline">Apertura y posición actual</span>
+              <span className="w-full text-[11px] text-[var(--ft-text-muted)] sm:hidden">Apertura y posición actual</span>
+            </div>
+          </div>
         )}
       >
         {accountsError ? (
@@ -1173,173 +1149,165 @@ export function PortfolioManager({
             />
           </div>
         ) : viewMode === 'list' ? (
-          <DataTable className="overflow-hidden">
-            <div className="hidden border-b border-[var(--c-border)] bg-[var(--c-surface-2)] px-4 py-3 xl:grid xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1.15fr)_minmax(145px,0.9fr)_minmax(155px,0.9fr)_auto] xl:items-center xl:gap-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-                Cuenta
-              </p>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-                Institución y tipo
-              </p>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-                Saldo de apertura
-              </p>
-              <p className="text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-                Saldo actual
-              </p>
-              <p className="text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-                Acciones
-              </p>
-            </div>
-
-            <div className="divide-y divide-[var(--c-border)]">
+          <DataTable className="overflow-hidden rounded-[10px] shadow-none">
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[900px] table-fixed border-collapse text-left text-[12px]">
+                <colgroup>
+                  <col className="w-[27%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[19%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[12%]" />
+                </colgroup>
+                <thead>
+                  <tr className="h-[38px] border-b border-[var(--ft-border)] bg-[var(--ft-surface-muted)]">
+                    {['Cuenta', 'Tipo', 'Moneda', 'Saldo de apertura', 'Saldo actual', 'Acciones'].map((label, index) => (
+                      <th
+                        key={label}
+                        scope="col"
+                        className={`whitespace-nowrap px-3.5 py-2.5 text-[10px] font-semibold text-[var(--ft-text-muted)] ${index === 3 || index === 4 ? 'text-right' : ''} ${index === 5 ? 'text-right' : ''}`}
+                      >
+                        {label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--ft-border)]">
               {filteredAccounts.map(account => {
                 const technical = isTechnicalAccount(account)
-                const currencyPresentation = getPortfolioCurrencyPresentation(account.currency, currencies)
+                const accountActions: AnchoredAction[] = [
+                  ...(account.is_active
+                    ? [{ id: 'deactivate', label: 'Desactivar cuenta', destructive: true, onSelect: () => openDeactivateModal(account) }]
+                    : [{ id: 'reactivate', label: 'Reactivar cuenta', onSelect: () => void reactivate(account.id) }]),
+                  { id: 'delete', label: 'Eliminar cuenta', destructive: true, onSelect: () => openDeleteModal(account) },
+                ]
 
                 return (
-                <article
+                <tr
                   key={account.id}
                   data-testid={`portfolio-row-${account.id}`}
-                  className="group px-4 py-4 transition-colors duration-150 hover:bg-[var(--c-surface-2)]"
+                  className="h-[62px] transition-colors hover:bg-[var(--ft-surface-hover)]"
                 >
-                  <div className="grid min-w-0 grid-cols-1 gap-x-4 gap-y-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1.15fr)_minmax(145px,0.9fr)_minmax(155px,0.9fr)_auto] xl:items-center">
-                    <div className="min-w-0">
-                      <div className="flex items-start gap-3">
-                        <div
-                          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border"
-                          style={{
-                            borderColor: withAlpha(account.color, '24'),
-                            backgroundColor: withAlpha(account.color, '12'),
-                            color: account.color,
-                          }}
-                        >
-                          <FinancialIcon name={account.icon} size={16} />
-                        </div>
-
-                        <div className="min-w-0">
-                          <div className="min-w-0">
-                            <p className="truncate text-[14px] font-semibold tracking-[-0.015em] text-[var(--c-text)]">
-                              {account.name}
-                            </p>
-                            <p className="mt-1 truncate text-[12px] text-[var(--c-text-muted)]">
-                              {technical
-                                ? 'Cuenta técnica de tarjeta'
-                                : getIconLabel(account.icon)}
-                            </p>
-                          </div>
-
-                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                            <StatusBadge tone={account.is_active ? 'success' : 'muted'}>
-                              {account.is_active ? 'Activa' : 'Inactiva'}
-                            </StatusBadge>
-                            <StatusBadge tone={ACCOUNT_TYPE_TONE[account.type]} dot={false}>
-                              {ACCOUNT_TYPE_LABEL[account.type]}
-                            </StatusBadge>
-                            <StatusBadge tone="muted" dot={false}>
-                              {currencyPresentation.code}
-                              {currencyPresentation.kind === 'custom'
-                                ? ' · Personalizada'
-                                : currencyPresentation.kind === 'unavailable'
-                                  ? ' · Código registrado'
-                                  : ''}
-                            </StatusBadge>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="min-w-0">
-                      <p className="truncate text-[12px] font-medium text-[var(--c-text)]">
-                        {getPortfolioBankDisplayName(account)}
-                      </p>
-                      <p className="mt-1 text-[11px] leading-4 text-[var(--c-text-muted)]">
-                        {technical
-                          ? 'Tarjeta técnica · fuera del patrimonio'
-                          : account.include_in_net_worth
-                            ? 'Incluida en patrimonio'
-                            : 'Fuera del patrimonio'}
-                      </p>
-                    </div>
-
-                    <div className="grid min-w-0 grid-cols-2 gap-3 rounded-[12px] bg-[var(--c-surface-2)] px-3 py-2.5 xl:block xl:rounded-none xl:bg-transparent xl:px-0 xl:py-0">
-                      <div className="min-w-0">
-                        <p className="text-[10px] font-medium text-[var(--c-text-faint)] xl:hidden">Apertura</p>
-                        <p className="truncate text-[12px] font-semibold tabular-nums text-[var(--c-text)]">
-                          {technical ? '—' : formatPortfolioAmount(account.initial_balance, account.currency, currencies)}
-                        </p>
-                        <p className="mt-0.5 truncate text-[10px] text-[var(--c-text-muted)]">
-                          {technical ? 'No aplica' : `Desde ${formatStoredPortfolioDate(account.initial_balance_date)}`}
-                        </p>
-                      </div>
-                      <div className="min-w-0 text-right xl:hidden">
-                        <p className="text-[10px] font-medium text-[var(--c-text-faint)]">Actual</p>
-                        <p className={`truncate text-[12px] font-semibold tabular-nums ${account.balance < 0 && !technical ? 'text-[var(--c-danger)]' : 'text-[var(--c-text)]'}`}>
-                          {technical ? 'No patrimonial' : formatPortfolioAmount(account.balance, account.currency, currencies)}
-                        </p>
-                      </div>
-                    </div>
-
-                    <AmountCell
-                      label={technical ? 'Cuenta técnica' : 'Saldo actual'}
-                      value={technical ? 'No patrimonial' : formatPortfolioAmount(account.balance, account.currency, currencies)}
-                      meta={
-                        technical
-                          ? (
-                              <Link href="/credits" className="font-medium text-[var(--c-primary)] hover:text-[var(--c-primary-hover)]">
-                                Gestionar en Créditos
-                              </Link>
-                            )
-                          : editingId === account.id
-                          ? 'En edicion'
-                          : account.is_active
-                            ? 'Disponible para operar'
-                            : 'Archivada para nuevos registros'
-                      }
-                      tone={balanceTone(account.balance)}
-                      className="hidden xl:flex xl:justify-self-end"
-                    />
-
-                    <div className="flex min-w-0 items-center justify-end gap-1.5 border-t border-[var(--c-border)] pt-2 xl:border-0 xl:pt-0">
-                      <ActionIconButton
+                  <td className="px-3.5 py-2.5">
+                    <button
+                      type="button"
+                      data-testid={`portfolio-detail-${account.id}`}
+                      onClick={() => setViewingAccountId(account.id)}
+                      className="flex min-w-0 items-center gap-3 text-left"
+                      title={account.name}
+                    >
+                      <span aria-hidden="true" className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-[7px] border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] text-[10px] font-bold text-[var(--ft-text-muted)]">
+                        {getPortfolioInstitutionMark(account)}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-[13px] font-semibold leading-[19px] text-[var(--ft-text-strong)]">{account.name}</span>
+                        <span className="mt-0.5 block truncate text-[11px] leading-4 text-[var(--ft-text-muted)]">{getPortfolioBankDisplayName(account)}</span>
+                      </span>
+                    </button>
+                  </td>
+                  <td className="px-3.5 py-2.5 text-[12px] text-[var(--ft-text-strong)]">{ACCOUNT_TYPE_LABEL[account.type]}</td>
+                  <td className="px-3.5 py-2.5">
+                    <span className="inline-flex rounded-[4px] bg-[var(--ft-surface-muted)] px-[7px] py-[3px] text-[10px] font-semibold leading-4 text-[var(--ft-text-muted)]">{account.currency}</span>
+                  </td>
+                  <td className="px-3.5 py-2.5 text-right tabular-nums">
+                    <span className="block whitespace-nowrap text-[12px] leading-[18px] text-[var(--ft-text-muted)]">{technical ? '—' : formatPortfolioAmount(account.initial_balance, account.currency, currencies)}</span>
+                    <span className="mt-0.5 block whitespace-nowrap text-[11px] leading-4 text-[var(--ft-text-muted)]">{technical ? 'No aplica' : formatStoredPortfolioDate(account.initial_balance_date)}</span>
+                  </td>
+                  <td className="px-3.5 py-2.5 text-right tabular-nums">
+                    {technical ? (
+                      <>
+                        <span className="block whitespace-nowrap text-[12px] font-semibold leading-[18px] text-[var(--ft-text-muted)]">No patrimonial</span>
+                        <Link href="/credits" className="mt-0.5 inline-block text-[11px] leading-4 text-[var(--ft-primary)] hover:underline">Gestionar en Créditos</Link>
+                      </>
+                    ) : (
+                      <span className={`block whitespace-nowrap text-[13px] font-semibold leading-[19px] ${account.balance < 0 ? 'text-[var(--c-danger)]' : 'text-[var(--ft-text-strong)]'}`}>
+                        {formatPortfolioAmount(account.balance, account.currency, currencies)}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-2.5 py-2.5">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        type="button"
                         onClick={() => startEdit(account)}
                         disabled={saving || loading || rowActionId !== null}
-                        testId={`portfolio-edit-${account.id}`}
-                        icon="edit"
-                        label="Editar cuenta"
-                      />
-                      {account.is_active ? (
-                        <ActionIconButton
-                          onClick={() => openDeactivateModal(account)}
+                        data-testid={`portfolio-edit-${account.id}`}
+                        className="min-h-9 rounded-control px-2.5 text-[11px] font-semibold text-[var(--ft-text-muted)] hover:bg-[var(--ft-surface-muted)] hover:text-[var(--ft-text-strong)] disabled:opacity-50"
+                      >
+                        Editar
+                      </button>
+                      <div data-testid={`portfolio-actions-${account.id}`}>
+                        <AnchoredActionMenu
+                          label={`Más acciones para ${account.name}`}
                           disabled={saving || loading || rowActionId !== null}
-                          testId={`portfolio-deactivate-${account.id}`}
-                          icon="deactivate"
-                          label="Desactivar cuenta"
-                          variant="danger"
+                          actions={accountActions}
+                          align="end"
+                          triggerContent={(
+                            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                              <circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" />
+                            </svg>
+                          )}
+                          className="grid h-9 w-9 place-items-center rounded-control text-[var(--ft-text-muted)] hover:bg-[var(--ft-surface-muted)] hover:text-[var(--ft-text-strong)]"
                         />
-                      ) : (
-                        <ActionIconButton
-                          onClick={() => void reactivate(account.id)}
-                          disabled={saving || loading || rowActionId !== null}
-                          testId={`portfolio-reactivate-${account.id}`}
-                          icon="reactivate"
-                          label="Reactivar cuenta"
-                          variant="success"
-                        />
-                      )}
-                      <ActionIconButton
-                        onClick={() => openDeleteModal(account)}
-                        disabled={saving || loading || rowActionId !== null}
-                        testId={`portfolio-delete-${account.id}`}
-                        icon="delete"
-                        label="Eliminar cuenta"
-                        variant="danger"
-                      />
+                      </div>
                     </div>
-                  </div>
-                </article>
+                  </td>
+                </tr>
                 )
               })}
+                </tbody>
+              </table>
+            </div>
+            <div className="divide-y divide-[var(--ft-border)] md:hidden">
+              {filteredAccounts.map(account => {
+                const technical = isTechnicalAccount(account)
+                const accountActions: AnchoredAction[] = [
+                  ...(account.is_active
+                    ? [{ id: 'deactivate', label: 'Desactivar cuenta', destructive: true, onSelect: () => openDeactivateModal(account) }]
+                    : [{ id: 'reactivate', label: 'Reactivar cuenta', onSelect: () => void reactivate(account.id) }]),
+                  { id: 'delete', label: 'Eliminar cuenta', destructive: true, onSelect: () => openDeleteModal(account) },
+                ]
+
+                return (
+                  <article key={account.id} data-testid={`portfolio-mobile-row-${account.id}`} className="px-3.5 py-3.5">
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <button type="button" data-testid={`portfolio-detail-mobile-${account.id}`} onClick={() => setViewingAccountId(account.id)} className="flex min-w-0 items-center gap-2.5 text-left">
+                        <span aria-hidden="true" className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-[7px] border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] text-[10px] font-bold text-[var(--ft-text-muted)]">{getPortfolioInstitutionMark(account)}</span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-[12px] font-semibold leading-[18px] text-[var(--ft-text-strong)]">{account.name}</span>
+                          <span className="mt-0.5 block truncate text-[11px] leading-4 text-[var(--ft-text-muted)]">{getPortfolioBankDisplayName(account)} · {account.currency}</span>
+                        </span>
+                      </button>
+                      <span className="max-w-[44%] shrink-0 whitespace-nowrap pt-1 text-right text-[12px] font-semibold tabular-nums text-[var(--ft-text-strong)]">
+                        {technical ? 'No patrimonial' : formatPortfolioAmount(account.balance, account.currency, currencies)}
+                      </span>
+                    </div>
+                    <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-[var(--ft-border)] pt-2.5">
+                      <span className="min-w-0 truncate text-[11px] leading-4 text-[var(--ft-text-muted)]">
+                        {ACCOUNT_TYPE_LABEL[account.type]} · {technical ? 'Sin saldo de apertura' : `Apertura ${formatPortfolioAmount(account.initial_balance, account.currency, currencies)} · ${formatStoredPortfolioDate(account.initial_balance_date)}`}
+                      </span>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <button type="button" onClick={() => startEdit(account)} disabled={saving || loading || rowActionId !== null} data-testid={`portfolio-mobile-edit-${account.id}`} className="min-h-9 rounded-control px-2.5 text-[11px] font-semibold text-[var(--ft-text-muted)] hover:bg-[var(--ft-surface-muted)] disabled:opacity-50">Editar</button>
+                        <div data-testid={`portfolio-actions-${account.id}`}>
+                          <AnchoredActionMenu
+                            label={`Más acciones para ${account.name}`}
+                            disabled={saving || loading || rowActionId !== null}
+                            actions={accountActions}
+                            align="end"
+                            triggerContent={<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg>}
+                            className="grid h-9 w-9 place-items-center rounded-control text-[var(--ft-text-muted)] hover:bg-[var(--ft-surface-muted)]"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+            <div className="flex min-h-[42px] items-center justify-between border-t border-[var(--ft-border)] px-3.5 py-2.5 text-[11px] leading-4 text-[var(--ft-text-muted)]">
+              <span>{filteredAccounts.length} cuenta{filteredAccounts.length === 1 ? '' : 's'} visible{filteredAccounts.length === 1 ? '' : 's'}</span>
+              <span>Importes sin conversión</span>
             </div>
           </DataTable>
         ) : (
@@ -1480,14 +1448,93 @@ export function PortfolioManager({
       </PageLayout>
 
       <RecordModal
+        open={Boolean(viewingAccount)}
+        onClose={() => setViewingAccountId(null)}
+        eyebrow="Detalle de cuenta"
+        title={viewingAccount?.name ?? 'Cuenta'}
+        subtitle={viewingAccount ? `${getPortfolioBankDisplayName(viewingAccount)} · ${ACCOUNT_TYPE_LABEL[viewingAccount.type]} · ${viewingAccount.currency}` : undefined}
+        widthClassName="w-[calc(100vw-32px)] max-w-[580px]"
+        presentation="workbench"
+        testId="portfolio-account-detail"
+      >
+        {viewingAccount ? (
+          <div className="space-y-6">
+            <section className="border-b border-[var(--ft-border)] pb-5" aria-label="Saldo actual registrado">
+              <p className="text-[12px] text-[var(--ft-text-muted)]">{isTechnicalAccount(viewingAccount) ? 'Cuenta técnica de tarjeta' : 'Saldo actual registrado'}</p>
+              <p className="mt-1 text-[32px] font-semibold leading-[42px] tracking-[-0.04em] tabular-nums text-[var(--ft-text-strong)]">
+                {isTechnicalAccount(viewingAccount)
+                  ? 'No patrimonial'
+                  : formatPortfolioAmount(viewingAccount.balance, viewingAccount.currency, currencies)}
+              </p>
+              {isTechnicalAccount(viewingAccount) ? (
+                <Link href="/credits" className="mt-1 inline-flex text-[12px] font-semibold text-[var(--ft-primary)] hover:underline">Gestionar en Créditos</Link>
+              ) : null}
+            </section>
+
+            <dl className="divide-y divide-[var(--ft-border)]">
+              <div className="flex items-start justify-between gap-5 py-3 text-[12px]">
+                <dt className="text-[var(--ft-text-muted)]">Saldo de apertura</dt>
+                <dd className="text-right font-semibold tabular-nums text-[var(--ft-text-strong)]">
+                  {isTechnicalAccount(viewingAccount) ? 'No aplica' : formatPortfolioAmount(viewingAccount.initial_balance, viewingAccount.currency, currencies)}
+                </dd>
+              </div>
+              <div className="flex items-start justify-between gap-5 py-3 text-[12px]">
+                <dt className="text-[var(--ft-text-muted)]">Fecha de apertura</dt>
+                <dd className="text-right font-semibold text-[var(--ft-text-strong)]">
+                  {isTechnicalAccount(viewingAccount) ? 'No aplica' : formatStoredPortfolioDate(viewingAccount.initial_balance_date)}
+                </dd>
+              </div>
+              <div className="flex items-start justify-between gap-5 py-3 text-[12px]">
+                <dt className="text-[var(--ft-text-muted)]">Tipo y estado</dt>
+                <dd className="text-right font-semibold text-[var(--ft-text-strong)]">{ACCOUNT_TYPE_LABEL[viewingAccount.type]} · {viewingAccount.is_active ? 'Activa' : 'Inactiva'}</dd>
+              </div>
+              <div className="flex items-start justify-between gap-5 py-3 text-[12px]">
+                <dt className="max-w-[58%] text-[var(--ft-text-muted)]">Incluida en el cálculo actual de cuentas</dt>
+                <dd className="text-right font-semibold text-[var(--ft-text-strong)]">
+                  {isTechnicalAccount(viewingAccount) ? 'No aplica a una cuenta técnica' : viewingAccount.include_in_net_worth ? 'Sí' : 'No'}
+                </dd>
+              </div>
+            </dl>
+            <p className="text-[11px] leading-[18px] text-[var(--ft-text-muted)]">
+              La apertura y el saldo actual son valores registrados, no un historial ni una rentabilidad. La inclusión conserva la configuración actual de esta cuenta.
+            </p>
+            {viewingAccount.notes?.trim() ? (
+              <section className="border-t border-[var(--ft-border)] pt-4">
+                <h3 className="text-[12px] font-semibold text-[var(--ft-text-strong)]">Notas</h3>
+                <p className="mt-1 whitespace-pre-wrap text-[12px] leading-5 text-[var(--ft-text-muted)]">{viewingAccount.notes}</p>
+              </section>
+            ) : null}
+          </div>
+        ) : null}
+        <RecordModalFooter>
+          <div className="flex w-full flex-col-reverse justify-between gap-3 sm:flex-row sm:items-center">
+            <Button type="button" onClick={() => setViewingAccountId(null)} variant="secondary" size="lg">Cerrar</Button>
+            <Button
+              type="button"
+              variant="primary"
+              size="lg"
+              disabled={!viewingAccount || saving || loading || rowActionId !== null}
+              onClick={() => {
+                if (!viewingAccount) return
+                const account = viewingAccount
+                setViewingAccountId(null)
+                startEdit(account)
+              }}
+            >
+              Editar cuenta
+            </Button>
+          </div>
+        </RecordModalFooter>
+      </RecordModal>
+
+      <RecordModal
         open={modalOpen}
         onClose={closeModal}
         eyebrow="Cuentas"
         title={editingId ? 'Editar cuenta' : 'Añadir cuenta'}
-        subtitle={editingId ? 'Actualiza los datos permitidos sin perder el historial.' : 'Define la identidad y el saldo de apertura de la cuenta.'}
-        widthClassName={editingId
-          ? 'w-[calc(100vw-32px)] max-w-[640px]'
-          : 'w-[calc(100vw-32px)] max-w-[600px]'}
+        subtitle={editingId ? 'Actualiza los datos permitidos sin perder el historial.' : 'Comienza con el saldo que conoces y la fecha a la que corresponde.'}
+        widthClassName="w-[calc(100vw-32px)] max-w-[580px]"
+        presentation="workbench"
       >
         <form
           onSubmit={handleSubmit}
@@ -1644,7 +1691,7 @@ export function PortfolioManager({
             </FormField>
 
             {editingId ? (
-              <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3 md:col-span-2">
+              <div className="border-t border-[var(--ft-form-border)] pt-3 md:col-span-2">
                 <p className="text-[11px] font-medium text-[var(--ft-form-muted)]">
                   {formIsTechnicalAccount ? 'Lectura técnica' : 'Saldo actual'}
                 </p>
@@ -1665,36 +1712,31 @@ export function PortfolioManager({
 
           </FormSection>
 
+          <label className="flex items-start gap-3 border-t border-[var(--ft-form-border)] pt-4">
+            <input
+              type="checkbox"
+              checked={formIsTechnicalAccount ? false : form.include_in_net_worth}
+              disabled={formIsTechnicalAccount}
+              onChange={event => setForm(prev => ({ ...prev, include_in_net_worth: event.target.checked }))}
+              className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--c-border)] text-[var(--c-primary)] focus:ring-[var(--c-primary-soft)] disabled:cursor-not-allowed disabled:opacity-60"
+            />
+            <span className="space-y-1">
+              <span className="block text-[12px] font-semibold text-[var(--c-text)]">
+                Incluir en el cálculo actual de cuentas
+              </span>
+              <span className="block text-[11px] leading-[1.45] text-[var(--ft-form-muted)]">
+                {formIsTechnicalAccount
+                  ? 'Las cuentas técnicas de tarjeta no representan dinero propio.'
+                  : 'Mantiene la configuración con la que esta cuenta participa en los totales actuales.'}
+              </span>
+            </span>
+          </label>
+
           <OptionalSection
             title="Más opciones"
-            summary={[
-              formIsTechnicalAccount
-                ? 'Cuenta técnica'
-                : form.include_in_net_worth ? 'Incluida en patrimonio' : 'Fuera de patrimonio',
-              form.notes.trim() ? 'Notas' : '',
-            ]}
+            summary={[form.notes.trim() ? 'Notas' : '']}
           >
             <div className="space-y-4">
-              <label className="flex items-start gap-3 rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
-                <input
-                  type="checkbox"
-                  checked={formIsTechnicalAccount ? false : form.include_in_net_worth}
-                  disabled={formIsTechnicalAccount}
-                  onChange={event => setForm(prev => ({ ...prev, include_in_net_worth: event.target.checked }))}
-                  className="mt-0.5 h-4 w-4 rounded border-[var(--c-border)] text-[var(--c-primary)] focus:ring-[var(--c-primary-soft)] disabled:cursor-not-allowed disabled:opacity-60"
-                />
-                <span className="space-y-1">
-                  <span className="block text-[13px] font-semibold tracking-[-0.01em] text-[var(--c-text)]">
-                    Incluir en patrimonio neto
-                  </span>
-                  <span className="block text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-                    {formIsTechnicalAccount
-                      ? 'Las tarjetas se excluyen del patrimonio. Su cupo disponible se muestra en Créditos.'
-                      : 'Actívalo si esta cuenta debe formar parte de la lectura patrimonial consolidada.'}
-                  </span>
-                </span>
-              </label>
-
               <FormField label="Notas" optional>
                 <textarea
                   value={form.notes}
