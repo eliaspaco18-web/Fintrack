@@ -29,8 +29,6 @@ import {
   FilterBar,
   ModuleHeader,
   PageLayout,
-  StatCard,
-  StatGrid,
   StatusBadge,
 } from '@/components/finance'
 import { getApiErrorMessage } from '@/lib/api/error-message'
@@ -168,7 +166,7 @@ type TypeFilter = 'all' | AccountType
 
 const CLIENT_FETCH_TIMEOUT_MS = 10_000
 const ACCOUNTS_LOAD_ERROR_MESSAGE =
-  'No se pudieron cargar las cuentas. Reintenta para recuperar la información del portafolio.'
+  'No se pudieron cargar las cuentas. Reintenta para recuperar la información.'
 const BANKS_LOAD_ERROR_MESSAGE =
   'No se pudo cargar el catálogo de bancos.'
 const CURRENCIES_LOAD_ERROR_MESSAGE =
@@ -227,12 +225,16 @@ const EMPTY_FORM: AccountForm = {
   notes: '',
 }
 
+function withAlpha(color: string, alpha: string) {
+  return /^#[0-9a-f]{6}$/i.test(color) ? `${color}${alpha}` : color
+}
+
 function getIconLabel(icon: string): string {
   return ACCOUNT_ICON_OPTIONS.find(option => option.value === icon)?.label ?? icon
 }
 
-function withAlpha(color: string, alpha: string) {
-  return /^#[0-9a-f]{6}$/i.test(color) ? `${color}${alpha}` : color
+function balanceTone(balance: number): 'neutral' | 'danger' {
+  return balance < 0 ? 'danger' : 'neutral'
 }
 
 function stackIcon() {
@@ -252,10 +254,6 @@ function stackIcon() {
       <path d="M4 17 12 20l8-3" />
     </svg>
   )
-}
-
-function balanceTone(balance: number): 'neutral' | 'danger' {
-  return balance < 0 ? 'danger' : 'neutral'
 }
 
 function formatStoredPortfolioDate(value: string | null) {
@@ -301,7 +299,7 @@ function PortfolioPositionComparison({
       <div className="mt-4 grid grid-cols-2 gap-3">
         <div className="min-w-0">
           <p className="text-[10px] font-medium text-[var(--c-text-faint)]">Saldo de apertura</p>
-          <p className="mt-1 truncate font-mono text-[13px] font-semibold tabular-nums text-[var(--c-text)]">
+          <p className="mt-1 truncate text-[13px] font-semibold tabular-nums text-[var(--c-text)]">
             {formatPortfolioAmount(facts.opening.amount, facts.currency, currencies)}
           </p>
           <p className="mt-1 text-[10px] text-[var(--c-text-muted)]">
@@ -310,7 +308,7 @@ function PortfolioPositionComparison({
         </div>
         <div className="min-w-0 text-right">
           <p className="text-[10px] font-medium text-[var(--c-text-faint)]">Saldo actual</p>
-          <p className={`mt-1 truncate font-mono text-[13px] font-semibold tabular-nums ${
+          <p className={`mt-1 truncate text-[13px] font-semibold tabular-nums ${
             facts.current.amount < 0 ? 'text-[var(--c-danger)]' : 'text-[var(--c-text)]'
           }`}>
             {formatPortfolioAmount(facts.current.amount, facts.currency, currencies)}
@@ -504,9 +502,9 @@ export function PortfolioManager({
 
   const visibleBaseAccounts = useMemo(
     () => showTechnicalAccounts || typeFilter === 'CREDIT_CARD'
-      ? accounts
+      ? technicalAccounts
       : operationalAccounts,
-    [accounts, operationalAccounts, showTechnicalAccounts, typeFilter],
+    [operationalAccounts, showTechnicalAccounts, technicalAccounts, typeFilter],
   )
 
   const activeCount = activeOperationalAccounts.length
@@ -516,19 +514,6 @@ export function PortfolioManager({
   const totalBalanceByCurrency = useMemo(() => {
     return groupPortfolioBalancesByCurrency(activeOperationalAccounts)
   }, [activeOperationalAccounts])
-
-  const totalPen = totalBalanceByCurrency.get('PEN') ?? 0
-  const totalUsd = totalBalanceByCurrency.get('USD') ?? 0
-
-  const accountsInNetWorth = useMemo(
-    () => activeOperationalAccounts.filter(account => account.include_in_net_worth).length,
-    [activeOperationalAccounts],
-  )
-
-  const accountsWithoutBank = useMemo(
-    () => activeOperationalAccounts.filter(account => !account.bank_entity_id && !account.institution).length,
-    [activeOperationalAccounts],
-  )
 
   const activeInstitutions = useMemo(() => {
     const names = new Set<string>()
@@ -785,7 +770,7 @@ export function PortfolioManager({
       resetForm()
       clearCreateQueryParam()
       toast.success(
-        editingId ? 'Portafolio actualizado' : 'Portafolio registrado',
+        editingId ? 'Cuenta actualizada' : 'Cuenta registrada',
         `${trimmedName} se guardo correctamente.`,
         { persist: false },
       )
@@ -836,7 +821,7 @@ export function PortfolioManager({
       }
 
       await loadAccounts()
-      toast.success('Portafolio desactivado', undefined, { persist: false })
+      toast.success('Cuenta desactivada', undefined, { persist: false })
       setPendingDeactivateAccount(null)
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'No se pudo desactivar la cuenta'
@@ -863,7 +848,7 @@ export function PortfolioManager({
       }
 
       await loadAccounts()
-      toast.success('Portafolio reactivado', undefined, { persist: false })
+      toast.success('Cuenta reactivada', undefined, { persist: false })
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'No se pudo reactivar la cuenta'
       setError(message)
@@ -887,49 +872,20 @@ export function PortfolioManager({
       )
 
       if (!res.ok && res.status !== 204) {
-        throw new Error(getApiErrorMessage(json, 'No se pudo eliminar el portafolio'))
+        throw new Error(getApiErrorMessage(json, 'No se pudo eliminar la cuenta'))
       }
 
       await loadAccounts()
       setPendingDeleteAccount(null)
-      toast.success('Portafolio eliminado', undefined, { persist: false })
+      toast.success('Cuenta eliminada', undefined, { persist: false })
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : 'No se pudo eliminar el portafolio'
+      const message = caught instanceof Error ? caught.message : 'No se pudo eliminar la cuenta'
       setError(message)
       toast.error('No se pudo eliminar', message)
     } finally {
       setRowActionId(null)
     }
   }, [loadAccounts, loading, rowActionId, saving, toast])
-
-  const exposureSummary = useMemo(() => {
-    return [...totalBalanceByCurrency.entries()]
-      .filter(([currency]) => currency !== 'PEN' && currency !== 'USD')
-      .slice(0, 2)
-      .map(([currency, total]) => {
-        const presentation = getPortfolioCurrencyPresentation(currency, currencies)
-        const qualifier = presentation.kind === 'custom'
-          ? ' · personalizada'
-          : presentation.kind === 'unavailable'
-            ? ' · código registrado'
-            : ''
-
-        return `${formatPortfolioAmount(total, currency, currencies)}${qualifier}`
-      })
-      .join(' · ')
-  }, [currencies, totalBalanceByCurrency])
-
-  const selectedBankLabel = useMemo(() => {
-    if (!form.bank_entity_id) return 'Sin banco asignado'
-    const selected = banks.find(bank => bank.id === form.bank_entity_id)
-    return selected ? (selected.name ?? selected.short_name ?? form.institution) : form.institution || 'Entidad seleccionada'
-  }, [banks, form.bank_entity_id, form.institution])
-
-  const formInitialBalanceValue = useMemo(() => {
-    const parsed = roundToDecimals(parseNumericInput(form.initial_balance, Number.NaN), 2)
-    if (!Number.isFinite(parsed)) return '--'
-    return formatPortfolioAmount(parsed, form.currency, currencies)
-  }, [currencies, form.currency, form.initial_balance])
 
   const formIsTechnicalAccount = form.type === 'CREDIT_CARD'
 
@@ -955,10 +911,6 @@ export function PortfolioManager({
     loading,
   ])
   const accountsSummaryAvailable = !loading && !accountsError
-  const summaryUnavailableDetail = loading ? 'Cargando...' : 'No disponible'
-  const summaryUnavailableCaption = loading
-    ? 'El resumen se mostrará cuando finalice la carga de cuentas.'
-    : 'No se presenta un total hasta recuperar las cuentas.'
   const canCreateWithAvailableCurrency = Boolean(currencyOptions.length) && dataState.currenciesAvailable
   const createFormCurrencyIsAvailable = currencyOptions.some(option => option.value === form.currency)
 
@@ -968,61 +920,64 @@ export function PortfolioManager({
         className="max-w-[1320px] gap-5"
         header={
           <ModuleHeader
-            eyebrow="Registro financiero"
-            title="Portafolio"
-            description={
-              accountsSummaryAvailable && exposureSummary
-                ? `Cuentas, efectivo e instrumentos patrimoniales con lectura inmediata por entidad, moneda y saldo. Otras exposiciones: ${exposureSummary}.`
-                : 'Cuentas, efectivo e instrumentos patrimoniales con lectura inmediata por entidad, moneda y saldo.'
-            }
-            mode="content"
+            title="Cuentas"
+            description="Cada saldo en su moneda. Consulta el valor de apertura y la posición actual sin confundirlos."
             actions={(
               <CreateModuleButton
                 onClick={openCreateModal}
-                label="Nuevo portafolio"
+                label="Añadir cuenta"
                 testId="portfolio-create-button"
               />
             )}
           />
         }
         stats={(
-          <StatGrid>
-            <StatCard
-              label="Saldo PEN"
-              value={accountsSummaryAvailable ? formatPortfolioAmount(totalPen, 'PEN', currencies) : '—'}
-              detail={accountsSummaryAvailable ? `${activeCount} activa${activeCount === 1 ? '' : 's'}` : summaryUnavailableDetail}
-              caption={accountsSummaryAvailable ? 'Liquidez propia consolidada en soles peruanos.' : summaryUnavailableCaption}
-            />
-            <StatCard
-              label="Saldo USD"
-              value={accountsSummaryAvailable ? formatPortfolioAmount(totalUsd, 'USD', currencies) : '—'}
-              detail={accountsSummaryAvailable ? (totalUsd === 0 ? 'Sin exposicion' : 'Caja dolarizada') : summaryUnavailableDetail}
-              caption={accountsSummaryAvailable ? 'Fondos disponibles en cuentas dolarizadas.' : summaryUnavailableCaption}
-            />
-            <StatCard
-              label="Cuentas operativas"
-              value={accountsSummaryAvailable ? String(activeCount) : '—'}
-              detail={accountsSummaryAvailable ? (inactiveCount > 0 ? `${inactiveCount} inactiva${inactiveCount === 1 ? '' : 's'}` : 'Sin rezagos') : summaryUnavailableDetail}
-              caption={accountsSummaryAvailable ? 'Cuentas patrimoniales disponibles para nuevos registros.' : summaryUnavailableCaption}
-            />
-            <StatCard
-              label="Técnicas y patrimonio"
-              value={accountsSummaryAvailable ? String(accountsInNetWorth) : '—'}
-              detail={accountsSummaryAvailable
-                ? (technicalCount > 0 ? `${technicalCount} técnica${technicalCount === 1 ? '' : 's'}` : `${activeInstitutions} entidad${activeInstitutions === 1 ? '' : 'es'}`)
-                : summaryUnavailableDetail}
-              caption={
-                !accountsSummaryAvailable
-                  ? summaryUnavailableCaption
-                  : technicalCount > 0
-                  ? 'Las tarjetas se gestionan en Créditos y no suman patrimonio.'
-                  : accountsWithoutBank > 0
-                  ? `${accountsWithoutBank} cuenta${accountsWithoutBank === 1 ? '' : 's'} sin banco asociado.`
-                  : 'Todas las cuentas activas tienen contraparte identificada.'
-              }
-              icon={stackIcon()}
-            />
-          </StatGrid>
+          <section
+            aria-label="Saldos actuales por moneda"
+            className="border-y border-[var(--ft-border)] py-4 md:py-5"
+          >
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between md:gap-8">
+              <div className="min-w-0">
+                <p className="text-[13px] font-semibold text-[var(--ft-text-strong)]">Saldos actuales</p>
+                <p className="mt-1 text-[12px] leading-5 text-[var(--ft-text-muted)]">
+                  {accountsSummaryAvailable
+                    ? `${activeCount} cuenta${activeCount === 1 ? '' : 's'} activa${activeCount === 1 ? '' : 's'} · ${activeInstitutions} entidad${activeInstitutions === 1 ? '' : 'es'}`
+                    : loading ? 'Cargando cuentas...' : 'Totales no disponibles'}
+                </p>
+              </div>
+
+              <div className="flex min-w-0 flex-wrap items-end gap-x-8 gap-y-3">
+                {!accountsSummaryAvailable ? (
+                  <p className="text-[14px] font-medium text-[var(--ft-text-muted)]">
+                    {loading ? 'Cargando...' : 'No disponible'}
+                  </p>
+                ) : totalBalanceByCurrency.size === 0 ? (
+                  <p className="text-[13px] text-[var(--ft-text-muted)]">
+                    No hay cuentas operativas activas para resumir.
+                  </p>
+                ) : [...totalBalanceByCurrency.entries()].map(([currency, total]) => {
+                  const presentation = getPortfolioCurrencyPresentation(currency, currencies)
+                  const currencyLabel = presentation.name
+                    ? `${presentation.code} · ${presentation.name}`
+                    : presentation.kind === 'unavailable'
+                      ? `${presentation.code} · código registrado`
+                      : presentation.code
+
+                  return (
+                    <div key={currency} className="min-w-[150px]">
+                      <p className="text-[11px] font-medium text-[var(--ft-text-muted)]">{currencyLabel}</p>
+                      <p className="mt-1 text-[20px] font-semibold tracking-[-0.025em] tabular-nums text-[var(--ft-text-strong)] sm:text-[22px]">
+                        {formatPortfolioAmount(total, currency, currencies)}
+                      </p>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+            <p className="mt-3 text-[11px] leading-5 text-[var(--ft-text-subtle)]">
+              Suma de saldos actuales en cuentas operativas activas. Cada moneda se muestra por separado; las cuentas técnicas de tarjetas no se incluyen.
+            </p>
+          </section>
         )}
         controls={(
           <ControlsBar
@@ -1030,27 +985,40 @@ export function PortfolioManager({
               <>
                 <DataFilterPreset
                   label="Todas"
-                  active={statusFilter === 'all'}
+                  active={statusFilter === 'all' && !showTechnicalAccounts}
                   count={operationalAccounts.length}
-                  onClick={() => setStatusFilter('all')}
+                  onClick={() => {
+                    setShowTechnicalAccounts(false)
+                    setStatusFilter('all')
+                  }}
                 />
                 <DataFilterPreset
                   label="Activas"
-                  active={statusFilter === 'active'}
+                  active={statusFilter === 'active' && !showTechnicalAccounts}
                   count={activeCount}
-                  onClick={() => setStatusFilter('active')}
+                  onClick={() => {
+                    setShowTechnicalAccounts(false)
+                    setStatusFilter('active')
+                  }}
                 />
                 <DataFilterPreset
                   label="Inactivas"
-                  active={statusFilter === 'inactive'}
+                  active={statusFilter === 'inactive' && !showTechnicalAccounts}
                   count={inactiveCount}
-                  onClick={() => setStatusFilter('inactive')}
+                  onClick={() => {
+                    setShowTechnicalAccounts(false)
+                    setStatusFilter('inactive')
+                  }}
                 />
                 <DataFilterPreset
-                  label="Técnicas"
+                  label="Cuentas técnicas"
                   active={showTechnicalAccounts}
                   count={technicalCount}
-                  onClick={() => setShowTechnicalAccounts(prev => !prev)}
+                  onClick={() => {
+                    const next = !showTechnicalAccounts
+                    setShowTechnicalAccounts(next)
+                    if (next) setStatusFilter('all')
+                  }}
                 />
               </>
             )}
@@ -1177,12 +1145,12 @@ export function PortfolioManager({
               title={
                 query.trim() || currencyFilter !== 'all' || typeFilter !== 'all' || bankFilter !== 'all' || statusFilter !== 'all' || showTechnicalAccounts
                   ? 'No encontramos cuentas para esa combinacion.'
-                  : 'Todavia no tienes portafolios registrados.'
+                  : 'Todavía no tienes cuentas registradas.'
               }
               description={
                 query.trim() || currencyFilter !== 'all' || typeFilter !== 'all' || bankFilter !== 'all' || statusFilter !== 'all' || showTechnicalAccounts
-                  ? 'Ajusta los filtros o amplia la busqueda para recuperar cuentas, custodios o monedas.'
-                  : 'Crea tu primera cuenta operativa para empezar a ordenar liquidez, bancos y patrimonio.'
+              ? 'Ajusta los filtros o amplía la búsqueda para encontrar cuentas por institución, tipo o moneda.'
+              : 'Añade una cuenta para consultar sus saldos y organizarlos por institución y moneda.'
               }
               action={
                 query.trim() || currencyFilter !== 'all' || typeFilter !== 'all' || bankFilter !== 'all' || statusFilter !== 'all' || showTechnicalAccounts
@@ -1198,7 +1166,7 @@ export function PortfolioManager({
                       },
                     }
                   : {
-                      label: 'Nuevo portafolio',
+                      label: 'Añadir cuenta',
                       onClick: openCreateModal,
                     }
               }
@@ -1206,15 +1174,18 @@ export function PortfolioManager({
           </div>
         ) : viewMode === 'list' ? (
           <DataTable className="overflow-hidden">
-            <div className="hidden border-b border-[var(--c-border)] bg-[var(--c-surface-2)] px-4 py-3 md:grid md:grid-cols-[minmax(0,1.8fr)_minmax(0,1.15fr)_minmax(170px,0.9fr)_auto] md:items-center md:gap-4">
+            <div className="hidden border-b border-[var(--c-border)] bg-[var(--c-surface-2)] px-4 py-3 xl:grid xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1.15fr)_minmax(145px,0.9fr)_minmax(155px,0.9fr)_auto] xl:items-center xl:gap-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
                 Cuenta
               </p>
               <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-                Banco y tipo
+                Institución y tipo
+              </p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+                Saldo de apertura
               </p>
               <p className="text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-                Saldo
+                Saldo actual
               </p>
               <p className="text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
                 Acciones
@@ -1230,9 +1201,9 @@ export function PortfolioManager({
                 <article
                   key={account.id}
                   data-testid={`portfolio-row-${account.id}`}
-                  className="group px-4 py-4 transition-[background-color,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--c-surface-2)]"
+                  className="group px-4 py-4 transition-colors duration-150 hover:bg-[var(--c-surface-2)]"
                 >
-                  <div className="grid gap-4 md:grid-cols-[minmax(0,1.8fr)_minmax(0,1.15fr)_minmax(170px,0.9fr)_auto] md:items-center">
+                  <div className="grid min-w-0 grid-cols-1 gap-x-4 gap-y-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1.15fr)_minmax(145px,0.9fr)_minmax(155px,0.9fr)_auto] xl:items-center">
                     <div className="min-w-0">
                       <div className="flex items-start gap-3">
                         <div
@@ -1246,20 +1217,19 @@ export function PortfolioManager({
                           <FinancialIcon name={account.icon} size={16} />
                         </div>
 
-                        <div className="min-w-0 space-y-2">
+                        <div className="min-w-0">
                           <div className="min-w-0">
-                            <p className="truncate text-[15px] font-semibold tracking-[-0.02em] text-[var(--c-text)]">
+                            <p className="truncate text-[14px] font-semibold tracking-[-0.015em] text-[var(--c-text)]">
                               {account.name}
                             </p>
                             <p className="mt-1 truncate text-[12px] text-[var(--c-text-muted)]">
                               {technical
-                                ? 'Cuenta técnica para consumos de tarjeta'
+                                ? 'Cuenta técnica de tarjeta'
                                 : getIconLabel(account.icon)}
-                              {account.notes && !technical ? ` · ${account.notes}` : ''}
                             </p>
                           </div>
 
-                          <div className="flex flex-wrap items-center gap-2">
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
                             <StatusBadge tone={account.is_active ? 'success' : 'muted'}>
                               {account.is_active ? 'Activa' : 'Inactiva'}
                             </StatusBadge>
@@ -1280,16 +1250,34 @@ export function PortfolioManager({
                     </div>
 
                     <div className="min-w-0">
-                      <p className="truncate text-[13px] font-medium text-[var(--c-text)]">
+                      <p className="truncate text-[12px] font-medium text-[var(--c-text)]">
                         {getPortfolioBankDisplayName(account)}
                       </p>
-                      <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">
+                      <p className="mt-1 text-[11px] leading-4 text-[var(--c-text-muted)]">
                         {technical
-                          ? 'Excluida del patrimonio. Línea y disponible en Créditos.'
+                          ? 'Tarjeta técnica · fuera del patrimonio'
                           : account.include_in_net_worth
-                            ? 'Incluida en patrimonio neto'
-                            : 'Excluida del patrimonio neto'}
+                            ? 'Incluida en patrimonio'
+                            : 'Fuera del patrimonio'}
                       </p>
+                    </div>
+
+                    <div className="grid min-w-0 grid-cols-2 gap-3 rounded-[12px] bg-[var(--c-surface-2)] px-3 py-2.5 xl:block xl:rounded-none xl:bg-transparent xl:px-0 xl:py-0">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-medium text-[var(--c-text-faint)] xl:hidden">Apertura</p>
+                        <p className="truncate text-[12px] font-semibold tabular-nums text-[var(--c-text)]">
+                          {technical ? '—' : formatPortfolioAmount(account.initial_balance, account.currency, currencies)}
+                        </p>
+                        <p className="mt-0.5 truncate text-[10px] text-[var(--c-text-muted)]">
+                          {technical ? 'No aplica' : `Desde ${formatStoredPortfolioDate(account.initial_balance_date)}`}
+                        </p>
+                      </div>
+                      <div className="min-w-0 text-right xl:hidden">
+                        <p className="text-[10px] font-medium text-[var(--c-text-faint)]">Actual</p>
+                        <p className={`truncate text-[12px] font-semibold tabular-nums ${account.balance < 0 && !technical ? 'text-[var(--c-danger)]' : 'text-[var(--c-text)]'}`}>
+                          {technical ? 'No patrimonial' : formatPortfolioAmount(account.balance, account.currency, currencies)}
+                        </p>
+                      </div>
                     </div>
 
                     <AmountCell
@@ -1309,16 +1297,16 @@ export function PortfolioManager({
                             : 'Archivada para nuevos registros'
                       }
                       tone={balanceTone(account.balance)}
-                      className="md:justify-self-end"
+                      className="hidden xl:flex xl:justify-self-end"
                     />
 
-                    <div className="flex shrink-0 items-center gap-1.5 md:justify-self-end">
+                    <div className="flex min-w-0 items-center justify-end gap-1.5 border-t border-[var(--c-border)] pt-2 xl:border-0 xl:pt-0">
                       <ActionIconButton
                         onClick={() => startEdit(account)}
                         disabled={saving || loading || rowActionId !== null}
                         testId={`portfolio-edit-${account.id}`}
                         icon="edit"
-                        label="Editar portafolio"
+                        label="Editar cuenta"
                       />
                       {account.is_active ? (
                         <ActionIconButton
@@ -1326,7 +1314,7 @@ export function PortfolioManager({
                           disabled={saving || loading || rowActionId !== null}
                           testId={`portfolio-deactivate-${account.id}`}
                           icon="deactivate"
-                          label="Desactivar portafolio"
+                          label="Desactivar cuenta"
                           variant="danger"
                         />
                       ) : (
@@ -1335,7 +1323,7 @@ export function PortfolioManager({
                           disabled={saving || loading || rowActionId !== null}
                           testId={`portfolio-reactivate-${account.id}`}
                           icon="reactivate"
-                          label="Reactivar portafolio"
+                          label="Reactivar cuenta"
                           variant="success"
                         />
                       )}
@@ -1344,7 +1332,7 @@ export function PortfolioManager({
                         disabled={saving || loading || rowActionId !== null}
                         testId={`portfolio-delete-${account.id}`}
                         icon="delete"
-                        label="Eliminar portafolio"
+                        label="Eliminar cuenta"
                         variant="danger"
                       />
                     </div>
@@ -1404,7 +1392,7 @@ export function PortfolioManager({
                       <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--c-text-faint)]">
                         {technical ? 'Cuenta técnica' : 'Saldo actual'}
                       </p>
-                      <p className={`mt-2 truncate font-mono text-[1.45rem] font-semibold tracking-[-0.03em] tabular-nums ${
+                      <p className={`mt-2 truncate text-[1.45rem] font-semibold tracking-[-0.03em] tabular-nums ${
                         account.balance < 0 && !technical ? 'text-[var(--c-danger)]' : 'text-[var(--c-text)]'
                       }`}>
                         {technical ? 'No patrimonial' : formatPortfolioAmount(account.balance, account.currency, currencies)}
@@ -1452,7 +1440,7 @@ export function PortfolioManager({
                         disabled={saving || loading || rowActionId !== null}
                         testId={`portfolio-edit-card-${account.id}`}
                         icon="edit"
-                        label="Editar portafolio"
+                        label="Editar cuenta"
                       />
                       {account.is_active ? (
                         <ActionIconButton
@@ -1460,7 +1448,7 @@ export function PortfolioManager({
                           disabled={saving || loading || rowActionId !== null}
                           testId={`portfolio-deactivate-card-${account.id}`}
                           icon="deactivate"
-                          label="Desactivar portafolio"
+                          label="Desactivar cuenta"
                           variant="danger"
                         />
                       ) : (
@@ -1469,7 +1457,7 @@ export function PortfolioManager({
                           disabled={saving || loading || rowActionId !== null}
                           testId={`portfolio-reactivate-card-${account.id}`}
                           icon="reactivate"
-                          label="Reactivar portafolio"
+                          label="Reactivar cuenta"
                           variant="success"
                         />
                       )}
@@ -1478,7 +1466,7 @@ export function PortfolioManager({
                         disabled={saving || loading || rowActionId !== null}
                         testId={`portfolio-delete-card-${account.id}`}
                         icon="delete"
-                        label="Eliminar portafolio"
+                        label="Eliminar cuenta"
                         variant="danger"
                       />
                     </div>
@@ -1494,12 +1482,12 @@ export function PortfolioManager({
       <RecordModal
         open={modalOpen}
         onClose={closeModal}
-        eyebrow="Portafolio"
-        title={editingId ? 'Editar cuenta del portafolio' : 'Nueva cuenta del portafolio'}
-        subtitle="Registra cuentas, custodios y productos financieros desde una sola capa de edicion."
+        eyebrow="Cuentas"
+        title={editingId ? 'Editar cuenta' : 'Añadir cuenta'}
+        subtitle={editingId ? 'Actualiza los datos permitidos sin perder el historial.' : 'Define la identidad y el saldo de apertura de la cuenta.'}
         widthClassName={editingId
-          ? 'w-[calc(100vw-32px)] max-w-[680px]'
-          : 'w-[calc(100vw-32px)] max-w-[640px]'}
+          ? 'w-[calc(100vw-32px)] max-w-[640px]'
+          : 'w-[calc(100vw-32px)] max-w-[600px]'}
       >
         <form
           onSubmit={handleSubmit}
@@ -1513,22 +1501,20 @@ export function PortfolioManager({
           ) : null}
 
           <FormSection
-            title="Cuenta principal"
-            description="Primero define el nombre y el tipo de cuenta para que FinTrack la ubique correctamente en tu portafolio."
-            columns="1"
-            className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
+            title="Identidad de la cuenta"
+            columns="2"
+            className="[--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
           >
-            <FormField label="Nombre de la cuenta">
+            <FormField label="Nombre" className="md:col-span-2">
               <input
                 value={form.name}
                 onChange={event => setForm(prev => ({ ...prev, name: event.target.value }))}
                 required
                 data-testid="portfolio-name-input"
                 className="field-base ft-form-input w-full"
-                placeholder="Ej: Cuenta corriente BCP"
+                placeholder="Ej.: Cuenta principal"
               />
             </FormField>
-
             <FormField
               label="Tipo"
               description={
@@ -1552,39 +1538,8 @@ export function PortfolioManager({
                 }))}
               />
             </FormField>
-
-            <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
-              <div className="flex min-w-0 items-center gap-3">
-                <div
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] border"
-                  style={{
-                    borderColor: withAlpha(form.color, '24'),
-                    backgroundColor: withAlpha(form.color, '12'),
-                    color: form.color,
-                  }}
-                >
-                  <FinancialIcon name={form.icon} size={16} />
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate text-[13px] font-semibold tracking-[-0.01em] text-[var(--c-text)]">
-                    {form.name.trim() || 'Nueva cuenta del portafolio'}
-                  </p>
-                  <p className="mt-1 truncate text-[12px] text-[var(--ft-form-muted)]">
-                    {selectedBankLabel} · {ACCOUNT_TYPE_LABEL[form.type]} · {form.currency}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </FormSection>
-
-          <FormSection
-            title="Contexto financiero"
-            description="Asocia la entidad, fija la moneda y define el saldo base con su fecha de corte para mantener la trazabilidad financiera."
-            columns="1"
-            className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
-          >
             <FormField
-              label="Entidad financiera"
+              label="Institución financiera"
               optional
               description={
                 banksError
@@ -1600,7 +1555,7 @@ export function PortfolioManager({
                 testId="portfolio-bank-entity-select"
                 searchPlaceholder="Buscar entidad..."
                 options={[
-                  { value: '', label: 'Sin banco' },
+                  { value: '', label: 'Sin institución' },
                   ...banks.map(bank => ({
                     value: bank.id,
                     label: bank.name ?? bank.short_name ?? 'Entidad sin nombre',
@@ -1608,6 +1563,16 @@ export function PortfolioManager({
                 ]}
               />
             </FormField>
+          </FormSection>
+
+          <FormSection
+            title="Saldo de apertura"
+            description={editingId
+              ? 'El saldo actual y el saldo de apertura son distintos. Ajusta la base respetando las restricciones del historial.'
+              : 'Indica el saldo y la fecha que marcan el punto de partida de esta cuenta.'}
+            columns="2"
+            className="[--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
+          >
 
             <FormField
               label="Moneda"
@@ -1640,9 +1605,10 @@ export function PortfolioManager({
 
             <FormField
               label={formIsTechnicalAccount ? 'Saldo técnico' : 'Saldo inicial'}
+              className="md:col-span-1"
               description={
                 formIsTechnicalAccount
-                  ? 'Las tarjetas no tienen saldo patrimonial en Portafolio. El cupo, uso y disponible se gestionan en Créditos.'
+                  ? 'Las tarjetas no tienen saldo propio. El cupo, uso y disponible se gestionan en Créditos.'
                   : editingId
                   ? 'Corrige el saldo de apertura y la fecha desde la que ese valor representa el punto de partida de la cuenta.'
                   : 'Usalo para reflejar el punto de partida exacto antes de comenzar a registrar movimientos.'
@@ -1661,6 +1627,7 @@ export function PortfolioManager({
 
             <FormField
               label="Fecha del saldo inicial"
+              className="md:col-span-1"
               description={
                 editingId
                   ? 'Debe ser igual o anterior al primer movimiento registrado en esta cuenta.'
@@ -1677,7 +1644,7 @@ export function PortfolioManager({
             </FormField>
 
             {editingId ? (
-              <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
+              <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3 md:col-span-2">
                 <p className="text-[11px] font-medium text-[var(--ft-form-muted)]">
                   {formIsTechnicalAccount ? 'Lectura técnica' : 'Saldo actual'}
                 </p>
@@ -1696,21 +1663,6 @@ export function PortfolioManager({
               </div>
             ) : null}
 
-            {!editingId ? (
-              <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
-                <p className="text-[11px] font-medium text-[var(--ft-form-muted)]">Lectura inicial</p>
-                <p className="mt-1 text-[1.05rem] font-semibold tracking-[-0.02em] text-[var(--c-text)] tabular-nums">
-                  {formInitialBalanceValue}
-                </p>
-                <p className="mt-2 text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-                  {form.include_in_net_worth
-                    ? 'Esta cuenta entrará al patrimonio neto desde su saldo de apertura.'
-                    : formIsTechnicalAccount
-                      ? 'Esta tarjeta se registrará como cuenta técnica fuera del patrimonio.'
-                      : 'Esta cuenta se registrará fuera del patrimonio neto inicial.'}
-                </p>
-              </div>
-            ) : null}
           </FormSection>
 
           <OptionalSection
@@ -1808,7 +1760,7 @@ export function PortfolioManager({
                   variant="primary"
                   size="lg"
                 >
-                  {editingId ? 'Guardar cambios' : 'Crear portafolio'}
+                  {editingId ? 'Guardar cambios' : 'Crear cuenta'}
                 </Button>
               )}
             />
@@ -1818,10 +1770,10 @@ export function PortfolioManager({
 
       <ConfirmDialog
         open={Boolean(pendingDeactivateAccount)}
-        title="Desactivar portafolio"
+        title="Desactivar cuenta"
         message={(
           <>
-            El portafolio{' '}
+            La cuenta{' '}
             <span className="font-semibold text-[var(--c-text)]">
               {pendingDeactivateAccount?.name}
             </span>{' '}
@@ -1846,7 +1798,7 @@ export function PortfolioManager({
 
       <ConfirmDialog
         open={Boolean(pendingDeleteAccount)}
-        title="Eliminar portafolio"
+        title="Eliminar cuenta"
         message={(
           <>
             Se eliminara{' '}
