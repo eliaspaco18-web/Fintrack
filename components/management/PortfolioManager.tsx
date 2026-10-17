@@ -50,6 +50,7 @@ import {
   getPortfolioReferenceDataState,
   resolveCreateAccountCurrency,
 } from '@/modules/portfolio/reference-data-state'
+import type { AccountMonthlyHistory } from '@/modules/portfolio/account-monthly-history'
 
 type BankEntityRef = {
   id: string
@@ -453,6 +454,69 @@ function PortfolioOpeningFact({
   )
 }
 
+function AccountBalanceSparkline({
+  history,
+  currency,
+  currencies,
+  loading,
+  unavailable,
+}: {
+  history: AccountMonthlyHistory | undefined
+  currency: string
+  currencies: readonly UserCurrencyItem[]
+  loading: boolean
+  unavailable: boolean
+}) {
+  if (!history || history.status !== 'available') {
+    let label = 'Historial no verificable'
+    if (loading) label = 'Cargando cierres mensuales'
+    else if (unavailable) label = 'Historial no disponible'
+    else if (!history) label = 'Cierres mensuales no disponibles'
+    else if (history.reason === 'INSUFFICIENT_CLOSED_MONTHS') label = 'Aún no hay cierres suficientes'
+    return <p className="mt-2 text-[10px] leading-4 text-[var(--ft-text-faint)]">{label}</p>
+  }
+
+  const points = history.points
+  const values = points.map(point => point.balance)
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const spread = max - min
+  const coordinates = points.map((point, index) => {
+    const x = points.length === 1 ? 56 : 3 + (index * 106) / (points.length - 1)
+    const y = spread === 0 ? 14 : 3 + ((max - point.balance) / spread) * 22
+    return { ...point, x, y }
+  })
+  const description = points.map(point => {
+    const date = new Date(`${point.month}-01T12:00:00Z`).toLocaleDateString('es-PE', {
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'UTC',
+    })
+    return `${date}: ${formatPortfolioAmount(point.balance, currency, currencies)}`
+  }).join('; ')
+
+  return (
+    <div className="mt-2 flex min-w-0 items-center justify-between gap-3">
+      <span className="shrink-0 text-[10px] leading-4 text-[var(--ft-text-faint)]">Cierres mensuales</span>
+      <svg role="img" aria-label={`Saldo al cierre de cada mes. ${description}`} viewBox="0 0 112 28" className="h-7 w-[112px] max-w-full text-[var(--ft-primary)]">
+        <polyline
+          points={coordinates.map(point => `${point.x},${point.y}`).join(' ')}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {coordinates.map(point => (
+          <circle key={point.month} cx={point.x} cy={point.y} r="1.8" fill="currentColor">
+            <title>{point.month}: {formatPortfolioAmount(point.balance, currency, currencies)}</title>
+          </circle>
+        ))}
+      </svg>
+    </div>
+  )
+}
+
 type PortfolioManagerProps = {
   initialAccounts?: AccountItem[]
   initialBanks?: BankEntityItem[]
@@ -501,6 +565,9 @@ export function PortfolioManager({
   const [bankFilter, setBankFilter] = useState<string>('all')
   const [showTechnicalAccounts, setShowTechnicalAccounts] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('list')
+  const [monthlyHistories, setMonthlyHistories] = useState<Record<string, AccountMonthlyHistory>>({})
+  const [monthlyHistoriesLoading, setMonthlyHistoriesLoading] = useState(false)
+  const [monthlyHistoriesUnavailable, setMonthlyHistoriesUnavailable] = useState(false)
   const [rowActionId, setRowActionId] = useState<string | null>(null)
   const [pendingDeactivateAccount, setPendingDeactivateAccount] = useState<AccountItem | null>(null)
   const [pendingDeleteAccount, setPendingDeleteAccount] = useState<AccountItem | null>(null)
@@ -590,6 +657,42 @@ export function PortfolioManager({
     if (initialCurrencies.length === 0) return
     setCurrencies(initialCurrencies)
   }, [initialCurrencies])
+
+  useEffect(() => {
+    if (viewMode !== 'cards' || loading || accountsError || accounts.length === 0) {
+      setMonthlyHistoriesLoading(false)
+      return
+    }
+
+    const controller = new AbortController()
+    setMonthlyHistoriesLoading(true)
+    setMonthlyHistoriesUnavailable(false)
+
+    void (async () => {
+      try {
+        const response = await fetchWithTimeout('/api/accounts/monthly-history', {
+          cache: 'no-store',
+          signal: controller.signal,
+          timeoutMs: CLIENT_FETCH_TIMEOUT_MS,
+          timeoutMessage: 'No se pudieron cargar los cierres mensuales.',
+        })
+        const json = await response.json().catch(() => null)
+        if (!response.ok || !json?.ok || !json.data?.histories) {
+          throw new Error('No se pudieron verificar los cierres mensuales.')
+        }
+        setMonthlyHistories(json.data.histories as Record<string, AccountMonthlyHistory>)
+      } catch {
+        if (!controller.signal.aborted) {
+          setMonthlyHistories({})
+          setMonthlyHistoriesUnavailable(true)
+        }
+      } finally {
+        if (!controller.signal.aborted) setMonthlyHistoriesLoading(false)
+      }
+    })()
+
+    return () => controller.abort()
+  }, [accounts, accountsError, loading, viewMode])
 
   const resetForm = useCallback(() => {
     setForm({
@@ -1499,6 +1602,15 @@ export function PortfolioManager({
                       </p>
                     ) : (
                       <PortfolioOpeningFact account={account} currencies={currencies} />
+                    )}
+                    {!technical && (
+                      <AccountBalanceSparkline
+                        history={monthlyHistories[account.id]}
+                        currency={account.currency}
+                        currencies={currencies}
+                        loading={monthlyHistoriesLoading}
+                        unavailable={monthlyHistoriesUnavailable}
+                      />
                     )}
                   </div>
 

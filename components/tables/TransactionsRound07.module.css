@@ -408,6 +408,10 @@
 .portfolioFilterBar .portfolioFilterType.filters-control { width: 148px; }
 .portfolioFilterBar .portfolioFilterInstitution.filters-control { width: 208px; }
 
+.portfolioFilterBar :global(input[data-testid='portfolio-search-input']) {
+  height: 38px;
+}
+
 .portfolioFilterCurrency :global(.app-select-trigger)::before,
 .portfolioFilterType :global(.app-select-trigger)::before,
 .portfolioFilterInstitution :global(.app-select-trigger)::before {
@@ -458,25 +462,6 @@
   line-height: 18px;
 }
 
-.portfolioFilterBar :global(input[data-testid='portfolio-search-input']) {
-  height: 20px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  padding: 0;
-  color: var(--ft-r07-ink);
-  font-size: 12px;
-  line-height: 18px;
-  box-shadow: none;
-}
-
-.portfolioFilterBar :global(input[data-testid='portfolio-search-input']:hover),
-.portfolioFilterBar :global(input[data-testid='portfolio-search-input']:focus) {
-  border: 0;
-  box-shadow: none;
-  outline: 0;
-}
-
 @media (max-width: 767px) {
   .portfolioFilterBar { margin-bottom: 12px; }
 
@@ -491,9 +476,10 @@
   }
 
   .portfolioFilterBar :global(input[data-testid='portfolio-search-input']) {
-    height: 42px;
+    height: 44px;
     font-size: 16px;
   }
+
 }
 
 .summaryDetail {
