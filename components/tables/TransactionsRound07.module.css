@@ -213,7 +213,7 @@
 }
 
 /* Preserve Round 07's transaction-page tokens without styling the shared shell. */
-.transactionsContent {
+.v3ModuleContent {
   --font-fintrack-v3: Manrope, system-ui, sans-serif;
   --font-body: Manrope, system-ui, sans-serif;
   --font-display: Manrope, system-ui, sans-serif;
@@ -256,14 +256,14 @@
   font-family: Manrope, system-ui, sans-serif;
 }
 
-.transactionsContent :global(.font-display) { font-family: inherit; }
+.v3ModuleContent :global(.font-display) { font-family: inherit; }
 
-.transactionsContent :global(button),
-.transactionsContent :global(input),
-.transactionsContent :global(select),
-.transactionsContent :global(textarea) { font-family: inherit; }
+.v3ModuleContent :global(button),
+.v3ModuleContent :global(input),
+.v3ModuleContent :global(select),
+.v3ModuleContent :global(textarea) { font-family: inherit; }
 
-:global(html[data-theme='dark']) .transactionsContent {
+:global(html[data-theme='dark']) .v3ModuleContent {
   --ft-canvas: #17191c;
   --ft-surface: #202327;
   --ft-surface-muted: #292d31;
@@ -296,20 +296,20 @@
   --ft-modal-bg: #202327;
 }
 
-.transactionsContent:global(.ft-shell-content) {
+.v3ModuleContent:global(.ft-shell-content) {
   max-width: 1512px;
   padding: 32px 36px 52px;
 }
 
 @media (max-width: 1199px) {
-  .transactionsContent:global(.ft-shell-content) { padding: 20px 22px 52px; }
+  .v3ModuleContent:global(.ft-shell-content) { padding: 20px 22px 52px; }
 }
 
 @media (max-width: 767px) {
   .operationGroups { gap: 8px; }
   .operation { padding: 6px 8px; }
 
-  .transactionsContent:global(.ft-shell-content) { padding: 24px 20px 100px; }
+  .v3ModuleContent:global(.ft-shell-content) { padding: 24px 20px 100px; }
 }
 
 .pageOverview {
@@ -343,22 +343,7 @@
   color: var(--ft-r07-ink);
 }
 
-.monthScope {
-  height: 36px;
-  min-height: 36px;
-  gap: 7px;
-  border-color: var(--ft-r07-line);
-  border-radius: 10px;
-  background: var(--ft-r07-surface);
-  padding: 0 12px;
-  color: var(--ft-r07-ink);
-  font-family: Manrope, system-ui, sans-serif;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 18px;
-}
-
-.pageOverview .createButton {
+.v3ModuleContent .v3ModulePrimaryAction {
   height: 36px;
   min-height: 36px;
   gap: 7px;
@@ -375,29 +360,69 @@
   box-shadow: inset 0 1px 0 rgb(252 253 251 / 10%);
 }
 
-.pageOverview .createButton:hover:not(:disabled) {
+.v3ModuleContent .v3ModulePrimaryAction:hover:not(:disabled) {
   border-color: var(--ft-primary-hover);
   background: var(--ft-primary-hover);
 }
 
-.pageOverview .createButton:active:not(:disabled) { transform: scale(.975); }
+.v3ModuleContent .v3ModulePrimaryAction:active:not(:disabled) { transform: scale(.975); }
 
-.pageOverview .createButton:disabled {
+.v3ModuleContent .v3ModulePrimaryAction:disabled {
   border-color: var(--ft-surface-muted);
   background: var(--ft-surface-muted);
   color: var(--ft-text-subtle);
   box-shadow: none;
 }
 
-.pageOverview .createButton:focus-visible {
+.v3ModuleContent .v3ModulePrimaryAction:focus-visible {
   outline: 2px solid var(--ft-primary);
   outline-offset: 3px;
   box-shadow: none;
 }
 
-.pageOverview .createButton > :global(svg) {
+.v3ModuleContent .v3ModulePrimaryAction > :global(svg) {
   width: 15px;
   height: 15px;
+}
+
+.portfolioControls { margin-bottom: 20px; }
+
+.summaryDetail {
+  display: block;
+  margin-top: 3px;
+  color: var(--ft-r07-muted);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.summaryQualitative .summaryValue {
+  font-size: 16px !important;
+  letter-spacing: -0.32px !important;
+}
+
+.summaryDetailList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 6px;
+  color: var(--ft-r07-muted);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.monthScope {
+  height: 36px;
+  min-height: 36px;
+  gap: 7px;
+  border-color: var(--ft-r07-line);
+  border-radius: 10px;
+  background: var(--ft-r07-surface);
+  padding: 0 12px;
+  color: var(--ft-r07-ink);
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
 }
 
 .summary {

@@ -585,7 +585,7 @@ export function TransactionsWorkspace({
                   <CreateModuleButton
                     onClick={openCreateModal}
                     label="Nuevo movimiento"
-                    className={`${styles.createButton} w-full sm:w-auto`}
+                    className={`${styles.v3ModulePrimaryAction} w-full sm:w-auto`}
                     testId="transactions-summary-create-button"
                     ariaHasPopup={isDesktopOperationSelector ? 'menu' : 'dialog'}
                     ariaExpanded={isDesktopOperationSelector

@@ -17,6 +17,7 @@ import { NumericInput } from '@/components/ui/NumericInput'
 import { ViewToggle, type ViewMode } from '@/components/ui/ViewToggle'
 import { Button } from '@/components/ui/Button'
 import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
+import styles from '@/components/tables/TransactionsRound07.module.css'
 import { listCurrenciesAction } from '@/app/actions/admin.actions'
 import {
   ConfirmDialog,
@@ -24,7 +25,6 @@ import {
   DataSearchField,
   DataTable,
   EmptyState,
-  ModuleHeader,
   PageLayout,
   StatusBadge,
 } from '@/components/finance'
@@ -925,71 +925,78 @@ export function PortfolioManager({
   return (
     <>
       <PageLayout
-        className="max-w-[1320px] gap-5"
+        className="max-w-none gap-0"
         header={
-          <ModuleHeader
-            title="Cuentas"
-            description="Cada saldo en su moneda. Cada cuenta con su propósito."
-            actions={(
-              <CreateModuleButton
-                onClick={openCreateModal}
-                label="Añadir cuenta"
-                testId="portfolio-create-button"
-              />
-            )}
-          />
-        }
-        stats={(
-          <section
-            aria-label="Saldos por moneda"
-            className="mb-1 grid grid-cols-2 gap-x-5 gap-y-5 border-b border-[var(--ft-border)] pb-[18px] sm:grid-cols-[minmax(130px,1fr)_minmax(130px,1fr)_minmax(240px,2fr)] sm:gap-x-10 sm:gap-y-0"
-          >
-            <div className="min-w-0">
-              <p className="mb-1.5 text-[11px] text-[var(--ft-text-muted)]">Saldos en soles</p>
-              <p className="text-[24px] font-semibold leading-8 tracking-[-0.025em] tabular-nums text-[var(--ft-text-strong)]">
-                {!accountsSummaryAvailable ? loading ? 'Cargando…' : 'No disponible' : totalBalanceByCurrency.has('PEN') ? formatPortfolioAmount(totalBalanceByCurrency.get('PEN')!, 'PEN', currencies) : '—'}
-              </p>
-              <p className="mt-0.5 text-[11px] text-[var(--ft-text-muted)]">
-                {accountsSummaryAvailable
-                  ? `${activeOperationalAccounts.filter(account => account.currency === 'PEN').length} cuenta${activeOperationalAccounts.filter(account => account.currency === 'PEN').length === 1 ? '' : 's'} activa${activeOperationalAccounts.filter(account => account.currency === 'PEN').length === 1 ? '' : 's'}`
-                  : loading ? 'Cargando cuentas…' : 'Totales no disponibles'}
-              </p>
-            </div>
-            <div className="min-w-0">
-              <p className="mb-1.5 text-[11px] text-[var(--ft-text-muted)]">Saldos en dólares</p>
-              <p className="text-[24px] font-semibold leading-8 tracking-[-0.025em] tabular-nums text-[var(--ft-text-strong)]">
-                {!accountsSummaryAvailable ? loading ? 'Cargando…' : 'No disponible' : totalBalanceByCurrency.has('USD') ? formatPortfolioAmount(totalBalanceByCurrency.get('USD')!, 'USD', currencies) : '—'}
-              </p>
-              <p className="mt-0.5 text-[11px] text-[var(--ft-text-muted)]">
-                {accountsSummaryAvailable
-                  ? `${activeOperationalAccounts.filter(account => account.currency === 'USD').length} cuenta${activeOperationalAccounts.filter(account => account.currency === 'USD').length === 1 ? '' : 's'} activa${activeOperationalAccounts.filter(account => account.currency === 'USD').length === 1 ? '' : 's'}`
-                  : loading ? 'Cargando cuentas…' : 'Totales no disponibles'}
-              </p>
-            </div>
-            <div className="col-span-2 min-w-0 sm:col-span-1">
-              <p className="mb-1.5 text-[11px] text-[var(--ft-text-muted)]">Registro separado</p>
-              <p className="text-[16px] font-semibold leading-8 tracking-[-0.02em] text-[var(--ft-text-strong)]">Sin consolidar monedas</p>
-              <p className="text-[11px] leading-[18px] text-[var(--ft-text-muted)]">El crédito disponible no es un saldo propio</p>
-              {accountsSummaryAvailable && otherCurrencyTotals.length > 0 ? (
-                <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] leading-[18px] text-[var(--ft-text-muted)]">
-                  {otherCurrencyTotals.map(([currency, total]) => (
-                    <span key={currency} className="tabular-nums">{formatPortfolioAmount(total, currency, currencies)}</span>
-                  ))}
+          <div className={styles.pageOverview} data-testid="portfolio-page-overview">
+            <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <h1 className="font-display text-[26px] font-semibold leading-8 tracking-[-0.035em] text-[var(--ft-text-strong)]">
+                  Cuentas
+                </h1>
+                <p className="mt-0.5 max-w-2xl text-[12px] leading-5 text-[var(--ft-text-muted)]">
+                  Cada saldo en su moneda. Cada cuenta con su propósito.
                 </p>
-              ) : null}
-            </div>
-          </section>
-        )}
+              </div>
+              <div className="flex w-full items-center gap-2 sm:w-auto sm:shrink-0">
+                <CreateModuleButton
+                  onClick={openCreateModal}
+                  label="Añadir cuenta"
+                  className={`${styles.v3ModulePrimaryAction} w-full sm:w-auto`}
+                  testId="portfolio-create-button"
+                />
+              </div>
+            </header>
+            <section
+              aria-label="Saldos por moneda"
+              className={styles.summary}
+            >
+              <div className={styles.summaryItem}>
+                <p>Saldos en soles</p>
+                <div className={`${styles.summaryValue} tabular-nums`}>
+                  {!accountsSummaryAvailable ? loading ? 'Cargando…' : 'No disponible' : totalBalanceByCurrency.has('PEN') ? formatPortfolioAmount(totalBalanceByCurrency.get('PEN')!, 'PEN', currencies) : '—'}
+                </div>
+                <span className={styles.summaryDetail}>
+                  {accountsSummaryAvailable
+                    ? `${activeOperationalAccounts.filter(account => account.currency === 'PEN').length} cuenta${activeOperationalAccounts.filter(account => account.currency === 'PEN').length === 1 ? '' : 's'} activa${activeOperationalAccounts.filter(account => account.currency === 'PEN').length === 1 ? '' : 's'}`
+                    : loading ? 'Cargando cuentas…' : 'Totales no disponibles'}
+                </span>
+              </div>
+              <div className={styles.summaryItem}>
+                <p>Saldos en dólares</p>
+                <div className={`${styles.summaryValue} tabular-nums`}>
+                  {!accountsSummaryAvailable ? loading ? 'Cargando…' : 'No disponible' : totalBalanceByCurrency.has('USD') ? formatPortfolioAmount(totalBalanceByCurrency.get('USD')!, 'USD', currencies) : '—'}
+                </div>
+                <span className={styles.summaryDetail}>
+                  {accountsSummaryAvailable
+                    ? `${activeOperationalAccounts.filter(account => account.currency === 'USD').length} cuenta${activeOperationalAccounts.filter(account => account.currency === 'USD').length === 1 ? '' : 's'} activa${activeOperationalAccounts.filter(account => account.currency === 'USD').length === 1 ? '' : 's'}`
+                    : loading ? 'Cargando cuentas…' : 'Totales no disponibles'}
+                </span>
+              </div>
+              <div className={`${styles.summaryItem} ${styles.summaryQualitative}`}>
+                <p>Registro separado</p>
+                <div className={styles.summaryValue}>Sin consolidar monedas</div>
+                <span className={styles.summaryDetail}>El crédito disponible no es un saldo propio</span>
+                {accountsSummaryAvailable && otherCurrencyTotals.length > 0 ? (
+                  <span className={styles.summaryDetailList}>
+                    {otherCurrencyTotals.map(([currency, total]) => (
+                      <span key={currency} className="tabular-nums">{formatPortfolioAmount(total, currency, currencies)}</span>
+                    ))}
+                  </span>
+                ) : null}
+              </div>
+            </section>
+          </div>
+        }
         controls={(
-          <div className="min-w-0">
-            <div role="group" aria-label="Tipo de cuenta" className="mb-[18px] flex min-w-0 gap-6 overflow-x-auto border-b border-[var(--ft-border)]">
-              <button type="button" aria-pressed={!showTechnicalAccounts && statusFilter === 'active'} onClick={() => { setShowTechnicalAccounts(false); setStatusFilter('active') }} className={`min-h-9 shrink-0 border-b-2 px-0 pb-[10px] text-[12px] font-semibold transition-colors ${!showTechnicalAccounts && statusFilter === 'active' ? 'border-[var(--ft-primary)] text-[var(--ft-primary)]' : 'border-transparent text-[var(--ft-text-muted)] hover:text-[var(--ft-text-strong)]'}`}>
+          <div className={`${styles.portfolioControls} min-w-0`}>
+            <div role="group" aria-label="Tipo de cuenta" className={`${styles.tabs} flex min-w-0 items-center overflow-x-auto`}>
+              <button type="button" aria-pressed={!showTechnicalAccounts && statusFilter === 'active'} onClick={() => { setShowTechnicalAccounts(false); setStatusFilter('active') }} className={`shrink-0 border-b-2 px-0 text-[12px] font-semibold transition-colors ${!showTechnicalAccounts && statusFilter === 'active' ? 'border-[var(--ft-primary)] text-[var(--ft-primary)]' : 'border-transparent text-[var(--ft-text-muted)] hover:text-[var(--ft-text-strong)]'}`}>
                 Activas <span className="ml-1.5 text-[10px] font-medium text-[var(--ft-text-faint)]">{activeCount}</span>
               </button>
-              <button type="button" aria-pressed={!showTechnicalAccounts && statusFilter === 'inactive'} onClick={() => { setShowTechnicalAccounts(false); setStatusFilter('inactive') }} className={`min-h-9 shrink-0 border-b-2 px-0 pb-[10px] text-[12px] font-semibold transition-colors ${!showTechnicalAccounts && statusFilter === 'inactive' ? 'border-[var(--ft-primary)] text-[var(--ft-primary)]' : 'border-transparent text-[var(--ft-text-muted)] hover:text-[var(--ft-text-strong)]'}`}>
+              <button type="button" aria-pressed={!showTechnicalAccounts && statusFilter === 'inactive'} onClick={() => { setShowTechnicalAccounts(false); setStatusFilter('inactive') }} className={`shrink-0 border-b-2 px-0 text-[12px] font-semibold transition-colors ${!showTechnicalAccounts && statusFilter === 'inactive' ? 'border-[var(--ft-primary)] text-[var(--ft-primary)]' : 'border-transparent text-[var(--ft-text-muted)] hover:text-[var(--ft-text-strong)]'}`}>
                 Inactivas <span className="ml-1.5 text-[10px] font-medium text-[var(--ft-text-faint)]">{inactiveCount}</span>
               </button>
-              <button type="button" aria-pressed={showTechnicalAccounts} onClick={() => { setShowTechnicalAccounts(true); setStatusFilter('all') }} className={`min-h-9 shrink-0 border-b-2 px-0 pb-[10px] text-[12px] font-semibold transition-colors ${showTechnicalAccounts ? 'border-[var(--ft-primary)] text-[var(--ft-primary)]' : 'border-transparent text-[var(--ft-text-muted)] hover:text-[var(--ft-text-strong)]'}`}>
+              <button type="button" aria-pressed={showTechnicalAccounts} onClick={() => { setShowTechnicalAccounts(true); setStatusFilter('all') }} className={`shrink-0 border-b-2 px-0 text-[12px] font-semibold transition-colors ${showTechnicalAccounts ? 'border-[var(--ft-primary)] text-[var(--ft-primary)]' : 'border-transparent text-[var(--ft-text-muted)] hover:text-[var(--ft-text-strong)]'}`}>
                 Cuentas técnicas <span className="ml-1.5 text-[10px] font-medium text-[var(--ft-text-faint)]">{technicalCount}</span>
               </button>
             </div>
