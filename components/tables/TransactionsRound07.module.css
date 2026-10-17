@@ -884,7 +884,7 @@
 .workspace :global([data-ft-density='movement'] tbody td:nth-child(2) p) {
   font-size: 13px;
   font-weight: 600;
-  line-height: 18px;
+  line-height: 19px;
 }
 
 .workspace :global([data-ft-density='movement'] tbody td:nth-child(3)),

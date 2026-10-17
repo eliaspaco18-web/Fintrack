@@ -1,8 +1,35 @@
 import { expect, test } from '@playwright/test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
   getTriggerMatchedMenuStyle,
   resolveAppSelectPortalRoot,
 } from '../../components/ui/AppSelect'
+
+test('all portfolio toolbar filters use trigger-matched menus', () => {
+  const source = readFileSync(join(process.cwd(), 'components/management/PortfolioManager.tsx'), 'utf8')
+
+  for (const testId of [
+    'portfolio-currency-filter',
+    'portfolio-type-filter',
+    'portfolio-institution-filter',
+  ]) {
+    const testIdIndex = source.indexOf(`testId="${testId}"`)
+    expect(testIdIndex, `${testId} should be present`).toBeGreaterThanOrEqual(0)
+    const appSelectStart = source.lastIndexOf('<AppSelect', testIdIndex)
+    const appSelectEnd = source.indexOf('/>', testIdIndex)
+    expect(appSelectStart, `${testId} should belong to an AppSelect`).toBeGreaterThanOrEqual(0)
+    expect(appSelectEnd, `${testId} AppSelect should be self-closing`).toBeGreaterThan(appSelectStart)
+    expect(source.slice(appSelectStart, appSelectEnd)).toContain('matchTriggerWidth')
+  }
+})
+
+test('movement row titles match account-name line height without changing the 48px row', () => {
+  const source = readFileSync(join(process.cwd(), 'components/tables/TransactionsRound07.module.css'), 'utf8')
+
+  expect(source).toMatch(/\[data-ft-density='movement'\] tbody tr\)\s*\{\s*height:\s*48px;/)
+  expect(source).toMatch(/\[data-ft-density='movement'\] tbody td:nth-child\(2\) p\)\s*\{[^}]*line-height:\s*19px;/)
+})
 
 test.describe('AppSelect trigger-matched menu layout', () => {
   test('keeps the menu aligned to the trigger and uses its exact width', () => {
@@ -52,6 +79,24 @@ test.describe('AppSelect trigger-matched menu layout', () => {
     expect(style.maxWidth).toBe(304)
     expect(style.maxHeight).toBe(404)
     expect(style.top).toBe(68)
+  })
+
+  test('keeps trigger-matched menus inside mobile, tablet, and desktop viewports', () => {
+    for (const width of [390, 768, 1440]) {
+      const triggerWidth = width < 768 ? width - 32 : 150
+      const triggerLeft = width - triggerWidth - 12
+      const style = getTriggerMatchedMenuStyle(
+        { left: triggerLeft, top: 180, bottom: 220, width: triggerWidth },
+        { left: 0, top: 0, width, height: 844 },
+        360,
+      )
+
+      expect(style.width).toBe(triggerWidth)
+      expect(Number(style.left)).toBeGreaterThanOrEqual(8)
+      expect(Number(style.left) + Number(style.width)).toBeLessThanOrEqual(width - 8)
+      expect(Number(style.top)).toBeGreaterThanOrEqual(8)
+      expect(Number(style.top) + 360).toBeLessThanOrEqual(836)
+    }
   })
 
   test('keeps a trigger-matched menu in the modal focus scope instead of behind its overlay', () => {
