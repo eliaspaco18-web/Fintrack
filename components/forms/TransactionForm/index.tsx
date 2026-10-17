@@ -255,6 +255,8 @@ function IncomeInfoHint({ label, children }: { label: string; children: string }
     }
   }, [closeTooltip, open])
 
+  const triggerIsV3 = Boolean(triggerRef.current?.closest('[data-ft-v3], [data-ft-v3-shell]'))
+
   return (
     <span className={incomeStyles.infoHint}>
       <button
@@ -311,6 +313,7 @@ function IncomeInfoHint({ label, children }: { label: string; children: string }
           id={tooltipId}
           role="tooltip"
           className={incomeStyles.infoTooltip}
+          data-ft-v3={triggerIsV3 ? '' : undefined}
           data-state={closing ? 'closing' : 'open'}
           style={{
             left: position?.left ?? 12,

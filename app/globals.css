@@ -462,6 +462,7 @@
 [data-ft-v3] {
   --ft-font-body: var(--font-fintrack-v3), system-ui, sans-serif;
   --font-body: var(--ft-font-body);
+  --font-display: var(--ft-font-body);
 
   --ft-canvas: #F5F6F7;
   --ft-bg: var(--ft-canvas);
@@ -574,6 +575,45 @@
 
   font-family: var(--ft-font-body);
   color: var(--ft-text-strong);
+}
+
+/*
+ * V3 typography foundation. Keep the compatibility fonts on :root for legacy
+ * routes, while the approved V3 shell, V3 surfaces, and their detached layers
+ * share Manrope. The V3 shell overrides the body's inherited antialiased
+ * setting after the Chrome/macOS comparison showed visibly lighter strokes.
+ */
+.fin-shell[data-ft-v3-shell],
+[data-ft-v3],
+body:has(.fin-shell[data-ft-v3-shell]) .app-modal-overlay,
+.ft-tablet-navigation-layer,
+.ft-rail-tooltip {
+  --ft-font-body: var(--font-fintrack-v3), system-ui, sans-serif;
+  --font-body: var(--ft-font-body);
+  --font-display: var(--ft-font-body);
+  font-family: var(--ft-font-body);
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+}
+
+/* Tailwind's compatibility utilities name Geist directly. Bridge presentation
+   utilities to the scoped V3 token without changing their legacy fallback. */
+.fin-shell[data-ft-v3-shell] :is(.font-sans, .font-body, .font-display),
+[data-ft-v3] :is(.font-sans, .font-body, .font-display),
+body:has(.fin-shell[data-ft-v3-shell]) .app-modal-overlay :is(.font-sans, .font-body, .font-display),
+.ft-tablet-navigation-layer :is(.font-sans, .font-body, .font-display),
+.ft-rail-tooltip :is(.font-sans, .font-body, .font-display) {
+  font-family: var(--ft-font-body);
+}
+
+/* Financial values previously marked mono use Manrope with tabular figures;
+   true technical identifiers remain monospaced. */
+.fin-shell[data-ft-v3-shell] .font-mono.tabular-nums,
+[data-ft-v3] .font-mono.tabular-nums,
+body:has(.fin-shell[data-ft-v3-shell]) .app-modal-overlay .font-mono.tabular-nums,
+.ft-tablet-navigation-layer .font-mono.tabular-nums,
+.ft-rail-tooltip .font-mono.tabular-nums {
+  font-family: var(--ft-font-body);
 }
 
 :root[data-theme='dark'] [data-ft-v3] {

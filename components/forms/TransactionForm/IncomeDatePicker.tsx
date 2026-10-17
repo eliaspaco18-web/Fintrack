@@ -367,6 +367,8 @@ export function IncomeDatePicker({
     setInputValue(formatIsoDateForDisplay(iso))
   }
 
+  const triggerIsV3 = Boolean(triggerRef.current?.closest('[data-ft-v3], [data-ft-v3-shell]'))
+
   return (
     <div className={styles.picker}>
       <input
@@ -431,6 +433,7 @@ export function IncomeDatePicker({
           role="dialog"
           aria-label="Seleccionar fecha"
           className={styles.popover}
+          data-ft-v3={triggerIsV3 ? '' : undefined}
           style={position ? {
             position: 'fixed',
             top: position.top,
