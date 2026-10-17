@@ -392,7 +392,11 @@
   height: 15px;
 }
 
-.portfolioControls { margin-bottom: 20px; }
+.portfolioControls { margin-bottom: 34px; }
+
+@media (max-width: 767px) {
+  .portfolioControls { margin-bottom: 20px; }
+}
 
 .portfolioControls :global(input[aria-label='Buscar por cuenta o entidad']) {
   height: 38px;
