@@ -1201,6 +1201,19 @@
   animation: editSkeletonReveal 140ms ease-out forwards;
 }
 
+.editSkeletonContainer {
+  transition: opacity 120ms ease-out;
+}
+
+.editSkeletonContainer[data-visible='false'] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.editSkeletonContainer[data-visible='true'] {
+  opacity: 1;
+}
+
 .editSkeletonLarge { height: 88px; }
 .editSkeletonWide { height: 48px; }
 
@@ -1209,8 +1222,8 @@
 }
 
 @keyframes editFormReveal {
-  from { opacity: 0; transform: translateY(3px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes editSkeletonReveal {
@@ -1218,7 +1231,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .editFormReveal { animation: none; }
+  .editFormReveal,
+  .editSkeletonContainer { animation: none; transition: none; }
   .editSkeleton {
     animation: none;
     opacity: .72;

@@ -9,7 +9,7 @@ const reactDomPath = join(process.cwd(), 'node_modules/react-dom/umd/react-dom.d
 function presenceSource(): string {
   const source = readFileSync(join(process.cwd(), 'lib/ui/use-v3-workbench-presence.ts'), 'utf8')
     .replace(/^'use client'\s*/, '')
-    .replace(/import \{[^}]+\} from 'react'/, 'const { useEffect, useRef, useState } = window.React')
+    .replace(/import \{[^}]+\} from 'react'/, 'const { useEffect, useLayoutEffect, useRef, useState } = window.React')
     .replace(/export type /g, 'type ')
     .replace(/export function /g, 'function ')
   const compiled = ts.transpileModule(source, {
@@ -29,14 +29,16 @@ async function mount(page: import('@playwright/test').Page, source: 'pointer' | 
     function Harness() {
       const [open, setOpen] = React.useState(false);
       const [view, setView] = React.useState('selector');
+      const [motionSource, setMotionSource] = React.useState('${source}');
       const [exits, setExits] = React.useState(0);
-      const presence = window.useV3WorkbenchPresence(open, true, '${source}', () => {
+      const presence = window.useV3WorkbenchPresence(open, true, motionSource, () => {
         setExits(value => value + 1);
         setView('selector');
       });
       return React.createElement(React.Fragment, null,
         React.createElement('button', { id: 'open', onClick: () => { setView('form'); setOpen(true); } }, 'Open'),
         React.createElement('button', { id: 'close', onClick: () => setOpen(false) }, 'Close'),
+        React.createElement('button', { id: 'toggle-source', onClick: () => setMotionSource(value => value === 'pointer' ? 'keyboard' : 'pointer') }, 'Toggle source'),
         React.createElement('span', { id: 'phase' }, presence.phase),
         React.createElement('span', { id: 'exits' }, exits),
         presence.mounted ? React.createElement('div', { id: 'surface' },
@@ -83,6 +85,34 @@ test('pointer workbench keeps the current pose through close/reopen and ignores 
   await expect(page.locator('#content')).toHaveText('form')
 })
 
+test('irrelevant motion-source rerenders do not restart the opening transition', async ({ page }) => {
+  await mount(page)
+  await page.evaluate(() => {
+    window.animationCalls = 0
+    const nativeAnimate = Element.prototype.animate
+    Element.prototype.animate = function (...args) {
+      window.animationCalls += 1
+      return nativeAnimate.apply(this, args)
+    }
+  })
+  await page.locator('#open').click()
+  await expect(page.locator('#phase')).toHaveText('opening')
+  await page.waitForTimeout(80)
+  const before = await page.evaluate(() => ({
+    calls: window.animationCalls,
+    currentTime: document.getElementById('frame')?.getAnimations()[0]?.currentTime,
+  }))
+  await page.locator('#toggle-source').click()
+  await page.waitForTimeout(30)
+  const after = await page.evaluate(() => ({
+    calls: window.animationCalls,
+    currentTime: document.getElementById('frame')?.getAnimations()[0]?.currentTime,
+  }))
+  expect(before.calls).toBe(2)
+  expect(after.calls).toBe(before.calls)
+  expect(Number(after.currentTime)).toBeGreaterThan(Number(before.currentTime))
+})
+
 test('keyboard dismissals use the same exit transition and reduced motion settles immediately', async ({ page }) => {
   await mount(page, 'keyboard')
   await page.locator('#open').click()
@@ -117,3 +147,9 @@ test('switching to reduced motion mid-dock finishes the current logical open sta
   await expect(page.locator('#surface')).toHaveCount(0)
   await expect(page.locator('#exits')).toHaveText('1')
 })
+
+declare global {
+  interface Window {
+    animationCalls: number
+  }
+}

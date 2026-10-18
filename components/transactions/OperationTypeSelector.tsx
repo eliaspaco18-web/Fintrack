@@ -77,6 +77,8 @@ export function OperationTypePopover({
 }: OperationTypePopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null)
   const lastInputRef = useRef<'pointer' | 'keyboard'>('pointer')
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
 
   useEffect(() => {
     const markPointer = () => { lastInputRef.current = 'pointer' }
@@ -135,12 +137,12 @@ export function OperationTypePopover({
 
     const closeAndRestoreFocus = () => {
       const shouldRestoreFocus = popover.contains(document.activeElement)
-      onClose()
+      onCloseRef.current()
       if (shouldRestoreFocus) anchor.focus({ preventScroll: true })
     }
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target
-      if (target instanceof Node && !popover.contains(target) && !anchor.contains(target)) onClose()
+      if (target instanceof Node && !popover.contains(target) && !anchor.contains(target)) onCloseRef.current()
     }
     const onKeyDown = (event: KeyboardEvent) => {
       if (!popover.contains(event.target as Node)) return
@@ -151,7 +153,7 @@ export function OperationTypePopover({
         return
       }
       if (event.key === 'Tab') {
-        onClose()
+        onCloseRef.current()
         return
       }
       if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
@@ -167,9 +169,9 @@ export function OperationTypePopover({
       items[next]?.focus()
     }
     const onScroll = (event: Event) => {
-      if (!(event.target instanceof Node) || !popover.contains(event.target)) onClose()
+      if (!(event.target instanceof Node) || !popover.contains(event.target)) onCloseRef.current()
     }
-    const onResize = () => onClose()
+    const onResize = () => onCloseRef.current()
 
     document.addEventListener('pointerdown', onPointerDown, true)
     document.addEventListener('keydown', onKeyDown, true)
@@ -184,7 +186,7 @@ export function OperationTypePopover({
       if (popover.matches(':popover-open') && typeof popover.hidePopover === 'function') popover.hidePopover()
       delete popover.dataset.fallbackOpen
     }
-  }, [anchorRef, onClose, open])
+  }, [anchorRef, open])
 
   const selectOperation = useCallback((type: OperationType) => {
     onSelect(type)

@@ -176,6 +176,75 @@ test('operation popover opens for keyboard, supports roving arrows, Escape resto
   await expect(menu).toHaveCount(0)
 })
 
+test('one intent opens the operation popover once despite URL-backed callback identity changes', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.setContent('<div id="root"></div>')
+  await page.addScriptTag({ path: reactPath })
+  await page.addScriptTag({ path: reactDomPath })
+  await page.addScriptTag({ content: `
+    window.FinTrackCategoryKeys = {
+      INCOME_RECEIVABLE_COLLECTION: 'income_receivable_collection', INCOME_PAYABLE_ISSUE: 'income_payable_issue',
+      EXPENSE_PAYABLE_PAYMENT: 'expense_payable_payment', EXPENSE_ASSET: 'expense_asset',
+      EXPENSE_RECEIVABLE_ISSUE: 'expense_receivable_issue',
+    };
+    window.operationStyles = {
+      operationPopover: 'operation-popover', operationPopoverHeading: 'operation-popover-heading',
+      operationSelector: 'operation-selector', operationGroups: 'operation-groups', operationGroup: 'operation-group',
+      operationGroupHeading: 'operation-group-heading', operationGroupItems: 'operation-group-items',
+      operation: 'operation', operationIcon: 'operation-icon', operationIncome: 'operation-income',
+      operationExpense: 'operation-expense', operationTransfer: 'operation-transfer', operationAsset: 'operation-asset',
+    };
+    window.popoverMetrics = { show: 0, hide: 0, animate: 0, visibleFrames: 0 };
+    const show = HTMLElement.prototype.showPopover;
+    const hide = HTMLElement.prototype.hidePopover;
+    HTMLElement.prototype.showPopover = function () { window.popoverMetrics.show += 1; return show.call(this); };
+    HTMLElement.prototype.hidePopover = function () { window.popoverMetrics.hide += 1; return hide.call(this); };
+    const animate = Element.prototype.animate;
+    Element.prototype.animate = function (...args) { window.popoverMetrics.animate += 1; return animate.apply(this, args); };
+  ` })
+  await page.addScriptTag({ content: operationIconSource() })
+  await page.addScriptTag({ content: operationSource() })
+  await page.addScriptTag({ content: `
+    function Harness() {
+      const [open, setOpen] = React.useState(false);
+      const [urlRevision, setUrlRevision] = React.useState(0);
+      const anchorRef = React.useRef(null);
+      React.useEffect(() => {
+        if (!open) return;
+        queueMicrotask(() => setUrlRevision(value => value + 1));
+      }, [open]);
+      const onClose = React.useCallback(() => setOpen(false), [urlRevision]);
+      return React.createElement(React.Fragment, null,
+        React.createElement('button', { id: 'new', ref: anchorRef, onClick: () => setOpen(true) }, 'Nuevo movimiento'),
+        React.createElement(window.FinTrackOperationPopover, {
+          anchorRef, menuId: 'operation-menu', open, onClose, onSelect: () => setOpen(false),
+        }));
+    }
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Harness));
+  ` })
+  const menu = page.getByRole('menu', { name: 'Registrar una operación' })
+  const trigger = page.getByRole('button', { name: 'Nuevo movimiento' })
+  for (let cycle = 1; cycle <= 5; cycle += 1) {
+    await trigger.click()
+    await expect(menu).toBeVisible()
+    await expect.poll(() => page.evaluate(() => window.popoverMetrics.show)).toBe(cycle)
+    await expect.poll(() => page.evaluate(() => window.popoverMetrics.animate)).toBe(cycle)
+    if (cycle < 5) {
+      await menu.getByRole('menuitem').first().focus()
+      await page.keyboard.press('Escape')
+      await expect(menu).toBeHidden()
+      await expect.poll(() => page.evaluate(() => window.popoverMetrics.hide)).toBe(cycle)
+    }
+  }
+  await menu.getByRole('menuitem').first().focus()
+  await page.keyboard.press('Escape')
+  await expect(menu).toBeHidden()
+  const metrics = await page.evaluate(() => ({ ...window.popoverMetrics }))
+  console.log('URL callback refresh popover metrics after fix:', JSON.stringify(metrics))
+  expect(metrics).toMatchObject({ show: 5, hide: 5, animate: 5 })
+})
+
 test('operation popover stays anchored and the selector adapts to narrow viewports', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.emulateMedia({ reducedMotion: 'reduce' })
@@ -345,5 +414,6 @@ declare global {
     FinTrackOperationTitles: Record<string, string>
     FinTrackResolveTransactionIconType: (transaction: Record<string, unknown>) => string
     selectedOperationTypes: string[]
+    popoverMetrics: { show: number; hide: number; animate: number; visibleFrames: number }
   }
 }

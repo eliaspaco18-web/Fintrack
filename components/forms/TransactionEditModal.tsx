@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { TransactionForm } from '@/components/forms/TransactionForm'
 import { RecordModal } from '@/components/ui/RecordModal'
 import { Button } from '@/components/ui/Button'
+import { FormActions } from '@/components/forms/primitives'
 import styles from '@/components/tables/TransactionsRound07.module.css'
+import incomeStyles from '@/components/forms/TransactionForm/IncomeTransactionForm.module.css'
 import { InlineFeedback } from '@/components/forms/TransactionForm/FormFields'
 import { getTransactionEditPresentation } from '@/components/forms/transaction-edit-presentation'
 import { firstLinkedRecord, inferOperationType, toInitialValues } from '@/components/forms/transaction-edit-data'
@@ -22,30 +24,61 @@ interface TransactionEditModalProps {
   onUpdated?: (transaction: TransactionWithRelations) => void
 }
 
-function EditTransactionSkeleton() {
+function EditTransactionLoadingActions({ onCancel, operationType }: { onCancel: () => void; operationType: OperationType | null }) {
   return (
-    <div
-      className="grid min-h-[460px] content-start gap-5"
-      role="status"
-      aria-label="Cargando datos del movimiento"
-      aria-busy="true"
-      data-testid="transaction-edit-skeleton"
-    >
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_132px]">
+    <FormActions
+      className={operationType === 'income' ? '' : incomeStyles.operationFormActions}
+      secondaryAction={(
+        <Button type="button" variant="secondary" size="lg" onClick={onCancel}>
+          Cancelar
+        </Button>
+      )}
+      primaryAction={(
+        <Button type="button" size="lg" disabled className="min-w-[190px]" aria-disabled="true">
+          Guardar cambios
+        </Button>
+      )}
+    />
+  )
+}
+
+function EditTransactionSkeleton({
+  visible,
+  onCancel,
+  operationType,
+}: {
+  visible: boolean
+  onCancel: () => void
+  operationType: OperationType | null
+}) {
+  return (
+    <div className="grid content-start gap-4" data-testid="transaction-edit-loading-state">
+      <div
+        className={`${styles.editSkeletonContainer} grid min-h-[460px] content-start gap-5`}
+        role={visible ? 'status' : undefined}
+        aria-label={visible ? 'Cargando datos del movimiento' : undefined}
+        aria-busy={visible || undefined}
+        aria-hidden={!visible}
+        data-visible={visible ? 'true' : 'false'}
+        data-testid="transaction-edit-skeleton"
+      >
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_132px]">
+          <span className={styles.editSkeleton} />
+          <span className={styles.editSkeleton} />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <span className={styles.editSkeleton} />
+          <span className={styles.editSkeleton} />
+        </div>
         <span className={styles.editSkeleton} />
-        <span className={styles.editSkeleton} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <span className={styles.editSkeleton} />
+          <span className={styles.editSkeleton} />
+        </div>
+        <span className={`${styles.editSkeleton} ${styles.editSkeletonLarge}`} />
+        <span className={`${styles.editSkeleton} ${styles.editSkeletonWide}`} />
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <span className={styles.editSkeleton} />
-        <span className={styles.editSkeleton} />
-      </div>
-      <span className={styles.editSkeleton} />
-      <div className="grid gap-3 sm:grid-cols-2">
-        <span className={styles.editSkeleton} />
-        <span className={styles.editSkeleton} />
-      </div>
-      <span className={`${styles.editSkeleton} ${styles.editSkeletonLarge}`} />
-      <span className={`${styles.editSkeleton} ${styles.editSkeletonWide}`} />
+      <EditTransactionLoadingActions onCancel={onCancel} operationType={operationType} />
     </div>
   )
 }
@@ -90,11 +123,14 @@ export function TransactionEditModal({
   }, [onClose, onUpdated])
 
   const title = editPresentation?.title ?? 'Editar movimiento'
-  const subtitle = isLoading
+  const subtitleText = isLoading
     ? 'Cargando datos del movimiento.'
     : editPresentation?.blocked
       ? 'La distribución financiera de este movimiento está protegida.'
       : 'Actualiza los datos permitidos de este movimiento.'
+  // Both the loading and ready copy reserve two lines. This avoids a panel
+  // height change when the final subtitle wraps on narrow workbench widths.
+  const subtitle = <span className="block min-h-10">{subtitleText}</span>
 
   return (
     <RecordModal
@@ -108,17 +144,14 @@ export function TransactionEditModal({
       testId="transaction-edit-modal"
       presentation="workbench"
       motionSource="pointer"
-      footer={visibleTransaction ? undefined : (
-        <div className="flex items-center justify-end gap-2">
-          <Button type="button" variant="secondary" size="lg" onClick={onClose}>Cancelar</Button>
-          <Button type="button" size="lg" disabled className="min-w-[190px]" aria-disabled="true">
-            Guardar cambios
-          </Button>
-        </div>
-      )}
       overlayClassName={styles.formOverlay}
     >
-      {open && !transactionId ? <InlineFeedback type="error" message="No se seleccionó un movimiento para editar." /> : null}
+      {open && !transactionId ? (
+        <div className="grid gap-4">
+          <InlineFeedback type="error" message="No se seleccionó un movimiento para editar." />
+          <EditTransactionLoadingActions onCancel={onClose} operationType={operationType} />
+        </div>
+      ) : null}
 
       {loadError ? (
         <div className="space-y-3" role="alert">
@@ -130,10 +163,13 @@ export function TransactionEditModal({
           >
             Reintentar
           </button>
+          <EditTransactionLoadingActions onCancel={onClose} operationType={operationType} />
         </div>
       ) : null}
 
-      {showSkeleton ? <EditTransactionSkeleton /> : null}
+      {isLoading && !loadError ? (
+        <EditTransactionSkeleton visible={showSkeleton} onCancel={onClose} operationType={operationType} />
+      ) : null}
 
       {visibleTransaction && operationType ? (
         <div className={styles.editFormReveal} data-testid="transaction-edit-form">

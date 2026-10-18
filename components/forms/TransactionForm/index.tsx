@@ -1867,33 +1867,36 @@ export function TransactionForm({
           La equivalencia es informativa y se calcula con el tipo de cambio aplicado a la operación.
         </IncomeInfoHint>
       </div>
-      <span className={incomeStyles.incomeAppliedRate}>
+      <span className={`${incomeStyles.incomeAppliedRate} ${currency === 'USD' ? incomeStyles.incomeAppliedRateUsd : ''}`}>
         <span>
           {currency === 'USD' ? 'TC aplicado' : 'TC referencia'} {formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN
-          {refreshingLiveRate ? ' · actualizando…' : ''}
+          <span
+            className={refreshingLiveRate ? undefined : incomeStyles.incomeRateRefreshingReserved}
+            aria-hidden={!refreshingLiveRate}
+          >
+            {' · actualizando…'}
+          </span>
         </span>
-        {currency === 'USD' && Math.abs(appliedRate - safeLiveRate) >= 0.0005 ? (
-          <span className={incomeStyles.incomeReferenceRate}>
+        {currency === 'USD' ? (
+          <span
+            className={`${incomeStyles.incomeReferenceRate} ${Math.abs(appliedRate - safeLiveRate) < 0.0005 ? incomeStyles.incomeReferenceRateReserved : ''}`}
+            aria-hidden={Math.abs(appliedRate - safeLiveRate) < 0.0005}
+          >
             Referencia diaria {formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN
           </span>
         ) : null}
       </span>
-      {hasAmount ? (
-        <div className={incomeStyles.incomeEquivalenceValues}>
-          <div>
-            <span>En soles</span>
-            <strong>{formatCurrency(equivalentPen, 'PEN')}</strong>
-          </div>
-          <div>
-            <span>En dólares</span>
-            <strong>{formatCurrency(equivalentUsd, 'USD')}</strong>
-          </div>
+      <div className={incomeStyles.incomeEquivalenceValues} aria-live="polite">
+        <div>
+          <span>En soles</span>
+          <strong>{hasAmount ? formatCurrency(equivalentPen, 'PEN') : '—'}</strong>
         </div>
-      ) : (
-        <p className={incomeStyles.incomeEquivalenceEmpty}>
-          Ingresa un monto para ver su equivalencia.
-        </p>
-      )}
+        <div>
+          <span>En dólares</span>
+          <strong>{hasAmount ? formatCurrency(equivalentUsd, 'USD') : '—'}</strong>
+        </div>
+        {!hasAmount ? <span className="sr-only">Ingresa un monto para ver su equivalencia.</span> : null}
+      </div>
     </div>
   ) : isCompactLayout ? (
     <div className="flex items-center justify-between gap-2 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-1.5">

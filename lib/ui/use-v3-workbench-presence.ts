@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 
 export type V3WorkbenchPhase = 'closed' | 'opening' | 'open' | 'closing'
 export type V3WorkbenchMotionSource = 'pointer' | 'keyboard'
@@ -18,8 +18,6 @@ interface Pose { transform: string; opacity: string }
 const ENTER_FRAME: Pose = { transform: 'translateX(48px) scale(.985)', opacity: '.82' }
 const EXIT_FRAME: Pose = { transform: 'translateX(24px) scale(.992)', opacity: '0' }
 const REST_FRAME: Pose = { transform: 'none', opacity: '1' }
-const ENTER_BODY: Pose = { transform: 'translateY(8px)', opacity: '.65' }
-const REST_BODY: Pose = { transform: 'none', opacity: '1' }
 
 function poseOf(element: HTMLElement): Pose {
   const style = getComputedStyle(element)
@@ -48,16 +46,20 @@ export function useV3WorkbenchPresence(
   motionSource: V3WorkbenchMotionSource = 'keyboard',
   onExitComplete?: () => void,
 ): PresenceResult {
+  // Kept in the public signature for callers; every dismissal now uses one
+  // stable exit motion, so this value must not restart the presence effect.
+  void motionSource
   const [mounted, setMounted] = useState(open)
   const [phase, setPhase] = useState<V3WorkbenchPhase>(open ? 'opening' : 'closed')
-  const [reducedMotion, setReducedMotion] = useState(false)
+  const [reducedMotion, setReducedMotion] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  )
   const frameRef = useRef<HTMLDivElement>(null)
   const veilRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const generationRef = useRef(0)
   const frameAnimationRef = useRef<Animation | null>(null)
   const veilAnimationRef = useRef<Animation | null>(null)
-  const bodyAnimationRef = useRef<Animation | null>(null)
   const carriedFrameRef = useRef<Pose | null>(null)
   const carriedVeilRef = useRef<Pose | null>(null)
   const onExitCompleteRef = useRef(onExitComplete)
@@ -72,7 +74,7 @@ export function useV3WorkbenchPresence(
     return () => media.removeEventListener('change', update)
   }, [])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!ready) return
     if (open && !mounted) {
       setMounted(true)
@@ -84,31 +86,25 @@ export function useV3WorkbenchPresence(
     let live = true
     const frame = frameRef.current
     const veil = veilRef.current
-    const body = bodyRef.current
     if (!frame || !veil) return
 
     const previousFrame = cancelAtCurrentPose(frameAnimationRef.current, frame) ?? carriedFrameRef.current
     const previousVeil = cancelAtCurrentPose(veilAnimationRef.current, veil) ?? carriedVeilRef.current
     carriedFrameRef.current = null
     carriedVeilRef.current = null
-    cancelAtCurrentPose(bodyAnimationRef.current, body)
     frameAnimationRef.current = null
     veilAnimationRef.current = null
-    bodyAnimationRef.current = null
 
     const settle = () => {
       if (!live || generation !== generationRef.current) return
       frameAnimationRef.current?.cancel()
       veilAnimationRef.current?.cancel()
-      bodyAnimationRef.current?.cancel()
       frameAnimationRef.current = null
       veilAnimationRef.current = null
-      bodyAnimationRef.current = null
       carriedFrameRef.current = null
       carriedVeilRef.current = null
       clearPose(frame)
       clearPose(veil)
-      clearPose(body)
       setPhase(open ? 'open' : 'closed')
       if (!open) {
         setMounted(false)
@@ -116,9 +112,8 @@ export function useV3WorkbenchPresence(
       }
     }
 
-    // Every dismissal path uses the same exit treatment. `motionSource` stays in
-    // the API for callers, while reduced motion remains the only skip condition.
-    void motionSource
+    // Every dismissal path uses the same exit treatment; reduced motion is the
+    // only condition that skips the transition.
     if (reducedMotion || typeof frame.animate !== 'function') {
       settle()
       return
@@ -144,29 +139,18 @@ export function useV3WorkbenchPresence(
       easing: 'cubic-bezier(.22,1,.36,1)',
       fill: 'forwards',
     })
-    if (open && !previousFrame && body) {
-      bodyAnimationRef.current = body.animate([
-        { transform: ENTER_BODY.transform, opacity: ENTER_BODY.opacity },
-        { transform: REST_BODY.transform, opacity: REST_BODY.opacity },
-      ], {
-        duration: 180,
-        delay: 36,
-        easing: 'cubic-bezier(.22,1,.36,1)',
-        fill: 'both',
-      })
-    }
     void frameAnimationRef.current.finished.then(settle, () => undefined)
 
     return () => {
       live = false
       carriedFrameRef.current = cancelAtCurrentPose(frameAnimationRef.current, frame)
       carriedVeilRef.current = cancelAtCurrentPose(veilAnimationRef.current, veil)
-      cancelAtCurrentPose(bodyAnimationRef.current, body)
       frameAnimationRef.current = null
       veilAnimationRef.current = null
-      bodyAnimationRef.current = null
     }
-  }, [open, ready, mounted, motionSource, reducedMotion])
+  // motionSource is intentionally not a lifecycle dependency: all dismissals
+  // use the same exit motion, so changing its bookkeeping must not restart WAAPI.
+  }, [open, ready, mounted, reducedMotion])
 
   return { mounted, phase, frameRef, veilRef, bodyRef }
 }

@@ -7,6 +7,7 @@ import {
   type ReactNode,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -163,7 +164,7 @@ export function RecordModal({
     if (open) setCloseMotionSource('keyboard')
   }, [open])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isWorkbench || !presence.mounted || !portalRoot || !overlayRef.current) return
     return acquireV3ModalBackground(overlayRef.current)
   }, [isWorkbench, presence.mounted, portalRoot])

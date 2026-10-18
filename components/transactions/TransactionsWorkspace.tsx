@@ -18,9 +18,9 @@ import {
   OperationTypePopover,
   OperationTypeSelector,
   OPERATION_TITLES,
-  operationTypeToFormConfig,
   type OperationType,
 } from '@/components/transactions/OperationTypeSelector'
+import { useTransactionModalInitialValues } from '@/components/transactions/use-transaction-modal-initial-values'
 
 export interface TransactionPreloadWarning {
   area: 'options' | 'initialValues'
@@ -324,18 +324,12 @@ export function TransactionsWorkspace({
     handledQueryOpenRef.current = false
   }, [hasPrefillParams, openFromQuery, prefilledOperationType])
 
-  const modalInitialValues = useMemo(() => {
-    // Si vino con prefill desde URL, usar esos valores
-    if (openFromQuery && hasPrefillParams && !selectedOperationType) return initialValues
-    // Si el usuario eligió un tipo de operación, mapear a form config
-    if (selectedOperationType) {
-      return {
-        ...initialValues,
-        ...(operationTypeToFormConfig(selectedOperationType) as Partial<TransactionFormValues>),
-      }
-    }
-    return undefined
-  }, [openFromQuery, hasPrefillParams, initialValues, selectedOperationType])
+  const modalInitialValues = useTransactionModalInitialValues(
+    initialValues,
+    openFromQuery,
+    hasPrefillParams,
+    selectedOperationType,
+  )
 
   const modalTitle = modalStep === 'form' && selectedOperationType
     ? OPERATION_TITLES[selectedOperationType]
