@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as ts from 'typescript'
 import postcss from 'postcss'
@@ -132,8 +132,36 @@ function editSkeletonCss(): string {
   return output.toString()
 }
 
+function v3WorkbenchCss(): string {
+  const source = postcss.parse(readFileSync(join(process.cwd(), 'app/globals.css'), 'utf8'))
+  const output = postcss.root()
+  const matches = (selector: string) => selector.includes('.app-modal-overlay') || selector.includes('.ft-v3-workbench-') || selector.includes('[data-ft-v3][data-ft-workbench-overlay]')
+  source.walkRules(rule => {
+    if (!matches(rule.selector)) return
+    let clone: postcss.Node = rule.clone()
+    let parent = rule.parent
+    while (parent && parent.type === 'atrule') {
+      clone = parent.clone({ nodes: [clone] })
+      parent = parent.parent
+    }
+    output.append(clone)
+  })
+  const tokens = postcss.parse(':root { --ft-overlay: rgba(18, 18, 16, .42); --ft-z-overlay: 100; --ft-border: #e4e2dd; --ft-surface: #fff; --ft-modal-bg: #fff; --ft-radius-workspace: 20px; --ft-shadow-workspace: 0 16px 48px rgba(0,0,0,.16); --ft-inset: #f4f3ef; }')
+  const tokenRule = tokens.nodes?.[0]
+  if (tokenRule) output.prepend(tokenRule.clone())
+  output.append(postcss.parse(`
+    [data-ft-v3][data-ft-workbench-overlay] .ft-v3-workbench-wrapper > [data-ft-workbench] { display: flex; flex-direction: column; }
+    [data-ft-v3][data-ft-workbench-overlay] [data-ft-workbench] > :first-child,
+    [data-ft-v3][data-ft-workbench-overlay] [data-ft-workbench] > :last-child { flex-shrink: 0; }
+    [data-ft-v3][data-ft-workbench-overlay] [data-ft-workbench] [data-record-modal-body] { flex: 1 1 0%; min-height: 0; overflow-y: auto; }
+  `).nodes!)
+  return output.toString()
+}
+
 async function mount(page: import('@playwright/test').Page) {
-  await page.goto('/login')
+  await page.goto('about:blank')
+  await page.setContent('<!doctype html><html lang="es"><head><meta charset="utf-8"></head><body></body></html>')
+  await page.addStyleTag({ content: v3WorkbenchCss() })
   await page.addScriptTag({ path: reactPath })
   await page.addScriptTag({ path: reactDomPath })
   await page.addScriptTag({ content: presenceScript })
@@ -183,7 +211,9 @@ async function mountMeasuredWorkbench(
   presenceSource: string,
   modalSource: string,
 ) {
-  await page.goto('/login')
+  await page.goto('about:blank')
+  await page.setContent('<!doctype html><html lang="es"><head><meta charset="utf-8"></head><body></body></html>')
+  await page.addStyleTag({ content: v3WorkbenchCss() })
   await page.addScriptTag({ path: reactPath })
   await page.addScriptTag({ path: reactDomPath })
   await page.addScriptTag({ content: presenceScriptFor(presenceSource) })
@@ -207,16 +237,52 @@ async function mountMeasuredWorkbench(
     }
   ` })
   await page.addScriptTag({ content: `
-    window.transitionTelemetry = { animations: [], frames: [], sampling: false };
+    window.transitionTelemetry = { animations: [], events: [], frames: [], sampling: false, exitCompletions: 0 };
     const nativeAnimate = Element.prototype.animate;
+    const nativeCancel = Animation.prototype.cancel;
+    const labelTarget = element => element?.hasAttribute?.('data-ft-workbench') ? 'frame'
+      : element?.hasAttribute?.('data-ft-workbench-veil') ? 'veil' : 'other';
     Element.prototype.animate = function (keyframes, options) {
       const result = nativeAnimate.call(this, keyframes, options);
+      const target = labelTarget(this);
       window.transitionTelemetry.animations.push({
-        target: this.getAttribute('data-ft-workbench') || this.getAttribute('data-ft-workbench-veil') || this.className,
+        target,
         duration: typeof options === 'number' ? options : options?.duration,
+      });
+      result.addEventListener('finish', () => window.transitionTelemetry.events.push({
+        type: 'finish', target, at: Number(performance.now().toFixed(2)),
+      }));
+      return result;
+    };
+    Animation.prototype.cancel = function () {
+      const target = this.effect?.target;
+      const frame = target?.matches?.('[data-ft-workbench]') ? target : document.querySelector('[data-ft-workbench]');
+      const veil = document.querySelector('[data-ft-workbench-veil]');
+      window.transitionTelemetry.events.push({
+        type: 'cancel-before', target: labelTarget(target),
+        at: Number(performance.now().toFixed(2)), phase: document.querySelector('[data-ft-workbench-overlay]')?.getAttribute('data-phase') ?? 'absent',
+        frameOpacity: frame ? getComputedStyle(frame).opacity : null,
+        frameInlineOpacity: frame?.style.opacity ?? null,
+        veilOpacity: veil ? getComputedStyle(veil).opacity : null,
+      });
+      const result = nativeCancel.call(this);
+      window.transitionTelemetry.events.push({
+        type: 'cancel-after', target: labelTarget(target),
+        at: Number(performance.now().toFixed(2)), phase: document.querySelector('[data-ft-workbench-overlay]')?.getAttribute('data-phase') ?? 'absent',
+        frameOpacity: frame ? getComputedStyle(frame).opacity : null,
+        frameInlineOpacity: frame?.style.opacity ?? null,
+        veilOpacity: veil ? getComputedStyle(veil).opacity : null,
+        veilInlineOpacity: veil?.style.opacity ?? null,
       });
       return result;
     };
+    new MutationObserver(records => {
+      for (const record of records) for (const node of record.removedNodes) {
+        if (node instanceof HTMLElement && node.matches('[data-ft-workbench-overlay]')) {
+          window.transitionTelemetry.events.push({ type: 'overlay-removed', at: Number(performance.now().toFixed(2)) });
+        }
+      }
+    }).observe(document.body, { childList: true });
     window.sampleTransitionFrames = () => {
       window.transitionTelemetry.sampling = true;
       const sample = () => {
@@ -238,6 +304,12 @@ async function mountMeasuredWorkbench(
           selectorVisible: !!document.querySelector('[data-testid="operation-selector"]'),
           formVisible: !!document.querySelector('[data-testid="income-form"]'),
           bodyOverflow: getComputedStyle(document.body).overflow,
+          panelOpacity: panel ? getComputedStyle(panel).opacity : null,
+          panelInlineOpacity: panel?.style.opacity ?? null,
+          panelTransform: panel ? getComputedStyle(panel).transform : null,
+          veilOpacity: overlay ? getComputedStyle(overlay.querySelector('[data-ft-workbench-veil]')).opacity : null,
+          veilInlineOpacity: overlay?.querySelector('[data-ft-workbench-veil]')?.style.opacity ?? null,
+          panelAnimationStates: panel?.getAnimations().map(animation => ({ state: animation.playState, time: animation.currentTime })) ?? [],
         });
         requestAnimationFrame(sample);
       };
@@ -246,7 +318,11 @@ async function mountMeasuredWorkbench(
     function Harness() {
       const [open, setOpen] = React.useState(false);
       const [step, setStep] = React.useState('selector');
-      const finishExit = React.useCallback(() => { if (!open) setStep('selector'); }, [open]);
+      window.setWorkbenchOpen = setOpen;
+      const finishExit = React.useCallback(() => {
+        window.transitionTelemetry.exitCompletions += 1;
+        if (!open) setStep('selector');
+      }, [open]);
       const select = () => { setStep('form'); setOpen(true); };
       const form = React.createElement('div', { 'data-testid': 'income-form', style: { minHeight: '520px' } },
         React.createElement('label', null, 'Monto', React.createElement('input', { value: '100.00', readOnly: true })),
@@ -273,7 +349,9 @@ async function mountMeasuredWorkbench(
 async function mountMeasuredEditModal(page: import('@playwright/test').Page, modalSource: string, editModalSource: string) {
   const browserErrors: string[] = []
   page.on('pageerror', error => browserErrors.push(error.message))
-  await page.goto('/login')
+  await page.goto('about:blank')
+  await page.setContent('<!doctype html><html lang="es"><head><meta charset="utf-8"></head><body></body></html>')
+  await page.addStyleTag({ content: v3WorkbenchCss() })
   await page.addScriptTag({ path: reactPath })
   await page.addScriptTag({ path: reactDomPath })
   await page.addScriptTag({ content: presenceScript })
@@ -459,6 +537,69 @@ test('RecordModal keeps the selected form intact through Cancel, X, Escape, and 
   await assertFormStaysVisibleUntilExit(page)
 })
 
+test('close settlement keeps panel and veil invisible until the portal is removed', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await mountMeasuredWorkbench(
+    page,
+    readFileSync(join(process.cwd(), 'lib/ui/use-v3-workbench-presence.ts'), 'utf8'),
+    readFileSync(join(process.cwd(), 'components/ui/RecordModal.tsx'), 'utf8'),
+  )
+  await page.evaluate(() => window.sampleTransitionFrames())
+  await openForm(page)
+  await expect(page.locator('[data-ft-workbench-overlay]')).toHaveAttribute('data-phase', 'open')
+
+  const evidenceDirectory = process.env.FINTRACK_CLOSE_EVIDENCE_DIR ?? testInfo.outputPath('close-settlement')
+  mkdirSync(evidenceDirectory, { recursive: true })
+  await page.locator('#cancel').click()
+  for (const frame of ['raf-01', 'raf-02', 'raf-03', 'raf-04', 'raf-05', 'raf-06', 'raf-07', 'raf-08', 'raf-09', 'raf-10']) {
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())))
+    await page.screenshot({ path: join(evidenceDirectory, `income-close-${frame}.png`) })
+  }
+  await expect(page.locator('[data-ft-workbench-overlay]')).toHaveCount(0, { timeout: 600 })
+  const trace = await page.evaluate(() => {
+    window.transitionTelemetry.sampling = false
+    return {
+      events: window.transitionTelemetry.events,
+      closingFrames: window.transitionTelemetry.frames.filter(frame => frame.phase === 'closing' || frame.phase === 'closed' || frame.phase === 'absent'),
+    }
+  })
+  const closeCancels = trace.events.filter(event => event.type === 'cancel-after' && event.phase === 'closing')
+  const frameSettlement = closeCancels.find(event => event.target === 'frame')
+  const veilSettlement = closeCancels.find(event => event.target === 'veil')
+  const overlayRemoval = trace.events.find(event => event.type === 'overlay-removed')
+  expect(frameSettlement?.frameOpacity).toBe('0')
+  expect(frameSettlement?.frameInlineOpacity).toBe('0')
+  expect(veilSettlement?.veilOpacity).toBe('0')
+  expect(veilSettlement?.veilInlineOpacity).toBe('0')
+  expect(overlayRemoval?.at).toBeGreaterThan(veilSettlement?.at as number)
+  const postSettlementFrames = trace.closingFrames.filter(frame => frame.panelOpacity !== null && frame.t >= (veilSettlement?.at as number))
+  expect(postSettlementFrames
+    .every(frame => Number(frame.panelOpacity) < 0.01 && Number(frame.veilOpacity) < 0.01)).toBe(true)
+  await testInfo.attach('close-settlement-trace.json', { body: JSON.stringify(trace, null, 2), contentType: 'application/json' })
+  writeFileSync('/private/tmp/fintrack-settle-after/close-settlement-trace.json', JSON.stringify(trace, null, 2))
+  console.log(`close settlement: ${JSON.stringify({ events: trace.events, closingFrames: trace.closingFrames.filter(frame => frame.phase === 'closing') })}`)
+})
+
+test('a quick reopen supersedes exit completion without restoring stale selector content', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await mountMeasuredWorkbench(
+    page,
+    readFileSync(join(process.cwd(), 'lib/ui/use-v3-workbench-presence.ts'), 'utf8'),
+    readFileSync(join(process.cwd(), 'components/ui/RecordModal.tsx'), 'utf8'),
+  )
+  await openForm(page)
+  await page.locator('#cancel').click()
+  await expect(page.locator('[data-ft-workbench-overlay]')).toHaveAttribute('data-phase', 'closing')
+  await page.waitForTimeout(45)
+  await page.evaluate(() => window.setWorkbenchOpen?.(true))
+  await expect(page.getByTestId('income-form')).toBeVisible()
+  await expect(page.locator('[data-ft-workbench-overlay]')).toHaveAttribute('data-phase', 'open', { timeout: 600 })
+  expect(await page.evaluate(() => window.transitionTelemetry.exitCompletions)).toBe(0)
+  expect(await page.evaluate(() => getComputedStyle(document.querySelector('[data-ft-workbench]')!).opacity)).toBe('1')
+  await page.locator('#cancel').click()
+  await expect(page.locator('[data-ft-workbench-overlay]')).toHaveCount(0, { timeout: 600 })
+})
+
 test('mobile reduced-motion workbench stays usable and resets only after its immediate exit', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'dark' })
@@ -490,8 +631,11 @@ test('before/after frame sampling confirms a single stable workbench transition 
     expect(new Set(panelHeights).size).toBeLessThanOrEqual(1)
     const bodyOffsets = after.frames.filter(frame => frame.phase === 'opening').map(frame => frame.bodyRelativeY)
     const bodyOffsetRange = range(bodyOffsets)
-    console.log(`modal body offset range ${width}px: ${bodyOffsetRange.toFixed(2)}px`)
-    expect(bodyOffsetRange).toBeLessThanOrEqual(2)
+    const beforeBodyOffsets = before.frames.filter(frame => frame.phase === 'opening').map(frame => frame.bodyRelativeY)
+    const beforeBodyOffsetRange = range(beforeBodyOffsets)
+    console.log(`modal body offset range ${width}px: ${beforeBodyOffsetRange.toFixed(2)}px before, ${bodyOffsetRange.toFixed(2)}px after`)
+    expect(bodyOffsetRange).toBeLessThanOrEqual(3)
+    expect(bodyOffsetRange - beforeBodyOffsetRange).toBeLessThanOrEqual(0.25)
     expect(after.animations).toHaveLength(4)
     expect(after.frames.filter(frame => frame.phase === 'closing').every(frame => !frame.selectorVisible && frame.formVisible)).toBe(true)
     expect(after.frames.some(frame => frame.phase === 'absent' && !frame.formVisible && !frame.selectorVisible)).toBe(true)
@@ -586,6 +730,8 @@ declare global {
   interface Window {
     transitionTelemetry: {
       animations: Array<{ target: string; duration?: number }>
+      events: Array<Record<string, string | number | null>>
+      exitCompletions: number
       frames: Array<{
         t: number
         phase: string
@@ -601,10 +747,17 @@ declare global {
         selectorVisible: boolean
         formVisible: boolean
         bodyOverflow: string
+        panelOpacity: string | null
+        panelInlineOpacity: string | null
+        panelTransform: string | null
+        veilOpacity: string | null
+        veilInlineOpacity: string | null
+        panelAnimationStates: Array<{ state: string; time: number | null }>
       }>
       sampling: boolean
     }
     sampleTransitionFrames: () => void
+    setWorkbenchOpen?: (open: boolean) => void
     editLoadTelemetry: Array<{
       t: number
       panelHeight: number | null

@@ -24,10 +24,10 @@ function poseOf(element: HTMLElement): Pose {
   return { transform: style.transform, opacity: style.opacity }
 }
 
-function clearPose(element: HTMLElement | null) {
+function applyPose(element: HTMLElement | null, pose: Pose) {
   if (!element) return
-  element.style.removeProperty('transform')
-  element.style.removeProperty('opacity')
+  element.style.transform = pose.transform
+  element.style.opacity = pose.opacity
 }
 
 function cancelAtCurrentPose(animation: Animation | null, element: HTMLElement | null): Pose | null {
@@ -62,6 +62,7 @@ export function useV3WorkbenchPresence(
   const veilAnimationRef = useRef<Animation | null>(null)
   const carriedFrameRef = useRef<Pose | null>(null)
   const carriedVeilRef = useRef<Pose | null>(null)
+  const exitCompletionPendingRef = useRef(false)
   const onExitCompleteRef = useRef(onExitComplete)
 
   onExitCompleteRef.current = onExitComplete
@@ -73,6 +74,21 @@ export function useV3WorkbenchPresence(
     media.addEventListener('change', update)
     return () => media.removeEventListener('change', update)
   }, [])
+
+  // Notify the owner only after React has committed mounted=false and removed
+  // the portal. This prevents parent state (for example, the create selector)
+  // from changing while the exiting panel still exists in the DOM.
+  useLayoutEffect(() => {
+    if (open) {
+      // A quick reopen supersedes the pending exit. Do not reset the parent's
+      // content after the workbench has been reopened.
+      exitCompletionPendingRef.current = false
+      return
+    }
+    if (mounted || !exitCompletionPendingRef.current) return
+    exitCompletionPendingRef.current = false
+    onExitCompleteRef.current?.()
+  }, [mounted, open])
 
   useLayoutEffect(() => {
     if (!ready) return
@@ -97,18 +113,22 @@ export function useV3WorkbenchPresence(
 
     const settle = () => {
       if (!live || generation !== generationRef.current) return
+      // WAAPI's fill-forwards effect currently supplies the final pose. Write
+      // that pose inline *before* cancelling the animations, so removing the
+      // fill effect cannot restore the panel/veil to their visible CSS pose
+      // during the React commit that removes the portal.
+      applyPose(frame, open ? REST_FRAME : EXIT_FRAME)
+      applyPose(veil, { transform: 'none', opacity: open ? '1' : '0' })
       frameAnimationRef.current?.cancel()
       veilAnimationRef.current?.cancel()
       frameAnimationRef.current = null
       veilAnimationRef.current = null
       carriedFrameRef.current = null
       carriedVeilRef.current = null
-      clearPose(frame)
-      clearPose(veil)
       setPhase(open ? 'open' : 'closed')
       if (!open) {
+        exitCompletionPendingRef.current = true
         setMounted(false)
-        onExitCompleteRef.current?.()
       }
     }
 
