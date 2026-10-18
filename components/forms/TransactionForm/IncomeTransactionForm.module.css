@@ -20,58 +20,66 @@
   min-width: 0;
 }
 
-.operationCreateFormRoot[data-stage-a-operation='expense'] :global([data-testid='transaction-submit-button']) {
+.operationEditFields {
+  display: contents;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.operationCreateFormRoot[data-operation-layout='expense'] :global([data-testid='transaction-submit-button']) {
   background-color: var(--ft-danger);
   box-shadow: 0 8px 20px color-mix(in srgb, var(--ft-danger) 20%, transparent);
 }
 
-.operationCreateFormRoot[data-stage-a-operation='expense'] :global([data-testid='transaction-submit-button']:hover:not(:disabled)) {
+.operationCreateFormRoot[data-operation-layout='expense'] :global([data-testid='transaction-submit-button']:hover:not(:disabled)) {
   filter: brightness(0.94);
 }
 
-.operationCreateFormRoot[data-stage-a-operation='transfer'] :global([data-testid='transaction-submit-button']) {
+.operationCreateFormRoot[data-operation-layout='transfer'] :global([data-testid='transaction-submit-button']) {
   background-color: #1f4f78;
   box-shadow: 0 8px 20px rgba(31, 79, 120, 0.18);
 }
 
-.operationCreateFormRoot[data-stage-a-operation='transfer'] :global([data-testid='transaction-submit-button']:hover:not(:disabled)) {
+.operationCreateFormRoot[data-operation-layout='transfer'] :global([data-testid='transaction-submit-button']:hover:not(:disabled)) {
   background-color: #183d5e;
   filter: none;
 }
 
-.operationCreateFormRoot[data-stage-a-operation='transfer'] :global([data-testid='transaction-submit-button']:active:not(:disabled)) {
+.operationCreateFormRoot[data-operation-layout='transfer'] :global([data-testid='transaction-submit-button']:active:not(:disabled)) {
   background-color: #143149;
 }
 
-.operationCreateFormRoot[data-stage-a-operation='transfer'] :global([data-testid='transaction-submit-button']:focus-visible) {
+.operationCreateFormRoot[data-operation-layout='transfer'] :global([data-testid='transaction-submit-button']:focus-visible) {
   outline: 2px solid rgba(31, 79, 120, 0.18);
   outline-offset: 2px;
   box-shadow: 0 0 0 3px rgba(31, 79, 120, 0.18), 0 8px 20px rgba(31, 79, 120, 0.18);
 }
 
-.operationCreateFormRoot[data-asset-purchase-create='true'] :global([data-testid='transaction-submit-button']) {
+.operationCreateFormRoot[data-operation-layout='asset_purchase'] :global([data-testid='transaction-submit-button']) {
   background-color: var(--ft-primary);
   box-shadow: 0 8px 20px color-mix(in srgb, var(--ft-primary) 20%, transparent);
   min-width: 16rem;
   padding-inline: 1.25rem;
 }
 
-.operationCreateFormRoot[data-asset-purchase-create='true'] :global([data-testid='transaction-submit-button']:hover:not(:disabled)) {
+.operationCreateFormRoot[data-operation-layout='asset_purchase'] :global([data-testid='transaction-submit-button']:hover:not(:disabled)) {
   filter: brightness(0.94);
 }
 
-.operationCreateFormRoot[data-receivable-create='receivable_issue'] :global([data-testid='transaction-submit-button']),
-.operationCreateFormRoot[data-receivable-create='receivable_collect'] :global([data-testid='transaction-submit-button']) {
+.operationCreateFormRoot[data-operation-layout='receivable_issue'] :global([data-testid='transaction-submit-button']),
+.operationCreateFormRoot[data-operation-layout='receivable_collect'] :global([data-testid='transaction-submit-button']) {
   background-color: var(--ft-primary);
   box-shadow: 0 8px 20px color-mix(in srgb, var(--ft-primary) 18%, transparent);
 }
 
-.operationCreateFormRoot[data-receivable-create='receivable_issue'] :global([data-testid='transaction-submit-button']:hover:not(:disabled)),
-.operationCreateFormRoot[data-receivable-create='receivable_collect'] :global([data-testid='transaction-submit-button']:hover:not(:disabled)) {
+.operationCreateFormRoot[data-operation-layout='receivable_issue'] :global([data-testid='transaction-submit-button']:hover:not(:disabled)),
+.operationCreateFormRoot[data-operation-layout='receivable_collect'] :global([data-testid='transaction-submit-button']:hover:not(:disabled)) {
   filter: brightness(0.94);
 }
 
-.operationCreateFormRoot[data-receivable-create='receivable_issue'] :global([data-testid='transaction-submit-button']) {
+.operationCreateFormRoot[data-operation-layout='receivable_issue'] :global([data-testid='transaction-submit-button']) {
   min-width: 12.5rem;
   min-height: 2.875rem;
   padding: 0.75rem 1.25rem;
@@ -81,7 +89,7 @@
   line-height: 1.25;
 }
 
-.operationCreateFormRoot[data-payable-create] :global([data-testid='transaction-submit-button']) {
+.operationCreateFormRoot[data-operation-layout^='payable_'] :global([data-testid='transaction-submit-button']) {
   min-width: 14rem;
   min-height: 2.875rem;
   padding: 0.75rem 1.25rem;
@@ -91,7 +99,7 @@
   line-height: 1.25;
 }
 
-.operationCreateFormRoot[data-payable-create] :global([data-testid='transaction-submit-button']:hover:not(:disabled)) {
+.operationCreateFormRoot[data-operation-layout^='payable_'] :global([data-testid='transaction-submit-button']:hover:not(:disabled)) {
   filter: brightness(0.94);
 }
 
@@ -109,7 +117,7 @@
   container: operation-create-section / inline-size;
 }
 
-.operationCreateFormRoot[data-payable-create] .incomeAmountCurrency {
+.operationCreateFormRoot[data-operation-layout^='payable_'] .incomeAmountCurrency {
   align-items: start;
 }
 
@@ -731,17 +739,17 @@
 }
 
 @media (max-width: 520px) {
-  .operationCreateFormRoot[data-asset-purchase-create='true'] :global([data-testid='transaction-submit-button']) {
+  .operationCreateFormRoot[data-operation-layout='asset_purchase'] :global([data-testid='transaction-submit-button']) {
     width: 100%;
     min-width: 0;
   }
 
-  .operationCreateFormRoot[data-receivable-create='receivable_issue'] :global([data-testid='transaction-submit-button']) {
+  .operationCreateFormRoot[data-operation-layout='receivable_issue'] :global([data-testid='transaction-submit-button']) {
     width: 100%;
     min-width: 0;
   }
 
-  .operationCreateFormRoot[data-payable-create] :global([data-testid='transaction-submit-button']) {
+  .operationCreateFormRoot[data-operation-layout^='payable_'] :global([data-testid='transaction-submit-button']) {
     width: 100%;
     min-width: 0;
   }
@@ -792,12 +800,12 @@
   align-items: start;
 }
 
-.operationCreateFormRoot[data-receivable-create='receivable_issue'] .incomeAmountCurrency,
-.operationCreateFormRoot[data-receivable-create='receivable_collect'] .incomeAmountCurrency {
+.operationCreateFormRoot[data-operation-layout='receivable_issue'] .incomeAmountCurrency,
+.operationCreateFormRoot[data-operation-layout='receivable_collect'] .incomeAmountCurrency {
   align-items: start;
 }
 
-.operationCreateFormRoot[data-asset-purchase-create='true'] .incomeAmountCurrency {
+.operationCreateFormRoot[data-operation-layout='asset_purchase'] .incomeAmountCurrency {
   align-items: start;
 }
 
@@ -1365,11 +1373,11 @@
 }
 
 @media (max-width: 640px) {
-  .operationCreateFormRoot[data-stage-a-operation='expense'] .operationCreateClassificationFields {
+  .operationCreateFormRoot[data-operation-layout='expense'] .operationCreateClassificationFields {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .operationCreateFormRoot[data-stage-a-operation='expense'] .incomeDescription {
+  .operationCreateFormRoot[data-operation-layout='expense'] .incomeDescription {
     grid-column: 1 / -1;
   }
 

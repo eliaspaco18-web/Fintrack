@@ -5,64 +5,12 @@ import { TransactionForm } from '@/components/forms/TransactionForm'
 import { RecordModal } from '@/components/ui/RecordModal'
 import styles from '@/components/tables/TransactionsRound07.module.css'
 import { InlineFeedback } from '@/components/forms/TransactionForm/FormFields'
-import {
-  operationTypeLabel,
-  type OperationType,
-} from '@/components/transactions/OperationTypeSelector'
-import { CategoryKeys } from '@/lib/constants/category-keys'
+import { getTransactionEditPresentation } from '@/components/forms/transaction-edit-presentation'
+import { firstLinkedRecord, inferOperationType, toInitialValues, type EditableTransaction } from '@/components/forms/transaction-edit-data'
 import type {
   TransactionFormOptions,
-  TransactionFormValues,
 } from '@/lib/contracts/ui.contracts'
 import type { TransactionWithRelations } from '@/types/database.types'
-
-type LinkedAssetSnapshot = {
-  id: string
-  name: string
-  asset_type: TransactionFormValues['asset_type']
-  asset_type_id: string | null
-  serial_number: string | null
-  location: string | null
-}
-
-type LinkedReceivableSnapshot = {
-  id: string
-  debtor_id: string | null
-  due_date: string | null
-}
-
-type LinkedPayableSnapshot = {
-  id: string
-  creditor_id: string | null
-  due_date: string | null
-}
-
-type EditableTransaction = Pick<
-  TransactionWithRelations,
-  | 'id'
-  | 'type'
-  | 'amount'
-  | 'amount_pen'
-  | 'currency'
-  | 'exchange_rate'
-  | 'description'
-  | 'transaction_date'
-  | 'category_id'
-  | 'notes'
-  | 'payment_method'
-  | 'sender'
-  | 'recipient'
-  | 'budget_id'
-  | 'source_account_id'
-  | 'destination_account_id'
-  | 'source_account'
-  | 'destination_account'
-> & {
-  category?: { id: string; system_key?: string | null } | null
-  linked_asset?: LinkedAssetSnapshot[] | LinkedAssetSnapshot | null
-  linked_receivable?: LinkedReceivableSnapshot[] | LinkedReceivableSnapshot | null
-  linked_payable?: LinkedPayableSnapshot[] | LinkedPayableSnapshot | null
-}
 
 interface TransactionEditModalProps {
   open: boolean
@@ -80,64 +28,6 @@ function normalizeTransaction(raw: unknown): (TransactionWithRelations & Editabl
   return candidate as TransactionWithRelations & EditableTransaction
 }
 
-function firstLinkedRecord<T>(value: T[] | T | null | undefined): T | null {
-  if (!value) return null
-  return Array.isArray(value) ? value[0] ?? null : value
-}
-
-function inferOperationType(transaction: Partial<EditableTransaction> | null): OperationType {
-  if (firstLinkedRecord(transaction?.linked_asset)) return 'asset_purchase'
-  if (firstLinkedRecord(transaction?.linked_receivable)) return 'receivable_issue'
-  if (firstLinkedRecord(transaction?.linked_payable)) return 'payable_issue'
-
-  const categorySystemKey = transaction?.category?.system_key ?? null
-  if (categorySystemKey === CategoryKeys.INCOME_RECEIVABLE_COLLECTION) return 'receivable_collect'
-  if (categorySystemKey === CategoryKeys.EXPENSE_PAYABLE_PAYMENT) return 'payable_pay'
-  if (transaction?.type === 'TRANSFER') return 'transfer'
-  if (transaction?.type === 'INCOME') return 'income'
-  return 'expense'
-}
-
-function toInitialValues(
-  transaction: Partial<EditableTransaction> | null,
-): Partial<TransactionFormValues> {
-  if (!transaction) return {}
-
-  const linkedAsset = firstLinkedRecord(transaction.linked_asset)
-  const linkedReceivable = firstLinkedRecord(transaction.linked_receivable)
-  const linkedPayable = firstLinkedRecord(transaction.linked_payable)
-
-  return {
-    type: transaction.type,
-    source_account_id: transaction.source_account_id ?? undefined,
-    destination_account_id: transaction.destination_account_id ?? undefined,
-    amount: Number(transaction.amount ?? 0),
-    currency: transaction.currency === 'USD' ? 'USD' : 'PEN',
-    exchange_rate: transaction.currency === 'USD'
-      ? Number(transaction.exchange_rate ?? 1)
-      : undefined,
-    payment_method: transaction.payment_method ?? 'DEBIT',
-    description: transaction.description ?? '',
-    transaction_date: transaction.transaction_date,
-    category_id: transaction.category_id ?? undefined,
-    notes: transaction.notes ?? undefined,
-    sender: transaction.sender ?? undefined,
-    recipient: transaction.recipient ?? undefined,
-    budget_id: transaction.budget_id ?? undefined,
-    creates_asset: Boolean(linkedAsset),
-    asset_name: linkedAsset?.name ?? undefined,
-    asset_type: linkedAsset?.asset_type ?? undefined,
-    asset_type_id: linkedAsset?.asset_type_id ?? undefined,
-    asset_serial: linkedAsset?.serial_number ?? undefined,
-    asset_location: linkedAsset?.location ?? undefined,
-    creates_receivable: Boolean(linkedReceivable),
-    receivable_debtor_id: linkedReceivable?.debtor_id ?? undefined,
-    receivable_due: linkedReceivable?.due_date ?? undefined,
-    creates_payable: Boolean(linkedPayable),
-    payable_creditor_id: linkedPayable?.creditor_id ?? undefined,
-    payable_due: linkedPayable?.due_date ?? undefined,
-  }
-}
 
 export function TransactionEditModal({
   open,
@@ -202,16 +92,18 @@ export function TransactionEditModal({
     return () => { cancelled = true }
   }, [open, transactionId])
 
-  const title = `Editar ${operationTypeLabel(operationType).toLowerCase()}`
+  const editPresentation = getTransactionEditPresentation(operationType)
 
   return (
     <RecordModal
       open={open}
       onClose={onClose}
       eyebrow="Movimientos"
-      title={title}
-      subtitle="Usa la misma ventana de registro, ajustada al tipo de movimiento seleccionado."
-      widthClassName="max-w-[min(96vw,920px)]"
+      title={editPresentation.title}
+      subtitle={editPresentation.blocked
+        ? 'La distribución financiera de este movimiento está protegida.'
+        : 'Actualiza los datos permitidos de este movimiento.'}
+      widthClassName="max-w-[min(96vw,580px)]"
       testId="transaction-edit-modal"
       presentation="workbench"
       motionSource="pointer"
@@ -236,6 +128,11 @@ export function TransactionEditModal({
           showSuccessSummary={false}
           mode="edit"
           transactionId={visibleTransaction.id}
+          editContext={{
+            hasExistingAttachment: Boolean(visibleTransaction.attachment_url),
+            receivableCollectedAmount: Number(firstLinkedRecord(visibleTransaction.linked_receivable)?.collected_amount ?? 0),
+            payablePaidAmount: Number(firstLinkedRecord(visibleTransaction.linked_payable)?.paid_amount ?? 0),
+          }}
           onCancel={onClose}
           onEditSuccess={updatedTransaction => {
             onUpdated?.(updatedTransaction)
