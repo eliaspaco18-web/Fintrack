@@ -7,6 +7,45 @@ const componentPath = join(process.cwd(), 'components/ui/AppSelect.tsx')
 const reactPath = join(process.cwd(), 'node_modules/react/umd/react.development.js')
 const reactDomPath = join(process.cwd(), 'node_modules/react-dom/umd/react-dom.development.js')
 const cssDirectory = join(process.cwd(), '.next/static/css')
+function v3FontToken(css: string): string {
+  const match = css.match(/\.__variable_[^{}]+\{--font-fintrack-v3:([^}]+)\}/)
+  if (!match?.[1]) throw new Error('Could not find Next local Manrope variable token in built CSS')
+  return match[1]
+}
+
+function v3FontFamily(css: string): string {
+  const match = v3FontToken(css).match(/"([^"]+)"/)
+  if (!match?.[1]) throw new Error('Could not find Next local Manrope family name in built CSS')
+  return match[1]
+}
+
+function v3Document(content: string, css: string, theme: 'light' | 'dark' = 'light'): string {
+  // RootLayout puts next/font/local's --font-fintrack-v3 token on body. The
+  // portaled menu is attached to body, so omitting that token falsely made it
+  // fall back to the legacy Geist stack in this CSS harness.
+  const fontToken = v3FontToken(css).replaceAll('"', '&quot;')
+  return `<html data-theme="${theme}"><head><base href="http://fintrack.test/"></head><body class="font-body antialiased" style="--font-fintrack-v3:${fontToken}">${content}</body></html>`
+}
+
+async function routeV3FontAssets(page: import('@playwright/test').Page) {
+  const generatedMedia = new Set(readdirSync(join(process.cwd(), '.next/static/media')))
+  await page.route('http://fintrack.test/**', async route => {
+    const pathname = new URL(route.request().url()).pathname
+    const publicFont = pathname.match(/^\/fonts\/v3\/(manrope-(?:regular|semibold|bold)\.ttf)$/)
+    const nextFont = pathname.match(/^\/_next\/static\/media\/([A-Za-z0-9._-]+)$/)
+    const file = publicFont?.[1]
+      ? join(process.cwd(), 'public/fonts/v3', publicFont[1])
+      : nextFont?.[1] && generatedMedia.has(nextFont[1])
+        ? join(process.cwd(), '.next/static/media', nextFont[1])
+        : null
+    if (!file) return route.abort()
+    await route.fulfill({
+      body: readFileSync(file),
+      contentType: 'font/ttf',
+      headers: { 'access-control-allow-origin': '*' },
+    })
+  })
+}
 
 function builtCss(): string {
   const files = readdirSync(cssDirectory).filter(file => file.endsWith('.css')).sort()
@@ -35,11 +74,16 @@ function browserComponentSource(): string {
 async function preparePage(page: import('@playwright/test').Page, css: string) {
   page.on('pageerror', error => console.log('AppSelect browser error:', error.message))
   page.on('console', message => { if (message.type() === 'error') console.log('AppSelect console error:', message.text()) })
-  await page.setContent('<div id="root" class="fin-shell" data-ft-v3 data-ft-v3-shell></div>')
+  await routeV3FontAssets(page)
+  await page.setContent(v3Document('<div id="root" class="fin-shell" data-ft-v3 data-ft-v3-shell></div>', css))
   await page.addStyleTag({ content: css })
   await page.addScriptTag({ path: reactPath })
   await page.addScriptTag({ path: reactDomPath })
   await page.addScriptTag({ content: browserComponentSource() })
+  await page.evaluate(async family => {
+    await Promise.all([document.fonts.load('500 13px Manrope'), document.fonts.load(`500 13px "${family}"`)])
+    await document.fonts.ready
+  }, v3FontFamily(css))
 }
 
 test('portfolio filter menus render at trigger width with built V3 CSS and body portal', async ({ page }) => {
@@ -272,11 +316,193 @@ test('adaptive portfolio menus size from rendered option text and remain capped 
   }
 })
 
+test('adaptive institution menu shows medium labels completely and truncates only over-limit labels', async ({ page }) => {
+  const css = builtCss()
+  const classes = {
+    controls: moduleClass(css, 'controls'),
+    bar: moduleClass(css, 'portfolioFilterBar'),
+    filter: moduleClass(css, 'portfolioFilter'),
+    institution: moduleClass(css, 'portfolioFilterInstitution'),
+    workspace: moduleClass(css, 'workspace'),
+  }
+
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 834, height: 900 },
+    { width: 1440, height: 900 },
+    { width: 1710, height: 1000 },
+  ]) {
+    await page.setViewportSize(viewport)
+    await preparePage(page, css)
+    await page.locator('#root').evaluate((element, workspaceClass) => element.classList.add(workspaceClass), classes.workspace)
+    await page.addScriptTag({ content: `(() => {
+      const classes = ${JSON.stringify(classes)};
+      const mediumLabel = 'Banco Andino Round 07';
+      function Harness() {
+        const [options, setOptions] = React.useState([
+          { value: 'all', label: 'Todas' },
+          { value: 'andino', label: mediumLabel },
+        ]);
+        const [value, setValue] = React.useState('all');
+        window.setInstitutionOptions = setOptions;
+        window.setInstitutionValue = setValue;
+        return React.createElement('div', { className: classes.controls + ' ' + classes.bar + ' min-w-0' },
+          React.createElement(window.FinTrackTestAppSelect, {
+            options, value, onChange: setValue, ariaLabel: 'Institución', compact: true,
+            adaptiveMenuWidth: true, className: classes.filter + ' ' + classes.institution + ' filters-control',
+            testId: 'institution-dynamic-width', searchPlaceholder: 'Buscar institución…',
+          })
+        );
+      }
+      ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Harness));
+    })();` })
+
+    const trigger = page.getByTestId('institution-dynamic-width')
+    await trigger.click()
+    const menu = page.getByRole('dialog', { name: 'Institución' })
+    await expect(menu).toBeVisible()
+    await page.waitForTimeout(300)
+
+    const medium = await page.evaluate(() => {
+      const menuElement = document.querySelector<HTMLElement>('.app-select-menu')!
+      const triggerElement = document.querySelector<HTMLElement>('[data-testid="institution-dynamic-width"]')!
+      const label = [...menuElement.querySelectorAll<HTMLElement>('.app-select-option-label')]
+        .find(element => element.textContent?.trim() === 'Banco Andino Round 07')!
+      const labelStyle = getComputedStyle(label)
+      const canvas = document.createElement('canvas')
+      const context = canvas.getContext('2d')!
+      context.font = labelStyle.font
+      const naturalCanvasWidth = context.measureText(label.textContent ?? '').width
+      const range = document.createRange()
+      range.selectNodeContents(label)
+      const textRect = range.getBoundingClientRect()
+      const effectiveFontFamily = labelStyle.fontFamily.split(',')[0]?.replaceAll('"', '') ?? labelStyle.fontFamily
+      const menuRect = menuElement.getBoundingClientRect()
+      const triggerRect = triggerElement.getBoundingClientRect()
+      const menuStyle = getComputedStyle(menuElement)
+      const triggerLabelStyle = getComputedStyle(triggerElement.querySelector<HTMLElement>('.app-select-trigger-label')!)
+      const optionStyle = getComputedStyle(menuElement.querySelector<HTMLElement>('.app-select-option')!)
+      return {
+        triggerWidth: triggerRect.width,
+        menuWidth: menuRect.width,
+        menuCssWidth: menuStyle.width,
+        menuLeft: menuRect.left,
+        menuRight: menuRect.right,
+        menuBorderWidth: menuStyle.borderLeftWidth,
+        optionPadding: optionStyle.paddingLeft,
+        menuHasV3Layer: menuElement.hasAttribute('data-ft-v3'),
+        triggerFontFamily: getComputedStyle(triggerElement).fontFamily,
+        triggerLabelFontFamily: triggerLabelStyle.fontFamily,
+        triggerLabelFontSize: triggerLabelStyle.fontSize,
+        triggerLabelFontWeight: triggerLabelStyle.fontWeight,
+        triggerLabelColor: triggerLabelStyle.color,
+        menuFontFamily: getComputedStyle(menuElement).fontFamily,
+        menuFontSize: menuStyle.fontSize,
+        menuFontWeight: menuStyle.fontWeight,
+        menuColor: menuStyle.color,
+        menuSmoothing: menuStyle.getPropertyValue('-webkit-font-smoothing'),
+        naturalCanvasWidth,
+        labelClientWidth: label.clientWidth,
+        labelScrollWidth: label.scrollWidth,
+        textRectWidth: textRect.width,
+        font: labelStyle.font,
+        fontFamily: labelStyle.fontFamily,
+        fontSize: labelStyle.fontSize,
+        fontWeight: labelStyle.fontWeight,
+        color: labelStyle.color,
+        smoothing: labelStyle.getPropertyValue('-webkit-font-smoothing'),
+        fontLoaded: document.fonts.check(`500 13px ${effectiveFontFamily}`),
+        bodyFontToken: getComputedStyle(document.body).getPropertyValue('--font-fintrack-v3').trim(),
+        textOverflow: labelStyle.textOverflow,
+      }
+    })
+    console.log(`Banco Andino medium option ${viewport.width}px`, JSON.stringify(medium))
+    expect(medium.menuWidth).toBeGreaterThanOrEqual(medium.triggerWidth - 0.5)
+    expect(medium.menuWidth).toBeLessThanOrEqual(296)
+    expect(medium.menuRight).toBeLessThanOrEqual(viewport.width)
+    expect(Number.parseFloat(medium.menuCssWidth)).toBeGreaterThanOrEqual(medium.naturalCanvasWidth + 26)
+    expect(medium.labelScrollWidth).toBeLessThanOrEqual(medium.labelClientWidth + 1)
+    expect(medium.textOverflow).toBe('ellipsis')
+    expect(medium.bodyFontToken).toContain('__fintrackV3Font_')
+    expect(medium.triggerLabelFontFamily).toContain('Manrope')
+    expect(medium.menuFontFamily).toContain('__fintrackV3Font_')
+    expect(medium.fontFamily).toBe(medium.menuFontFamily)
+    expect(medium.menuFontFamily).not.toContain('Geist')
+    expect(medium.menuFontSize).toBe('15px')
+    expect(medium.menuFontWeight).toBe('400')
+    expect(medium.menuColor).toBe(medium.triggerLabelColor)
+    expect(medium.menuSmoothing).toBe('auto')
+    expect(medium.fontSize).toBe('13px')
+    expect(medium.fontWeight).toBe('500')
+    expect(medium.color).toBe(medium.triggerLabelColor)
+    expect(medium.smoothing).toBe('auto')
+    expect(medium.fontLoaded).toBe(true)
+
+    await page.evaluate(() => {
+      (window as Window & { setInstitutionValue?: (value: string) => void }).setInstitutionValue?.('andino')
+    })
+    await page.waitForTimeout(100)
+    const selected = await page.evaluate(() => {
+      const menuElement = document.querySelector<HTMLElement>('.app-select-menu')!
+      const label = [...menuElement.querySelectorAll<HTMLElement>('.app-select-option-label')]
+        .find(element => element.textContent?.trim() === 'Banco Andino Round 07')!
+      const check = menuElement.querySelector<SVGElement>('.app-select-option-check')!
+      return {
+        menuWidth: getComputedStyle(menuElement).width,
+        checkWidth: check.getBoundingClientRect().width,
+        labelClientWidth: label.clientWidth,
+        labelScrollWidth: label.scrollWidth,
+      }
+    })
+    expect(selected.checkWidth).toBe(16)
+    expect(Number.parseFloat(selected.menuWidth)).toBeGreaterThanOrEqual(medium.naturalCanvasWidth + 50)
+    expect(selected.labelScrollWidth).toBeLessThanOrEqual(selected.labelClientWidth + 1)
+
+    await page.evaluate(() => {
+      (window as Window & { setInstitutionOptions?: (options: Array<{ value: string; label: string }>) => void }).setInstitutionOptions?.([
+        { value: 'all', label: 'Todas' },
+        { value: 'andino', label: 'Banco Andino Round 07' },
+        { value: 'long', label: 'Cooperativa Financiera Internacional con una denominación que excede ampliamente el límite autorizado' },
+      ])
+    })
+    await page.waitForTimeout(100)
+    const long = await page.evaluate(() => {
+      const menuElement = document.querySelector<HTMLElement>('.app-select-menu')!
+      const label = [...menuElement.querySelectorAll<HTMLElement>('.app-select-option-label')]
+        .find(element => element.textContent?.trim().startsWith('Cooperativa Financiera'))!
+      const menuRect = menuElement.getBoundingClientRect()
+      const triggerElement = document.querySelector<HTMLElement>('[data-testid="institution-dynamic-width"]')!
+      const triggerRect = triggerElement.getBoundingClientRect()
+      return {
+        triggerWidth: triggerRect.width,
+        menuWidth: menuRect.width,
+        menuLeft: menuRect.left,
+        menuRight: menuRect.right,
+        labelClientWidth: label.clientWidth,
+        labelScrollWidth: label.scrollWidth,
+        textOverflow: getComputedStyle(label).textOverflow,
+      }
+    })
+    console.log(`Long institution option ${viewport.width}px`, JSON.stringify(long))
+    expect(long.menuWidth).toBeGreaterThanOrEqual(long.triggerWidth - 0.5)
+    expect(long.menuWidth).toBeLessThanOrEqual(296)
+    expect(long.menuRight).toBeLessThanOrEqual(viewport.width)
+    expect(long.labelScrollWidth).toBeGreaterThan(long.labelClientWidth)
+    expect(long.textOverflow).toBe('ellipsis')
+    await page.getByRole('combobox', { name: 'Institución' }).press('Escape')
+  }
+})
+
 test('matched menu flips upward near the viewport bottom and keeps dark V3 surfaces', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const css = builtCss()
-  await page.setContent('<html data-theme="dark"><body><div id="root" class="fin-shell" data-ft-v3 data-ft-v3-shell></div></body></html>')
+  await routeV3FontAssets(page)
+  await page.setContent(v3Document('<div id="root" class="fin-shell" data-ft-v3 data-ft-v3-shell></div>', css, 'dark'))
   await page.addStyleTag({ content: css + '.test-bottom-anchor { position: fixed; left: 24px; bottom: 12px; width: 180px; }' })
+  await page.evaluate(async family => {
+    await document.fonts.load(`500 13px "${family}"`)
+    await document.fonts.ready
+  }, v3FontFamily(css))
   await page.addScriptTag({ path: reactPath })
   await page.addScriptTag({ path: reactDomPath })
   await page.addScriptTag({ content: browserComponentSource() })
@@ -320,8 +546,13 @@ test('matched menu flips upward near the viewport bottom and keeps dark V3 surfa
 test('adaptive menu grows from its anchor, flips upward, and stays visible in dark mode', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const css = builtCss()
-  await page.setContent('<html data-theme="dark"><body><div id="root" class="fin-shell" data-ft-v3 data-ft-v3-shell></div></body></html>')
+  await routeV3FontAssets(page)
+  await page.setContent(v3Document('<div id="root" class="fin-shell" data-ft-v3 data-ft-v3-shell></div>', css, 'dark'))
   await page.addStyleTag({ content: css + '.test-adaptive-bottom-anchor { position: fixed; left: 24px; bottom: 12px; width: 180px; }' })
+  await page.evaluate(async family => {
+    await document.fonts.load(`500 13px "${family}"`)
+    await document.fonts.ready
+  }, v3FontFamily(css))
   await page.addScriptTag({ path: reactPath })
   await page.addScriptTag({ path: reactDomPath })
   await page.addScriptTag({ content: browserComponentSource() })
@@ -367,7 +598,8 @@ test('adaptive menu grows from its anchor, flips upward, and stays visible in da
 test('trigger-matched selector in the account modal portal keeps measured width and keyboard behavior', async ({ page }) => {
   await page.setViewportSize({ width: 834, height: 700 })
   const css = builtCss()
-  await page.setContent(`
+  await routeV3FontAssets(page)
+  await page.setContent(v3Document(`
     <div class="fin-shell" data-ft-v3 data-ft-v3-shell>
       <div class="test-overlay"><div class="test-focus-scope" data-app-select-portal-root>
         <section role="dialog" aria-modal="true" aria-label="Añadir cuenta" class="test-account-modal">
@@ -375,12 +607,16 @@ test('trigger-matched selector in the account modal portal keeps measured width 
         </section>
       </div></div>
     </div>
-  `)
+  `, css))
   await page.addStyleTag({ content: css + `
     .test-overlay { position: fixed; inset: 0; z-index: 120; background: rgb(0 0 0 / .24); }
     .test-focus-scope { position: relative; z-index: 1; width: 100%; height: 100%; }
     .test-account-modal { position: absolute; left: 200px; top: 180px; width: 420px; height: 260px; overflow: hidden; background: var(--ft-surface); padding: 24px; }
   ` })
+  await page.evaluate(async family => {
+    await document.fonts.load(`500 13px "${family}"`)
+    await document.fonts.ready
+  }, v3FontFamily(css))
   await page.addScriptTag({ path: reactPath })
   await page.addScriptTag({ path: reactDomPath })
   await page.addScriptTag({ content: browserComponentSource() })

@@ -140,12 +140,17 @@ function measureAdaptiveMenuContentWidth(
   const hintStyle = hintElement ? window.getComputedStyle(hintElement) : labelStyle
   const optionStyle = window.getComputedStyle(optionElement)
   const rowStyle = window.getComputedStyle(rowElement)
+  const menuStyle = window.getComputedStyle(menu)
   const labelFont = labelStyle.font || `${labelStyle.fontWeight} ${labelStyle.fontSize} ${labelStyle.fontFamily}`
   const hintFont = hintStyle.font || `${hintStyle.fontWeight} ${hintStyle.fontSize} ${hintStyle.fontFamily}`
   const labelSpacing = Number.parseFloat(labelStyle.letterSpacing) || 0
   const hintSpacing = Number.parseFloat(hintStyle.letterSpacing) || 0
   const rowGap = Number.parseFloat(rowStyle.columnGap) || Number.parseFloat(rowStyle.gap) || 0
   const optionPadding = (Number.parseFloat(optionStyle.paddingLeft) || 0) + (Number.parseFloat(optionStyle.paddingRight) || 0)
+  // The menu width is border-box, while option text is measured inside its
+  // content box. Include the real portal surface borders or the final label
+  // can lose a few pixels to ellipsis even when Canvas reports it should fit.
+  const menuBorders = (Number.parseFloat(menuStyle.borderLeftWidth) || 0) + (Number.parseFloat(menuStyle.borderRightWidth) || 0)
 
   const optionsWidth = options.reduce((widest, option) => {
     const labelWidth = measureTextWidth(context, option.label, labelFont, labelSpacing)
@@ -156,7 +161,7 @@ function measureAdaptiveMenuContentWidth(
     return Math.max(widest, Math.max(labelWidth, hintWidth) + adornmentWidth + optionPadding)
   }, 0)
 
-  return Math.ceil(optionsWidth)
+  return Math.ceil(optionsWidth + menuBorders)
 }
 
 export function getAdaptiveMenuStyle(
