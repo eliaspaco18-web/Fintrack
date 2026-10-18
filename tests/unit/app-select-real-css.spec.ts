@@ -160,6 +160,118 @@ test('portfolio filter menus render at trigger width with built V3 CSS and body 
   }
 })
 
+test('adaptive portfolio menus size from rendered option text and remain capped within the viewport', async ({ page }) => {
+  const css = builtCss()
+  const classes = {
+    controls: moduleClass(css, 'controls'),
+    bar: moduleClass(css, 'portfolioFilterBar'),
+    filter: moduleClass(css, 'portfolioFilter'),
+    currency: moduleClass(css, 'portfolioFilterCurrency'),
+    type: moduleClass(css, 'portfolioFilterType'),
+    institution: moduleClass(css, 'portfolioFilterInstitution'),
+  }
+
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 834, height: 900 },
+    { width: 1440, height: 900 },
+    { width: 1710, height: 1000 },
+  ]) {
+    await page.setViewportSize(viewport)
+    await preparePage(page, css)
+    await page.locator('html').evaluate((element, dark) => {
+      if (dark) element.setAttribute('data-theme', 'dark')
+      else element.removeAttribute('data-theme')
+    }, viewport.width === 390)
+    await page.addScriptTag({ content: `(() => {
+      const classes = ${JSON.stringify(classes)};
+      const definitions = [
+        { id: 'adaptive-currency', label: 'Moneda', className: classes.currency, value: 'PEN', options: [
+          { value: 'PEN', label: 'PEN' }, { value: 'USD', label: 'USD' },
+        ] },
+        { id: 'adaptive-type', label: 'Tipo', className: classes.type, value: 'CHECKING', options: [
+          { value: 'CHECKING', label: 'Cuenta corriente para empresas' }, { value: 'SAVINGS', label: 'Cuenta de ahorro' },
+        ] },
+        { id: 'adaptive-institution', label: 'Institución', className: classes.institution, value: 'all', options: [
+          { value: 'all', label: 'Todas' },
+          { value: 'medium', label: 'Caja Municipal de Arequipa' },
+          { value: 'long', label: 'Cooperativa Financiera de Ahorro y Crédito con denominación extensa' },
+        ] },
+      ];
+      function Harness() {
+        const [values, setValues] = React.useState(Object.fromEntries(definitions.map(item => [item.id, item.value])));
+        return React.createElement('div', { className: classes.controls + ' ' + classes.bar + ' min-w-0' },
+          ...definitions.map(item => React.createElement(window.FinTrackTestAppSelect, {
+            key: item.id, options: item.options, value: values[item.id], onChange: value => setValues(current => ({ ...current, [item.id]: value })),
+            ariaLabel: item.label, compact: true, adaptiveMenuWidth: true,
+            className: classes.filter + ' ' + item.className + ' filters-control', testId: item.id,
+            searchPlaceholder: 'Buscar ' + item.label.toLowerCase() + '…',
+          }))
+        );
+      }
+      ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Harness));
+    })();` })
+
+    for (const filter of [
+      { id: 'adaptive-currency', label: 'Moneda', expectedExpansion: false, capped: false },
+      { id: 'adaptive-type', label: 'Tipo', expectedExpansion: true, capped: false },
+      { id: 'adaptive-institution', label: 'Institución', expectedExpansion: true, capped: true },
+    ]) {
+      const trigger = page.getByTestId(filter.id)
+      await trigger.click()
+      const menu = page.getByRole('dialog', { name: filter.label })
+      await expect(menu).toBeVisible()
+      await page.waitForTimeout(500)
+      const dimensions = await page.evaluate(() => {
+        const menuElement = document.querySelector<HTMLElement>('.app-select-menu')!
+        const triggerElement = document.querySelector<HTMLElement>('[aria-expanded="true"]')!
+        const triggerRect = triggerElement.getBoundingClientRect()
+        const menuRect = menuElement.getBoundingClientRect()
+        const style = getComputedStyle(menuElement)
+        return {
+          triggerWidth: triggerRect.width,
+          triggerLeft: triggerRect.left,
+          menuWidth: menuRect.width,
+          left: menuRect.left,
+          right: menuRect.right,
+          viewportWidth: innerWidth,
+          cssWidth: style.width,
+          minWidth: style.minWidth,
+          maxWidth: style.maxWidth,
+          background: style.backgroundColor,
+        }
+      })
+      console.log(`Adaptive AppSelect ${filter.label} ${viewport.width}px`, JSON.stringify(dimensions))
+      expect(dimensions.menuWidth).toBeGreaterThanOrEqual(dimensions.triggerWidth - 0.5)
+      expect(dimensions.menuWidth).toBeLessThanOrEqual(296)
+      expect(dimensions.menuWidth).toBeLessThanOrEqual(dimensions.viewportWidth - 16)
+      expect(dimensions.left).toBeGreaterThanOrEqual(0)
+      expect(dimensions.right).toBeLessThanOrEqual(dimensions.viewportWidth)
+      expect(dimensions.minWidth).toBe('0px')
+      expect(dimensions.background).not.toBe('rgba(0, 0, 0, 0)')
+      expect(Math.abs(Number.parseFloat(dimensions.cssWidth) - dimensions.menuWidth)).toBeLessThanOrEqual(1.5)
+      expect(Math.abs(Number.parseFloat(dimensions.maxWidth) - dimensions.menuWidth)).toBeLessThanOrEqual(1.5)
+      if (filter.expectedExpansion) expect(dimensions.menuWidth).toBeGreaterThan(dimensions.triggerWidth + 1)
+      if (!filter.expectedExpansion) expect(Math.abs(dimensions.menuWidth - dimensions.triggerWidth)).toBeLessThanOrEqual(2)
+      if (filter.capped) {
+        expect(dimensions.menuWidth).toBeCloseTo(296, 0)
+        await expect(menu.locator('.app-select-option-label').last()).toHaveCSS('text-overflow', 'ellipsis')
+      }
+
+      const search = page.getByRole('combobox', { name: filter.label })
+      if (filter.id === 'adaptive-type') {
+        await search.press('ArrowDown')
+        await search.press('Enter')
+        await expect(trigger).toContainText('Cuenta de ahorro')
+      } else {
+        await search.press('Escape')
+        await expect(menu).toHaveCount(0)
+        await expect(trigger).toBeFocused()
+      }
+    }
+  }
+})
+
 test('matched menu flips upward near the viewport bottom and keeps dark V3 surfaces', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const css = builtCss()
@@ -202,6 +314,53 @@ test('matched menu flips upward near the viewport bottom and keeps dark V3 surfa
   expect(geometry.menuBottom).toBeLessThanOrEqual(geometry.triggerTop - 4)
   expect(geometry.menuTop).toBeGreaterThanOrEqual(0)
   expect(geometry.menuBottom).toBeLessThanOrEqual(geometry.viewportHeight)
+  expect(geometry.background).not.toBe('rgba(0, 0, 0, 0)')
+})
+
+test('adaptive menu grows from its anchor, flips upward, and stays visible in dark mode', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  const css = builtCss()
+  await page.setContent('<html data-theme="dark"><body><div id="root" class="fin-shell" data-ft-v3 data-ft-v3-shell></div></body></html>')
+  await page.addStyleTag({ content: css + '.test-adaptive-bottom-anchor { position: fixed; left: 24px; bottom: 12px; width: 180px; }' })
+  await page.addScriptTag({ path: reactPath })
+  await page.addScriptTag({ path: reactDomPath })
+  await page.addScriptTag({ content: browserComponentSource() })
+  await page.addScriptTag({ content: `(() => {
+    function Harness() {
+      return React.createElement('div', { className: 'test-adaptive-bottom-anchor' }, React.createElement(window.FinTrackTestAppSelect, {
+        options: [{ value: 'all', label: 'Todas' }, { value: 'long', label: 'Caja Municipal de Arequipa' }],
+        value: 'all', onChange: () => {}, ariaLabel: 'Institución adaptable', compact: true, adaptiveMenuWidth: true, testId: 'adaptive-bottom-filter',
+      }))
+    }
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Harness));
+  })();` })
+
+  const trigger = page.getByTestId('adaptive-bottom-filter')
+  await trigger.click()
+  const menu = page.getByRole('dialog', { name: 'Institución adaptable' })
+  await expect(menu).toBeVisible()
+  const geometry = await page.evaluate(() => {
+    const triggerElement = document.querySelector<HTMLElement>('[data-testid="adaptive-bottom-filter"]')!
+    const menuElement = document.querySelector<HTMLElement>('.app-select-menu')!
+    const triggerRect = triggerElement.getBoundingClientRect()
+    const menuRect = menuElement.getBoundingClientRect()
+    return {
+      triggerTop: triggerRect.top,
+      triggerWidth: triggerRect.width,
+      menuTop: menuRect.top,
+      menuBottom: menuRect.bottom,
+      menuWidth: menuRect.width,
+      viewportWidth: innerWidth,
+      viewportHeight: innerHeight,
+      background: getComputedStyle(menuElement).backgroundColor,
+    }
+  })
+  expect(geometry.menuWidth).toBeGreaterThan(geometry.triggerWidth + 1)
+  expect(geometry.menuWidth).toBeLessThanOrEqual(296)
+  expect(geometry.menuBottom).toBeLessThanOrEqual(geometry.triggerTop - 4)
+  expect(geometry.menuTop).toBeGreaterThanOrEqual(0)
+  expect(geometry.menuBottom).toBeLessThanOrEqual(geometry.viewportHeight)
+  expect(geometry.menuWidth + 16).toBeLessThanOrEqual(geometry.viewportWidth)
   expect(geometry.background).not.toBe('rgba(0, 0, 0, 0)')
 })
 

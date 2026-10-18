@@ -2865,6 +2865,12 @@ input:-webkit-autofill:focus {
     min-width: 0;
   }
 
+  /* Portfolio filters opt into a content-measured width, capped by the viewport. */
+  .app-select-menu.app-select-menu-adaptive-width {
+    box-sizing: border-box;
+    min-width: 0;
+  }
+
   .account-history-sparkline-row {
     display: flex;
     min-width: 0;

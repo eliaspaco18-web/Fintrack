@@ -1190,7 +1190,7 @@ export function PortfolioManager({
                   onChange={value => setCurrencyFilter(value as CurrencyFilter)}
                   className={`${styles.portfolioFilter} ${styles.portfolioFilterCurrency} filters-control`}
                   compact
-                  matchTriggerWidth
+                  adaptiveMenuWidth
                   disabled={!dataState.currenciesAvailable}
                   options={[
                     { value: 'all', label: currenciesLoading ? 'Cargando…' : currenciesError ? 'No disponible' : 'Todas' },
@@ -1204,7 +1204,7 @@ export function PortfolioManager({
                   onChange={value => setTypeFilter(value as TypeFilter)}
                   className={`${styles.portfolioFilter} ${styles.portfolioFilterType} filters-control`}
                   compact
-                  matchTriggerWidth
+                  adaptiveMenuWidth
                   searchPlaceholder="Buscar tipo…"
                   options={[
                     { value: 'all', label: 'Todos' },
@@ -1219,7 +1219,7 @@ export function PortfolioManager({
                   className={`${styles.portfolioFilter} ${styles.portfolioFilterInstitution} filters-control col-span-2 lg:col-span-1`}
                   disabled={!dataState.banksAvailable}
                   compact
-                  matchTriggerWidth
+                  adaptiveMenuWidth
                   searchPlaceholder="Buscar institución…"
                   options={[
                     { value: 'all', label: banksLoading ? 'Cargando…' : banksError ? 'No disponible' : 'Todas' },

@@ -21,6 +21,8 @@ export type AppSelectOption = {
   icon?: ReactNode
 }
 
+const EMPTY_APP_SELECT_OPTIONS: AppSelectOption[] = []
+
 interface AppSelectProps {
   options: AppSelectOption[]
   value: string
@@ -44,6 +46,7 @@ interface AppSelectProps {
   onRetry?: () => void
   sourceComplete?: boolean
   matchTriggerWidth?: boolean
+  adaptiveMenuWidth?: boolean
 }
 
 type AnchorRect = Pick<DOMRect, 'left' | 'top' | 'bottom' | 'width'>
@@ -109,6 +112,97 @@ export function getTriggerMatchedMenuStyle(
   }
 }
 
+function measureTextWidth(
+  context: CanvasRenderingContext2D,
+  text: string,
+  font: string,
+  letterSpacing: number,
+): number {
+  context.font = font
+  const glyphs = Array.from(text).length
+  return context.measureText(text).width + Math.max(0, glyphs - 1) * letterSpacing
+}
+
+function measureAdaptiveMenuContentWidth(
+  menu: HTMLElement,
+  options: AppSelectOption[],
+  value: string,
+): number {
+  const canvas = document.createElement('canvas')
+  const context = canvas.getContext('2d')
+  const labelElement = menu.querySelector<HTMLElement>('.app-select-option-label')
+  const hintElement = menu.querySelector<HTMLElement>('.app-select-option-hint')
+  const optionElement = menu.querySelector<HTMLElement>('.app-select-option')
+  const rowElement = menu.querySelector<HTMLElement>('.app-select-option-row')
+  if (!context || !labelElement || !optionElement || !rowElement) return 0
+
+  const labelStyle = window.getComputedStyle(labelElement)
+  const hintStyle = hintElement ? window.getComputedStyle(hintElement) : labelStyle
+  const optionStyle = window.getComputedStyle(optionElement)
+  const rowStyle = window.getComputedStyle(rowElement)
+  const labelFont = labelStyle.font || `${labelStyle.fontWeight} ${labelStyle.fontSize} ${labelStyle.fontFamily}`
+  const hintFont = hintStyle.font || `${hintStyle.fontWeight} ${hintStyle.fontSize} ${hintStyle.fontFamily}`
+  const labelSpacing = Number.parseFloat(labelStyle.letterSpacing) || 0
+  const hintSpacing = Number.parseFloat(hintStyle.letterSpacing) || 0
+  const rowGap = Number.parseFloat(rowStyle.columnGap) || Number.parseFloat(rowStyle.gap) || 0
+  const optionPadding = (Number.parseFloat(optionStyle.paddingLeft) || 0) + (Number.parseFloat(optionStyle.paddingRight) || 0)
+
+  const optionsWidth = options.reduce((widest, option) => {
+    const labelWidth = measureTextWidth(context, option.label, labelFont, labelSpacing)
+    const hintWidth = option.hint ? measureTextWidth(context, option.hint, hintFont, hintSpacing) : 0
+    const hasIcon = Boolean(option.icon)
+    const hasCheck = option.value === value
+    const adornmentWidth = (hasIcon ? 16 + rowGap : 0) + (hasCheck ? 16 + rowGap : 0)
+    return Math.max(widest, Math.max(labelWidth, hintWidth) + adornmentWidth + optionPadding)
+  }, 0)
+
+  return Math.ceil(optionsWidth)
+}
+
+export function getAdaptiveMenuStyle(
+  triggerRect: AnchorRect,
+  viewportRect: AppSelectViewportRect,
+  menuHeight: number,
+  contentWidth: number,
+  maxContentWidth = 296,
+): CSSProperties {
+  const inset = 8
+  const gap = 8
+  const availableWidth = Math.max(0, viewportRect.width - inset * 2)
+  const maxWidth = Math.min(maxContentWidth, availableWidth)
+  const width = Math.min(Math.max(triggerRect.width, contentWidth), maxWidth)
+  const left = Math.max(
+    viewportRect.left + inset,
+    Math.min(triggerRect.left, viewportRect.left + viewportRect.width - width - inset),
+  )
+  const spaceBelow = viewportRect.top + viewportRect.height - triggerRect.bottom - gap - inset
+  const spaceAbove = triggerRect.top - viewportRect.top - gap - inset
+  const requestedHeight = Math.max(0, menuHeight)
+  const fitsBelow = spaceBelow >= requestedHeight
+  const fitsAbove = spaceAbove >= requestedHeight
+  const flip = !fitsBelow && (fitsAbove || spaceAbove > spaceBelow)
+  const maxHeight = Math.max(0, Math.min(viewportRect.height - inset * 2, flip ? spaceAbove : spaceBelow))
+  const height = Math.min(requestedHeight, maxHeight)
+  const top = flip
+    ? Math.max(viewportRect.top + inset, triggerRect.top - height - gap)
+    : Math.min(triggerRect.bottom + gap, viewportRect.top + viewportRect.height - height - inset)
+
+  return {
+    position: 'fixed',
+    left,
+    top,
+    width,
+    minWidth: 0,
+    maxWidth: width,
+    maxHeight,
+    overflowY: 'auto',
+    right: 'auto',
+    marginTop: 0,
+    visibility: 'visible',
+    transformOrigin: flip ? 'bottom center' : 'top center',
+  }
+}
+
 function normalize(text: string): string {
   return text
     .toLowerCase()
@@ -147,6 +241,7 @@ export function AppSelect({
   onRetry,
   sourceComplete = true,
   matchTriggerWidth = false,
+  adaptiveMenuWidth = false,
 }: AppSelectProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -174,6 +269,8 @@ export function AppSelect({
     () => options.find(option => option.value === value) ?? null,
     [options, value],
   )
+  const menuSizingOptions = adaptiveMenuWidth ? options : EMPTY_APP_SELECT_OPTIONS
+  const menuSizingValue = adaptiveMenuWidth ? value : ''
 
   // V3 keeps one predictable searchable selection surface for every option count.
   // Retain the prop for existing callers; it no longer changes the V3 interaction.
@@ -235,9 +332,9 @@ export function AppSelect({
     setQuery('')
     setMenuStyle({ visibility: 'hidden' })
     setV3Layer(Boolean(wrapperRef.current?.closest('[data-ft-v3]')))
-    setPortalRoot(resolveAppSelectPortalRoot(wrapperRef.current, document.body, matchTriggerWidth))
+    setPortalRoot(resolveAppSelectPortalRoot(wrapperRef.current, document.body, matchTriggerWidth || adaptiveMenuWidth))
     setOpen(true)
-  }, [disabled, matchTriggerWidth, selectId])
+  }, [adaptiveMenuWidth, disabled, matchTriggerWidth, selectId])
 
   const commitOption = useCallback((option: AppSelectOption, fromPointer = false) => {
     if (option.disabled) return
@@ -323,6 +420,16 @@ export function AppSelect({
         ))
         return
       }
+      if (adaptiveMenuWidth) {
+        const contentWidth = measureAdaptiveMenuContentWidth(menu, menuSizingOptions, menuSizingValue)
+        setMenuStyle(getAdaptiveMenuStyle(
+          triggerRect,
+          { left: viewportLeft, top: viewportTop, width: viewportWidth, height: viewportHeight },
+          menu.offsetHeight,
+          contentWidth,
+        ))
+        return
+      }
       const width = isMobile
         ? Math.max(0, viewportWidth - 16)
         : Math.min(400, Math.max(320, triggerRect.width), Math.max(0, viewportWidth - 24))
@@ -359,7 +466,7 @@ export function AppSelect({
 
     const frame = window.requestAnimationFrame(positionMenu)
     const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(positionMenu) : null
-    if (matchTriggerWidth) {
+    if (matchTriggerWidth || adaptiveMenuWidth) {
       if (menuRef.current) resizeObserver?.observe(menuRef.current)
       if (triggerRef.current) resizeObserver?.observe(triggerRef.current)
     }
@@ -367,7 +474,12 @@ export function AppSelect({
     window.addEventListener('scroll', positionMenu, true)
     window.visualViewport?.addEventListener('resize', positionMenu)
     window.visualViewport?.addEventListener('scroll', positionMenu)
+    let cancelled = false
+    if (adaptiveMenuWidth) {
+      void document.fonts?.ready.then(() => { if (!cancelled) positionMenu() })
+    }
     return () => {
+      cancelled = true
       window.cancelAnimationFrame(frame)
       resizeObserver?.disconnect()
       window.removeEventListener('resize', positionMenu)
@@ -375,7 +487,7 @@ export function AppSelect({
       window.visualViewport?.removeEventListener('resize', positionMenu)
       window.visualViewport?.removeEventListener('scroll', positionMenu)
     }
-  }, [open, portalRoot, filtered.length, loading, error, sourceComplete, matchTriggerWidth])
+  }, [open, portalRoot, filtered.length, loading, error, sourceComplete, matchTriggerWidth, adaptiveMenuWidth, menuSizingOptions, menuSizingValue])
 
   useEffect(() => {
     if (!open) return
@@ -522,7 +634,7 @@ export function AppSelect({
           aria-labelledby={ariaLabelledBy}
           data-ft-v3={v3Layer ? '' : undefined}
           style={menuStyle}
-          className={`app-select-menu ${compact ? 'app-select-menu-compact' : ''} ${matchTriggerWidth ? 'app-select-menu-match-trigger-width' : ''} ${exiting ? 'app-select-menu-exit' : ''} ${menuClassName}`.trim()}
+          className={`app-select-menu ${compact ? 'app-select-menu-compact' : ''} ${matchTriggerWidth ? 'app-select-menu-match-trigger-width' : ''} ${adaptiveMenuWidth ? 'app-select-menu-adaptive-width' : ''} ${exiting ? 'app-select-menu-exit' : ''} ${menuClassName}`.trim()}
         >
           <div className="app-select-search-wrap">
             <input

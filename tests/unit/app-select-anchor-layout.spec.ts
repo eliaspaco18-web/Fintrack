@@ -6,7 +6,7 @@ import {
   resolveAppSelectPortalRoot,
 } from '../../components/ui/AppSelect'
 
-test('all portfolio toolbar filters use trigger-matched menus', () => {
+test('all portfolio toolbar filters opt into adaptive content-width menus', () => {
   const source = readFileSync(join(process.cwd(), 'components/management/PortfolioManager.tsx'), 'utf8')
 
   for (const testId of [
@@ -20,7 +20,7 @@ test('all portfolio toolbar filters use trigger-matched menus', () => {
     const appSelectEnd = source.indexOf('/>', testIdIndex)
     expect(appSelectStart, `${testId} should belong to an AppSelect`).toBeGreaterThanOrEqual(0)
     expect(appSelectEnd, `${testId} AppSelect should be self-closing`).toBeGreaterThan(appSelectStart)
-    expect(source.slice(appSelectStart, appSelectEnd)).toContain('matchTriggerWidth')
+    expect(source.slice(appSelectStart, appSelectEnd)).toContain('adaptiveMenuWidth')
   }
 })
 
