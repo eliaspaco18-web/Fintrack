@@ -45,6 +45,7 @@ const MODAL_SIZE_PRESETS: Record<RecordModalSize, { widthClassName: string; padd
 interface RecordModalProps {
   open: boolean
   onClose: () => void
+  onExitComplete?: () => void
   title: string
   subtitle?: ReactNode
   eyebrow?: string
@@ -75,6 +76,7 @@ RecordModalFooter.displayName = 'RecordModalFooter'
 export function RecordModal({
   open,
   onClose,
+  onExitComplete,
   title,
   subtitle,
   eyebrow,
@@ -150,6 +152,7 @@ export function RecordModal({
     open,
     isWorkbench && !!portalRoot,
     open ? motionSource : closeMotionSource,
+    onExitComplete,
   )
 
   useEffect(() => {

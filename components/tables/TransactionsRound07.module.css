@@ -1190,6 +1190,41 @@
   font-family: Manrope, system-ui, sans-serif;
 }
 
+.editSkeleton {
+  display: block;
+  min-width: 0;
+  height: 42px;
+  border: 1px solid color-mix(in srgb, var(--ft-border) 72%, transparent);
+  border-radius: var(--ft-radius-control, 10px);
+  background: var(--ft-surface-muted);
+  opacity: 0;
+  animation: editSkeletonReveal 140ms ease-out forwards;
+}
+
+.editSkeletonLarge { height: 88px; }
+.editSkeletonWide { height: 48px; }
+
+.editFormReveal {
+  animation: editFormReveal 150ms ease-out both;
+}
+
+@keyframes editFormReveal {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes editSkeletonReveal {
+  to { opacity: .72; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .editFormReveal { animation: none; }
+  .editSkeleton {
+    animation: none;
+    opacity: .72;
+  }
+}
+
 .astraOverlay:global(.app-modal-overlay),
 .formOverlay:global(.app-modal-overlay) {
   font-family: Manrope, system-ui, sans-serif;

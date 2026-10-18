@@ -18,6 +18,7 @@ import { formatCurrency, formatNumber } from '@/lib/contracts/ui.contracts'
 import type { TransactionFormOptions } from '@/lib/contracts/ui.contracts'
 import { deleteTransactionAction }   from '@/app/actions/transaction.actions'
 import { TransactionEditModal }      from '@/components/forms/TransactionEditModal'
+import { inferOperationType }         from '@/components/forms/transaction-edit-data'
 import {
   CanonicalDetailActionButton,
   CanonicalDetailBackLink,
@@ -275,7 +276,7 @@ export function TransactionDetailClient({
         open={editing}
         transactionId={tx.id}
         options={options}
-        initialTransaction={tx}
+        initialOperationType={inferOperationType(tx)}
         onClose={() => setEditing(false)}
         onUpdated={handleEditSave}
       />

@@ -1911,15 +1911,9 @@ export function TransactionTable({
           open={Boolean(editTransactionId)}
           transactionId={editTransactionId}
           options={options}
-          initialTransaction={selectedTransactionForEdit ? {
-            id: selectedTransactionForEdit.id,
-            type: selectedTransactionForEdit.type,
-            amount: selectedTransactionForEdit.amount,
-            amount_pen: selectedTransactionForEdit.amountPen,
-            currency: selectedTransactionForEdit.currency,
-            description: selectedTransactionForEdit.description,
-            transaction_date: selectedTransactionForEdit.transactionDate,
-          } : null}
+          initialOperationType={selectedTransactionForEdit
+            ? resolveTransactionOperationIconType(selectedTransactionForEdit)
+            : null}
           onClose={() => setEditTransactionId(null)}
           onUpdated={() => {
             setEditTransactionId(null)

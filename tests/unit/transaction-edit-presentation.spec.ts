@@ -27,6 +27,7 @@ test('edit presentation gives every operation its matching title and protects se
 test('edit modal and form use the approved operation layouts without unlocking protected settlements', () => {
   const form = readFileSync(join(process.cwd(), 'components/forms/TransactionForm/index.tsx'), 'utf8')
   const modal = readFileSync(join(process.cwd(), 'components/forms/TransactionEditModal.tsx'), 'utf8')
+  const modalStyles = readFileSync(join(process.cwd(), 'components/tables/TransactionsRound07.module.css'), 'utf8')
 
   for (const layout of [
     'isIncomeLayout',
@@ -48,7 +49,13 @@ test('edit modal and form use the approved operation layouts without unlocking p
   expect(form).toContain('const linkedCard = creditCardOptions.find(option => option.meta?.account_id === sourceAccountId)')
   expect(form).toContain("setValue('credit_card_id', linkedCard.value")
   expect(form).toContain("setValue('credit_operation', 'CONSUMPTION'")
-  expect(modal).toContain('title={editPresentation.title}')
+  expect(modal).toContain('title={title}')
+  expect(modal).toContain('key={visibleTransaction.id}')
+  expect(modal).toContain('className={styles.editFormReveal}')
+  expect(modal).toContain('{showSkeleton ? <EditTransactionSkeleton /> : null}')
+  expect(modal).toContain('window.setTimeout(() => setSkeletonTransactionId(transactionId), 120)')
+  expect(modalStyles).toContain('animation: editFormReveal 150ms ease-out both')
+  expect(modalStyles).toContain('@media (prefers-reduced-motion: reduce)')
   expect(modal).toContain('widthClassName="max-w-[min(96vw,580px)]"')
   expect(form).toContain('onClick={onCancel}')
 })
@@ -252,9 +259,12 @@ for (const fixture of editOperationCases) {
 
 test('opening an edit is read-only and settlement consultation has no save action', () => {
   const modal = readFileSync(join(process.cwd(), 'components/forms/TransactionEditModal.tsx'), 'utf8')
+  const loader = readFileSync(join(process.cwd(), 'components/forms/use-transaction-edit-record.ts'), 'utf8')
   const form = readFileSync(join(process.cwd(), 'components/forms/TransactionForm/index.tsx'), 'utf8')
 
-  expect(modal).toContain('fetch(`/api/transactions/${transactionId}`')
+  expect(loader).toContain('fetch(`/api/transactions/${transactionId}`')
+  expect(loader).toContain('candidate.id !== expectedId')
+  expect(loader).toContain('controller.abort()')
   expect(modal).not.toContain('updateTransactionAction')
   expect(form).toContain('if (lockSettlementEdit)')
   expect(form).toContain('primaryAction={lockSettlementEdit ? null : (')

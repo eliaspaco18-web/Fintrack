@@ -28,16 +28,23 @@ async function mount(page: import('@playwright/test').Page, source: 'pointer' | 
   await page.addScriptTag({ content: `
     function Harness() {
       const [open, setOpen] = React.useState(false);
-      const presence = window.useV3WorkbenchPresence(open, true, '${source}');
+      const [view, setView] = React.useState('selector');
+      const [exits, setExits] = React.useState(0);
+      const presence = window.useV3WorkbenchPresence(open, true, '${source}', () => {
+        setExits(value => value + 1);
+        setView('selector');
+      });
       return React.createElement(React.Fragment, null,
-        React.createElement('button', { id: 'open', onClick: () => setOpen(true) }, 'Open'),
+        React.createElement('button', { id: 'open', onClick: () => { setView('form'); setOpen(true); } }, 'Open'),
         React.createElement('button', { id: 'close', onClick: () => setOpen(false) }, 'Close'),
         React.createElement('span', { id: 'phase' }, presence.phase),
+        React.createElement('span', { id: 'exits' }, exits),
         presence.mounted ? React.createElement('div', { id: 'surface' },
           React.createElement('div', { id: 'veil', ref: presence.veilRef }),
           React.createElement('div', { id: 'frame', ref: presence.frameRef },
-            React.createElement('div', { id: 'body', ref: presence.bodyRef }, 'Record'))
-        ) : null);
+            React.createElement('div', { id: 'body', ref: presence.bodyRef },
+              React.createElement('div', { id: 'content' }, view))))
+        : null);
     }
     ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Harness));
   ` })
@@ -57,24 +64,35 @@ test('pointer workbench keeps the current pose through close/reopen and ignores 
   expect(enteringPose).not.toBe('none')
   await page.locator('#close').click()
   await expect(page.locator('#phase')).toHaveText('closing')
-  await page.waitForTimeout(40)
-  await page.locator('#open').click()
+  await expect(page.locator('#content')).toHaveText('form')
+  await page.evaluate(() => document.getElementById('open')?.click())
   await expect(page.locator('#surface')).toBeVisible()
   await expect(page.locator('#phase')).toHaveText('open', { timeout: 600 })
+  await expect(page.locator('#exits')).toHaveText('0')
   await page.waitForTimeout(200)
   await expect(page.locator('#surface')).toBeVisible()
   await page.locator('#close').click()
+  await expect(page.locator('#phase')).toHaveText('closing')
+  await expect(page.locator('#content')).toHaveText('form')
   await expect(page.locator('#surface')).toHaveCount(0, { timeout: 600 })
   await expect(page.locator('#phase')).toHaveText('closed')
+  await expect(page.locator('#exits')).toHaveText('1')
+  await expect(page.locator('#content')).toHaveCount(0)
+  // The next opening starts at the selector state, reset only after exit.
+  await page.locator('#open').click()
+  await expect(page.locator('#content')).toHaveText('form')
 })
 
-test('keyboard and reduced-motion paths settle without animation or exit wait', async ({ page }) => {
+test('keyboard dismissals use the same exit transition and reduced motion settles immediately', async ({ page }) => {
   await mount(page, 'keyboard')
   await page.locator('#open').click()
   await expect(page.locator('#phase')).toHaveText('open')
   expect(await page.locator('#frame').evaluate(element => element.getAnimations().length)).toBe(0)
   await page.locator('#close').click()
-  await expect(page.locator('#surface')).toHaveCount(0)
+  await expect(page.locator('#phase')).toHaveText('closing')
+  expect(await page.locator('#frame').evaluate(element => element.getAnimations().length)).toBeGreaterThan(0)
+  await expect(page.locator('#surface')).toHaveCount(0, { timeout: 600 })
+  await expect(page.locator('#exits')).toHaveText('1')
 
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.reload()
@@ -84,6 +102,7 @@ test('keyboard and reduced-motion paths settle without animation or exit wait', 
   expect(await page.locator('#frame').evaluate(element => element.getAnimations().length)).toBe(0)
   await page.locator('#close').click()
   await expect(page.locator('#surface')).toHaveCount(0)
+  await expect(page.locator('#exits')).toHaveText('1')
 })
 
 test('switching to reduced motion mid-dock finishes the current logical open state', async ({ page }) => {
@@ -96,4 +115,5 @@ test('switching to reduced motion mid-dock finishes the current logical open sta
   expect(await page.locator('#frame').evaluate(element => element.getAnimations().length)).toBe(0)
   await page.locator('#close').click()
   await expect(page.locator('#surface')).toHaveCount(0)
+  await expect(page.locator('#exits')).toHaveText('1')
 })

@@ -241,10 +241,15 @@ export function TransactionsWorkspace({
   const closeCreateModal = useCallback(() => {
     setIsOperationPopoverOpen(false)
     setIsModalOpen(false)
-    setModalStep('select_type')
-    setSelectedOperationType(null)
     clearCreateQueryParams()
   }, [clearCreateQueryParams])
+
+  const resetCreateModalAfterExit = useCallback(() => {
+    // Keep the active selector/form mounted until RecordModal confirms its exit.
+    if (isModalOpen) return
+    setModalStep('select_type')
+    setSelectedOperationType(null)
+  }, [isModalOpen])
 
   const retryPreload = useCallback(() => {
     router.refresh()
@@ -641,6 +646,7 @@ export function TransactionsWorkspace({
         open={isModalOpen}
         dialogId="transaction-operation-selector-dialog"
         onClose={closeCreateModal}
+        onExitComplete={resetCreateModalAfterExit}
         title={modalTitle}
         subtitle={modalSubtitle}
         widthClassName={createModalWidthClassName}

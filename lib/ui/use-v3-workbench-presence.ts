@@ -46,6 +46,7 @@ export function useV3WorkbenchPresence(
   open: boolean,
   ready: boolean,
   motionSource: V3WorkbenchMotionSource = 'keyboard',
+  onExitComplete?: () => void,
 ): PresenceResult {
   const [mounted, setMounted] = useState(open)
   const [phase, setPhase] = useState<V3WorkbenchPhase>(open ? 'opening' : 'closed')
@@ -59,6 +60,9 @@ export function useV3WorkbenchPresence(
   const bodyAnimationRef = useRef<Animation | null>(null)
   const carriedFrameRef = useRef<Pose | null>(null)
   const carriedVeilRef = useRef<Pose | null>(null)
+  const onExitCompleteRef = useRef(onExitComplete)
+
+  onExitCompleteRef.current = onExitComplete
 
   useEffect(() => {
     const media = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -106,10 +110,16 @@ export function useV3WorkbenchPresence(
       clearPose(veil)
       clearPose(body)
       setPhase(open ? 'open' : 'closed')
-      if (!open) setMounted(false)
+      if (!open) {
+        setMounted(false)
+        onExitCompleteRef.current?.()
+      }
     }
 
-    if (reducedMotion || motionSource === 'keyboard' || typeof frame.animate !== 'function') {
+    // Every dismissal path uses the same exit treatment. `motionSource` stays in
+    // the API for callers, while reduced motion remains the only skip condition.
+    void motionSource
+    if (reducedMotion || typeof frame.animate !== 'function') {
       settle()
       return
     }
