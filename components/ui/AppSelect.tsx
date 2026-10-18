@@ -522,7 +522,7 @@ export function AppSelect({
           aria-labelledby={ariaLabelledBy}
           data-ft-v3={v3Layer ? '' : undefined}
           style={menuStyle}
-          className={`app-select-menu ${compact ? 'app-select-menu-compact' : ''} ${exiting ? 'app-select-menu-exit' : ''} ${menuClassName}`.trim()}
+          className={`app-select-menu ${compact ? 'app-select-menu-compact' : ''} ${matchTriggerWidth ? 'app-select-menu-match-trigger-width' : ''} ${exiting ? 'app-select-menu-exit' : ''} ${menuClassName}`.trim()}
         >
           <div className="app-select-search-wrap">
             <input

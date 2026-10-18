@@ -2857,6 +2857,141 @@ input:-webkit-autofill:focus {
     transform-origin: top center;
   }
 
+  /* A trigger-matched portal gets its width from AppSelect's measured inline
+     geometry. Clear the compact utility's min-width: 100% so it cannot grow
+     against body or the dialog focus-scope containing block. */
+  .app-select-menu.app-select-menu-match-trigger-width {
+    box-sizing: border-box;
+    min-width: 0;
+  }
+
+  .account-history-sparkline-row {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 8px;
+  }
+
+  .account-history-sparkline-label,
+  .account-history-sparkline-status {
+    min-width: 0;
+    color: var(--ft-text-faint);
+    font-size: 10px;
+    line-height: 16px;
+  }
+
+  .account-history-sparkline-status { margin-top: 8px; }
+
+  .account-history-sparkline-plot {
+    display: grid;
+    width: 112px;
+    min-width: 112px;
+    min-height: 44px;
+    flex: 0 0 112px;
+    place-items: center;
+    border-radius: 6px;
+    color: var(--ft-primary);
+    cursor: crosshair;
+    touch-action: pan-y;
+  }
+
+  .account-history-sparkline-plot:focus-visible {
+    outline: 2px solid var(--ft-focus-ring-color);
+    outline-offset: 2px;
+  }
+
+  .account-history-sparkline-svg {
+    display: block;
+    width: 112px;
+    height: 28px;
+    overflow: visible;
+  }
+
+  .account-history-sparkline-line {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: account-history-sparkline-draw 420ms cubic-bezier(.16, 1, .3, 1) forwards;
+  }
+
+  .account-history-sparkline-point {
+    fill: currentColor;
+    opacity: .7;
+    transition: r 120ms var(--ft-ease-out), opacity 120ms var(--ft-ease-out);
+  }
+
+  .account-history-sparkline-point.is-active {
+    opacity: 1;
+  }
+
+  .account-history-sparkline-tooltip {
+    z-index: calc(var(--ft-z-modal, 120) + 1);
+    display: grid;
+    gap: 2px;
+    box-sizing: border-box;
+    max-width: calc(100vw - 16px);
+    padding: 8px 10px;
+    border: 1px solid var(--ft-border);
+    border-radius: 8px;
+    background: var(--ft-surface);
+    color: var(--ft-text-strong);
+    box-shadow: var(--ft-shadow-menu, 0 8px 24px rgb(18 35 32 / 12%));
+    font-family: Manrope, system-ui, sans-serif;
+    animation: account-history-sparkline-tooltip-in 120ms var(--ft-ease-out) both;
+    pointer-events: none;
+  }
+
+  .account-history-sparkline-tooltip > span {
+    color: var(--ft-text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 15px;
+  }
+
+  .account-history-sparkline-tooltip > strong {
+    color: var(--ft-text-strong);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 15px;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+
+  .account-history-sparkline-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  @keyframes account-history-sparkline-draw {
+    to { stroke-dashoffset: 0; }
+  }
+
+  @keyframes account-history-sparkline-tooltip-in {
+    from { opacity: 0; transform: translateY(2px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .account-history-sparkline-line {
+      animation: none;
+      stroke-dashoffset: 0;
+    }
+
+    .account-history-sparkline-point,
+    .account-history-sparkline-tooltip { transition: none; animation: none; }
+  }
+
   [data-ft-v3] .app-select-menu.app-select-menu-exit,
   .app-select-menu[data-ft-v3].app-select-menu-exit {
     pointer-events: none;
