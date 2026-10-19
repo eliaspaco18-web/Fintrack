@@ -1132,7 +1132,7 @@ export function BudgetsManager() {
   return (
     <>
       <PageLayout
-        className="max-w-none !gap-0"
+        className={`max-w-none !gap-0 ${movementPageStyles.v3ModuleContent}`}
         header={(
           <div className={`${movementPageStyles.pageOverview} ${styles.budgetOverview}`} data-testid="budgets-page-overview">
             <header aria-labelledby="budgets-heading" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1141,21 +1141,28 @@ export function BudgetsManager() {
                 <p className="mt-0.5 max-w-2xl text-[12px] leading-5 text-[var(--ft-text-muted)]">Límites que puedes revisar antes de tu próximo gasto.</p>
               </div>
               <div className={styles.budgetHeaderActions}>
-                <AppSelect
-                  value={periodMonth}
-                  onChange={setPeriodMonth}
-                  className={`${styles.headerPeriodSelect} filters-control`}
-                  compact
-                  searchable={false}
-                  adaptiveMenuWidth
-                  options={periodMonthOptions}
-                  ariaLabel="Seleccionar período"
-                  testId="budgets-header-period-select"
-                />
+                <div className={styles.headerPeriodControl}>
+                  <svg aria-hidden="true" className={styles.headerPeriodIcon} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="5" width="18" height="16" rx="2" />
+                    <path d="M16 3v4M8 3v4M3 10h18" />
+                  </svg>
+                  <AppSelect
+                    value={periodMonth}
+                    onChange={setPeriodMonth}
+                    className={`${styles.headerPeriodSelect} filters-control`}
+                    buttonClassName={styles.headerPeriodTrigger}
+                    compact
+                    searchable={false}
+                    adaptiveMenuWidth
+                    options={periodMonthOptions}
+                    ariaLabel="Seleccionar período"
+                    testId="budgets-header-period-select"
+                  />
+                </div>
                 <CreateModuleButton
                   onClick={openCreateModal}
                   label="Crear presupuesto"
-                  className={`${movementPageStyles.v3ModulePrimaryAction} ${styles.budgetCreateButton}`}
+                  className={movementPageStyles.v3ModulePrimaryAction}
                   testId="budgets-create-button"
                 />
               </div>
@@ -1219,55 +1226,69 @@ export function BudgetsManager() {
 
             </div>
 
-            <div className={styles.budgetFilterToolbar}>
-              <div className={styles.statusFilters} role="group" aria-label="Filtrar por estado">
-                <DataFilterPreset label="Activos" active={statusFilter === 'active'} count={statusCounts?.active} onClick={() => setStatusFilter('active')} />
-                <DataFilterPreset label="Inactivos" active={statusFilter === 'inactive'} count={statusCounts?.inactive} onClick={() => setStatusFilter('inactive')} />
-                <DataFilterPreset label="Todos" active={statusFilter === 'all'} count={statusCounts?.total} onClick={() => setStatusFilter('all')} />
+            <div className={`${movementPageStyles.controls} ${styles.budgetFilterToolbar}`} data-testid="budgets-filter-toolbar">
+              <div className={`${movementPageStyles.controlsMain} ${styles.budgetFilterMain}`}>
+                <DataSearchField
+                  value={query}
+                  onChange={setQuery}
+                  placeholder="Buscar presupuesto, descripción, categoría o período"
+                  aria-label="Buscar presupuestos"
+                  data-testid="budgets-search-input"
+                  className={`${movementPageStyles.searchControl} ${styles.budgetSearchControl}`}
+                />
+                <AppSelect
+                  value={currencyFilter}
+                  onChange={value => setCurrencyFilter(value as CurrencyFilter)}
+                  className={`${styles.budgetCurrencyFilter} filters-control`}
+                  compact
+                  searchable={false}
+                  options={budgetCurrencyOptions}
+                  ariaLabel="Filtrar por moneda"
+                />
+                <AppSelect
+                  value={periodFilter}
+                  onChange={value => setPeriodFilter(value as PeriodFilter)}
+                  className={`${styles.budgetPeriodFilter} filters-control`}
+                  compact
+                  searchable={false}
+                  options={[
+                    { value: 'all', label: 'Periodicidad' },
+                    { value: 'WEEKLY', label: 'Semanal' },
+                    { value: 'MONTHLY', label: 'Mensual' },
+                    { value: 'QUARTERLY', label: 'Trimestral' },
+                    { value: 'YEARLY', label: 'Anual' },
+                  ]}
+                  ariaLabel="Filtrar por periodicidad"
+                />
+                <AppSelect
+                  value={categoryFilter}
+                  onChange={setCategoryFilter}
+                  className={`${styles.budgetCategoryFilter} filters-control`}
+                  searchPlaceholder="Buscar categoría..."
+                  options={[
+                    { value: 'all', label: 'Categoría' },
+                    { value: 'none', label: 'General (sin categoría)' },
+                    ...categories.map(category => ({ value: category.id, label: category.name })),
+                  ]}
+                  ariaLabel="Filtrar por categoría"
+                />
               </div>
-              <DataSearchField
-                value={query}
-                onChange={setQuery}
-                placeholder="Buscar presupuesto, descripción, categoría o período"
-                aria-label="Buscar presupuestos"
-                className={styles.budgetSearch}
-              />
-              <AppSelect value={currencyFilter} onChange={value => setCurrencyFilter(value as CurrencyFilter)} className="filters-control w-[112px]" compact searchable={false} options={budgetCurrencyOptions} ariaLabel="Filtrar por moneda" />
-              <AppSelect
-                value={periodFilter}
-                onChange={value => setPeriodFilter(value as PeriodFilter)}
-                className="filters-control w-[150px]"
-                compact searchable={false}
-                options={[
-                  { value: 'all', label: 'Periodicidad' },
-                  { value: 'WEEKLY', label: 'Semanal' },
-                  { value: 'MONTHLY', label: 'Mensual' },
-                  { value: 'QUARTERLY', label: 'Trimestral' },
-                  { value: 'YEARLY', label: 'Anual' },
-                ]}
-                ariaLabel="Filtrar por periodicidad"
-              />
-              <AppSelect
-                value={categoryFilter}
-                onChange={setCategoryFilter}
-                className="filters-control w-[220px]"
-                searchPlaceholder="Buscar categoría..."
-                options={[
-                  { value: 'all', label: 'Categoría' },
-                  { value: 'none', label: 'General (sin categoría)' },
-                  ...categories.map(category => ({ value: category.id, label: category.name })),
-                ]}
-                ariaLabel="Filtrar por categoría"
-              />
-              <Button type="button" size="sm" variant="secondary" onClick={() => void loadPeriodRows()} disabled={periodRowsLoading} loading={periodRowsLoading}>
-                Actualizar
-              </Button>
-              {workspaceView === 'series' ? <ViewToggle value={viewMode} onChange={setViewMode} id="budgets-view-toggle" /> : null}
-              <StatusBadge tone="muted" dot={false}>
-                {workspaceView === 'series'
-                  ? `${filteredBudgetSeries.length} serie${filteredBudgetSeries.length === 1 ? '' : 's'}`
-                  : `${filteredPeriodRows.length} presupuesto${filteredPeriodRows.length === 1 ? '' : 's'}`}
-              </StatusBadge>
+              <div className={`${movementPageStyles.controlsActions} ${styles.budgetFilterActions}`}>
+                <div className={styles.statusFilters} role="group" aria-label="Filtrar por estado">
+                  <DataFilterPreset label="Activos" active={statusFilter === 'active'} count={statusCounts?.active} onClick={() => setStatusFilter('active')} />
+                  <DataFilterPreset label="Inactivos" active={statusFilter === 'inactive'} count={statusCounts?.inactive} onClick={() => setStatusFilter('inactive')} />
+                  <DataFilterPreset label="Todos" active={statusFilter === 'all'} count={statusCounts?.total} onClick={() => setStatusFilter('all')} />
+                </div>
+                <Button type="button" size="sm" variant="secondary" onClick={() => void loadPeriodRows()} disabled={periodRowsLoading} loading={periodRowsLoading}>
+                  Actualizar
+                </Button>
+                {workspaceView === 'series' ? <ViewToggle value={viewMode} onChange={setViewMode} id="budgets-view-toggle" /> : null}
+                <StatusBadge tone="muted" dot={false}>
+                  {workspaceView === 'series'
+                    ? `${filteredBudgetSeries.length} serie${filteredBudgetSeries.length === 1 ? '' : 's'}`
+                    : `${filteredPeriodRows.length} presupuesto${filteredPeriodRows.length === 1 ? '' : 's'}`}
+                </StatusBadge>
+              </div>
             </div>
           </div>
         )}

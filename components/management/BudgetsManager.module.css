@@ -1,9 +1,17 @@
 .summaryCurrency {
-  display: grid;
+  display: flex;
   min-width: 0;
   width: 100%;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 24px;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 24px 36px;
+}
+
+.summaryCurrency > div {
+  flex: 0 1 auto;
+  min-width: min(130px, 100%);
 }
 
 .summaryValue {
@@ -30,13 +38,14 @@
 }
 
 .periodHeader {
-  min-height: 42px;
-  padding: 0 16px;
-  background: var(--ft-surface-muted);
-  color: var(--ft-text-muted);
+  min-height: 34px;
+  padding: 8px 14px;
+  background: var(--ft-r07-subtle);
+  color: var(--ft-r07-muted);
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: .08em;
+  line-height: 16px;
+  letter-spacing: normal;
   text-transform: uppercase;
 }
 
@@ -108,15 +117,49 @@
   gap: 8px;
 }
 
-.headerPeriodSelect {
+.headerPeriodControl {
+  position: relative;
   width: 164px;
-  flex: 0 0 164px;
+  min-width: 0;
+  flex: 0 1 164px;
 }
 
-.budgetCreateButton {
-  width: auto !important;
-  flex: 0 0 auto;
-  white-space: nowrap;
+.headerPeriodSelect {
+  width: 100%;
+  min-width: 0;
+}
+
+.headerPeriodTrigger {
+  height: 36px;
+  min-height: 36px;
+  border: 1px solid var(--ft-r07-line);
+  border-radius: 10px;
+  background: var(--ft-r07-surface);
+  padding: 0 11px 0 34px;
+  color: var(--ft-r07-ink);
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.headerPeriodTrigger:hover {
+  background: var(--ft-r07-hover);
+}
+
+.headerPeriodTrigger:focus-visible {
+  outline: 2px solid var(--ft-primary);
+  outline-offset: 3px;
+}
+
+.headerPeriodIcon {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 11px;
+  transform: translateY(-50%);
+  color: var(--ft-r07-muted);
+  pointer-events: none;
 }
 
 .budgetSummary {
@@ -155,7 +198,6 @@
 .budgetControls {
   display: grid;
   gap: 0;
-  margin-bottom: 4px;
 }
 
 .budgetPeriodNavigation {
@@ -175,11 +217,6 @@
   scrollbar-width: none;
 }
 
-.budgetControls .budgetTabs {
-  border-bottom: 1px solid var(--ft-r07-line);
-  margin: 0 0 16px;
-}
-
 .budgetTabs::-webkit-scrollbar {
   display: none;
 }
@@ -187,7 +224,7 @@
 .budgetTab {
   position: relative;
   display: inline-flex;
-  min-height: 42px;
+  min-height: 40px;
   flex: 0 0 auto;
   align-items: center;
   gap: 7px;
@@ -234,12 +271,75 @@
   font-variant-numeric: tabular-nums;
 }
 
-.budgetFilterToolbar {
-  display: flex;
+.budgetFilterToolbar.budgetFilterToolbar {
+  min-width: 0;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 8px 12px;
+}
+
+.budgetFilterMain {
+  flex-wrap: wrap;
+}
+
+.budgetSearchControl {
   min-width: 0;
+}
+
+.budgetFilterToolbar .budgetCurrencyFilter {
+  width: 132px;
+  max-width: 132px;
+  flex: 0 0 132px;
+}
+
+.budgetFilterToolbar .budgetPeriodFilter {
+  width: 148px;
+  max-width: 148px;
+  flex: 0 0 148px;
+}
+
+.budgetFilterToolbar .budgetCategoryFilter {
+  width: 208px;
+  max-width: 208px;
+  flex: 0 0 208px;
+}
+
+.budgetFilterToolbar :global(.app-select-trigger-compact) {
+  height: 38px;
+  min-height: 38px;
+  border-color: var(--ft-r07-line);
+  border-radius: 10px;
+  background: var(--ft-r07-surface);
+  color: var(--ft-r07-ink);
+  font-size: 12px;
+}
+
+.budgetFilterToolbar :global(.app-select-trigger-compact:hover) {
+  background: var(--ft-r07-hover);
+}
+
+.budgetFilterToolbar :global(.app-select-trigger-compact:focus-visible) {
+  outline: 2px solid var(--ft-primary);
+  outline-offset: 3px;
+}
+
+.budgetFilterToolbar :global(input[data-testid='budgets-search-input']) {
+  height: 20px;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--ft-r07-ink);
+  font-size: 12px;
+  line-height: 18px;
+  box-shadow: none;
+}
+
+.budgetFilterToolbar :global(input[data-testid='budgets-search-input']:hover),
+.budgetFilterToolbar :global(input[data-testid='budgets-search-input']:focus) {
+  border: 0;
+  box-shadow: none;
 }
 
 .statusFilters {
@@ -249,14 +349,23 @@
   gap: 5px;
 }
 
-.budgetSearch {
-  flex: 1 1 240px;
-  min-width: 0;
-  width: 100%;
+.statusFilters > button {
+  height: 38px;
+  min-height: 38px;
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 12px;
 }
 
-.budgetFilterToolbar > :last-child {
-  flex: 0 0 auto;
+.budgetFilterActions {
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.budgetFilterActions > :global(button) {
+  min-height: 36px;
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 12px;
 }
 
 .exceptionBand {
@@ -446,8 +555,8 @@
 }
 
 @media (max-width: 1100px) {
-  .budgetSearch {
-    flex-basis: 200px;
+  .budgetFilterActions {
+    margin-left: 0;
   }
 }
 
@@ -457,9 +566,10 @@
   }
 
   .summaryCurrency {
+    display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 176px), 1fr));
     min-width: 0;
-    gap: 8px;
+    gap: 8px 18px;
   }
 
   .summaryCurrency .summaryValue {
@@ -468,28 +578,54 @@
     letter-spacing: -0.4px !important;
   }
 
-  .budgetPeriodNavigation {
-    display: grid;
-    gap: 8px;
-  }
-
   .budgetTabs {
     gap: 18px;
   }
 
-  .budgetFilterToolbar {
+  .budgetFilterToolbar.budgetFilterToolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .budgetFilterToolbar .budgetFilterMain {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
   }
 
-  .statusFilters,
-  .budgetSearch {
+  .budgetFilterToolbar .budgetFilterMain > .budgetSearchControl {
     grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+    height: 44px;
   }
 
-  .budgetFilterToolbar :global(.filters-control) {
+  .budgetFilterToolbar :global(input[data-testid='budgets-search-input']) {
+    height: 42px;
+    font-size: 16px;
+  }
+
+  .budgetFilterToolbar .budgetFilterMain .budgetCurrencyFilter,
+  .budgetFilterToolbar .budgetFilterMain .budgetPeriodFilter,
+  .budgetFilterToolbar .budgetFilterMain .budgetCategoryFilter {
     width: 100% !important;
+    max-width: none;
     min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .budgetFilterToolbar :global(.app-select-trigger-compact),
+  .statusFilters > button,
+  .budgetFilterActions > :global(button) {
+    height: 44px;
+    min-height: 44px;
+  }
+
+  .budgetFilterActions {
+    grid-column: 1;
+    justify-content: flex-start;
+    margin-left: 0;
   }
 
   .identityFields,
@@ -612,13 +748,19 @@
 @media (max-width: 520px) {
   .budgetHeaderActions {
     width: 100%;
-    justify-content: space-between;
+    justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
-  .headerPeriodSelect {
+  .headerPeriodControl {
     flex: 1 1 auto;
     width: auto;
-    min-width: 0;
+    min-width: min(132px, 100%);
+  }
+
+  .headerPeriodTrigger {
+    height: 40px;
+    min-height: 40px;
   }
 
   .exceptionBand {
