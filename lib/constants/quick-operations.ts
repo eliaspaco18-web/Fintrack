@@ -10,6 +10,11 @@ export const QUICK_OPERATIONS = [
   { id: 'asset_purchase', label: 'Comprar un activo', href: '/transactions?new=transaction&type=EXPENSE&module=asset' },
 ] as const
 
+/** Resolve the existing creation deep link for an operation selector item. */
+export function quickOperationHrefForId(id: string): string | null {
+  return QUICK_OPERATIONS.find(operation => operation.id === id)?.href ?? null
+}
+
 export const QUICK_CONTEXTUAL_CREATE = {
   portfolio: { id: 'account', label: 'Añadir cuenta', href: '/portfolio?new=portfolio' },
   budgets: { id: 'budget', label: 'Crear presupuesto', href: '/budgets?new=budget' },

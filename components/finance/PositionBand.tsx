@@ -16,6 +16,7 @@ export interface PositionGroup {
   scope: string
   linkLabel?: string
   amounts: readonly PositionAmount[]
+  loading?: boolean
   unavailableReason?: string
 }
 
@@ -37,7 +38,14 @@ function Group({ group, main }: { group: PositionGroup; main: boolean }) {
         </Link>
       </div>
       {main ? <p className="sr-only">{group.scope}</p> : null}
-      {group.amounts.length ? (
+      {group.loading ? (
+        <ul aria-hidden="true" className={main ? 'mt-3 grid grid-cols-2 gap-3 xl:grid-cols-[174px_minmax(0,1fr)]' : 'mt-2 flex flex-wrap gap-x-3 gap-y-1'}>
+          {[0, 1].map(index => <li key={`loading-${index}`} className={main ? 'min-w-0' : 'flex min-w-0 flex-wrap items-baseline gap-x-2'}>
+            {main ? <span className="mb-1 block h-3 w-20 animate-pulse rounded bg-[var(--ft-surface-muted)] motion-reduce:animate-none" /> : null}
+            <span className={`block h-6 rounded bg-[var(--ft-surface-muted)] motion-reduce:animate-none ${main ? 'w-28' : 'w-20'}`} />
+          </li>)}
+        </ul>
+      ) : group.amounts.length ? (
         <ul className={main ? 'mt-3 grid grid-cols-2 gap-3 xl:grid-cols-[174px_minmax(0,1fr)]' : 'mt-2 flex flex-wrap gap-x-3 gap-y-1'}>
           {group.amounts.map((item, index) => (
             <li key={`${item.currency ?? 'unknown'}-${index}`} className={main ? 'min-w-0' : 'flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5'}>

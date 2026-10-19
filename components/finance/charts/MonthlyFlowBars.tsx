@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 export interface MonthlyFlowDatum {
   id: string
@@ -96,9 +96,11 @@ export function MonthlyFlowBars({
   const [focusedId, setFocusedId] = useState<string | null>(null)
   const [tooltipId, setTooltipId] = useState<string | null>(null)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = rootRef.current
     if (!root) return
+    const initialWidth = root.getBoundingClientRect().width
+    if (initialWidth && Number.isFinite(initialWidth)) setWidth(Math.max(280, Math.round(initialWidth)))
     const observer = new ResizeObserver(entries => {
       const measured = entries[0]?.contentRect.width
       if (measured && Number.isFinite(measured)) setWidth(Math.max(280, Math.round(measured)))

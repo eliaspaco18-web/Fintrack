@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as ts from 'typescript'
+import postcss from 'postcss'
 
 const reactPath = join(process.cwd(), 'node_modules/react/umd/react.development.js')
 const reactDomPath = join(process.cwd(), 'node_modules/react-dom/umd/react-dom.development.js')
@@ -34,6 +35,26 @@ function operationIconSource(): string {
   return `(() => {\n${browserScript}\nwindow.FinTrackOperationIcon = OperationTypeIcon; window.FinTrackResolveTransactionIconType = resolveTransactionOperationIconType;\n})()`
 }
 
+function operationCssSource(): string {
+  const source = postcss.parse(readFileSync(join(process.cwd(), 'components/tables/TransactionsRound07.module.css'), 'utf8'))
+  const output = postcss.root()
+  const classes = ['operationPopover', 'operationPopoverHeading', 'operationSelector', 'operationGroups', 'operationGroup', 'operationGroupHeading', 'operationGroupItems', 'operation', 'operationIcon', 'operationIncome', 'operationExpense', 'operationTransfer', 'operationAsset']
+  source.walkRules(rule => {
+    if (!classes.some(name => rule.selector.includes(`.${name}`))) return
+    const copy = rule.clone({ selector: rule.selector
+      .replace(/:global\(([^)]+)\)/g, '$1')
+      .replace(/\.([A-Za-z][A-Za-z0-9]*)/g, (match, name: string) => classes.includes(name) ? `.${name.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)}` : match) })
+    let node: postcss.Node = copy
+    let parent = rule.parent
+    while (parent && parent.type === 'atrule') {
+      node = parent.clone({ nodes: [node] })
+      parent = parent.parent
+    }
+    output.append(node)
+  })
+  return `:root { --ft-surface: #fff; --ft-text-strong: #242a30; --ft-text-muted: #59636d; --ft-border: #dce1e5; --ft-success: #2b7356; --ft-success-soft: #e8f2e9; --ft-danger: #ad4545; --ft-danger-soft: #f9eeee; --ft-info: #426f9f; --ft-info-soft: #ebf2fb; } html[data-theme='dark'] { --ft-surface: #202327; --ft-text-strong: #edf0f2; --ft-text-muted: #b7bfc5; --ft-border: #393f45; } ${output.toString()}`
+}
+
 async function mount(page: import('@playwright/test').Page) {
   const pageErrors: string[] = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
@@ -59,23 +80,7 @@ async function mount(page: import('@playwright/test').Page) {
       operationTransfer: 'operation-transfer', operationAsset: 'operation-asset',
     };
   ` })
-  await page.addStyleTag({ path: join(process.cwd(), 'docs/redesign-v3/preview/design.css') })
-  await page.addStyleTag({ content: `
-    .operation-popover { position:fixed; inset:auto; margin:0; box-sizing:border-box; border:1px solid #dce1e5; border-radius:14px; padding:10px; width:min(356px,calc(100vw - 24px)); min-width:min(320px,calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:calc(100vh - 24px); max-height:calc(100dvh - 24px); overflow-x:hidden; overflow-y:auto; font-family:Manrope,sans-serif; font-size:12px; line-height:1.5; color:#242a30; background:#fff; box-shadow:0 3px 8px rgb(25 51 49 / 7%),0 16px 44px rgb(25 51 49 / 13%); }
-    .operation-popover-heading { padding:1px 2px 9px; border-bottom:1px solid #dce1e5; margin:0 0 11px; font-size:11px; font-weight:700; }
-    .operation-groups { display:grid; grid-template-columns:minmax(0,1fr); gap:8px; }
-    .operation-group { min-width:0; }
-    .operation-group:not(:last-child) { padding-bottom:8px; border-bottom:1px solid #dce1e5; }
-    .operation-group-heading { margin:0 0 5px; font-size:11.5px; font-weight:700; line-height:16px; }
-    .operation-group-items { display:grid; gap:5px; min-width:0; }
-    .operation { display:flex; align-items:center; gap:9px; width:100%; min-width:0; min-height:54px; border:1px solid #dce1e5; border-radius:10px; background:#fff; padding:7px 9px; text-align:left; }
-    .operation-icon { display:grid; width:32px; height:32px; flex:0 0 32px; place-items:center; border-radius:8px; }
-    .operation > span:last-child { min-width:0; }
-    .operation strong, .operation small { display:block; }
-    .operation strong { font-size:12.5px; line-height:17px; }
-    .operation small { margin-top:2px; font-size:11.5px; line-height:16px; overflow-wrap:anywhere; }
-    @media (max-width:767px) { .operation-groups { gap:8px; } .operation { padding:6px 8px; } }
-  ` })
+  await page.addStyleTag({ content: operationCssSource() })
   await page.addScriptTag({ content: operationIconSource() })
   await page.addScriptTag({ content: operationSource() })
   await page.addScriptTag({ content: `
@@ -296,6 +301,9 @@ test('operation popover stays anchored and the selector adapts to narrow viewpor
   expect(compactViewportBox!.y).toBeGreaterThanOrEqual(0)
   expect(compactViewportBox!.y + compactViewportBox!.height).toBeLessThanOrEqual(480)
 
+  await page.setViewportSize({ width: 390, height: 844 })
+  await integratedTrigger.click()
+  await expect(integratedMenu).toBeVisible()
   const outputDir = process.env.OPERATION_MENU_COMPARISON_DIR
   if (outputDir) {
     await integratedMenu.screenshot({ path: join(outputDir, 'fintrack-operation-menu.png'), animations: 'disabled' })

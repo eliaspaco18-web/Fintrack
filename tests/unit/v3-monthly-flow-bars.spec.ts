@@ -20,7 +20,7 @@ async function mount(page: import('@playwright/test').Page, viewportWidth = 1200
   await page.setContent('<style>#root{width:560px;max-width:calc(100vw - 32px);margin:16px}</style><output id="summary">Septiembre: S/ 5,120.00</output><div id="root" data-ft-v3></div><button id="outside">Fuera</button>')
   await page.addScriptTag({ path: join(process.cwd(), 'node_modules/react/umd/react.development.js') })
   await page.addScriptTag({ path: join(process.cwd(), 'node_modules/react-dom/umd/react-dom.development.js') })
-  await page.addScriptTag({ content: `const { useEffect, useId, useMemo, useRef, useState } = React;` })
+  await page.addScriptTag({ content: `const { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } = React;` })
   await page.addScriptTag({ content: flowSource() })
   await page.addScriptTag({ content: `
     window.flowPoints = [
@@ -38,6 +38,19 @@ async function mount(page: import('@playwright/test').Page, viewportWidth = 1200
   ` })
   await page.locator('.ft-v3-flow-svg').waitFor()
 }
+
+test('monthly flow measures its container and mobile mode on initial mount', async ({ page }) => {
+  await mount(page, 390)
+  const firstFrame = await page.evaluate(() => {
+    const svg = document.querySelector<SVGSVGElement>('.ft-v3-flow-svg')!
+    return {
+      viewBoxWidth: svg.viewBox.baseVal.width,
+      rootWidth: Math.round(document.getElementById('root')!.getBoundingClientRect().width),
+      groups: svg.querySelectorAll('[role="button"]').length,
+    }
+  })
+  expect(firstFrame).toEqual({ viewBoxWidth: 358, rootWidth: 358, groups: 3 })
+})
 
 async function captureMaterial(page: import('@playwright/test').Page, name: string) {
   const cssDirectory = join(process.cwd(), '.next/static/css')

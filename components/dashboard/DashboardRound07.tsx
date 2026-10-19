@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
 import { BudgetProgressRow } from '@/components/finance/charts/BudgetProgressRow'
 import { CategoryRanking, type CategoryRankingRow } from '@/components/finance/charts/CategoryRanking'
@@ -11,7 +12,11 @@ import { MoneyText } from '@/components/finance/MoneyText'
 import { PositionBand } from '@/components/finance/PositionBand'
 import { FocusTrap } from '@/components/ui/accessibility'
 import { ModalOverlayPortal } from '@/components/ui/ModalOverlayPortal'
-import { QUICK_OPERATIONS } from '@/lib/constants/quick-operations'
+import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
+import { RecordModal } from '@/components/ui/RecordModal'
+import { OperationTypePopover, OperationTypeSelector, type OperationType } from '@/components/transactions/OperationTypeSelector'
+import transactionStyles from '@/components/tables/TransactionsRound07.module.css'
+import { QUICK_OPERATIONS, quickOperationHrefForId } from '@/lib/constants/quick-operations'
 import type { TransactionListItem } from '@/lib/contracts/ui.contracts'
 import type { CreditListItem } from '@/lib/credits/display-type'
 import { getCreditDetailPresentation } from '@/modules/credits/credit-detail-presentation'
@@ -22,6 +27,7 @@ import {
   type DashboardAccount, type DashboardObligation,
 } from '@/lib/dashboard/round07'
 import { fetchDashboardData } from './api'
+import { DashboardSourceState as SourceState } from './DashboardSourceState'
 import styles from './DashboardRound07.module.css'
 
 const AdvancedDashboard = dynamic(() => import('./DashboardWorkspace').then(module => module.DashboardWorkspace), { ssr: false })
@@ -57,14 +63,6 @@ const recentDateLabel = (value: string | undefined) => {
   return new Intl.DateTimeFormat('es-PE', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(date)
 }
 
-function SourceState({ loading, failed, available, retry, children }: {
-  loading: boolean; failed: boolean; available: boolean; retry: () => void; children: React.ReactNode
-}) {
-  if (failed && !available) return <div className={styles.sourceState} role="alert">No se pudo cargar esta sección. <button type="button" onClick={retry}>Reintentar</button></div>
-  if (loading) return <div className={styles.sourceState} role="status" aria-busy="true">Cargando información…</div>
-  return <>{failed ? <div className={styles.stale} role="status">No se pudo actualizar; se muestran los últimos datos disponibles. <button type="button" onClick={retry}>Reintentar</button></div> : null}{children}</>
-}
-
 function Panel({ title, subtitle, href, linkLabel, children, className = '' }: {
   title: string; subtitle?: string; href?: string; linkLabel?: string; children: React.ReactNode; className?: string
 }) {
@@ -92,6 +90,7 @@ function useDashboardSources(period: string) {
 }
 
 export function DashboardRound07() {
+  const router = useRouter()
   const [today] = useState(() => currentLimaPeriod())
   const [agendaDays, setAgendaDays] = useState<7 | 30>(7)
   const [categoryType, setCategoryType] = useState<'EXPENSE' | 'INCOME'>('EXPENSE')
@@ -101,11 +100,42 @@ export function DashboardRound07() {
   const [showLegacy, setShowLegacy] = useState(false)
   const [showAllCategories, setShowAllCategories] = useState(false)
   const [showAllAgenda, setShowAllAgenda] = useState(false)
+  const [operationSelectorOpen, setOperationSelectorOpen] = useState(false)
+  const [isDesktopOperationSelector, setIsDesktopOperationSelector] = useState(false)
+  const operationMenuAnchorRef = useRef<HTMLDivElement>(null)
+  const pendingMobileOperationHrefRef = useRef<string | null>(null)
+  const operationMenuId = useId()
+  const operationDialogId = 'dashboard-operation-selector-dialog'
   const sources = useDashboardSources(today.month)
   const month = monthName(today.iso)
   const firstDay = `${today.month}-01`
   const dateLabel = new Intl.DateTimeFormat('es-PE', { timeZone: 'America/Lima', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
     .format(new Date(`${today.iso}T12:00:00Z`))
+
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 768px)')
+    const update = () => {
+      setIsDesktopOperationSelector(media.matches)
+      setOperationSelectorOpen(false)
+    }
+    update()
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
+
+  const selectDashboardOperation = useCallback((operationType: OperationType) => {
+    setOperationSelectorOpen(false)
+    const href = quickOperationHrefForId(operationType)
+    if (!href) return
+    if (isDesktopOperationSelector) router.push(href)
+    else pendingMobileOperationHrefRef.current = href
+  }, [isDesktopOperationSelector, router])
+
+  const finishMobileOperationSelectorExit = useCallback(() => {
+    const href = pendingMobileOperationHrefRef.current
+    pendingMobileOperationHrefRef.current = null
+    if (href) router.push(href)
+  }, [router])
 
   const accounts = useMemo(() => nativeAccountPosition(sources.accounts.data ?? []), [sources.accounts.data])
   const receivables = useMemo(() => documentedPending(sources.receivables.data ?? [], 'collected_amount'), [sources.receivables.data])
@@ -113,7 +143,7 @@ export function DashboardRound07() {
   const agenda = useMemo(() => documentedAgenda(
     sources.receivables.data ?? [], sources.payables.data ?? [], today.iso, agendaDays,
   ), [sources.receivables.data, sources.payables.data, today.iso, agendaDays])
-  const agendaLoading = !sources.receivables.data && !sources.payables.data
+  const agendaLoading = (!sources.receivables.data && !sources.receivables.error) || (!sources.payables.data && !sources.payables.error)
   const flowPoints: MonthlyFlowDatum[] = useMemo(() => (sources.flow.data?.series ?? []).map((point, index) => ({
     id: `${index}-${point.month}`, label: point.month, periodLabel: point.month,
     income: Number.isFinite(point.ingresos) ? point.ingresos : null,
@@ -153,15 +183,24 @@ export function DashboardRound07() {
       <div><h1 data-ft-route-heading="" tabIndex={-1}>Tu panorama financiero</h1><p className={styles.date}>{dateLabel}</p></div>
       <div className={styles.headerActions}>
         <Link href="/transactions" className={styles.periodControl}>Mes actual: {month} <span aria-hidden="true">↗</span></Link>
-        <Link href={QUICK_OPERATIONS[0].href} className={styles.primaryAction}>＋ Registrar egreso</Link>
-        <details className={styles.operationMenu}><summary aria-label="Otras operaciones">⌄</summary><div>{QUICK_OPERATIONS.slice(1).map(operation => <Link key={operation.id} href={operation.href}>{operation.label}</Link>)}</div></details>
+        <div ref={operationMenuAnchorRef} className={`${styles.operationAnchor} ${transactionStyles.v3ModuleContent}`}>
+          <CreateModuleButton
+            onClick={() => setOperationSelectorOpen(value => !value)}
+            label="Nuevo movimiento"
+            className={`${transactionStyles.v3ModulePrimaryAction} w-full sm:w-auto`}
+            testId="dashboard-create-transaction-button"
+            ariaHasPopup={isDesktopOperationSelector ? 'menu' : 'dialog'}
+            ariaExpanded={operationSelectorOpen}
+            ariaControls={isDesktopOperationSelector ? operationMenuId : operationDialogId}
+          />
+        </div>
       </div>
     </header>
 
     <PositionBand
-      accounts={{ label: 'Saldos de tus cuentas', href: '/portfolio', linkLabel: sources.accounts.data ? `${accounts.count} cuentas` : 'Ver cuentas', scope: sources.accounts.data ? `${accounts.count} cuentas activas · moneda original` : 'Moneda original', amounts: sources.accounts.data ? accounts.amounts : [], unavailableReason: sources.accounts.error ? 'No se pudieron consultar las cuentas.' : !sources.accounts.data ? 'Cargando cuentas…' : undefined }}
-      receivables={{ label: 'Por cobrar', href: '/receivables', scope: 'Pendiente documentado', amounts: sources.receivables.data ? receivables.amounts : [], unavailableReason: sources.receivables.error ? 'No se pudo consultar.' : !sources.receivables.data ? 'Cargando…' : receivables.unverified ? `${receivables.unverified} sin importe verificable` : undefined }}
-      payables={{ label: 'Por pagar', href: '/payables', scope: 'Pendiente documentado', amounts: sources.payables.data ? payables.amounts : [], unavailableReason: sources.payables.error ? 'No se pudo consultar.' : !sources.payables.data ? 'Cargando…' : payables.unverified ? `${payables.unverified} sin importe verificable` : undefined }}
+      accounts={{ label: 'Saldos de tus cuentas', href: '/portfolio', linkLabel: sources.accounts.data ? `${accounts.count} cuentas` : 'Ver cuentas', scope: sources.accounts.data ? `${accounts.count} cuentas activas · moneda original` : 'Moneda original', amounts: sources.accounts.data ? accounts.amounts : [], loading: !sources.accounts.data && !sources.accounts.error, unavailableReason: sources.accounts.error ? 'No se pudieron consultar las cuentas.' : undefined }}
+      receivables={{ label: 'Por cobrar', href: '/receivables', scope: 'Pendiente documentado', amounts: sources.receivables.data ? receivables.amounts : [], loading: !sources.receivables.data && !sources.receivables.error, unavailableReason: sources.receivables.error ? 'No se pudo consultar.' : receivables.unverified ? `${receivables.unverified} sin importe verificable` : undefined }}
+      payables={{ label: 'Por pagar', href: '/payables', scope: 'Pendiente documentado', amounts: sources.payables.data ? payables.amounts : [], loading: !sources.payables.data && !sources.payables.error, unavailableReason: sources.payables.error ? 'No se pudo consultar.' : payables.unverified ? `${payables.unverified} sin importe verificable` : undefined }}
     />
 
     {attention.length ? <nav className={styles.attention} aria-label="Para revisar"><span>ⓘ &nbsp; Para revisar</span>{attention.slice(0, 2).map(item => <Link key={item.href} href={item.href} data-tone={item.tone}>{item.label} <span aria-hidden="true">›</span></Link>)}</nav> : null}
@@ -169,7 +208,7 @@ export function DashboardRound07() {
     <div className={styles.bodyGrid} data-ft-route-group="work">
       <div className={styles.leftColumn}>
         <Panel title={`Así va ${month}`} subtitle={`Del 1 al ${today.day} · PEN de reporte`} className={styles.report}>
-          <SourceState loading={!sources.summary.data && !sources.summary.error} failed={Boolean(sources.summary.error)} available={Boolean(sources.summary.data)} retry={() => void sources.summary.mutate()}>
+          <SourceState loading={!sources.summary.data && !sources.summary.error} failed={Boolean(sources.summary.error)} available={Boolean(sources.summary.data)} retry={() => void sources.summary.mutate()} skeleton="summary" regionClassName={styles.summarySource}>
             {sources.summary.data ? <>
               <div className={styles.facts}>
                 <Link href={`/transactions?type=INCOME&date_from=${firstDay}&date_to=${today.iso}&page=1`}><span>Ingresos</span>{amount(sources.summary.data.ingresos_mes, 'PEN', 'income')}</Link>
@@ -183,13 +222,13 @@ export function DashboardRound07() {
             <div className={styles.flowBlock}>
               <div className={styles.subheading}><h3>Ingresos y egresos</h3><div className={styles.segment}><button aria-pressed={flowMonths === 3} onClick={() => setFlowMonths(3)}>3 meses</button><button aria-pressed={flowMonths === 6} onClick={() => setFlowMonths(6)}>6 meses</button></div></div>
               <p className={styles.meta}>PEN de reporte</p>
-              <SourceState loading={!sources.flow.data && !sources.flow.error} failed={Boolean(sources.flow.error)} available={Boolean(sources.flow.data)} retry={() => void sources.flow.mutate()}>
+              <SourceState loading={!sources.flow.data && !sources.flow.error} failed={Boolean(sources.flow.error)} available={Boolean(sources.flow.data)} retry={() => void sources.flow.mutate()} skeleton="flow" regionClassName={styles.flowSource}>
                 {flowPoints.length ? <><MonthlyFlowBars points={flowPoints} requestedMonths={flowMonths} compact /><button className={styles.textButton} onClick={() => setShowFlowTable(value => !value)} aria-expanded={showFlowTable}>{showFlowTable ? 'Ocultar datos' : 'Ver datos exactos'}</button>{showFlowTable ? <MonthlyFlowDataTable points={flowPoints} /> : null}<p className={styles.meta}>La serie no trae una fecha completa por barra y no calcula estos totales.</p></> : <p className={styles.empty}>Aún no hay meses de movimiento para comparar.</p>}
               </SourceState>
             </div>
             <div className={styles.rankBlock}>
               <div className={styles.subheading}><h3>Por categoría</h3><div className={styles.segment}><button aria-pressed={categoryType === 'EXPENSE'} onClick={() => { setCategoryType('EXPENSE'); setShowAllCategories(false) }}>Egresos</button><button aria-pressed={categoryType === 'INCOME'} onClick={() => { setCategoryType('INCOME'); setShowAllCategories(false) }}>Ingresos</button></div></div>
-              <SourceState loading={!sources.sidebar.data && !sources.sidebar.error} failed={Boolean(sources.sidebar.error)} available={Boolean(sources.sidebar.data)} retry={() => void sources.sidebar.mutate()}>
+              <SourceState loading={(!sources.sidebar.data || !sources.summary.data) && !sources.sidebar.error && !sources.summary.error} failed={Boolean(sources.sidebar.error || sources.summary.error)} available={Boolean(sources.sidebar.data)} retry={() => { void sources.sidebar.mutate(); void sources.summary.mutate() }} skeleton="ranking" regionClassName={styles.rankingSource}>
                 {!sources.summary.data ? <p className={styles.empty}>Esperando el total del reporte para verificar categorías.</p> : !rankMatches ? <p className={styles.empty}>El desglose no coincide con el total del reporte. Revisa las categorías en Movimientos.</p> : rankingRows.length ? <><CategoryRanking rows={rankingRows} /><p className={styles.meta}>Registros de categoría; la participación en reportes se explica en el detalle.</p></> : <p className={styles.empty}>Sin categorías en el reporte de este mes.</p>}
               </SourceState>
             </div>
@@ -198,7 +237,7 @@ export function DashboardRound07() {
         </Panel>
 
         <Panel title="Últimos movimientos" subtitle="Lo último que registraste · no se usa para calcular el mes" href="/transactions" className={styles.recent}>
-          <SourceState loading={!sources.recent.data && !sources.recent.error} failed={Boolean(sources.recent.error)} available={Boolean(sources.recent.data)} retry={() => void sources.recent.mutate()}>
+          <SourceState loading={!sources.recent.data && !sources.recent.error} failed={Boolean(sources.recent.error)} available={Boolean(sources.recent.data)} retry={() => void sources.recent.mutate()} skeleton="recent" regionClassName={styles.recentSource}>
             {(sources.recent.data?.data ?? []).length ? <ul className={styles.recentList}>{sources.recent.data!.data.map(row => <li key={row.id}><Link href={`/transactions/${encodeURIComponent(row.id)}`}><span className={styles.recentDate}>{recentDateLabel(row.transactionDate || row.transaction_date)}</span><span className={styles.recentIdentity}><strong>{row.description || (row.type === 'TRANSFER' ? 'Transferencia' : 'Movimiento')}</strong><small>{row.category?.name ?? (row.type === 'TRANSFER' ? 'Transferencia interna' : row.type === 'INCOME' ? 'Ingreso' : 'Egreso')}</small></span><span className={styles.recentAccount}>{row.sourceAccount?.name ?? row.source_account?.name ?? '—'}</span><span className={styles.recentAmount}>{row.type === 'TRANSFER' ? '' : row.type === 'INCOME' ? '+' : '−'}{amount(Math.abs(row.amount), row.currency)}</span><span aria-hidden="true">›</span></Link></li>)}</ul> : <p className={styles.empty}>Aún no hay movimientos. <Link href={QUICK_OPERATIONS[0].href}>Registrar el primero</Link></p>}
           </SourceState>
           <div className={styles.panelFooter}><Link href={QUICK_OPERATIONS[1].href}>＋ Registrar ingreso</Link><Link href={QUICK_OPERATIONS[2].href}>⇄ Transferir entre cuentas</Link><Link href={QUICK_OPERATIONS[0].href}>Otras operaciones ↗</Link></div>
@@ -208,13 +247,13 @@ export function DashboardRound07() {
       <div className={styles.rightColumn}>
         <Panel title="Tu próxima agenda" subtitle="Compromisos documentados" className={styles.agenda}>
           <div className={styles.agendaControls}><div className={styles.segment}><button aria-pressed={agendaDays === 7} onClick={() => setAgendaDays(7)}>7 días</button><button aria-pressed={agendaDays === 30} onClick={() => setAgendaDays(30)}>30 días</button></div></div>
-          <SourceState loading={agendaLoading && !sources.receivables.error && !sources.payables.error} failed={Boolean(sources.receivables.error || sources.payables.error)} available={!agendaLoading} retry={() => { void sources.receivables.mutate(); void sources.payables.mutate() }}>
+          <SourceState loading={agendaLoading && !sources.receivables.error && !sources.payables.error} failed={Boolean(sources.receivables.error || sources.payables.error)} available={Boolean(sources.receivables.data || sources.payables.data)} retry={() => { void sources.receivables.mutate(); void sources.payables.mutate() }} skeleton="agenda" regionClassName={styles.agendaSource}>
             {agenda.length ? <><ul className={styles.agendaList}>{agenda.slice(0, 4).map(item => <li key={`${item.source}-${item.id}`}><Link href={item.href}><span className={styles.dateTile}><strong>{item.dueDate.slice(8)}</strong><small>{new Intl.DateTimeFormat('es-PE', { month: 'short', timeZone: 'UTC' }).format(new Date(`${item.dueDate}T12:00:00Z`))}</small></span><span className={styles.agendaIdentity}><strong>{item.label}</strong><small>{item.dueDate < today.iso ? 'Vencido · ' : ''}{item.source === 'receivable' ? 'Por cobrar' : 'Por pagar'}</small></span><span className={styles.agendaAmount}>{amount(item.pending ?? Number.NaN, item.currency ?? 'PEN')}</span><span aria-hidden="true">›</span></Link></li>)}</ul><p className={styles.agendaScope}>No son pagos automáticos. Agenda parcial: ciclos y préstamos se consultan en Créditos. Cobertura de documentos no verificada.</p>{agenda.length > 4 ? <button className={styles.textButton} onClick={() => setShowAllAgenda(true)}>Ver los {agenda.length} documentos</button> : null}</> : <p className={styles.empty}>No hay vencimientos documentados en este intervalo. Ciclos y préstamos: consultar Créditos.</p>}
           </SourceState>
         </Panel>
 
         <Panel title="Presupuestos" subtitle={`${month} · importes vinculados`} href="/budgets">
-          <SourceState loading={!sources.budgets.data && !sources.budgets.error} failed={Boolean(sources.budgets.error)} available={Boolean(sources.budgets.data)} retry={() => void sources.budgets.mutate()}>
+          <SourceState loading={!sources.budgets.data && !sources.budgets.error} failed={Boolean(sources.budgets.error)} available={Boolean(sources.budgets.data)} retry={() => void sources.budgets.mutate()} skeleton="budgets" regionClassName={styles.budgetSource}>
             {orderedBudgets.length ? <div className={styles.budgetList}>{orderedBudgets.slice(0, 3).map(item => {
               const valid = Number.isFinite(item.amount) && item.amount > 0 && Number.isFinite(item.spent_amount) && Number.isFinite(item.progress_percent)
               const common = { periodId: item.id, href: '/budgets', label: item.budget.name, spentLabel: moneyLabel(item.spent_amount, item.budget.currency), limitLabel: moneyLabel(item.amount, item.budget.currency) }
@@ -223,7 +262,7 @@ export function DashboardRound07() {
           </SourceState>
         </Panel>
 
-        <SourceState loading={!sources.credits.data && !sources.credits.error} failed={Boolean(sources.credits.error)} available={Boolean(sources.credits.data)} retry={() => void sources.credits.mutate()}>
+        <SourceState loading={!sources.credits.data && !sources.credits.error} failed={Boolean(sources.credits.error)} available={Boolean(sources.credits.data)} retry={() => void sources.credits.mutate()} skeleton="credits" regionClassName={sources.credits.data && !cards.length && !loans.length ? '' : styles.creditSource}>
           {cards.length || loans.length ? <Panel title="Créditos, por separado" subtitle="Deuda en moneda original · no es dinero disponible" href="/credits" linkLabel="Revisar">
             <ul className={styles.creditList}>{cards.slice(0, 2).map(item => {
               const presentation = getCreditDetailPresentation(item, { status: 'NOT_APPLICABLE' })
@@ -240,5 +279,28 @@ export function DashboardRound07() {
 
     <p className={styles.scopeNote}>Los saldos describen cuentas activas hoy; el resultado describe {month}. Cobros, pagos y créditos conservan su moneda y significado. Los documentos consultados pueden tener cobertura parcial.</p>
     <div className={styles.advanced}><button type="button" onClick={() => setShowLegacy(value => !value)} aria-expanded={showLegacy}>{showLegacy ? 'Ocultar análisis anteriores' : 'Explorar análisis anteriores'} <span aria-hidden="true">⌄</span></button>{showLegacy ? <AdvancedDashboard /> : null}</div>
+
+    <OperationTypePopover
+      anchorRef={operationMenuAnchorRef}
+      menuId={operationMenuId}
+      open={operationSelectorOpen && isDesktopOperationSelector}
+      onClose={() => setOperationSelectorOpen(false)}
+      onSelect={selectDashboardOperation}
+    />
+    <RecordModal
+      open={operationSelectorOpen && !isDesktopOperationSelector}
+      onExitComplete={finishMobileOperationSelectorExit}
+      dialogId={operationDialogId}
+      onClose={() => setOperationSelectorOpen(false)}
+      eyebrow="Movimientos"
+      title="¿Qué vas a registrar?"
+      subtitle="Elige lo que ocurrió. FinTrack mantiene la relación con tus cuentas."
+      widthClassName="max-w-[min(96vw,580px)]"
+      presentation="workbench"
+      motionSource="pointer"
+      overlayClassName={transactionStyles.astraOverlay}
+    >
+      <OperationTypeSelector onSelect={selectDashboardOperation} />
+    </RecordModal>
   </main>
 }
