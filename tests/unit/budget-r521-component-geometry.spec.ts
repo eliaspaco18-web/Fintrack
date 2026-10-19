@@ -63,7 +63,7 @@ async function installReactHarness(page: Page) {
   page.on('console', message => {
     if (message.type() === 'error') console.error('[budget-geometry console]', message.text())
   })
-  await page.setContent('<div class="fin-shell" data-ft-v3-shell></div><div id="root"></div>')
+  await page.setContent('<div class="fin-shell" data-ft-v3-shell><main class="v3ModuleContent"><div id="root"></div></main></div>')
   await page.addScriptTag({ path: reactPath })
   await page.addScriptTag({ path: reactDomPath })
 
@@ -90,6 +90,10 @@ async function installReactHarness(page: Page) {
     window.__budgetModules['@/components/ui/accessibility'] = {
       FocusTrap: ({ children, className }) => React.createElement('div', { className }, children),
     };
+    window.__budgetModules['@/components/ui/Button'] = { Button: () => null };
+    window.__budgetModules['@/components/ui/AppSelect'] = { AppSelect: () => null };
+    window.__budgetModules['@/components/ui/ActionIconButton'] = { ActionIconButton: () => null };
+    window.__budgetModules['@/components/finance/primitives'] = { EmptyState: () => null };
     window.__budgetModules['@/lib/ui/v3-modal-background'] = { acquireV3ModalBackground: () => () => {} };
     window.__budgetModules['@/components/finance'] = {
       ConfirmDialog: ({ open, title, onCancel, onConfirm }) => open ? React.createElement('div', { role: 'alertdialog', 'aria-label': title },
@@ -130,6 +134,59 @@ async function installReactHarness(page: Page) {
   await page.addScriptTag({ content: `window.__budgetModules['@/components/ui/RecordModal'] = { RecordModal: window.__budgetExports.RecordModal };` })
   await page.addScriptTag({ content: compileComponent('components/management/BudgetDetail.tsx', 'BudgetDetail') })
 }
+
+test('budget search uses a single framed control with the focus ring on its wrapper', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await installReactHarness(page)
+  await page.addScriptTag({ content: compileComponent('components/finance/data-table.tsx', 'DataSearchField') })
+  await page.addScriptTag({ content: `(() => {
+    const React = window.React;
+    const ReactDOM = window.ReactDOM;
+    const DataSearchField = window.__budgetExports.DataSearchField;
+    window.__budgetRoot = ReactDOM.createRoot(document.getElementById('root'));
+    window.__budgetRoot.render(React.createElement('div', { className: 'controls portfolioFilterBar budgetFilterToolbar', 'data-testid': 'budgets-filter-toolbar' },
+      React.createElement('div', { className: 'controlsMain budgetFilterMain' },
+        React.createElement(DataSearchField, {
+          value: '', onChange: () => {}, placeholder: 'Buscar presupuestos',
+          'aria-label': 'Buscar presupuestos', 'data-testid': 'budgets-search-input',
+          className: 'searchControl budgetSearchControl',
+        }))));
+  })();` })
+
+  const input = page.getByTestId('budgets-search-input')
+  const wrapper = page.locator('.controlsMain > .searchControl')
+  await expect(input).toBeVisible()
+  for (const width of [390, 834, 1440]) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
+    await input.focus()
+    const styles = await page.evaluate(() => {
+      const wrapper = document.querySelector<HTMLElement>('.controlsMain > .searchControl')!
+      const input = document.querySelector<HTMLInputElement>('[data-testid="budgets-search-input"]')!
+      const wrapperStyle = getComputedStyle(wrapper)
+      const inputStyle = getComputedStyle(input)
+      const wrapperRect = wrapper.getBoundingClientRect()
+      const inputRect = input.getBoundingClientRect()
+      return {
+        wrapper: { border: wrapperStyle.borderWidth, radius: wrapperStyle.borderRadius, outline: wrapperStyle.outlineWidth, width: wrapperRect.width, height: wrapperRect.height, right: wrapperRect.right },
+        input: { border: inputStyle.borderWidth, radius: inputStyle.borderRadius, background: inputStyle.backgroundColor, shadow: inputStyle.boxShadow, outline: inputStyle.outlineWidth, left: inputRect.left, right: inputRect.right },
+      }
+    })
+    expect(styles.wrapper.border).toBe('1px')
+    expect(styles.wrapper.radius).toBe('10px')
+    expect(styles.wrapper.outline).toBe('2px')
+    expect(styles.input.border).toBe('0px')
+    expect(styles.input.radius).toBe('0px')
+    expect(styles.input.background).toBe('rgba(0, 0, 0, 0)')
+    expect(styles.input.shadow).toBe('none')
+    expect(styles.input.outline).toBe('0px')
+    const wrapperBox = await wrapper.boundingBox()
+    expect(wrapperBox).not.toBeNull()
+    expect(styles.input.left).toBeGreaterThanOrEqual(wrapperBox!.x)
+    expect(styles.input.right).toBeLessThanOrEqual(wrapperBox!.x + wrapperBox!.width)
+    expect(styles.wrapper.right).toBeLessThanOrEqual(width)
+    if (width <= 767) expect(styles.wrapper.height).toBe(44)
+  }
+})
 
 test('the three module CTAs use the real shared button and approved V3 geometry', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -196,6 +253,9 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
   expect(source).toContain('overlayClassName={styles.detailOverlay}')
   expect(source).toContain('footer={onContinueNextPeriod ? (')
   expect(source).toContain('testId="budget-detail-next-period"')
+  const managerSource = sourceOf('components/management/BudgetsManager.tsx')
+  expect(managerSource).toContain("formMode === 'continuation'\n              ? 'Crear siguiente período'")
+  expect(managerSource).toContain("isContinuationMode ? 'w-[calc(100vw-32px)] max-w-[580px]'")
 
   await page.addScriptTag({ content: `(() => {
     const React = window.React;
@@ -263,8 +323,8 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
     expect(geometry.parts.every(part => part.width > 0 && part.right <= geometry.dialog.right + 1)).toBe(true)
     if (width > 767) {
       expect(geometry.wrapper.width).toBeGreaterThan(580)
-      expect(geometry.wrapper.left).toBeGreaterThan(0)
-      expect(geometry.wrapper.left).toBeCloseTo(width - geometry.wrapper.right, 0)
+      expect(geometry.wrapper.left).toBeGreaterThanOrEqual(11)
+      expect(geometry.wrapper.right).toBeCloseTo(width - 12, 0)
       expect(geometry.wrapper.height).toBeLessThan(900)
       expect(Math.abs(geometry.layout.bottom - geometry.body.bottom)).toBeLessThanOrEqual(2)
       expect(Math.abs(geometry.detailMainBottom - geometry.layout.bottom)).toBeLessThanOrEqual(2)

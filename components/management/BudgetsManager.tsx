@@ -23,7 +23,6 @@ import {
   AmountCell,
   ConfirmDialog,
   DataErrorBanner,
-  DataFilterPreset,
   DataSearchField,
   EmptyState,
   PageLayout,
@@ -38,7 +37,7 @@ import {
   BUDGET_SCOPE_REQUIRED_ERROR,
   createBudgetRecordActionScope,
 } from '@/modules/budgets/budget-action-scope'
-import { budgetRowsForSelectedMonth, countBudgetStatuses, displayBudgetProgress, formatBudgetCurrency, summarizeBudgetCurrencies } from '@/lib/budgets/presentation'
+import { budgetRowsForSelectedMonth, displayBudgetProgress, formatBudgetCurrency, summarizeBudgetCurrencies } from '@/lib/budgets/presentation'
 import { resolveBudgetPeriodEditTarget, resolveBudgetPeriodIdentity } from '@/lib/budgets/period-record'
 
 type BudgetCategoryRef = {
@@ -102,7 +101,6 @@ type BudgetForm = {
   notes: string
 }
 
-type StatusFilter = 'all' | 'active' | 'inactive'
 type CurrencyFilter = 'all' | CurrencyCode
 type PeriodFilter = 'all' | BudgetPeriod
 type ViewMode = 'list' | 'cards'
@@ -471,7 +469,6 @@ export function BudgetsManager() {
   const [query, setQuery] = useState('')
   const [currencyFilter, setCurrencyFilter] = useState<CurrencyFilter>('all')
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all')
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [rowActionId, setRowActionId] = useState<string | null>(null)
   const [pendingDeleteBudget, setPendingDeleteBudget] = useState<BudgetItem | null>(null)
@@ -816,12 +813,6 @@ export function BudgetsManager() {
     [loadedPeriodMonth, periodMonth, periodRows],
   )
 
-  const statusCounts = useMemo(() => {
-    if (workspaceView === 'series') return countBudgetStatuses(budgetSeries)
-    if (!periodRowsReady) return null
-    return countBudgetStatuses(currentPeriodRows.map(row => row.budget))
-  }, [budgetSeries, currentPeriodRows, periodRowsReady, workspaceView])
-
   const periodSummary = useMemo(
     () => summarizeBudgetCurrencies(currentPeriodRows),
     [currentPeriodRows],
@@ -844,8 +835,6 @@ export function BudgetsManager() {
       if (workspaceView === 'exceeded' && !row.over_limit) return false
       if (currencyFilter !== 'all' && row.budget.currency !== currencyFilter) return false
       if (periodFilter !== 'all' && row.budget.period_type !== periodFilter) return false
-      if (statusFilter === 'active' && !row.budget.is_active) return false
-      if (statusFilter === 'inactive' && row.budget.is_active) return false
       if (categoryFilter === 'none' && row.budget.category_id) return false
       if (categoryFilter !== 'all' && categoryFilter !== 'none' && row.budget.category_id !== categoryFilter) return false
       if (!normalizedQuery) return true
@@ -856,7 +845,7 @@ export function BudgetsManager() {
         || formatFullDate(row.period_end).toLowerCase().includes(normalizedQuery)
         || PERIOD_LABEL[row.budget.period_type].toLowerCase().includes(normalizedQuery)
     })
-  }, [categoryFilter, currencyFilter, currentPeriodRows, periodFilter, query, statusFilter, workspaceView])
+  }, [categoryFilter, currencyFilter, currentPeriodRows, periodFilter, query, workspaceView])
 
   const exceededPeriodRows = useMemo(
     () => currentPeriodRows.filter(row => row.over_limit),
@@ -884,8 +873,6 @@ export function BudgetsManager() {
     return budgetSeries.filter(item => {
       if (currencyFilter !== 'all' && item.currency !== currencyFilter) return false
       if (periodFilter !== 'all' && item.period_type !== periodFilter) return false
-      if (statusFilter === 'active' && !item.is_active) return false
-      if (statusFilter === 'inactive' && item.is_active) return false
       if (categoryFilter !== 'all') {
         if (categoryFilter === 'none' && item.category_id) return false
         if (categoryFilter !== 'none' && item.category_id !== categoryFilter) return false
@@ -901,7 +888,7 @@ export function BudgetsManager() {
         item.periods.some(period => formatRange(period.period_start, period.period_end).toLowerCase().includes(q))
       )
     })
-  }, [budgetSeries, categoryFilter, currencyFilter, periodFilter, query, statusFilter])
+  }, [budgetSeries, categoryFilter, currencyFilter, periodFilter, query])
 
   const handleSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -1239,20 +1226,7 @@ export function BudgetsManager() {
                 />
               </div>
               <div className={`${movementPageStyles.controlsActions} ${styles.budgetFilterActions}`}>
-                <div className={styles.statusFilters} role="group" aria-label="Filtrar por estado">
-                  <DataFilterPreset label="Activos" active={statusFilter === 'active'} count={statusCounts?.active} onClick={() => setStatusFilter('active')} />
-                  <DataFilterPreset label="Inactivos" active={statusFilter === 'inactive'} count={statusCounts?.inactive} onClick={() => setStatusFilter('inactive')} />
-                  <DataFilterPreset label="Todos" active={statusFilter === 'all'} count={statusCounts?.total} onClick={() => setStatusFilter('all')} />
-                </div>
-                <Button type="button" size="sm" variant="secondary" onClick={() => void loadPeriodRows()} disabled={periodRowsLoading} loading={periodRowsLoading}>
-                  Actualizar
-                </Button>
                 {workspaceView === 'series' ? <ViewToggle value={viewMode} onChange={setViewMode} id="budgets-view-toggle" /> : null}
-                <StatusBadge tone="muted" dot={false}>
-                  {workspaceView === 'series'
-                    ? `${filteredBudgetSeries.length} serie${filteredBudgetSeries.length === 1 ? '' : 's'}`
-                    : `${filteredPeriodRows.length} presupuesto${filteredPeriodRows.length === 1 ? '' : 's'}`}
-                </StatusBadge>
               </div>
             </div>
           </div>
@@ -1318,10 +1292,10 @@ export function BudgetsManager() {
             ) : periodRowsReady && filteredPeriodRows.length === 0 ? (
               <EmptyState
                 title={workspaceView === 'exceeded' ? 'Sin excedentes en este período.' : 'No encontramos presupuestos para esos filtros.'}
-                description={workspaceView === 'exceeded' ? `No hay límites que superen el monto asignado en ${periodMonthLabel}.` : 'Prueba con otra moneda, categoría, estado o búsqueda.'}
+                description={workspaceView === 'exceeded' ? `No hay límites que superen el monto asignado en ${periodMonthLabel}.` : 'Prueba con otra moneda, periodicidad, categoría o búsqueda.'}
                 action={workspaceView === 'exceeded' ? undefined : {
                   label: 'Limpiar filtros',
-                  onClick: () => { setQuery(''); setCurrencyFilter('all'); setPeriodFilter('all'); setCategoryFilter('all'); setStatusFilter('all') },
+                  onClick: () => { setQuery(''); setCurrencyFilter('all'); setPeriodFilter('all'); setCategoryFilter('all') },
                 }}
               />
             ) : (
@@ -1409,13 +1383,13 @@ export function BudgetsManager() {
           </div>
         ) : filteredBudgetSeries.length === 0 ? (
           <EmptyState
-            title={query.trim() || currencyFilter !== 'all' || periodFilter !== 'all' || categoryFilter !== 'all' || statusFilter !== 'all'
+            title={query.trim() || currencyFilter !== 'all' || periodFilter !== 'all' || categoryFilter !== 'all'
               ? 'No encontramos presupuestos para esos filtros.'
               : 'Todavia no tienes presupuestos registrados.'}
-            description={query.trim() || currencyFilter !== 'all' || periodFilter !== 'all' || categoryFilter !== 'all' || statusFilter !== 'all'
+            description={query.trim() || currencyFilter !== 'all' || periodFilter !== 'all' || categoryFilter !== 'all'
               ? 'Ajusta moneda, periodo o categoria para recuperar controles presupuestales del periodo.'
               : 'Crea tu primer presupuesto y empieza a vigilar gasto, margen restante y excedentes desde un solo registro.'}
-            action={query.trim() || currencyFilter !== 'all' || periodFilter !== 'all' || categoryFilter !== 'all' || statusFilter !== 'all'
+            action={query.trim() || currencyFilter !== 'all' || periodFilter !== 'all' || categoryFilter !== 'all'
               ? {
                   label: 'Limpiar filtros',
                   onClick: () => {
@@ -1423,7 +1397,6 @@ export function BudgetsManager() {
                     setCurrencyFilter('all')
                     setPeriodFilter('all')
                     setCategoryFilter('all')
-                    setStatusFilter('all')
                   },
                 }
               : {
@@ -1672,7 +1645,7 @@ export function BudgetsManager() {
           editingId
             ? 'Editar este periodo'
             : formMode === 'continuation'
-              ? 'Nuevo período continuo'
+              ? 'Crear siguiente período'
               : 'Nuevo presupuesto'
         }
         subtitle={
@@ -1682,7 +1655,7 @@ export function BudgetsManager() {
               ? `Siguiente período de ${form.name}.`
               : 'Define el límite y su vigencia.'
         }
-        widthClassName={isContinuationMode ? 'w-[calc(100vw-32px)] max-w-[880px]' : 'w-[calc(100vw-32px)] max-w-[720px]'}
+        widthClassName={isContinuationMode ? 'w-[calc(100vw-32px)] max-w-[580px]' : 'w-[calc(100vw-32px)] max-w-[720px]'}
       >
         <form
           id="budget-form"

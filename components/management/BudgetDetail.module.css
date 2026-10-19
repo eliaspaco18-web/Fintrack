@@ -1,20 +1,21 @@
 .detailOverlay:global([data-ft-v3][data-ft-workbench-overlay]) {
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
+  justify-content: flex-end;
 }
 
 .detailOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
-  width: min(1180px, calc(100vw - 64px));
-  height: min(780px, calc(100dvh - 48px));
-  max-height: calc(100dvh - 48px);
-  margin: 0;
+  width: min(1180px, calc(100vw - 48px));
+  height: min(780px, calc(100dvh - 24px));
+  max-height: calc(100dvh - 24px);
+  margin: 12px;
 }
 
 @media (max-width: 1120px) {
   .detailOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
-    width: calc(100vw - 32px);
-    height: min(760px, calc(100dvh - 32px));
-    max-height: calc(100dvh - 32px);
+    width: calc(100vw - 48px);
+    height: min(760px, calc(100dvh - 24px));
+    max-height: calc(100dvh - 24px);
+    margin: 12px;
   }
 }
 
@@ -23,7 +24,7 @@
     width: calc(100vw - 16px);
     height: calc(100dvh - 16px);
     max-height: calc(100dvh - 16px);
-    margin: 0;
+    margin: 8px;
   }
 }
 

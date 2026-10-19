@@ -248,8 +248,26 @@
   min-width: 0;
 }
 
-.budgetFilterToolbar :global(input[data-testid='budgets-search-input']) {
-  height: 38px;
+.budgetFilterToolbar .budgetSearchControl > :global(input[data-testid='budgets-search-input']) {
+  width: 0;
+  min-width: 0;
+  max-width: none;
+  flex: 1 1 auto;
+  height: 20px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+  outline: 0;
+}
+
+.budgetFilterToolbar .budgetSearchControl > :global(input[data-testid='budgets-search-input']:hover),
+.budgetFilterToolbar .budgetSearchControl > :global(input[data-testid='budgets-search-input']:focus) {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: 0;
 }
 
 .budgetFilterToolbar .budgetPeriodFilter {
@@ -282,20 +300,6 @@
 
 .budgetPeriodFilter :global(.app-select-trigger)::before { content: 'Periodicidad'; }
 .budgetCategoryFilter :global(.app-select-trigger)::before { content: 'Categoría'; }
-
-.statusFilters {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.statusFilters > button {
-  height: 38px;
-  min-height: 38px;
-  font-family: Manrope, system-ui, sans-serif;
-  font-size: 12px;
-}
 
 .budgetFilterActions {
   flex-wrap: wrap;
@@ -574,8 +578,8 @@
     height: 44px;
   }
 
-  .budgetFilterToolbar :global(input[data-testid='budgets-search-input']) {
-    height: 44px;
+  .budgetFilterToolbar .budgetSearchControl > :global(input[data-testid='budgets-search-input']) {
+    height: 24px;
     font-size: 16px;
   }
 
@@ -587,7 +591,6 @@
     flex: 1 1 auto;
   }
 
-  .statusFilters > button,
   .budgetFilterActions > :global(button) {
     height: 44px;
     min-height: 44px;

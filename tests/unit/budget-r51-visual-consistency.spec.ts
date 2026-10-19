@@ -21,9 +21,10 @@ test('budgets opts into shared V3 header, tokens and primary action without loca
   expect(managerSource).toContain('ariaLabel="Filtrar por moneda"')
   expect(managerSource).toContain('ariaLabel="Filtrar por periodicidad"')
   expect(managerSource).toContain('ariaLabel="Filtrar por categoría"')
-  expect(managerSource).toContain('label="Activos"')
-  expect(managerSource).toContain('label="Inactivos"')
-  expect(managerSource).toContain('label="Todos"')
+  expect(managerSource).not.toContain('label="Activos"')
+  expect(managerSource).not.toContain('label="Inactivos"')
+  expect(managerSource).not.toContain('label="Todos"')
+  expect(managerSource).not.toContain('Actualizar')
   expect(budgetCss).not.toContain('.budgetCreateButton')
 })
 
