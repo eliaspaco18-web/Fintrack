@@ -197,3 +197,17 @@ test('month picker renders the real tokenized trigger in light and dark theme', 
   await expect(trigger).toHaveCSS('background-color', 'rgb(32, 35, 39)')
   await expect(trigger).toHaveCSS('color', 'rgb(237, 240, 242)')
 })
+
+test('budget tabs reserve the same 20px rhythm before filters as the approved accounts module', async ({ page }) => {
+  await installHarness(page)
+  await page.locator('#root').evaluate(root => {
+    root.innerHTML = `<div class="budgetControls"><div class="budgetPeriodNavigation"><nav class="budgetTabs tabs"><button class="budgetTab">Este período</button></nav></div><div class="controls budgetFilterToolbar" data-testid="budgets-filter-toolbar"></div></div>`
+  })
+
+  const spacing = await page.evaluate(() => {
+    const tabs = document.querySelector('.budgetTabs')!.getBoundingClientRect()
+    const toolbar = document.querySelector('[data-testid="budgets-filter-toolbar"]')!.getBoundingClientRect()
+    return toolbar.top - tabs.bottom
+  })
+  expect(spacing).toBe(20)
+})

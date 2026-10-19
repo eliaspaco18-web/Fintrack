@@ -159,7 +159,7 @@
 
 .budgetControls {
   display: grid;
-  gap: 0;
+  gap: 4px;
 }
 
 .budgetPeriodNavigation {
