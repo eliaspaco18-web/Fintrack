@@ -125,6 +125,7 @@ test('R5.2 detail CSS keeps its content readable in a representative responsive 
         panelWidth: rect.width,
         panelRight: rect.right,
         documentWidth: document.documentElement.scrollWidth,
+        display: getComputedStyle(layout).display,
         columns: layoutStyle.gridTemplateColumns,
         internalOverflowCount: overflows,
         font: getComputedStyle(document.querySelector('.detailMetricValue')!).fontFamily,
@@ -137,8 +138,9 @@ test('R5.2 detail CSS keeps its content readable in a representative responsive 
     expect(measured.internalOverflowCount, `${width}px detail descendants should stay within the panel`).toBe(0)
     expect(measured.font.toLowerCase()).toContain('manrope')
     expect(measured.metricWidths.every(metric => metric.scroll <= metric.client + 2)).toBe(true)
-    if (width <= 1120) expect(measured.columns.split(' ').length).toBe(1)
-    else expect(measured.columns.split(' ').length).toBe(2)
+    if (width <= 767) expect(measured.display).toBe('flex')
+    else if (width <= 1120) expect(measured.columns).not.toContain('286px')
+    else expect(measured.columns).toContain('286px')
   }
 
   await page.locator('html').evaluate(element => element.setAttribute('data-theme', 'dark'))

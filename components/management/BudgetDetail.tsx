@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RecordModal } from '@/components/ui/RecordModal'
+import { Button } from '@/components/ui/Button'
 import { ConfirmDialog } from '@/components/finance'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import type { CurrencyCode, BudgetPeriod } from '@/types/database.types'
@@ -90,6 +91,7 @@ interface Props {
   onClose: () => void
   onExitComplete?: () => void
   onPeriodUpdated?: () => void | Promise<void>
+  onContinueNextPeriod?: () => void
 }
 
 function clampProgress(value: number | null | undefined): number {
@@ -165,7 +167,7 @@ function parseAmountInput(value: string): number | null {
   return Math.round(parsed * 100) / 100
 }
 
-export function BudgetDetail({ open, budget, periods, onClose, onExitComplete, onPeriodUpdated }: Props) {
+export function BudgetDetail({ open, budget, periods, onClose, onExitComplete, onPeriodUpdated, onContinueNextPeriod }: Props) {
   const [transactions, setTransactions] = useState<TxRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -179,6 +181,7 @@ export function BudgetDetail({ open, budget, periods, onClose, onExitComplete, o
   const [periodSearch, setPeriodSearch] = useState('')
   const [discardAmountConfirmationOpen, setDiscardAmountConfirmationOpen] = useState(false)
   const [pendingPeriodSelectionId, setPendingPeriodSelectionId] = useState<string | null>(null)
+  const [continueAfterDiscard, setContinueAfterDiscard] = useState(false)
   const requestSequenceRef = useRef(0)
 
   const seriesPeriods = useMemo(
@@ -304,6 +307,16 @@ export function BudgetDetail({ open, budget, periods, onClose, onExitComplete, o
     onClose()
   }, [amountSaving, hasAmountDraft, onClose])
 
+  const requestNextPeriod = useCallback(() => {
+    if (amountSaving || !onContinueNextPeriod) return
+    if (hasAmountDraft) {
+      setContinueAfterDiscard(true)
+      setDiscardAmountConfirmationOpen(true)
+      return
+    }
+    onContinueNextPeriod()
+  }, [amountSaving, hasAmountDraft, onContinueNextPeriod])
+
   const requestPeriodSelection = useCallback((periodId: string) => {
     if (hasAmountDraft) {
       setPendingPeriodSelectionId(periodId)
@@ -315,13 +328,19 @@ export function BudgetDetail({ open, budget, periods, onClose, onExitComplete, o
 
   const discardAmountDraft = useCallback(() => {
     setDiscardAmountConfirmationOpen(false)
+    if (continueAfterDiscard) {
+      setContinueAfterDiscard(false)
+      setPendingPeriodSelectionId(null)
+      onContinueNextPeriod?.()
+      return
+    }
     if (pendingPeriodSelectionId) {
       setSelectedBudgetId(pendingPeriodSelectionId)
       setPendingPeriodSelectionId(null)
       return
     }
     onClose()
-  }, [onClose, pendingPeriodSelectionId])
+  }, [continueAfterDiscard, onClose, onContinueNextPeriod, pendingPeriodSelectionId])
 
   async function savePeriodAmount() {
     const nextAmount = parseAmountInput(periodAmount)
@@ -383,6 +402,31 @@ export function BudgetDetail({ open, budget, periods, onClose, onExitComplete, o
       size="xl"
       overlayClassName={styles.detailOverlay}
       widthClassName="w-[calc(100vw-40px)] max-w-[1320px]"
+      footer={onContinueNextPeriod ? (
+        <div className={styles.workbenchFooter}>
+          <div className={styles.footerTotals}>
+            <div>
+              <p className={styles.detailFooterLabel}>Total gastado · {filtered.length} movimiento{filtered.length === 1 ? '' : 's'}</p>
+              <p className={styles.detailFooterValue}>{formatBudgetCurrency(Math.round(totalSpent * 100) / 100, selectedBudget.currency)}</p>
+            </div>
+            <div className={styles.detailFooterSecondary}>
+              <p className={styles.detailFooterLabel}>Límite del período</p>
+              <p className={styles.detailFooterValue}>{formatBudgetCurrency(Number(selectedBudget.amount ?? 0), selectedBudget.currency)}</p>
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="primary"
+            size="md"
+            disabled={amountSaving}
+            onClick={requestNextPeriod}
+            testId="budget-detail-next-period"
+            leadingIcon={<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>}
+          >
+            Crear siguiente período
+          </Button>
+        </div>
+      ) : undefined}
       eyebrow="Detalle de presupuesto"
       title={budget.name}
       subtitle={`${formatRange(selectedBudget.period_start, selectedBudget.period_end)}${budget.category ? ` · ${budget.category.name}` : ''}`}
@@ -574,25 +618,17 @@ export function BudgetDetail({ open, budget, periods, onClose, onExitComplete, o
             )}
           </div>
 
-          <footer className={styles.detailFooter}>
-            <div>
-              <p className={styles.detailFooterLabel}>Total gastado · {filtered.length} movimiento{filtered.length === 1 ? '' : 's'}</p>
-              <p className={styles.detailFooterValue}>{formatBudgetCurrency(Math.round(totalSpent * 100) / 100, selectedBudget.currency)}</p>
-            </div>
-            <div className={styles.detailFooterSecondary}>
-              <p className={styles.detailFooterLabel}>Límite del período</p>
-              <p className={styles.detailFooterValue}>{formatBudgetCurrency(Number(selectedBudget.amount ?? 0), selectedBudget.currency)}</p>
-            </div>
-          </footer>
         </section>
       </div>
       <ConfirmDialog
         open={discardAmountConfirmationOpen}
-        title="Descartar cambio de importe"
-        message="El nuevo límite del período aún no se ha guardado. ¿Quieres cerrar y descartarlo?"
-        onCancel={() => { setDiscardAmountConfirmationOpen(false); setPendingPeriodSelectionId(null) }}
+        title={continueAfterDiscard ? 'Continuar sin guardar el importe' : 'Descartar cambio de importe'}
+        message={continueAfterDiscard
+          ? 'El cambio sin guardar se descartará antes de abrir el siguiente período.'
+          : 'El nuevo límite del período aún no se ha guardado. ¿Quieres cerrar y descartarlo?'}
+        onCancel={() => { setDiscardAmountConfirmationOpen(false); setPendingPeriodSelectionId(null); setContinueAfterDiscard(false) }}
         onConfirm={discardAmountDraft}
-        confirmLabel="Descartar cambio"
+        confirmLabel={continueAfterDiscard ? 'Descartar y continuar' : 'Descartar cambio'}
         testId="budget-detail-discard-modal"
       />
     </RecordModal>

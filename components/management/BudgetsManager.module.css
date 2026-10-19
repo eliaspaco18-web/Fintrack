@@ -248,10 +248,8 @@
   min-width: 0;
 }
 
-.budgetFilterToolbar .budgetCurrencyFilter {
-  width: 132px;
-  max-width: 132px;
-  flex: 0 0 132px;
+.budgetFilterToolbar :global(input[data-testid='budgets-search-input']) {
+  height: 38px;
 }
 
 .budgetFilterToolbar .budgetPeriodFilter {
@@ -266,43 +264,24 @@
   flex: 0 0 208px;
 }
 
-.budgetFilterToolbar :global(.app-select-trigger-compact) {
-  height: 38px;
-  min-height: 38px;
-  border-color: var(--ft-r07-line);
-  border-radius: 10px;
-  background: var(--ft-r07-surface);
-  color: var(--ft-r07-ink);
-  font-size: 12px;
+.budgetCategoryFilter {
+  width: 208px;
+  max-width: 208px;
+  flex: 0 0 208px;
 }
 
-.budgetFilterToolbar :global(.app-select-trigger-compact:hover) {
-  background: var(--ft-r07-hover);
+.budgetPeriodFilter :global(.app-select-trigger)::before,
+.budgetCategoryFilter :global(.app-select-trigger)::before {
+  flex: 0 0 auto;
+  margin-right: 2px;
+  color: var(--ft-r07-muted);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
 }
 
-.budgetFilterToolbar :global(.app-select-trigger-compact:focus-visible) {
-  outline: 2px solid var(--ft-primary);
-  outline-offset: 3px;
-}
-
-.budgetFilterToolbar :global(input[data-testid='budgets-search-input']) {
-  height: 20px;
-  min-width: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  padding: 0;
-  color: var(--ft-r07-ink);
-  font-size: 12px;
-  line-height: 18px;
-  box-shadow: none;
-}
-
-.budgetFilterToolbar :global(input[data-testid='budgets-search-input']:hover),
-.budgetFilterToolbar :global(input[data-testid='budgets-search-input']:focus) {
-  border: 0;
-  box-shadow: none;
-}
+.budgetPeriodFilter :global(.app-select-trigger)::before { content: 'Periodicidad'; }
+.budgetCategoryFilter :global(.app-select-trigger)::before { content: 'Categoría'; }
 
 .statusFilters {
   display: flex;
@@ -596,11 +575,10 @@
   }
 
   .budgetFilterToolbar :global(input[data-testid='budgets-search-input']) {
-    height: 42px;
+    height: 44px;
     font-size: 16px;
   }
 
-  .budgetFilterToolbar .budgetFilterMain .budgetCurrencyFilter,
   .budgetFilterToolbar .budgetFilterMain .budgetPeriodFilter,
   .budgetFilterToolbar .budgetFilterMain .budgetCategoryFilter {
     width: 100% !important;
@@ -609,7 +587,6 @@
     flex: 1 1 auto;
   }
 
-  .budgetFilterToolbar :global(.app-select-trigger-compact),
   .statusFilters > button,
   .budgetFilterActions > :global(button) {
     height: 44px;

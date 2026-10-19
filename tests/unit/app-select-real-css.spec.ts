@@ -493,6 +493,117 @@ test('adaptive institution menu shows medium labels completely and truncates onl
   }
 })
 
+test('budget filters render the shared Accounts controls and adaptive AppSelect menus with built V3 CSS', async ({ page }) => {
+  const css = builtCss()
+  const classes = {
+    controls: moduleClass(css, 'controls'),
+    controlsMain: moduleClass(css, 'controlsMain'),
+    portfolioBar: moduleClass(css, 'portfolioFilterBar'),
+    portfolioFilter: moduleClass(css, 'portfolioFilter'),
+    portfolioCurrency: moduleClass(css, 'portfolioFilterCurrency'),
+    portfolioType: moduleClass(css, 'portfolioFilterType'),
+    portfolioInstitution: moduleClass(css, 'portfolioFilterInstitution'),
+    budgetToolbar: moduleClass(css, 'budgetFilterToolbar'),
+    budgetMain: moduleClass(css, 'budgetFilterMain'),
+    budgetPeriod: moduleClass(css, 'budgetPeriodFilter'),
+    budgetCategory: moduleClass(css, 'budgetCategoryFilter'),
+  }
+
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 834, height: 900 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport)
+    await preparePage(page, css)
+    await page.addScriptTag({ content: `(() => {
+      const classes = ${JSON.stringify(classes)};
+      const reference = [
+        { id: 'ref-currency', value: 'all', className: classes.portfolioCurrency, options: [{ value: 'all', label: 'Todas' }, { value: 'PEN', label: 'PEN' }] },
+        { id: 'ref-type', value: 'all', className: classes.portfolioType, options: [{ value: 'all', label: 'Todos' }, { value: 'MONTHLY', label: 'Cuenta mensual' }] },
+        { id: 'ref-institution', value: 'all', className: classes.portfolioInstitution, options: [{ value: 'all', label: 'Todas' }, { value: 'bank', label: 'Banco de referencia' }] },
+      ];
+      const budgets = [
+        { id: 'budget-currency', value: 'all', className: classes.portfolioCurrency, options: [{ value: 'all', label: 'Todas' }, { value: 'PEN', label: 'PEN' }] },
+        { id: 'budget-period', value: 'all', className: classes.budgetPeriod, options: [{ value: 'all', label: 'Todas' }, { value: 'MONTHLY', label: 'Mensual' }] },
+        { id: 'budget-category', value: 'all', className: classes.budgetCategory, options: [{ value: 'all', label: 'Todas' }, { value: 'category', label: 'Categoría con etiqueta extensa de prueba' }] },
+      ];
+      function SelectGroup({ definitions, id, budget = false }) {
+        const [values, setValues] = React.useState(Object.fromEntries(definitions.map(item => [item.id, item.value])));
+        return React.createElement('div', { className: classes.controls + ' ' + classes.portfolioBar + (budget ? ' ' + classes.budgetToolbar : ''), id },
+          React.createElement('div', { className: classes.controlsMain + (budget ? ' ' + classes.budgetMain : '') },
+            ...definitions.map(item => React.createElement(window.FinTrackTestAppSelect, {
+              key: item.id, options: item.options, value: values[item.id], onChange: value => setValues(current => ({ ...current, [item.id]: value })),
+              ariaLabel: item.id, compact: true, adaptiveMenuWidth: true,
+              className: classes.portfolioFilter + ' ' + item.className + ' filters-control', testId: item.id,
+            })),
+          ),
+        );
+      }
+      function Harness() {
+        return React.createElement(React.Fragment, null,
+          React.createElement(SelectGroup, { definitions: reference, id: 'reference-toolbar' }),
+          React.createElement(SelectGroup, { definitions: budgets, id: 'budget-toolbar', budget: true }),
+        );
+      }
+      ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Harness));
+    })();` })
+
+    const sharedGeometry = await page.evaluate(() => {
+      const pick = (selector: string) => {
+        const element = document.querySelector<HTMLElement>(selector)!
+        const style = getComputedStyle(element)
+        const rect = element.getBoundingClientRect()
+        return { width: rect.width, height: rect.height, borderRadius: style.borderRadius, borderColor: style.borderColor, background: style.backgroundColor, fontFamily: style.fontFamily, fontSize: style.fontSize }
+      }
+      const reference = ['ref-currency', 'ref-type', 'ref-institution'].map(id => pick(`[data-testid="${id}"]`))
+      const budgets = ['budget-currency', 'budget-period', 'budget-category'].map(id => pick(`[data-testid="${id}"]`))
+      return { reference, budgets }
+    })
+    console.log(`Shared budget filter control geometry ${viewport.width}px`, JSON.stringify(sharedGeometry))
+
+    for (let index = 0; index < 3; index += 1) {
+      expect(sharedGeometry.budgets[index]!.height, `${viewport.width}px filter height`).toBe(sharedGeometry.reference[index]!.height)
+      expect(sharedGeometry.budgets[index]!.borderRadius).toBe(sharedGeometry.reference[index]!.borderRadius)
+      expect(sharedGeometry.budgets[index]!.borderColor).toBe(sharedGeometry.reference[index]!.borderColor)
+      expect(sharedGeometry.budgets[index]!.background).toBe(sharedGeometry.reference[index]!.background)
+      expect(sharedGeometry.budgets[index]!.fontFamily).toBe(sharedGeometry.reference[index]!.fontFamily)
+      expect(sharedGeometry.budgets[index]!.fontSize).toBe(sharedGeometry.reference[index]!.fontSize)
+      // Currency shares the exact Accounts slot. Period and category keep the shared
+      // control treatment, but their longer semantic labels need their own compact width.
+      if (index === 0) {
+        expect(Math.abs(sharedGeometry.budgets[index]!.width - sharedGeometry.reference[index]!.width)).toBeLessThanOrEqual(1)
+      } else if (viewport.width > 767) {
+        const expectedWidth = index === 1 ? 148 : 208
+        expect(Math.abs(sharedGeometry.budgets[index]!.width - expectedWidth)).toBeLessThanOrEqual(1)
+      } else {
+        // The two budget-specific controls share the available mobile grid tracks.
+        expect(sharedGeometry.budgets[index]!.width).toBeLessThanOrEqual(viewport.width - 32)
+      }
+    }
+
+    await page.getByTestId('budget-category').click()
+    const menu = page.getByRole('dialog', { name: 'budget-category' })
+    await expect(menu).toBeVisible()
+    const menuGeometry = await page.evaluate(() => {
+      const trigger = document.querySelector<HTMLElement>('[data-testid="budget-category"]')!
+      const menu = document.querySelector<HTMLElement>('.app-select-menu')!
+      const triggerRect = trigger.getBoundingClientRect()
+      const menuRect = menu.getBoundingClientRect()
+      const style = getComputedStyle(menu)
+      return { triggerWidth: triggerRect.width, menuWidth: menuRect.width, minWidth: style.minWidth, left: menuRect.left, right: menuRect.right, viewport: innerWidth }
+    })
+    expect(menuGeometry.menuWidth).toBeGreaterThanOrEqual(menuGeometry.triggerWidth - 0.5)
+    expect(menuGeometry.menuWidth).toBeLessThanOrEqual(296)
+    expect(menuGeometry.minWidth).toBe('0px')
+    expect(menuGeometry.left).toBeGreaterThanOrEqual(0)
+    expect(menuGeometry.right).toBeLessThanOrEqual(menuGeometry.viewport)
+    await menu.getByRole('combobox').fill('extensa')
+    await expect(menu.getByRole('option')).toContainText('Categoría con etiqueta extensa de prueba')
+    await expect(menu.getByRole('option')).toHaveCount(1)
+  }
+})
+
 test('matched menu flips upward near the viewport bottom and keeps dark V3 surfaces', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const css = builtCss()

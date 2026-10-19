@@ -485,6 +485,7 @@ export function BudgetsManager() {
   const [loadedPeriodMonth, setLoadedPeriodMonth] = useState<string | null>(null)
   const [detailBudget, setDetailBudget] = useState<BudgetSeriesItem | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
+  const detailContinuationRef = useRef<BudgetItem | null>(null)
   const periodFetchSequence = useRef(0)
   const resetAfterModalExitRef = useRef(false)
   const initialFormSnapshotRef = useRef(JSON.stringify(EMPTY_FORM))
@@ -728,6 +729,19 @@ export function BudgetsManager() {
     setModalOpen(true)
   }, [budgets])
 
+  const requestNextPeriodFromDetail = useCallback(() => {
+    if (!detailBudget) return
+    detailContinuationRef.current = detailBudget
+    setDetailOpen(false)
+  }, [detailBudget])
+
+  const completeDetailExit = useCallback(() => {
+    setDetailBudget(null)
+    const continuation = detailContinuationRef.current
+    detailContinuationRef.current = null
+    if (continuation) openNewPeriod(continuation)
+  }, [openNewPeriod])
+
   const budgetSeries = useMemo(() => buildBudgetSeries(budgets), [budgets])
 
   const openSeriesDetail = useCallback((budget: BudgetSeriesItem) => {
@@ -819,7 +833,7 @@ export function BudgetsManager() {
       ...periodRows.map(row => String(row.budget.currency)),
     ])
     return [
-      { value: 'all', label: 'Moneda' },
+      { value: 'all', label: 'Todas' },
       ...Array.from(currencies).sort().map(currency => ({ value: currency, label: currency })),
     ]
   }, [budgets, periodRows])
@@ -1174,7 +1188,7 @@ export function BudgetsManager() {
 
             </div>
 
-            <div className={`${movementPageStyles.controls} ${styles.budgetFilterToolbar}`} data-testid="budgets-filter-toolbar">
+            <div className={`${movementPageStyles.controls} ${movementPageStyles.portfolioFilterBar} ${styles.budgetFilterToolbar}`} data-testid="budgets-filter-toolbar">
               <div className={`${movementPageStyles.controlsMain} ${styles.budgetFilterMain}`}>
                 <DataSearchField
                   value={query}
@@ -1187,20 +1201,22 @@ export function BudgetsManager() {
                 <AppSelect
                   value={currencyFilter}
                   onChange={value => setCurrencyFilter(value as CurrencyFilter)}
-                  className={`${styles.budgetCurrencyFilter} filters-control`}
+                  className={`${movementPageStyles.portfolioFilter} ${movementPageStyles.portfolioFilterCurrency} filters-control`}
                   compact
                   searchable={false}
+                  adaptiveMenuWidth
                   options={budgetCurrencyOptions}
                   ariaLabel="Filtrar por moneda"
                 />
                 <AppSelect
                   value={periodFilter}
                   onChange={value => setPeriodFilter(value as PeriodFilter)}
-                  className={`${styles.budgetPeriodFilter} filters-control`}
+                  className={`${movementPageStyles.portfolioFilter} ${styles.budgetPeriodFilter} filters-control`}
                   compact
                   searchable={false}
+                  adaptiveMenuWidth
                   options={[
-                    { value: 'all', label: 'Periodicidad' },
+                    { value: 'all', label: 'Todas' },
                     { value: 'WEEKLY', label: 'Semanal' },
                     { value: 'MONTHLY', label: 'Mensual' },
                     { value: 'QUARTERLY', label: 'Trimestral' },
@@ -1211,10 +1227,11 @@ export function BudgetsManager() {
                 <AppSelect
                   value={categoryFilter}
                   onChange={setCategoryFilter}
-                  className={`${styles.budgetCategoryFilter} filters-control`}
+                  className={`${movementPageStyles.portfolioFilter} ${styles.budgetCategoryFilter} filters-control`}
                   searchPlaceholder="Buscar categoría..."
+                  adaptiveMenuWidth
                   options={[
-                    { value: 'all', label: 'Categoría' },
+                    { value: 'all', label: 'Todas' },
                     { value: 'none', label: 'General (sin categoría)' },
                     ...categories.map(category => ({ value: category.id, label: category.name })),
                   ]}
@@ -1938,7 +1955,8 @@ export function BudgetsManager() {
           periods={detailBudget.periods}
           onPeriodUpdated={async () => { await Promise.all([loadBudgets(), loadPeriodRows()]) }}
           onClose={() => setDetailOpen(false)}
-          onExitComplete={() => setDetailBudget(null)}
+          onExitComplete={completeDetailExit}
+          onContinueNextPeriod={requestNextPeriodFromDetail}
         />
       )}
 

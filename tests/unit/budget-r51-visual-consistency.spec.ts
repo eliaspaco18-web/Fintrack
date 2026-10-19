@@ -13,7 +13,7 @@ test('budgets opts into shared V3 header, tokens and primary action without loca
   expect(managerSource).toContain('label="Crear presupuesto"')
   expect(managerSource).toContain('className={`${movementPageStyles.v3ModulePrimaryAction} w-full sm:w-auto`}')
   expect(managerSource).not.toContain('budgetCreateButton')
-  expect(managerSource).toContain('className={`${movementPageStyles.controls} ${styles.budgetFilterToolbar}`}')
+  expect(managerSource).toContain('className={`${movementPageStyles.controls} ${movementPageStyles.portfolioFilterBar} ${styles.budgetFilterToolbar}`}')
   expect(managerSource).toContain('movementPageStyles.controlsMain')
   expect(managerSource).toContain('movementPageStyles.controlsActions')
   expect(managerSource).toContain('value={periodMonth}')
@@ -99,7 +99,6 @@ test('budget header, summary and filter toolbar follow shared V3 geometry at des
       const summaryRect = summary.getBoundingClientRect()
       const firstRect = firstIndicator.getBoundingClientRect()
       const lastRect = lastIndicator.getBoundingClientRect()
-      const triggers = Array.from(document.querySelectorAll<HTMLElement>('.budgetCurrencyFilter, .budgetPeriodFilter, .budgetCategoryFilter'))
       return {
         documentWidth: document.documentElement.scrollWidth,
         module: rect('[data-testid="budgets-module"]'),
@@ -110,7 +109,6 @@ test('budget header, summary and filter toolbar follow shared V3 geometry at des
         summary: { left: summaryRect.left, right: summaryRect.right },
         firstIndicator: { left: firstRect.left, right: firstRect.right },
         lastIndicator: { left: lastRect.left, right: lastRect.right },
-        triggers: triggers.map(trigger => ({ height: trigger.getBoundingClientRect().height, font: getComputedStyle(trigger).fontFamily })),
       }
     })
 
@@ -121,9 +119,6 @@ test('budget header, summary and filter toolbar follow shared V3 geometry at des
     expect(geometry.toolbar.left).toBeGreaterThanOrEqual(geometry.module.left - 0.5)
     expect(geometry.toolbar.right).toBeLessThanOrEqual(geometry.module.right + 0.5)
     expect(geometry.search.height).toBe(width <= 767 ? 44 : 38)
-    expect(geometry.triggers).toHaveLength(3)
-    expect(geometry.triggers.every(trigger => trigger.height === (width <= 767 ? 44 : 38))).toBe(true)
-    expect(geometry.triggers.every(trigger => trigger.font.toLowerCase().includes('manrope'))).toBe(true)
     expect(geometry.firstIndicator.left).toBeGreaterThanOrEqual(geometry.summary.left - 0.5)
     expect(geometry.firstIndicator.left).toBeLessThanOrEqual(geometry.summary.left + 1)
     if (width >= 1280) {

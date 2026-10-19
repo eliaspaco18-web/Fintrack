@@ -194,6 +194,8 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
   await installReactHarness(page)
   const source = sourceOf('components/management/BudgetDetail.tsx')
   expect(source).toContain('overlayClassName={styles.detailOverlay}')
+  expect(source).toContain('footer={onContinueNextPeriod ? (')
+  expect(source).toContain('testId="budget-detail-next-period"')
 
   await page.addScriptTag({ content: `(() => {
     const React = window.React;
@@ -209,8 +211,12 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
     };
     function Host() {
       const [open, setOpen] = React.useState(true);
+      const [mounted, setMounted] = React.useState(true);
+      window.__reopenBudgetDetail = () => { setMounted(true); setOpen(true); };
+      if (!mounted) return null;
       return React.createElement(window.__budgetExports.BudgetDetail, {
-        open, budget, periods: [budget], onClose: () => setOpen(false), onExitComplete: () => { window.__budgetExitComplete = true; },
+        open, budget, periods: [budget], onClose: () => setOpen(false), onExitComplete: () => { window.__budgetExitComplete = true; setMounted(false); },
+        onContinueNextPeriod: () => { window.__budgetContinueCalled = true; setOpen(false); },
       });
     }
     window.__budgetRoot = ReactDOM.createRoot(document.getElementById('root'));
@@ -240,8 +246,13 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
       return {
         wrapper: { left: bounds.left, right: bounds.right, width: bounds.width, height: bounds.height },
         dialog: { left: dialogBounds.left, right: dialogBounds.right, width: dialogBounds.width },
+        body: (() => { const rect = dialogNode.querySelector<HTMLElement>('[data-record-modal-body]')!.getBoundingClientRect(); return { top: rect.top, bottom: rect.bottom, height: rect.height } })(),
+        layout: (() => { const rect = dialogNode.querySelector<HTMLElement>('.detailLayout')!.getBoundingClientRect(); return { top: rect.top, bottom: rect.bottom, height: rect.height } })(),
+        detailMainBottom: dialogNode.querySelector<HTMLElement>('.detailMain')!.getBoundingClientRect().bottom,
+        footer: (() => { const rect = dialogNode.lastElementChild!.getBoundingClientRect(); return { top: rect.top, bottom: rect.bottom, height: rect.height } })(),
         documentWidth: document.documentElement.scrollWidth,
         parts,
+        display: getComputedStyle(dialogNode.querySelector<HTMLElement>('.detailLayout')!).display,
         columns: getComputedStyle(dialogNode.querySelector<HTMLElement>('.detailLayout')!).gridTemplateColumns,
       }
     })
@@ -250,8 +261,17 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
     expect(geometry.dialog.width).toBeGreaterThan(width <= 767 ? width - 30 : Math.min(580, width - 50))
     expect(geometry.documentWidth).toBeLessThanOrEqual(width)
     expect(geometry.parts.every(part => part.width > 0 && part.right <= geometry.dialog.right + 1)).toBe(true)
-    if (width > 767) expect(geometry.wrapper.width).toBeGreaterThan(580)
-    if (width <= 1120) expect(geometry.columns.split(' ').length).toBe(1)
+    if (width > 767) {
+      expect(geometry.wrapper.width).toBeGreaterThan(580)
+      expect(geometry.wrapper.left).toBeGreaterThan(0)
+      expect(geometry.wrapper.left).toBeCloseTo(width - geometry.wrapper.right, 0)
+      expect(geometry.wrapper.height).toBeLessThan(900)
+      expect(Math.abs(geometry.layout.bottom - geometry.body.bottom)).toBeLessThanOrEqual(2)
+      expect(Math.abs(geometry.detailMainBottom - geometry.layout.bottom)).toBeLessThanOrEqual(2)
+      expect(geometry.footer.height).toBeGreaterThan(0)
+    }
+    if (width <= 767) expect(geometry.display).toBe('flex')
+    else if (width <= 1120) expect(geometry.columns).not.toContain('286px')
   }
 
   const amount = page.locator('#budget-period-amount')
@@ -289,4 +309,10 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
   const nearInvisible = visibleFrames.findIndex(frame => frame.opacity <= 0.03)
   expect(nearInvisible).toBeGreaterThanOrEqual(0)
   expect(visibleFrames.slice(nearInvisible).every(frame => frame.opacity <= 0.03 && frame.veilOpacity <= 0.03)).toBe(true)
+
+  await page.evaluate(() => (window as any).__reopenBudgetDetail())
+  await expect(dialog).toBeVisible()
+  await page.getByTestId('budget-detail-next-period').click()
+  await expect.poll(() => page.evaluate(() => (window as any).__budgetContinueCalled)).toBe(true)
+  await expect(dialog).toHaveCount(0, { timeout: 1500 })
 })

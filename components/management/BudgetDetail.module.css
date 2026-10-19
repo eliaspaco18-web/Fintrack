@@ -1,21 +1,39 @@
+.detailOverlay:global([data-ft-v3][data-ft-workbench-overlay]) {
+  align-items: center;
+  justify-content: center;
+}
+
 .detailOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
-  width: min(1180px, calc(100vw - 48px));
-  margin: 12px;
+  width: min(1180px, calc(100vw - 64px));
+  height: min(780px, calc(100dvh - 48px));
+  max-height: calc(100dvh - 48px);
+  margin: 0;
+}
+
+@media (max-width: 1120px) {
+  .detailOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
+    width: calc(100vw - 32px);
+    height: min(760px, calc(100dvh - 32px));
+    max-height: calc(100dvh - 32px);
+  }
 }
 
 @media (max-width: 767px) {
   .detailOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
     width: calc(100vw - 16px);
     height: calc(100dvh - 16px);
-    margin: 8px;
+    max-height: calc(100dvh - 16px);
+    margin: 0;
   }
 }
 
 .detailLayout {
   display: grid;
   grid-template-columns: 286px minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
   min-width: 0;
-  min-height: min(66dvh, 660px);
   color: var(--ft-text-strong);
   font-family: Manrope, system-ui, sans-serif;
 }
@@ -571,15 +589,21 @@
   cursor: pointer;
 }
 
-.detailFooter {
+.workbenchFooter {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  border-top: 1px solid var(--ft-border);
-  background: var(--ft-surface);
-  padding: 13px 24px 15px;
+  width: 100%;
+  min-width: 0;
+}
+
+.footerTotals {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 28px;
 }
 
 .detailFooterValue {
@@ -604,11 +628,10 @@
 @media (max-width: 1120px) {
   .detailLayout {
     grid-template-columns: minmax(0, 1fr);
-    min-height: 0;
   }
 
   .periodRail {
-    max-height: 256px;
+    max-height: 224px;
     border-right: 0;
     border-bottom: 1px solid var(--ft-border);
   }
@@ -621,23 +644,29 @@
   .periodList {
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
     flex: 0 1 auto;
-    max-height: 136px;
+    max-height: 112px;
     padding: 10px 12px 12px;
   }
 
   .periodOption { gap: 5px; padding: 8px 10px; }
 
-  .detailMain { min-height: 560px; }
+  .detailMain { min-height: 0; }
 }
 
 @media (max-width: 767px) {
-  .detailLayout { min-height: 0; }
-  .periodRail { max-height: 286px; }
+  .detailLayout {
+    display: flex;
+    height: auto;
+    min-height: 100%;
+    flex-direction: column;
+    flex: 0 0 auto;
+  }
+  .periodRail { max-height: 260px; flex: 0 0 auto; }
   .periodFilters { grid-template-columns: 104px minmax(0, 1fr); }
   .periodSearch { height: 42px; }
   .periodList { grid-template-columns: minmax(0, 1fr); max-height: 140px; }
 
-  .detailMain { min-height: 0; }
+  .detailMain { min-height: 0; flex: 0 0 auto; }
   .detailOverview { gap: 14px; padding: 16px; }
   .periodHeadingRow { align-items: stretch; flex-direction: column; gap: 13px; }
   .amountForm { width: 100%; flex: 0 1 auto; }
@@ -670,7 +699,9 @@
     text-transform: uppercase;
   }
 
-  .detailFooter { padding-inline: 16px; }
+  .workbenchFooter { align-items: stretch; flex-direction: column; gap: 12px; }
+  .footerTotals { justify-content: space-between; gap: 12px; }
+  .workbenchFooter > :global(button) { width: 100%; }
 }
 
 @media (max-width: 420px) {
@@ -678,7 +709,7 @@
   .periodList { padding-inline: 10px; }
   .detailOverview { padding-inline: 14px; }
   .detailMetric { padding-inline: 7px; }
-  .detailFooter { align-items: flex-start; flex-direction: column; gap: 9px; padding-inline: 14px; }
+  .footerTotals { align-items: flex-start; flex-direction: column; gap: 9px; }
   .detailFooterSecondary { text-align: left; }
   .detailFooterValue { font-size: 15px; }
 }
