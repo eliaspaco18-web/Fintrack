@@ -532,7 +532,7 @@ export function BudgetDetail({ open, budget, periods, suspendFocusTrap = false, 
                   <strong className={styles.detailMetricValue}>{formatBudgetCurrency(visibleSpent, selectedBudget.currency)}</strong>
                 </div>
                 <div className={styles.detailMetric}>
-                  <p className={styles.detailMetricLabel}>Disponible</p>
+                  <p className={styles.detailMetricLabel}>{visibleRemaining < 0 ? 'Exceso' : 'Disponible'}</p>
                   <strong className={`${styles.detailMetricValue} ${visibleRemaining < 0 ? styles.detailMetricValueDanger : ''}`}>
                     {formatBudgetCurrency(Math.abs(visibleRemaining), selectedBudget.currency)}
                   </strong>

@@ -10,6 +10,7 @@ declare global {
     __budgetRoot?: { render: (node: unknown) => void }
     __budgetCloseFrames?: Array<{ phase: string; opacity: number; veilOpacity: number; width: number; height: number } | { gone: true }>
     __budgetRequests?: Array<{ url: string; method?: string; body?: string }>
+    __showZeroRemainingPeriod?: () => void
   }
 }
 
@@ -285,15 +286,23 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
       amount: 9876543210.99, spent_amount: 11234567890.87, remaining_amount: -1358024679.88,
       progress_percent: 114, over_limit: true,
     };
+    const zeroRemainingBudget = {
+      ...budget,
+      id: 'period-2026-12', budget_period_id: 'period-2026-12',
+      start_date: '2026-12-01', end_date: '2026-12-31', period_start: '2026-12-01', period_end: '2026-12-31',
+      amount: 100, spent_amount: 100, remaining_amount: 0, progress_percent: 100, over_limit: false,
+    };
     function Host() {
       const [open, setOpen] = React.useState(true);
       const [mounted, setMounted] = React.useState(true);
       const [continuationOpen, setContinuationOpen] = React.useState(false);
+      const [periods, setPeriods] = React.useState([budget, nextBudget]);
       window.__reopenBudgetDetail = () => { setMounted(true); setOpen(true); };
+      window.__showZeroRemainingPeriod = () => setPeriods([budget, nextBudget, zeroRemainingBudget]);
       if (!mounted) return null;
       return React.createElement(React.Fragment, null,
         React.createElement(window.__budgetExports.BudgetDetail, {
-          open, budget, periods: [budget, nextBudget], suspendFocusTrap: continuationOpen, onClose: () => setOpen(false), onExitComplete: () => { window.__budgetExitComplete = true; setMounted(false); },
+          open, budget, periods, suspendFocusTrap: continuationOpen, onClose: () => setOpen(false), onExitComplete: () => { window.__budgetExitComplete = true; setMounted(false); },
           onContinueNextPeriod: () => { window.__budgetContinueCalled = true; setContinuationOpen(true); },
         }),
         React.createElement(window.__budgetExports.RecordModal, {
@@ -312,6 +321,8 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
   await expect(dialog).toBeVisible()
   await expect(dialog.locator('.periodRail')).toBeVisible()
   await expect(dialog.locator('.detailMetrics')).toBeVisible()
+  await expect(dialog.locator('.detailMetricLabel').nth(2)).toHaveText('Disponible')
+  await expect(dialog.locator('.detailMetricValueDanger')).toHaveCount(0)
   await expect(dialog.locator('.amountForm')).toHaveCount(0)
   await expect(dialog.locator('[data-testid^="budget-edit-period-"]')).toHaveCount(2)
   await expect(dialog.locator('.transactionList')).toBeVisible()
@@ -410,6 +421,14 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
     expect(overLimitGeometry.values.every(value => value.scrollWidth <= value.clientWidth + 1)).toBe(true)
     await dialog.getByTestId('budget-select-period-period-2026-10').click()
   }
+
+  await page.evaluate(() => window.__showZeroRemainingPeriod?.())
+  await dialog.getByTestId('budget-select-period-period-2026-12').click()
+  await expect(dialog.locator('.detailMetricLabel').nth(2)).toHaveText('Disponible')
+  await expect(dialog.locator('.detailMetricValueDanger')).toHaveCount(0)
+  await dialog.getByTestId('budget-select-period-period-2026-11').click()
+  await expect(dialog.locator('.detailMetricLabel').nth(2)).toHaveText('Exceso')
+  await expect(dialog.locator('.detailMetricValueDanger')).toContainText('1,358,024,679.88')
 
   await dialog.getByTestId('budget-edit-period-period-2026-10').click()
   const editor = page.getByTestId('budget-period-editor-workbench')
