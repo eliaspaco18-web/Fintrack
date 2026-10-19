@@ -1,0 +1,677 @@
+.detailLayout {
+  display: grid;
+  grid-template-columns: 286px minmax(0, 1fr);
+  min-width: 0;
+  min-height: min(66dvh, 660px);
+  color: var(--ft-text-strong);
+  font-family: Manrope, system-ui, sans-serif;
+}
+
+.periodRail {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  border-right: 1px solid var(--ft-border);
+  background: var(--ft-surface-muted);
+}
+
+.periodRailHeader {
+  display: grid;
+  gap: 14px;
+  border-bottom: 1px solid var(--ft-border);
+  padding: 18px 18px 16px;
+}
+
+.periodRailTitleRow {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sectionEyebrow {
+  margin: 0;
+  color: var(--ft-text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+
+.periodCount {
+  flex: 0 0 auto;
+  border: 1px solid var(--ft-border);
+  border-radius: 999px;
+  background: var(--ft-surface);
+  padding: 3px 8px;
+  color: var(--ft-text-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 15px;
+}
+
+.periodFilters {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.periodYearSelect {
+  min-width: 0;
+}
+
+.periodSearch,
+.transactionSearch {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  border: 1px solid var(--ft-border);
+  border-radius: 10px;
+  background: var(--ft-surface);
+  padding: 0 11px;
+  color: var(--ft-text-strong);
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.periodSearch::placeholder,
+.transactionSearch::placeholder {
+  color: var(--ft-text-subtle);
+}
+
+.periodSearch:focus-visible,
+.transactionSearch:focus-visible {
+  border-color: var(--ft-primary);
+  outline: 2px solid var(--ft-focus-ring-color);
+  outline-offset: 2px;
+}
+
+.periodList {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  align-content: start;
+  gap: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px;
+}
+
+.periodOption {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ft-surface) 68%, transparent);
+  padding: 10px 11px;
+  color: var(--ft-text-muted);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
+}
+
+.periodOption:hover {
+  border-color: var(--ft-border);
+  background: var(--ft-surface);
+  color: var(--ft-text-strong);
+}
+
+.periodOption:focus-visible {
+  outline: 2px solid var(--ft-focus-ring-color);
+  outline-offset: 2px;
+}
+
+.periodOption[data-selected='true'] {
+  border-color: color-mix(in srgb, var(--ft-primary) 34%, var(--ft-border));
+  background: var(--ft-surface);
+  color: var(--ft-text-strong);
+  box-shadow: 0 1px 3px rgb(24 39 33 / 5%);
+}
+
+.periodOptionTop,
+.periodOptionAmounts {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.periodOptionRange {
+  overflow: hidden;
+  color: var(--ft-text-strong);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.periodOptionDot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.periodOptionAmounts {
+  color: var(--ft-text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+}
+
+.periodOptionAmount {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.periodOptionProgress {
+  display: grid;
+  gap: 5px;
+}
+
+.periodOptionProgressLabel {
+  color: var(--ft-text-subtle);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 15px;
+}
+
+.periodEmpty {
+  display: grid;
+  min-height: 120px;
+  place-content: center;
+  border: 1px dashed var(--ft-border);
+  border-radius: 10px;
+  background: var(--ft-surface);
+  padding: 18px;
+  color: var(--ft-text-muted);
+  font-size: 12px;
+  line-height: 19px;
+  text-align: center;
+}
+
+.detailMain {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--ft-surface);
+}
+
+.detailOverview {
+  display: grid;
+  gap: 18px;
+  border-bottom: 1px solid var(--ft-border);
+  padding: 20px 24px 18px;
+}
+
+.periodHeadingRow {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.selectedPeriodCopy {
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.selectedPeriodDate {
+  margin: 5px 0 0;
+  color: var(--ft-text-strong);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 23px;
+  overflow-wrap: anywhere;
+}
+
+.selectedStatusDescription {
+  margin: 4px 0 0;
+  color: var(--ft-text-muted);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.amountForm {
+  display: grid;
+  width: min(100%, 360px);
+  flex: 0 0 min(100%, 360px);
+  gap: 7px;
+}
+
+.amountLabel,
+.detailMetricLabel,
+.transactionColumnLabel,
+.detailFooterLabel {
+  margin: 0;
+  color: var(--ft-text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  letter-spacing: .025em;
+  text-transform: uppercase;
+}
+
+.amountControl {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+}
+
+.amountInput {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  border: 1px solid var(--ft-border);
+  border-radius: 10px;
+  background: var(--ft-surface);
+  padding: 0 12px;
+  color: var(--ft-text-strong);
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.amountInput:focus-visible {
+  border-color: var(--ft-primary);
+  outline: 2px solid var(--ft-focus-ring-color);
+  outline-offset: 2px;
+}
+
+.saveAmountButton {
+  min-width: 88px;
+  height: 40px;
+  border: 1px solid var(--ft-primary);
+  border-radius: 10px;
+  background: var(--ft-primary);
+  padding: 0 13px;
+  color: var(--ft-text-on-primary);
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.saveAmountButton:hover:not(:disabled) {
+  border-color: var(--ft-primary-hover);
+  background: var(--ft-primary-hover);
+}
+
+.saveAmountButton:disabled {
+  border-color: var(--ft-border);
+  background: var(--ft-surface-muted);
+  color: var(--ft-text-subtle);
+  cursor: not-allowed;
+}
+
+.saveAmountButton:focus-visible {
+  outline: 2px solid var(--ft-focus-ring-color);
+  outline-offset: 2px;
+}
+
+.inlineError {
+  margin: 0;
+  color: var(--ft-danger);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.detailMetrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid var(--ft-border);
+  border-bottom: 1px solid var(--ft-border);
+  padding: 13px 0;
+}
+
+.detailMetric {
+  min-width: 0;
+  padding: 0 16px;
+}
+
+.detailMetric:first-child { padding-left: 0; }
+.detailMetric + .detailMetric { border-left: 1px solid var(--ft-border); }
+
+.detailMetricValue {
+  display: block;
+  margin-top: 4px;
+  color: var(--ft-text-strong);
+  font-size: clamp(15px, 1.2vw, 19px);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 25px;
+  letter-spacing: -.02em;
+  overflow-wrap: anywhere;
+}
+
+.detailMetricValueDanger { color: var(--ft-danger); }
+
+.execution {
+  display: grid;
+  gap: 8px;
+}
+
+.executionHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ft-text-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.executionPercent {
+  color: var(--ft-text-strong);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.progressTrack {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--ft-surface-muted);
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ft-primary);
+  transition: width 180ms ease;
+}
+
+.toneDanger { color: var(--ft-danger); }
+.toneWarning { color: var(--ft-warning); }
+.toneOk { color: var(--ft-success); }
+.toneEmpty { color: var(--ft-text-subtle); }
+.fillDanger { background: var(--ft-danger); }
+.fillWarning { background: var(--ft-warning); }
+.fillOk { background: var(--ft-success); }
+.fillEmpty { background: var(--ft-text-subtle); }
+
+.statusBadge {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--ft-border);
+  border-radius: 999px;
+  background: var(--ft-surface-muted);
+  padding: 3px 8px;
+  color: var(--ft-text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  white-space: nowrap;
+}
+
+.statusDot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.badgeDanger { border-color: color-mix(in srgb, var(--ft-danger) 28%, var(--ft-border)); background: var(--ft-danger-soft); color: var(--ft-danger); }
+.badgeWarning { border-color: color-mix(in srgb, var(--ft-warning) 30%, var(--ft-border)); background: var(--ft-warning-soft); color: var(--ft-warning); }
+.badgeOk { border-color: color-mix(in srgb, var(--ft-success) 28%, var(--ft-border)); background: var(--ft-success-soft); color: var(--ft-success); }
+
+.transactionToolbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid var(--ft-border);
+  padding: 12px 24px;
+}
+
+.transactionTitle {
+  margin: 0;
+  color: var(--ft-text-strong);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19px;
+}
+
+.transactionCount {
+  flex: 0 0 auto;
+  color: var(--ft-text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.transactionSearch {
+  max-width: 320px;
+  height: 36px;
+}
+
+.transactionList {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 14px 24px;
+}
+
+.transactionTable {
+  min-width: 0;
+}
+
+.transactionHeader,
+.transactionRow {
+  display: grid;
+  grid-template-columns: 104px minmax(0, .9fr) minmax(0, .9fr) minmax(0, 1.35fr) minmax(118px, .75fr);
+  align-items: center;
+  gap: 14px;
+}
+
+.transactionHeader {
+  padding: 0 10px 9px;
+  color: var(--ft-text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  letter-spacing: .025em;
+  text-transform: uppercase;
+}
+
+.transactionRow {
+  min-height: 58px;
+  border-top: 1px solid var(--ft-border);
+  padding: 10px;
+  color: var(--ft-text-strong);
+}
+
+.transactionCell {
+  min-width: 0;
+  color: var(--ft-text-strong);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.transactionCellMuted { color: var(--ft-text-muted); }
+.transactionAmount { text-align: right; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.mobileCellLabel { display: none; }
+
+.detailEmpty,
+.detailError {
+  display: grid;
+  min-height: 220px;
+  place-content: center;
+  gap: 6px;
+  border: 1px dashed var(--ft-border);
+  border-radius: 12px;
+  background: var(--ft-surface-muted);
+  padding: 24px;
+  text-align: center;
+}
+
+.detailEmptyTitle {
+  margin: 0;
+  color: var(--ft-text-strong);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19px;
+}
+
+.detailEmptyCopy {
+  max-width: 44ch;
+  margin: 0 auto;
+  color: var(--ft-text-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.retryButton {
+  justify-self: center;
+  min-height: 34px;
+  border: 1px solid color-mix(in srgb, var(--ft-danger) 35%, var(--ft-border));
+  border-radius: 9px;
+  background: var(--ft-surface);
+  padding: 0 12px;
+  color: var(--ft-danger);
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.detailFooter {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-top: 1px solid var(--ft-border);
+  background: var(--ft-surface);
+  padding: 13px 24px 15px;
+}
+
+.detailFooterValue {
+  margin: 3px 0 0;
+  color: var(--ft-text-strong);
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 24px;
+}
+
+.detailFooterSecondary {
+  text-align: right;
+}
+
+.detailFooterSecondary .detailFooterValue {
+  color: var(--ft-text-muted);
+  font-size: 13px;
+  line-height: 19px;
+}
+
+@media (max-width: 1120px) {
+  .detailLayout {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+  }
+
+  .periodRail {
+    max-height: 256px;
+    border-right: 0;
+    border-bottom: 1px solid var(--ft-border);
+  }
+
+  .periodRailHeader {
+    gap: 11px;
+    padding: 14px 18px 12px;
+  }
+
+  .periodList {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+    flex: 0 1 auto;
+    max-height: 136px;
+    padding: 10px 12px 12px;
+  }
+
+  .periodOption { gap: 5px; padding: 8px 10px; }
+
+  .detailMain { min-height: 560px; }
+}
+
+@media (max-width: 767px) {
+  .detailLayout { min-height: 0; }
+  .periodRail { max-height: 286px; }
+  .periodFilters { grid-template-columns: 104px minmax(0, 1fr); }
+  .periodSearch { height: 42px; }
+  .periodList { grid-template-columns: minmax(0, 1fr); max-height: 140px; }
+
+  .detailMain { min-height: 0; }
+  .detailOverview { gap: 14px; padding: 16px; }
+  .periodHeadingRow { align-items: stretch; flex-direction: column; gap: 13px; }
+  .amountForm { width: 100%; flex: 0 1 auto; }
+  .detailMetric { padding: 0 10px; }
+  .detailMetric:first-child { padding-left: 0; }
+  .detailMetricValue { font-size: clamp(13px, 3.8vw, 17px); line-height: 21px; }
+  .detailMetricLabel { font-size: 9px; line-height: 13px; }
+
+  .transactionToolbar { align-items: flex-start; flex-direction: column; gap: 8px; padding: 12px 16px; }
+  .transactionToolbarSearch { width: 100%; }
+  .transactionSearch { max-width: none; height: 42px; }
+  .transactionList { flex: 0 0 auto; overflow: visible; padding: 12px 16px; }
+  .transactionHeader { display: none; }
+  .transactionRow {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 10px 14px;
+    min-height: 0;
+    padding: 12px 2px;
+  }
+  .transactionDescription { grid-column: 1 / -1; }
+  .transactionAmount { text-align: left; }
+  .mobileCellLabel {
+    display: block;
+    margin-bottom: 2px;
+    color: var(--ft-text-subtle);
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 13px;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+  }
+
+  .detailFooter { padding-inline: 16px; }
+}
+
+@media (max-width: 420px) {
+  .periodRailHeader { padding-inline: 14px; }
+  .periodList { padding-inline: 10px; }
+  .detailOverview { padding-inline: 14px; }
+  .detailMetric { padding-inline: 7px; }
+  .detailFooter { align-items: flex-start; flex-direction: column; gap: 9px; padding-inline: 14px; }
+  .detailFooterSecondary { text-align: left; }
+  .detailFooterValue { font-size: 15px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .periodOption,
+  .saveAmountButton,
+  .progressFill { transition: none; }
+}

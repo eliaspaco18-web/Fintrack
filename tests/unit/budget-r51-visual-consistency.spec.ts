@@ -10,7 +10,8 @@ const budgetCssFixture = budgetCss.replace(/:global\(([^()]*)\)/g, '$1')
 
 test('budgets opts into shared V3 header, tokens and primary action without local button variants', () => {
   expect(managerSource).toContain('className={`max-w-none !gap-0 ${movementPageStyles.v3ModuleContent}`}')
-  expect(managerSource).toContain('className={movementPageStyles.v3ModulePrimaryAction}')
+  expect(managerSource).toContain('label="Crear presupuesto"')
+  expect(managerSource).not.toContain('className={movementPageStyles.v3ModulePrimaryAction}')
   expect(managerSource).not.toContain('budgetCreateButton')
   expect(managerSource).toContain('className={`${movementPageStyles.controls} ${styles.budgetFilterToolbar}`}')
   expect(managerSource).toContain('movementPageStyles.controlsMain')
@@ -34,6 +35,7 @@ test('budget header, summary and filter toolbar follow shared V3 geometry at des
       :root[data-theme='dark'] { --ft-r07-surface: #1f2529; --ft-r07-line: #3b444a; --ft-r07-ink: #edf1f3; --ft-r07-muted: #abb5bb; --ft-r07-hover: #2b3338; --ft-primary: #54b88b; --ft-text-on-primary: #12251b; --ft-control: #48535a; --ft-text-strong: #edf1f3; --ft-text-subtle: #9aa6ad; }
       html, body { margin: 0; min-height: 100%; width: 100%; font: 13px Manrope, system-ui, sans-serif; color: var(--ft-r07-ink); }
       .shellContent { width: min(calc(100vw - var(--rail) - 48px), 1440px); margin-left: calc(var(--rail) + 24px); padding: 22px 0 40px; }
+      .module-create-btn { height: 40px; min-height: 40px; }
       .summaryCurrency { display: flex; min-width: 0; width: 100%; flex: 1 1 100%; flex-wrap: wrap; align-items: flex-start; justify-content: flex-start; gap: 24px 36px; }
       .summaryCurrency > div { flex: 0 1 auto; min-width: min(176px, 100%); }
       .summaryValue { font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -61,7 +63,7 @@ test('budget header, summary and filter toolbar follow shared V3 geometry at des
     </style>
     <main class="v3ModuleContent shellContent" data-testid="budgets-module">
       <div class="pageOverview budgetOverview" data-testid="budgets-page-overview">
-        <header><div><h1>Presupuestos</h1><p>Control de límites por período.</p></div><div class="budgetHeaderActions"><div class="headerPeriodControl"><button class="headerPeriodTrigger">Octubre 2026</button></div><button class="v3ModulePrimaryAction" data-testid="budgets-create-button">Crear presupuesto</button></div></header>
+        <header><div><h1>Presupuestos</h1><p>Control de límites por período.</p></div><div class="budgetHeaderActions"><div class="headerPeriodControl"><button class="headerPeriodTrigger">Octubre 2026</button></div><button class="module-create-btn" data-testid="budgets-create-button">Crear presupuesto</button></div></header>
         <section class="summary budgetSummary" data-testid="budgets-summary"><div class="summaryCurrency"><div class="summaryItem"><p>Asignado · PEN</p><div class="summaryValue">S/ 1,234.00</div></div><div class="summaryItem"><p>Gastado · PEN</p><div class="summaryValue">S/ 456.00</div></div><div class="summaryItem"><p>Disponible · PEN</p><div class="summaryValue">S/ 778.00</div></div></div></section>
       </div>
       <nav class="tabs"><button>Este período</button><button>Excedidos</button><button>Otros períodos</button></nav>
@@ -117,7 +119,7 @@ test('budget header, summary and filter toolbar follow shared V3 geometry at des
     expect(geometry.documentWidth, `${width}px viewport should not overflow`).toBeLessThanOrEqual(width)
     expect(geometry.module.left).toBeGreaterThanOrEqual(0)
     expect(geometry.module.right).toBeLessThanOrEqual(width + 0.5)
-    expect(geometry.action.height).toBe(36)
+    expect(geometry.action.height).toBe(40)
     expect(geometry.period.height).toBe(width <= 520 ? 40 : 36)
     expect(geometry.toolbar.left).toBeGreaterThanOrEqual(geometry.module.left - 0.5)
     expect(geometry.toolbar.right).toBeLessThanOrEqual(geometry.module.right + 0.5)

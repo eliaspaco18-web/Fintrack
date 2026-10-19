@@ -8,6 +8,7 @@ import type { CurrencyCode, BudgetPeriod } from '@/types/database.types'
 import { createBudgetRecordActionScope } from '@/modules/budgets/budget-action-scope'
 import { formatBudgetCurrency } from '@/lib/budgets/presentation'
 import { AppSelect } from '@/components/ui/AppSelect'
+import styles from '@/components/management/BudgetDetail.module.css'
 import {
   mergeBudgetPeriodItems,
   resolveBudgetPeriodAmountUrl,
@@ -147,29 +148,13 @@ function getPeriodStatus(period: BudgetRef): {
 function getToneClasses(tone: 'ok' | 'warning' | 'danger' | 'empty') {
   switch (tone) {
     case 'danger':
-      return {
-        badge: 'border-red-400/30 bg-red-500/10 text-red-500',
-        bar: 'bg-red-500',
-        dot: 'bg-red-500',
-      }
+      return { badge: styles.badgeDanger, bar: styles.fillDanger, dot: styles.toneDanger }
     case 'warning':
-      return {
-        badge: 'border-amber-400/35 bg-amber-500/10 text-amber-600',
-        bar: 'bg-amber-500',
-        dot: 'bg-amber-500',
-      }
+      return { badge: styles.badgeWarning, bar: styles.fillWarning, dot: styles.toneWarning }
     case 'empty':
-      return {
-        badge: 'border-[var(--c-border)] bg-[var(--c-surface-2)] text-[var(--c-text-muted)]',
-        bar: 'bg-[var(--c-text-faint)]',
-        dot: 'bg-[var(--c-text-faint)]',
-      }
+      return { badge: '', bar: styles.fillEmpty, dot: styles.toneEmpty }
     default:
-      return {
-        badge: 'border-emerald-400/30 bg-emerald-500/10 text-emerald-600',
-        bar: 'bg-[var(--c-accent)]',
-        dot: 'bg-[var(--c-accent)]',
-      }
+      return { badge: styles.badgeOk, bar: styles.fillOk, dot: styles.toneOk }
   }
 }
 
@@ -396,276 +381,210 @@ export function BudgetDetail({ open, budget, periods, onClose, onExitComplete, o
       onExitComplete={onExitComplete}
       presentation="workbench"
       size="xl"
-      widthClassName="w-[calc(100vw-32px)] max-w-[1120px]"
+      widthClassName="w-[calc(100vw-40px)] max-w-[1320px]"
       eyebrow="Detalle de presupuesto"
       title={budget.name}
       subtitle={`${formatRange(selectedBudget.period_start, selectedBudget.period_end)}${budget.category ? ` · ${budget.category.name}` : ''}`}
-      headerBadge={<span className={`rounded-md border px-2 py-1 text-[10px] font-semibold ${selectedTone.badge}`}>{selectedStatus.label}</span>}
+      headerBadge={<span className={`${styles.statusBadge} ${selectedTone.badge}`}><span className={styles.statusDot} aria-hidden="true" />{selectedStatus.label}</span>}
       bodyClassName="!p-0"
       testId="budget-detail-workbench"
     >
-          <div className="grid min-h-[min(68dvh,680px)] grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)]">
-            <aside className="flex min-h-0 flex-col border-b border-[var(--c-border)] bg-[var(--c-surface-2)] lg:border-b-0 lg:border-r">
-              <div className="border-b border-[var(--c-border)] px-4 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-[10px] font-semibold uppercase text-[var(--c-text-muted)]">
-                    Periodos de la serie
-                  </p>
-                  <span className="rounded-md bg-[var(--c-surface)] px-2 py-1 text-[11px] text-[var(--c-text-muted)]">
-                    {visiblePeriods.length}/{seriesPeriods.length}
-                  </span>
-                </div>
-
-                <div className="mt-3 grid gap-2 sm:grid-cols-[120px_minmax(0,1fr)]">
-                  <AppSelect
-                    value={periodYearFilter}
-                    onChange={setPeriodYearFilter}
-                    className="w-full"
-                    compact
-                    searchable={false}
-                    options={periodYearOptions}
-                    aria-label="Filtrar periodos por año"
-                  />
-                  <input
-                    value={periodSearch}
-                    onChange={event => setPeriodSearch(event.target.value)}
-                    placeholder="Buscar periodo o estado..."
-                    className="field-base h-9 w-full px-3 text-[12px]"
-                  />
-                </div>
-              </div>
-
-              <div className="min-h-[220px] flex-1 overflow-y-auto px-3 py-3">
-                {visiblePeriods.length === 0 ? (
-                  <div className="flex h-full min-h-[220px] items-center justify-center rounded-xl border border-dashed border-[var(--c-border)] bg-[var(--c-surface)] px-4 text-center">
-                    <p className="text-[12px] leading-5 text-[var(--c-text-muted)]">
-                      No hay periodos para el filtro seleccionado.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2">
-                    {visiblePeriods.map(period => {
-                      const selected = period.id === selectedBudget.id
-                      const periodProgress = clampProgress(period.progress_percent)
-                      const periodStatus = getPeriodStatus(period)
-                      const tone = getToneClasses(periodStatus.tone)
-
-                      return (
-                        <button
-                          key={period.id}
-                          type="button"
-                          onClick={() => requestPeriodSelection(period.id)}
-                          className={`min-h-[86px] rounded-xl border px-2.5 py-2 text-left transition-all duration-200 active:scale-[0.99] ${
-                            selected
-                              ? 'border-[var(--c-accent)] bg-[var(--c-surface)] shadow-sm text-[var(--c-text)]'
-                              : 'border-transparent bg-[var(--c-surface)]/75 text-[var(--c-text-muted)] hover:border-[var(--c-border-hover)] hover:bg-[var(--c-surface)] hover:text-[var(--c-text)]'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="truncate text-[11px] font-semibold text-[var(--c-text)]">
-                              {formatRangeCompact(period.period_start, period.period_end)}
-                            </span>
-                            <span className={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`} />
-                          </div>
-                          <div className="mt-1 flex items-baseline justify-between gap-2">
-                            <span className="truncate text-[10px] tabular-nums text-[var(--c-text-faint)]">
-                              {formatBudgetCurrency(Number(period.amount ?? 0), period.currency)}
-                            </span>
-                            <span className="text-[10px] font-semibold tabular-nums text-[var(--c-text-muted)]">
-                              {periodProgress.toFixed(0)}%
-                            </span>
-                          </div>
-                          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--c-border)]">
-                            <div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${Math.min(100, periodProgress)}%` }} />
-                          </div>
-                          <span className={`mt-2 inline-flex max-w-full rounded-md border px-1.5 py-0.5 text-[9px] font-semibold ${tone.badge}`}>
-                            <span className="truncate">{periodStatus.label}</span>
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            </aside>
-
-            <section className="flex min-h-0 flex-col">
-              <div className="border-b border-[var(--c-border)] px-5 py-4">
-                <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-semibold uppercase text-[var(--c-text-muted)]">Periodo seleccionado</p>
-                    <p className="mt-1 text-sm font-semibold text-[var(--c-text)]">
-                      {formatRange(selectedBudget.period_start, selectedBudget.period_end)}
-                    </p>
-                    <p className="mt-1 text-[11px] text-[var(--c-text-faint)]">{selectedStatus.description}</p>
-                  </div>
-
-                  <form
-                    onSubmit={event => {
-                      event.preventDefault()
-                      void savePeriodAmount()
-                    }}
-                    className="w-full rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] p-3 xl:w-[360px]"
-                  >
-                    <label htmlFor="budget-period-amount" className="text-[10px] font-semibold uppercase text-[var(--c-text-muted)]">
-                      Importe del periodo
-                    </label>
-                    <div className="mt-2 flex gap-2">
-                      <input
-                        id="budget-period-amount"
-                        value={periodAmount}
-                        onChange={event => setPeriodAmount(event.target.value)}
-                        inputMode="decimal"
-                        className="field-base min-w-0 flex-1 px-3 py-2 text-sm font-semibold tabular-nums"
-                        aria-invalid={amountError ? 'true' : 'false'}
-                      />
-                      <button
-                        type="submit"
-                        disabled={!amountChanged || amountSaving}
-                        className="rounded-lg bg-[var(--c-accent)] px-3 py-2 text-[12px] font-semibold text-white transition-colors hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-45"
-                      >
-                        {amountSaving ? 'Guardando' : 'Guardar'}
-                      </button>
-                    </div>
-                    {amountError && <p className="mt-2 text-[11px] text-red-500">{amountError}</p>}
-                  </form>
-                </div>
-
-                <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-3">
-                    <p className="text-[10px] font-semibold uppercase text-[var(--c-text-muted)]">Presupuesto</p>
-                    <p className="mt-1 text-base font-bold tabular-nums text-[var(--c-text)]">
-                      {formatBudgetCurrency(Number(selectedBudget.amount ?? 0), selectedBudget.currency)}
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-3">
-                    <p className="text-[10px] font-semibold uppercase text-[var(--c-text-muted)]">Ejecutado</p>
-                    <p className="mt-1 text-base font-bold tabular-nums text-[var(--c-text)]">
-                      {formatBudgetCurrency(visibleSpent, selectedBudget.currency)}
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-3">
-                    <p className="text-[10px] font-semibold uppercase text-[var(--c-text-muted)]">
-                      {visibleRemaining < 0 ? 'Exceso' : 'Disponible'}
-                    </p>
-                    <p className={`mt-1 text-base font-bold tabular-nums ${visibleRemaining < 0 ? 'text-red-500' : 'text-[var(--c-text)]'}`}>
-                      {formatBudgetCurrency(Math.abs(visibleRemaining), selectedBudget.currency)}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-4">
-                  <div className="flex items-center justify-between gap-3 text-[11px]">
-                    <span className="font-semibold text-[var(--c-text-muted)]">Ejecucion</span>
-                    <span className={`font-bold tabular-nums ${selectedBudget.over_limit ? 'text-red-500' : 'text-[var(--c-text)]'}`}>
-                      {progress.toFixed(0)}%
-                    </span>
-                  </div>
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--c-border)]">
-                    <div className={`h-full rounded-full ${selectedTone.bar}`} style={{ width: `${Math.min(100, progress)}%` }} />
-                  </div>
-                </div>
-              </div>
-
-              <div className="border-b border-[var(--c-border)] px-5 py-3">
-                <input
-                  value={query}
-                  onChange={e => setQuery(e.target.value)}
-                  placeholder="Buscar por descripcion, portafolio o destinatario..."
-                  className="field-base w-full"
-                />
-              </div>
-
-              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-                {loading ? (
-                  <div className="space-y-2">
-                    {[0, 1, 2].map(item => (
-                      <div key={item} className="h-14 animate-pulse rounded-xl bg-[var(--c-surface-2)]" />
-                    ))}
-                  </div>
-                ) : error ? (
-                  <div className="flex h-full min-h-[260px] flex-col items-center justify-center gap-3 text-center">
-                    <p className="text-[12px] text-red-500">{error}</p>
-                    <button
-                      type="button"
-                      onClick={() => void load()}
-                      className="rounded-md border border-red-400/35 px-3 py-1.5 text-[11px] font-semibold text-red-500 transition-colors hover:bg-red-500/10"
-                    >
-                      Reintentar
-                    </button>
-                  </div>
-                ) : filtered.length === 0 ? (
-                  <div className="flex h-full min-h-[260px] flex-col items-center justify-center rounded-xl border border-dashed border-[var(--c-border)] bg-[var(--c-surface-2)] px-6 text-center">
-                    <p className="text-sm font-semibold text-[var(--c-text)]">
-                      {q ? 'Sin coincidencias' : 'Sin transacciones en este periodo'}
-                    </p>
-                    <p className="mt-1 max-w-sm text-[12px] leading-5 text-[var(--c-text-muted)]">
-                      {q
-                        ? 'Prueba con otro termino de busqueda.'
-                        : 'El periodo mantiene su tamano y sus indicadores aunque todavia no tenga movimientos asociados.'}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="hidden grid-cols-[110px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.35fr)_120px] gap-3 px-3 text-[10px] font-semibold uppercase text-[var(--c-text-faint)] md:grid">
-                      <span>Fecha</span>
-                      <span>Portafolio</span>
-                      <span>Destinatario</span>
-                      <span>Descripcion</span>
-                      <span className="text-right">Importe</span>
-                    </div>
-
-                    {filtered.map(tx => (
-                      <div
-                        key={tx.id}
-                        className="grid grid-cols-1 gap-3 rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-4 py-3 md:grid-cols-[110px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.35fr)_120px] md:items-center"
-                      >
-                        <div>
-                          <p className="text-[10px] uppercase text-[var(--c-text-faint)] md:hidden">Fecha</p>
-                          <p className="text-[12px] text-[var(--c-text-muted)]">{formatDate(tx.date)}</p>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[10px] uppercase text-[var(--c-text-faint)] md:hidden">Portafolio</p>
-                          <p className="truncate text-[13px] text-[var(--c-text)]">{tx.portfolio ?? '-'}</p>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[10px] uppercase text-[var(--c-text-faint)] md:hidden">Destinatario</p>
-                          <p className="truncate text-[13px] text-[var(--c-text)]">{tx.recipient ?? '-'}</p>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[10px] uppercase text-[var(--c-text-faint)] md:hidden">Descripcion</p>
-                          <p className="text-[13px] leading-5 text-[var(--c-text)]">{tx.description ?? '-'}</p>
-                        </div>
-                        <div className="md:text-right">
-                          <p className="text-[10px] uppercase text-[var(--c-text-faint)] md:hidden">Importe</p>
-                          <span className="shrink-0 text-sm font-bold tabular-nums text-red-500">
-                            -{formatBudgetCurrency(Number(tx.amount ?? 0), tx.currency)}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <footer className="flex items-center justify-between gap-4 border-t border-[var(--c-border)] px-5 py-4">
-                <div>
-                  <p className="text-[10px] font-semibold uppercase text-[var(--c-text-muted)]">
-                    Total gastado ({filtered.length} transaccion{filtered.length !== 1 ? 'es' : ''})
-                  </p>
-                  <p className="text-lg font-bold tabular-nums text-[var(--c-text)]">
-                    {formatBudgetCurrency(Math.round(totalSpent * 100) / 100, selectedBudget.currency)}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-[10px] font-semibold uppercase text-[var(--c-text-muted)]">Presupuesto</p>
-                  <p className="text-sm font-semibold tabular-nums text-[var(--c-text-muted)]">
-                    {formatBudgetCurrency(Number(selectedBudget.amount ?? 0), selectedBudget.currency)}
-                  </p>
-                </div>
-              </footer>
-            </section>
+      <div className={styles.detailLayout} data-testid="budget-detail-layout">
+        <aside className={styles.periodRail} aria-label="Períodos de la serie">
+          <div className={styles.periodRailHeader}>
+            <div className={styles.periodRailTitleRow}>
+              <p className={styles.sectionEyebrow}>Períodos de la serie</p>
+              <span className={styles.periodCount}>{visiblePeriods.length}/{seriesPeriods.length}</span>
+            </div>
+            <div className={styles.periodFilters}>
+              <AppSelect
+                value={periodYearFilter}
+                onChange={setPeriodYearFilter}
+                className={styles.periodYearSelect}
+                compact
+                searchable={false}
+                options={periodYearOptions}
+                aria-label="Filtrar períodos por año"
+              />
+              <input
+                value={periodSearch}
+                onChange={event => setPeriodSearch(event.target.value)}
+                placeholder="Buscar período o estado"
+                aria-label="Buscar período de presupuesto"
+                className={styles.periodSearch}
+              />
+            </div>
           </div>
+
+          <div className={styles.periodList}>
+            {visiblePeriods.length === 0 ? (
+              <div className={styles.periodEmpty}>No hay períodos para el filtro seleccionado.</div>
+            ) : visiblePeriods.map(period => {
+              const selected = period.id === selectedBudget.id
+              const periodProgress = clampProgress(period.progress_percent)
+              const periodStatus = getPeriodStatus(period)
+              const tone = getToneClasses(periodStatus.tone)
+
+              return (
+                <button
+                  key={period.id}
+                  type="button"
+                  onClick={() => requestPeriodSelection(period.id)}
+                  className={styles.periodOption}
+                  data-selected={selected}
+                  aria-current={selected ? 'true' : undefined}
+                  aria-label={`${formatRange(period.period_start, period.period_end)}, ${periodStatus.label}, ${formatBudgetCurrency(Number(period.amount ?? 0), period.currency)}`}
+                >
+                  <span className={styles.periodOptionTop}>
+                    <span className={styles.periodOptionRange}>{formatRange(period.period_start, period.period_end)}</span>
+                    <span className={`${styles.periodOptionDot} ${tone.dot}`} aria-hidden="true" />
+                  </span>
+                  <span className={styles.periodOptionAmounts}>
+                    <span className={styles.periodOptionAmount}>{formatBudgetCurrency(Number(period.amount ?? 0), period.currency)} · {periodStatus.label}</span>
+                    <span className={styles.periodOptionProgressLabel}>{periodProgress.toFixed(0)}%</span>
+                  </span>
+                  <span className={styles.progressTrack} aria-hidden="true">
+                    <span className={`${styles.progressFill} ${tone.bar}`} style={{ width: `${Math.min(100, periodProgress)}%` }} />
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </aside>
+
+        <section className={styles.detailMain} aria-label="Detalle del período seleccionado">
+          <div className={styles.detailOverview}>
+            <div className={styles.periodHeadingRow}>
+              <div className={styles.selectedPeriodCopy}>
+                <p className={styles.sectionEyebrow}>Período seleccionado</p>
+                <h3 className={styles.selectedPeriodDate}>{formatRange(selectedBudget.period_start, selectedBudget.period_end)}</h3>
+                <p className={styles.selectedStatusDescription}>{selectedStatus.description}</p>
+              </div>
+
+              <form
+                onSubmit={event => {
+                  event.preventDefault()
+                  void savePeriodAmount()
+                }}
+                className={styles.amountForm}
+              >
+                <label htmlFor="budget-period-amount" className={styles.amountLabel}>Importe del período</label>
+                <div className={styles.amountControl}>
+                  <input
+                    id="budget-period-amount"
+                    value={periodAmount}
+                    onChange={event => setPeriodAmount(event.target.value)}
+                    inputMode="decimal"
+                    className={styles.amountInput}
+                    aria-invalid={amountError ? 'true' : 'false'}
+                  />
+                  <button type="submit" disabled={!amountChanged || amountSaving} className={styles.saveAmountButton}>
+                    {amountSaving ? 'Guardando…' : 'Guardar'}
+                  </button>
+                </div>
+                {amountError && <p className={styles.inlineError} role="alert">{amountError}</p>}
+              </form>
+            </div>
+
+            <div className={styles.detailMetrics} aria-label="Resumen del período">
+              <div className={styles.detailMetric}>
+                <p className={styles.detailMetricLabel}>Presupuesto</p>
+                <strong className={styles.detailMetricValue}>{formatBudgetCurrency(Number(selectedBudget.amount ?? 0), selectedBudget.currency)}</strong>
+              </div>
+              <div className={styles.detailMetric}>
+                <p className={styles.detailMetricLabel}>Ejecutado</p>
+                <strong className={styles.detailMetricValue}>{formatBudgetCurrency(visibleSpent, selectedBudget.currency)}</strong>
+              </div>
+              <div className={styles.detailMetric}>
+                <p className={styles.detailMetricLabel}>{visibleRemaining < 0 ? 'Exceso' : 'Disponible'}</p>
+                <strong className={`${styles.detailMetricValue} ${visibleRemaining < 0 ? styles.detailMetricValueDanger : ''}`}>
+                  {formatBudgetCurrency(Math.abs(visibleRemaining), selectedBudget.currency)}
+                </strong>
+              </div>
+            </div>
+
+            <div className={styles.execution}>
+              <div className={styles.executionHeading}>
+                <span>Ejecución del límite</span>
+                <strong className={`${styles.executionPercent} ${selectedBudget.over_limit ? styles.toneDanger : ''}`}>{progress.toFixed(0)}%</strong>
+              </div>
+              <div className={styles.progressTrack} role="progressbar" aria-label="Ejecución del presupuesto" aria-valuemin={0} aria-valuemax={Math.max(100, progress)} aria-valuenow={progress}>
+                <div className={`${styles.progressFill} ${selectedTone.bar}`} style={{ width: `${Math.min(100, progress)}%` }} />
+              </div>
+            </div>
+          </div>
+
+          <div className={styles.transactionToolbar}>
+            <div>
+              <h4 className={styles.transactionTitle}>Movimientos vinculados</h4>
+              {!loading && !error ? <span className={styles.transactionCount}>{filtered.length} movimiento{filtered.length === 1 ? '' : 's'} · {formatRange(selectedBudget.period_start, selectedBudget.period_end)}</span> : null}
+            </div>
+            <div className={styles.transactionToolbarSearch}>
+              <input
+                value={query}
+                onChange={event => setQuery(event.target.value)}
+                placeholder="Buscar descripción, cuenta o destinatario"
+                aria-label="Buscar movimientos vinculados"
+                className={styles.transactionSearch}
+              />
+            </div>
+          </div>
+
+          <div className={styles.transactionList}>
+            {loading ? (
+              <div className="space-y-2" aria-label="Cargando movimientos" role="status">
+                {[0, 1, 2].map(item => <div key={item} className="h-14 animate-pulse rounded-lg bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />)}
+              </div>
+            ) : error ? (
+              <div className={styles.detailError} role="alert">
+                <p className={styles.inlineError}>{error}</p>
+                <button type="button" onClick={() => void load()} className={styles.retryButton}>Reintentar</button>
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className={styles.detailEmpty}>
+                <p className={styles.detailEmptyTitle}>{q ? 'Sin coincidencias' : 'Sin movimientos en este período'}</p>
+                <p className={styles.detailEmptyCopy}>{q ? 'Prueba con otra búsqueda.' : 'El resumen del período se conserva aunque todavía no tenga movimientos vinculados.'}</p>
+              </div>
+            ) : (
+              <div className={styles.transactionTable}>
+                <div className={styles.transactionHeader} aria-hidden="true">
+                  <span>Fecha</span><span>Cuenta</span><span>Destinatario</span><span>Descripción</span><span className="text-right">Importe</span>
+                </div>
+                {filtered.map(tx => (
+                  <div key={tx.id} className={styles.transactionRow}>
+                    <div className={`${styles.transactionCell} ${styles.transactionCellMuted}`}>
+                      <span className={styles.mobileCellLabel}>Fecha</span>{formatDate(tx.date)}
+                    </div>
+                    <div className={styles.transactionCell}>
+                      <span className={styles.mobileCellLabel}>Cuenta</span>{tx.portfolio ?? '—'}
+                    </div>
+                    <div className={styles.transactionCell}>
+                      <span className={styles.mobileCellLabel}>Destinatario</span>{tx.recipient ?? '—'}
+                    </div>
+                    <div className={`${styles.transactionCell} ${styles.transactionDescription}`}>
+                      <span className={styles.mobileCellLabel}>Descripción</span>{tx.description ?? '—'}
+                    </div>
+                    <div className={`${styles.transactionCell} ${styles.transactionAmount} ${styles.toneDanger}`}>
+                      <span className={styles.mobileCellLabel}>Importe</span>−{formatBudgetCurrency(Number(tx.amount ?? 0), tx.currency)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <footer className={styles.detailFooter}>
+            <div>
+              <p className={styles.detailFooterLabel}>Total gastado · {filtered.length} movimiento{filtered.length === 1 ? '' : 's'}</p>
+              <p className={styles.detailFooterValue}>{formatBudgetCurrency(Math.round(totalSpent * 100) / 100, selectedBudget.currency)}</p>
+            </div>
+            <div className={styles.detailFooterSecondary}>
+              <p className={styles.detailFooterLabel}>Límite del período</p>
+              <p className={styles.detailFooterValue}>{formatBudgetCurrency(Number(selectedBudget.amount ?? 0), selectedBudget.currency)}</p>
+            </div>
+          </footer>
+        </section>
+      </div>
       <ConfirmDialog
         open={discardAmountConfirmationOpen}
         title="Descartar cambio de importe"
