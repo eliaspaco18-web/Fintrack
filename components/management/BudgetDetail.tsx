@@ -121,7 +121,7 @@ function getPeriodStatus(period: BudgetRef): {
     return {
       label: 'Excedido',
       tone: 'danger',
-      description: `Exceso ${formatBudgetCurrency(Math.abs(Number(period.remaining_amount ?? 0)), period.currency)}`,
+      description: 'El gasto supera el límite del período',
     }
   }
 
@@ -137,14 +137,14 @@ function getPeriodStatus(period: BudgetRef): {
     return {
       label: 'En riesgo',
       tone: 'warning',
-      description: 'Cerca del limite',
+      description: 'El gasto se acerca al límite definido',
     }
   }
 
   return {
     label: 'En rango',
     tone: 'ok',
-    description: `Disponible ${formatBudgetCurrency(Math.max(0, Number(period.remaining_amount ?? 0)), period.currency)}`,
+    description: 'El gasto se mantiene dentro del límite',
   }
 }
 
@@ -472,6 +472,7 @@ export function BudgetDetail({ open, budget, periods, suspendFocusTrap = false, 
                     type="button"
                     onClick={() => requestPeriodSelection(period.id)}
                     className={styles.periodSelectButton}
+                    data-testid={`budget-select-period-${period.id}`}
                     aria-current={selected ? 'true' : undefined}
                     aria-label={`${formatRange(period.period_start, period.period_end)}, ${periodStatus.label}, ${formatBudgetCurrency(Number(period.amount ?? 0), period.currency)}`}
                   >
@@ -520,30 +521,32 @@ export function BudgetDetail({ open, budget, periods, suspendFocusTrap = false, 
 
             </div>
 
-            <div className={styles.detailMetrics} aria-label="Resumen del período">
-              <div className={styles.detailMetric}>
-                <p className={styles.detailMetricLabel}>Presupuesto</p>
-                <strong className={styles.detailMetricValue}>{formatBudgetCurrency(Number(selectedBudget.amount ?? 0), selectedBudget.currency)}</strong>
+            <div className={styles.summaryFinance}>
+              <div className={styles.detailMetrics} aria-label="Resumen del período">
+                <div className={styles.detailMetric}>
+                  <p className={styles.detailMetricLabel}>Presupuesto</p>
+                  <strong className={styles.detailMetricValue}>{formatBudgetCurrency(Number(selectedBudget.amount ?? 0), selectedBudget.currency)}</strong>
+                </div>
+                <div className={styles.detailMetric}>
+                  <p className={styles.detailMetricLabel}>Ejecutado</p>
+                  <strong className={styles.detailMetricValue}>{formatBudgetCurrency(visibleSpent, selectedBudget.currency)}</strong>
+                </div>
+                <div className={styles.detailMetric}>
+                  <p className={styles.detailMetricLabel}>Disponible</p>
+                  <strong className={`${styles.detailMetricValue} ${visibleRemaining < 0 ? styles.detailMetricValueDanger : ''}`}>
+                    {formatBudgetCurrency(Math.abs(visibleRemaining), selectedBudget.currency)}
+                  </strong>
+                </div>
               </div>
-              <div className={styles.detailMetric}>
-                <p className={styles.detailMetricLabel}>Ejecutado</p>
-                <strong className={styles.detailMetricValue}>{formatBudgetCurrency(visibleSpent, selectedBudget.currency)}</strong>
-              </div>
-              <div className={styles.detailMetric}>
-                <p className={styles.detailMetricLabel}>{visibleRemaining < 0 ? 'Exceso' : 'Disponible'}</p>
-                <strong className={`${styles.detailMetricValue} ${visibleRemaining < 0 ? styles.detailMetricValueDanger : ''}`}>
-                  {formatBudgetCurrency(Math.abs(visibleRemaining), selectedBudget.currency)}
-                </strong>
-              </div>
-            </div>
 
-            <div className={styles.execution}>
-              <div className={styles.executionHeading}>
-                <span>Ejecución del límite</span>
-                <strong className={`${styles.executionPercent} ${selectedBudget.over_limit ? styles.toneDanger : ''}`}>{progress.toFixed(0)}%</strong>
-              </div>
-              <div className={styles.progressTrack} role="progressbar" aria-label="Ejecución del presupuesto" aria-valuemin={0} aria-valuemax={Math.max(100, progress)} aria-valuenow={progress}>
-                <div className={`${styles.progressFill} ${selectedTone.bar}`} style={{ width: `${Math.min(100, progress)}%` }} />
+              <div className={styles.execution}>
+                <div className={styles.executionHeading}>
+                  <span>Ejecución del límite</span>
+                  <strong className={`${styles.executionPercent} ${selectedBudget.over_limit ? styles.toneDanger : ''}`}>{progress.toFixed(0)}%</strong>
+                </div>
+                <div className={styles.progressTrack} role="progressbar" aria-label="Ejecución del presupuesto" aria-valuemin={0} aria-valuemax={Math.max(100, progress)} aria-valuenow={progress}>
+                  <div className={`${styles.progressFill} ${selectedTone.bar}`} style={{ width: `${Math.min(100, progress)}%` }} />
+                </div>
               </div>
             </div>
           </div>

@@ -319,7 +319,9 @@
 
 .detailOverview {
   display: grid;
-  gap: 11px;
+  grid-template-columns: minmax(210px, .72fr) minmax(0, 1.7fr);
+  align-items: center;
+  column-gap: 22px;
   border-bottom: 1px solid var(--ft-border);
   padding: 14px 22px 12px;
 }
@@ -327,14 +329,15 @@
 .periodHeadingRow {
   display: flex;
   min-width: 0;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
+  min-height: 100%;
+  align-items: center;
+  border-right: 1px solid var(--ft-border);
+  padding-right: 20px;
 }
 
 .selectedPeriodCopy {
   min-width: 0;
-  padding-top: 2px;
+  padding-block: 2px;
 }
 
 .selectedPeriodDate {
@@ -431,14 +434,12 @@
 .detailMetrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-top: 1px solid var(--ft-border);
-  border-bottom: 1px solid var(--ft-border);
-  padding: 9px 0;
+  min-width: 0;
 }
 
 .detailMetric {
   min-width: 0;
-  padding: 0 16px;
+  padding: 0 12px;
 }
 
 .detailMetric:first-child { padding-left: 0; }
@@ -458,9 +459,17 @@
 
 .detailMetricValueDanger { color: var(--ft-danger); }
 
+.summaryFinance {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
 .execution {
   display: grid;
   gap: 5px;
+  border-top: 1px solid var(--ft-border);
+  padding-top: 7px;
 }
 
 .executionHeading {
@@ -732,8 +741,18 @@
   .periodList { grid-template-columns: minmax(0, 1fr); max-height: 128px; }
 
   .detailMain { min-height: 0; flex: 1 1 auto; overflow: hidden; }
-  .detailOverview { gap: 10px; padding: 13px 16px 11px; }
-  .periodHeadingRow { align-items: stretch; flex-direction: column; gap: 13px; }
+  .detailOverview {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 10px;
+    padding: 13px 16px 11px;
+  }
+  .periodHeadingRow {
+    min-height: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--ft-border);
+    padding: 0 0 9px;
+  }
+  .summaryFinance { gap: 7px; }
   .detailMetric { padding: 0 10px; }
   .detailMetric:first-child { padding-left: 0; }
   .detailMetricValue { font-size: clamp(13px, 3.8vw, 17px); line-height: 20px; }
@@ -775,6 +794,8 @@
   .periodList { padding-inline: 10px; }
   .detailOverview { padding-inline: 14px; }
   .detailMetric { padding-inline: 7px; }
+  .detailMetrics { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 8px; }
+  .detailMetric:nth-child(3) { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--ft-border); padding: 7px 0 0; }
   .footerTotals { align-items: flex-start; flex-direction: column; gap: 9px; }
   .detailFooterSecondary { text-align: left; }
   .detailFooterValue { font-size: 15px; }

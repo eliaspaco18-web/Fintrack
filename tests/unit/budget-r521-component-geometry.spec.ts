@@ -278,7 +278,13 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
       amount: 1000, spent_amount: 350, remaining_amount: 650, progress_percent: 35, over_limit: false,
       is_active: true, category: { name: 'Hogar' },
     };
-    const nextBudget = { ...budget, id: 'period-2026-11', budget_period_id: 'period-2026-11', start_date: '2026-11-01', end_date: '2026-11-30', period_start: '2026-11-01', period_end: '2026-11-30', amount: 1100 };
+    const nextBudget = {
+      ...budget,
+      id: 'period-2026-11', budget_period_id: 'period-2026-11',
+      start_date: '2026-11-01', end_date: '2026-11-30', period_start: '2026-11-01', period_end: '2026-11-30',
+      amount: 9876543210.99, spent_amount: 11234567890.87, remaining_amount: -1358024679.88,
+      progress_percent: 114, over_limit: true,
+    };
     function Host() {
       const [open, setOpen] = React.useState(true);
       const [mounted, setMounted] = React.useState(true);
@@ -329,7 +335,12 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
         layout: (() => { const rect = dialogNode.querySelector<HTMLElement>('.detailLayout')!.getBoundingClientRect(); return { top: rect.top, bottom: rect.bottom, height: rect.height } })(),
         detailMainBottom: dialogNode.querySelector<HTMLElement>('.detailMain')!.getBoundingClientRect().bottom,
         overviewHeight: dialogNode.querySelector<HTMLElement>('.detailOverview')!.getBoundingClientRect().height,
+        transactionToolbarOffset: dialogNode.querySelector<HTMLElement>('.transactionToolbar')!.getBoundingClientRect().top - dialogNode.querySelector<HTMLElement>('[data-record-modal-body]')!.getBoundingClientRect().top,
         transactionListHeight: dialogNode.querySelector<HTMLElement>('.transactionList')!.getBoundingClientRect().height,
+        summaryOverflow: (() => {
+          const overview = dialogNode.querySelector<HTMLElement>('.detailOverview')!
+          return overview.scrollWidth > overview.clientWidth || [...overview.querySelectorAll<HTMLElement>('.detailMetricValue')].some(value => value.scrollWidth > value.clientWidth + 1)
+        })(),
         periodRailWidth: dialogNode.querySelector<HTMLElement>('.periodRail')!.getBoundingClientRect().width,
         periodCard: (() => {
           const card = dialogNode.querySelector<HTMLElement>('.periodOption')!
@@ -352,10 +363,12 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
         columns: getComputedStyle(dialogNode.querySelector<HTMLElement>('.detailLayout')!).gridTemplateColumns,
       }
     })
+    if (width === 1440) console.log('[r5.8 detail geometry]', JSON.stringify({ overviewHeight: geometry.overviewHeight, transactionToolbarOffset: geometry.transactionToolbarOffset, transactionListHeight: geometry.transactionListHeight, wrapperHeight: geometry.wrapper.height }))
     expect(geometry.wrapper.width).toBeLessThanOrEqual(width)
     expect(geometry.wrapper.right).toBeLessThanOrEqual(width + 0.5)
     expect(geometry.dialog.width).toBeGreaterThan(width <= 767 ? width - 30 : Math.min(580, width - 50))
     expect(geometry.documentWidth).toBeLessThanOrEqual(width)
+    expect(geometry.summaryOverflow).toBe(false)
     expect(geometry.parts.every(part => part.width > 0 && part.right <= geometry.dialog.right + 1)).toBe(true)
     expect(geometry.periodCard.statusVisible).toBe(true)
     expect(geometry.periodCard.editVisible).toBe(true)
@@ -372,11 +385,30 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
     }
     if (width >= 1200) {
       expect(geometry.periodRailWidth).toBeGreaterThanOrEqual(318)
-      expect(geometry.overviewHeight).toBeLessThanOrEqual(200)
+      expect(geometry.overviewHeight).toBeLessThanOrEqual(150)
       expect(geometry.transactionListHeight).toBeGreaterThan(260)
     }
     if (width <= 767) expect(geometry.display).toBe('flex')
     else if (width <= 1120) expect(geometry.columns).not.toContain('318px')
+  }
+
+  for (const width of [390, 834, 1440]) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
+    await dialog.getByTestId('budget-select-period-period-2026-11').click()
+    await expect(dialog.locator('.detailMetricValueDanger')).toContainText('1,358,024,679.88')
+    await expect(dialog.locator('.selectedStatusDescription')).toContainText('supera el límite')
+    const overLimitGeometry = await dialog.locator('.detailOverview').evaluate(node => {
+      const overview = node as HTMLElement
+      const values = [...overview.querySelectorAll<HTMLElement>('.detailMetricValue')]
+      return {
+        clientWidth: overview.clientWidth,
+        scrollWidth: overview.scrollWidth,
+        values: values.map(value => ({ clientWidth: value.clientWidth, scrollWidth: value.scrollWidth })),
+      }
+    })
+    expect(overLimitGeometry.scrollWidth).toBeLessThanOrEqual(overLimitGeometry.clientWidth + 1)
+    expect(overLimitGeometry.values.every(value => value.scrollWidth <= value.clientWidth + 1)).toBe(true)
+    await dialog.getByTestId('budget-select-period-period-2026-10').click()
   }
 
   await dialog.getByTestId('budget-edit-period-period-2026-10').click()
