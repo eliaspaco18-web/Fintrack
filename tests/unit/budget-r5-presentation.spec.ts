@@ -7,10 +7,11 @@ const css = readFileSync(join(process.cwd(), 'components/management/BudgetsManag
 
 test('selected period is in the page header and uses the full year-month key', () => {
   expect(source).toContain('testId="budgets-header-period-select"')
+  expect(source).toContain('<BudgetMonthPicker')
   expect(source).toContain('value={periodMonth}')
   expect(source).toContain('onChange={setPeriodMonth}')
-  expect(source).toContain('options={periodMonthOptions}')
-  expect(source).toContain('ariaLabel="Seleccionar período"')
+  expect(source).not.toContain('options={periodMonthOptions}')
+  expect(source).not.toContain('MONTH_OPTIONS')
   expect(source).not.toContain('className={styles.periodControls}')
   expect(source).not.toContain('ariaLabel="Seleccionar mes"')
   expect(source).not.toContain('ariaLabel="Seleccionar año"')

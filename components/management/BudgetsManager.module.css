@@ -119,47 +119,9 @@
 
 .headerPeriodControl {
   position: relative;
-  width: 164px;
+  width: 184px;
   min-width: 0;
-  flex: 0 1 164px;
-}
-
-.headerPeriodSelect {
-  width: 100%;
-  min-width: 0;
-}
-
-.headerPeriodTrigger {
-  height: 36px;
-  min-height: 36px;
-  border: 1px solid var(--ft-r07-line);
-  border-radius: 10px;
-  background: var(--ft-r07-surface);
-  padding: 0 11px 0 34px;
-  color: var(--ft-r07-ink);
-  font-family: Manrope, system-ui, sans-serif;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 18px;
-}
-
-.headerPeriodTrigger:hover {
-  background: var(--ft-r07-hover);
-}
-
-.headerPeriodTrigger:focus-visible {
-  outline: 2px solid var(--ft-primary);
-  outline-offset: 3px;
-}
-
-.headerPeriodIcon {
-  position: absolute;
-  z-index: 1;
-  top: 50%;
-  left: 11px;
-  transform: translateY(-50%);
-  color: var(--ft-r07-muted);
-  pointer-events: none;
+  flex: 0 1 184px;
 }
 
 .budgetSummary {
@@ -184,11 +146,11 @@
 
 .summaryReserve {
   display: block;
-  min-height: 82px;
+  min-height: 74px;
 }
 
 .summaryUnavailable {
-  min-height: 58px;
+  min-height: 74px;
   margin: 0;
   color: var(--ft-text-muted);
   font-size: 12px;
@@ -554,6 +516,38 @@
   font-weight: 600;
 }
 
+.periodActionTooltip {
+  position: fixed;
+  z-index: calc(var(--ft-z-tooltip, 180) + 2);
+  display: grid;
+  width: min(224px, calc(100vw - 16px));
+  gap: 5px;
+  border: 1px solid var(--ft-border);
+  border-radius: 10px;
+  background: var(--ft-surface);
+  padding: 10px 12px;
+  color: var(--ft-text-muted);
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 11px;
+  line-height: 16px;
+  box-shadow: var(--ft-shadow-md, 0 8px 24px rgb(36 42 48 / 12%));
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(3px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.periodActionTooltip[data-visible='true'] {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.periodActionTooltipTitle {
+  color: var(--ft-text-strong);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 @media (max-width: 1100px) {
   .budgetFilterActions {
     margin-left: 0;
@@ -753,14 +747,9 @@
   }
 
   .headerPeriodControl {
-    flex: 1 1 auto;
-    width: auto;
-    min-width: min(132px, 100%);
-  }
-
-  .headerPeriodTrigger {
-    height: 40px;
-    min-height: 40px;
+    flex: 0 1 184px;
+    width: min(100%, 184px);
+    min-width: min(176px, 100%);
   }
 
   .exceptionBand {
@@ -775,6 +764,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   .progressFill {
+    transition: none;
+  }
+
+  .periodActionTooltip {
     transition: none;
   }
 }

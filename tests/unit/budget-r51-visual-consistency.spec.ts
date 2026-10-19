@@ -38,9 +38,9 @@ test('budget header, summary and filter toolbar follow shared V3 geometry at des
       .summaryCurrency { display: flex; min-width: 0; width: 100%; flex: 1 1 100%; flex-wrap: wrap; align-items: flex-start; justify-content: flex-start; gap: 24px 36px; }
       .summaryCurrency > div { flex: 0 1 auto; min-width: min(176px, 100%); }
       .summaryValue { font-variant-numeric: tabular-nums; white-space: nowrap; }
-      .headerPeriodControl { position: relative; width: 164px; min-width: 0; flex: 0 1 164px; }
+      .headerPeriodControl { position: relative; width: 184px; min-width: 0; flex: 0 1 184px; }
       .headerPeriodSelect { width: 100%; min-width: 0; }
-      .headerPeriodTrigger { height: 36px; min-height: 36px; border: 1px solid var(--ft-r07-line); border-radius: 10px; background: var(--ft-r07-surface); padding: 0 11px 0 34px; color: var(--ft-r07-ink); font: 600 12px/18px Manrope, system-ui, sans-serif; }
+      .trigger { height: 36px; min-height: 36px; border: 1px solid var(--ft-r07-line); border-radius: 10px; background: var(--ft-r07-surface); color: var(--ft-r07-ink); font: 600 12px/18px Manrope, system-ui, sans-serif; }
       .budgetHeaderActions { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: 8px; }
       .budgetFilterToolbar.budgetFilterToolbar { min-width: 0; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
       .budgetFilterMain { flex-wrap: wrap; }
@@ -62,7 +62,7 @@ test('budget header, summary and filter toolbar follow shared V3 geometry at des
     </style>
     <main class="v3ModuleContent shellContent" data-testid="budgets-module">
       <div class="pageOverview budgetOverview" data-testid="budgets-page-overview">
-        <header><div><h1>Presupuestos</h1><p>Control de límites por período.</p></div><div class="budgetHeaderActions"><div class="headerPeriodControl"><button class="headerPeriodTrigger">Octubre 2026</button></div></div></header>
+        <header><div><h1>Presupuestos</h1><p>Control de límites por período.</p></div><div class="budgetHeaderActions"><div class="headerPeriodControl"><button class="trigger">Octubre 2026</button></div></div></header>
         <section class="summary budgetSummary" data-testid="budgets-summary"><div class="summaryCurrency"><div class="summaryItem"><p>Asignado · PEN</p><div class="summaryValue">S/ 1,234.00</div></div><div class="summaryItem"><p>Gastado · PEN</p><div class="summaryValue">S/ 456.00</div></div><div class="summaryItem"><p>Disponible · PEN</p><div class="summaryValue">S/ 778.00</div></div></div></section>
       </div>
       <nav class="tabs"><button>Este período</button><button>Excedidos</button><button>Otros períodos</button></nav>
@@ -104,7 +104,7 @@ test('budget header, summary and filter toolbar follow shared V3 geometry at des
         documentWidth: document.documentElement.scrollWidth,
         module: rect('[data-testid="budgets-module"]'),
         header: rect('[data-testid="budgets-page-overview"]'),
-        period: rect('.headerPeriodTrigger'),
+        period: rect('.trigger'),
         toolbar: rect('[data-testid="budgets-filter-toolbar"]'),
         search: rect('.budgetSearchControl'),
         summary: { left: summaryRect.left, right: summaryRect.right },
@@ -117,7 +117,7 @@ test('budget header, summary and filter toolbar follow shared V3 geometry at des
     expect(geometry.documentWidth, `${width}px viewport should not overflow`).toBeLessThanOrEqual(width)
     expect(geometry.module.left).toBeGreaterThanOrEqual(0)
     expect(geometry.module.right).toBeLessThanOrEqual(width + 0.5)
-    expect(geometry.period.height).toBe(width <= 520 ? 40 : 36)
+    expect(geometry.period.height).toBe(36)
     expect(geometry.toolbar.left).toBeGreaterThanOrEqual(geometry.module.left - 0.5)
     expect(geometry.toolbar.right).toBeLessThanOrEqual(geometry.module.right + 0.5)
     expect(geometry.search.height).toBe(width <= 767 ? 44 : 38)
@@ -132,20 +132,10 @@ test('budget header, summary and filter toolbar follow shared V3 geometry at des
   }
 })
 
-test('budget header and filter controls keep their light/dark theme surfaces token-driven', async ({ page }) => {
-  await page.setContent(`
-    <style>
-      * { box-sizing: border-box; }
-      html, body { margin: 0; min-height: 100%; width: 100%; font: 13px Manrope, system-ui, sans-serif; }
-      ${movementCssFixture}
-      ${budgetCssFixture}
-    </style>
-    <main class="v3ModuleContent"><div class="headerPeriodControl"><button class="headerPeriodTrigger">Octubre 2026</button></div></main>`)
-  const trigger = page.locator('.headerPeriodTrigger')
-  await expect(trigger).toHaveCSS('background-color', 'rgb(255, 255, 255)')
-  await expect(trigger).toHaveCSS('border-radius', '10px')
-  await expect(trigger).toHaveCSS('font-family', /Manrope/)
-  await page.locator('html').evaluate(element => element.setAttribute('data-theme', 'dark'))
-  await expect(trigger).toHaveCSS('background-color', 'rgb(32, 35, 39)')
-  await expect(trigger).toHaveCSS('color', 'rgb(237, 240, 242)')
+test('budget month picker uses V3 theme tokens rather than a local surface palette', () => {
+  const monthPickerCss = readFileSync(join(process.cwd(), 'components/management/BudgetMonthPicker.module.css'), 'utf8')
+  expect(monthPickerCss).toContain('background: var(--ft-r07-surface)')
+  expect(monthPickerCss).toContain('color: var(--ft-r07-ink)')
+  expect(monthPickerCss).toContain('border: 1px solid var(--ft-r07-line)')
+  expect(monthPickerCss).toContain('background: var(--ft-modal-bg, var(--ft-surface))')
 })

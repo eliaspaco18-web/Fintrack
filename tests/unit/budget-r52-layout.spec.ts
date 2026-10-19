@@ -3,6 +3,8 @@ import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 
 const managerSource = readFileSync(join(process.cwd(), 'components/management/BudgetsManager.tsx'), 'utf8')
+const pickerSource = readFileSync(join(process.cwd(), 'components/management/BudgetMonthPicker.tsx'), 'utf8')
+const shellSource = readFileSync(join(process.cwd(), 'components/layout/AppShell.tsx'), 'utf8')
 const detailSource = readFileSync(join(process.cwd(), 'components/management/BudgetDetail.tsx'), 'utf8')
 const detailCss = readFileSync(join(process.cwd(), 'components/management/BudgetDetail.module.css'), 'utf8')
 const movementCss = readFileSync(join(process.cwd(), 'components/tables/TransactionsRound07.module.css'), 'utf8')
@@ -20,7 +22,7 @@ test('R5.2 keeps the budget header and summary aligned to the approved V3 page g
       .pageOverview > header { display:flex; justify-content:space-between; }
       .budgetHeaderActions { display:flex; flex:0 0 auto; align-items:center; justify-content:flex-end; gap:8px; }
       .headerPeriodControl { position:relative; width:164px; flex:0 1 164px; }
-      .headerPeriodTrigger { width:100%; height:36px; border:1px solid var(--ft-r07-line); border-radius:10px; background:var(--ft-r07-surface); padding-left:34px; color:var(--ft-r07-ink); font:600 12px/18px Manrope,system-ui,sans-serif; }
+      .trigger { width:100%; height:36px; border:1px solid var(--ft-r07-line); border-radius:10px; background:var(--ft-r07-surface); color:var(--ft-r07-ink); font:600 12px/18px Manrope,system-ui,sans-serif; }
       .summaryCurrency { display:flex; width:100%; min-width:0; flex:1 1 100%; gap:36px; }
       .summaryCurrency > div { min-width:130px; }
       ${movementCssFixture}
@@ -36,7 +38,7 @@ test('R5.2 keeps the budget header and summary aligned to the approved V3 page g
         <section class="summary"><div class="summaryItem"><p>Ingresos</p><div class="summaryValue">S/ 120.00</div></div><div class="summaryItem"><p>Egresos</p><div class="summaryValue">$ 30.00</div></div><div class="summaryItem"><p>Resultado</p><div class="summaryValue">S/ 10.00</div></div></section>
       </section>
       <section class="page pageOverview v3ModuleContent" data-testid="budgets-overview">
-        <header><div><h1>Presupuestos</h1><p>Descripción del módulo.</p></div><div class="budgetHeaderActions"><div class="headerPeriodControl"><button class="headerPeriodTrigger">Octubre de 2026</button></div></div></header>
+        <header><div><h1>Presupuestos</h1><p>Descripción del módulo.</p></div><div class="budgetHeaderActions"><div class="headerPeriodControl"><button class="trigger">Octubre de 2026</button></div></div></header>
         <section class="summary budgetSummary"><div class="summaryCurrency"><div class="summaryItem"><p>Asignado · PEN</p><div class="summaryValue">S/ 120.00</div></div><div class="summaryItem"><p>Gastado · PEN</p><div class="summaryValue">S/ 30.00</div></div><div class="summaryItem"><p>Disponible · PEN</p><div class="summaryValue">S/ 90.00</div></div></div></section>
       </section>
     </main>`)
@@ -67,7 +69,7 @@ test('R5.2 keeps the budget header and summary aligned to the approved V3 page g
         accountsSummaryTop: rect('[data-testid="accounts-overview"] .summary').top - overviewTop('[data-testid="accounts-overview"]'),
         movementsSummaryTop: rect('[data-testid="movements-overview"] .summary').top - overviewTop('[data-testid="movements-overview"]'),
         budgetsSummaryTop: rect('[data-testid="budgets-overview"] .summary').top - overviewTop('[data-testid="budgets-overview"]'),
-        budgetPeriod: rect('[data-testid="budgets-overview"] .headerPeriodTrigger'),
+        budgetPeriod: rect('[data-testid="budgets-overview"] .trigger'),
       }
     })
 
@@ -145,18 +147,32 @@ test('R5.2 detail CSS keeps its content readable in a representative responsive 
   await expect(page.locator('.detailMetricValue').first()).toHaveCSS('color', 'rgb(237, 240, 242)')
 })
 
-test('R5.2 keeps the period action explanation on the approved info-hint interaction', () => {
-  expect(managerSource).toContain('title="Ver período"')
-  expect(managerSource).toContain('description="Abre el detalle y muestra los movimientos vinculados a sus fechas."')
-  expect(managerSource).toContain('label="Abrir este período y sus movimientos"')
-  expect(managerSource).not.toContain('label="Ayuda: ver este período y sus movimientos"')
+test('R5.2.1 keeps the period action explanation in one budget-scoped accessible tooltip', () => {
+  const actionSource = readFileSync(join(process.cwd(), 'components/management/BudgetViewPeriodAction.tsx'), 'utf8')
+  expect(managerSource).toContain('<BudgetViewPeriodAction')
+  expect(actionSource).toContain('role="tooltip"')
+  expect(actionSource).toContain('aria-describedby={id}')
+  expect(actionSource).toContain("event.key === 'Escape'")
+  expect(actionSource).toContain('document.body')
 })
 
-test('R5.2 period control stays bound to periodMonth and presents only a calendar month/year', () => {
+test('R5.2.1 period control uses a month calendar while preserving the periodMonth key', () => {
   expect(managerSource).toContain('value={periodMonth}')
   expect(managerSource).toContain('onChange={setPeriodMonth}')
-  expect(managerSource).toContain('month: \'long\',\n        year: \'numeric\'')
-  expect(managerSource).toContain('className={styles.headerPeriodIcon}')
-  expect(managerSource).toContain('Seleccionar período')
+  expect(managerSource).toContain('<BudgetMonthPicker')
+  expect(pickerSource).toContain('month: \'long\', year: \'numeric\'')
+  expect(pickerSource).toContain('length: 12')
+  expect(pickerSource).toContain('role="dialog"')
+  expect(pickerSource).not.toContain('role="searchbox"')
+  expect(shellSource).toContain("pathname === '/transactions' || pathname === '/portfolio' || pathname === '/budgets'")
   expect(managerSource).toContain('className={`${movementPageStyles.v3ModulePrimaryAction} w-full sm:w-auto`}')
+})
+
+test('budget summary reserves the same real secondary-line rhythm as approved V3 summaries', () => {
+  expect(managerSource.match(/className=\{movementPageStyles\.summaryDetail\}/g)).toHaveLength(3)
+  expect(managerSource).toContain('currentPeriodRows.filter(row => row.budget.currency === summary.currency).length')
+  expect(managerSource).toContain('Egresos vinculados')
+  expect(managerSource).toContain('Asignado menos gasto')
+  expect(movementCss).toContain('.summaryDetail {')
+  expect(movementCss).toContain('line-height: 18px;')
 })

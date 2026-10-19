@@ -12,6 +12,7 @@ import { useToast } from '@/lib/toast/toast'
 import { fetchWithTimeout } from '@/lib/client/fetch-with-timeout'
 import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
 import { ActionIconButton } from '@/components/ui/ActionIconButton'
+import { BudgetViewPeriodAction } from '@/components/management/BudgetViewPeriodAction'
 import { AppSelect } from '@/components/ui/AppSelect'
 import { NumericInput } from '@/components/ui/NumericInput'
 import { Button } from '@/components/ui/Button'
@@ -32,6 +33,7 @@ import {
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 import { BudgetDetail } from '@/components/management/BudgetDetail'
+import { BudgetMonthPicker } from '@/components/management/BudgetMonthPicker'
 import {
   BUDGET_SCOPE_REQUIRED_ERROR,
   createBudgetRecordActionScope,
@@ -146,21 +148,6 @@ const PERIOD_LABEL: Record<BudgetPeriod, string> = {
   QUARTERLY: 'Trimestral',
   YEARLY: 'Anual',
 }
-
-const MONTH_OPTIONS = [
-  { value: '01', label: 'Enero' },
-  { value: '02', label: 'Febrero' },
-  { value: '03', label: 'Marzo' },
-  { value: '04', label: 'Abril' },
-  { value: '05', label: 'Mayo' },
-  { value: '06', label: 'Junio' },
-  { value: '07', label: 'Julio' },
-  { value: '08', label: 'Agosto' },
-  { value: '09', label: 'Septiembre' },
-  { value: '10', label: 'Octubre' },
-  { value: '11', label: 'Noviembre' },
-  { value: '12', label: 'Diciembre' },
-]
 
 // Calcula la fecha de fin automática según periodicidad (PRD: "automática según periodicidad")
 function calcEndDate(startDate: string, period: BudgetPeriod): string {
@@ -877,42 +864,6 @@ export function BudgetsManager() {
     })
   }, [periodMonth])
 
-  const periodYearOptions = useMemo(() => {
-    const years = new Set<string>()
-    const currentYear = Number(isoToday().slice(0, 4))
-    const selectedYear = Number(periodMonth.slice(0, 4))
-
-    for (let year = currentYear - 2; year <= currentYear + 2; year += 1) {
-      years.add(String(year))
-    }
-    if (Number.isFinite(selectedYear)) years.add(String(selectedYear))
-
-    for (const budget of budgets) {
-      const starts = [budget.start_date, budget.period_start]
-      const ends = [budget.end_date, budget.period_end]
-      for (const dateValue of [...starts, ...ends]) {
-        if (dateValue && /^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
-          years.add(dateValue.slice(0, 4))
-        }
-      }
-    }
-
-    return Array.from(years)
-      .sort((left, right) => Number(right) - Number(left))
-      .map(year => ({ value: year, label: year }))
-  }, [budgets, periodMonth])
-
-  const periodMonthOptions = useMemo(() => periodYearOptions.flatMap(({ value: year }) =>
-    MONTH_OPTIONS.map(({ value: month }) => ({
-      value: `${year}-${month}`,
-      label: new Date(Date.UTC(Number(year), Number(month) - 1, 15)).toLocaleDateString('es-PE', {
-        month: 'long',
-        year: 'numeric',
-        timeZone: 'UTC',
-      }),
-    })),
-  ), [periodYearOptions])
-
   const filteredBudgetSeries = useMemo(() => {
     const q = query.trim().toLowerCase()
 
@@ -1142,20 +1093,9 @@ export function BudgetsManager() {
               </div>
               <div className={styles.budgetHeaderActions}>
                 <div className={styles.headerPeriodControl}>
-                  <svg aria-hidden="true" className={styles.headerPeriodIcon} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="3" y="5" width="18" height="16" rx="2" />
-                    <path d="M16 3v4M8 3v4M3 10h18" />
-                  </svg>
-                  <AppSelect
+                  <BudgetMonthPicker
                     value={periodMonth}
                     onChange={setPeriodMonth}
-                    className={`${styles.headerPeriodSelect} filters-control`}
-                    buttonClassName={styles.headerPeriodTrigger}
-                    compact
-                    searchable={false}
-                    adaptiveMenuWidth
-                    options={periodMonthOptions}
-                    ariaLabel="Seleccionar período"
                     testId="budgets-header-period-select"
                   />
                 </div>
@@ -1180,17 +1120,25 @@ export function BudgetsManager() {
                   <div className={movementPageStyles.summaryItem}>
                     <p>Asignado · {summary.currency}</p>
                     <div className={`${movementPageStyles.summaryValue} ${styles.summaryValue} tabular-nums`}>{formatBudgetCurrency(summary.assigned, summary.currency)}</div>
+                    <span className={movementPageStyles.summaryDetail}>
+                      {currentPeriodRows.filter(row => row.budget.currency === summary.currency).length} presupuesto{currentPeriodRows.filter(row => row.budget.currency === summary.currency).length === 1 ? '' : 's'}
+                    </span>
                   </div>
                   <div className={movementPageStyles.summaryItem}>
                     <p>Gasto vinculado · {summary.currency}</p>
                     <div className={`${movementPageStyles.summaryValue} ${styles.summaryValue} tabular-nums`}>{formatBudgetCurrency(summary.spent, summary.currency)}</div>
+                    <span className={movementPageStyles.summaryDetail}>Egresos vinculados</span>
                   </div>
                   <div className={movementPageStyles.summaryItem}>
                     <p>Disponible · {summary.currency}</p>
                     <div className={`${movementPageStyles.summaryValue} ${styles.summaryValue} tabular-nums ${summary.available < 0 ? 'text-[var(--ft-danger)]' : ''}`}>
                       {formatBudgetCurrency(summary.available, summary.currency)}
                     </div>
-                    {summary.available < 0 ? <small className={movementPageStyles.summaryNote}>Excedido por {formatBudgetCurrency(Math.abs(summary.available), summary.currency)}</small> : null}
+                    <span className={movementPageStyles.summaryDetail}>
+                      {summary.available < 0
+                        ? `Excedido por ${formatBudgetCurrency(Math.abs(summary.available), summary.currency)}`
+                        : 'Asignado menos gasto'}
+                    </span>
                   </div>
                 </div>
               )) : (
@@ -1402,12 +1350,8 @@ export function BudgetsManager() {
                         <StatusBadge tone={periodStatusTone(row.status, row.over_limit)} dot={row.status !== 'CLOSED'}>{row.over_limit ? 'Excedido' : periodStatusLabel(row.status)}</StatusBadge>
                       </div>
                       <div className={`${styles.periodActions} flex items-center gap-1.5 md:justify-end`}>
-                        <ActionIconButton
+                        <BudgetViewPeriodAction
                           onClick={() => openPeriodDetail(row)}
-                          icon="view"
-                          label="Abrir este período y sus movimientos"
-                          title="Ver período"
-                          description="Abre el detalle y muestra los movimientos vinculados a sus fechas."
                           testId={`budget-period-detail-${row.id}`}
                         />
                         <ActionIconButton
