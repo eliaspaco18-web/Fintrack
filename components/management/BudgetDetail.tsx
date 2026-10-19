@@ -381,6 +381,7 @@ export function BudgetDetail({ open, budget, periods, onClose, onExitComplete, o
       onExitComplete={onExitComplete}
       presentation="workbench"
       size="xl"
+      overlayClassName={styles.detailOverlay}
       widthClassName="w-[calc(100vw-40px)] max-w-[1320px]"
       eyebrow="Detalle de presupuesto"
       title={budget.name}

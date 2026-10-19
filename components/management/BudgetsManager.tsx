@@ -1162,6 +1162,7 @@ export function BudgetsManager() {
                 <CreateModuleButton
                   onClick={openCreateModal}
                   label="Crear presupuesto"
+                  className={`${movementPageStyles.v3ModulePrimaryAction} w-full sm:w-auto`}
                   testId="budgets-create-button"
                 />
               </div>
@@ -1401,10 +1402,14 @@ export function BudgetsManager() {
                         <StatusBadge tone={periodStatusTone(row.status, row.over_limit)} dot={row.status !== 'CLOSED'}>{row.over_limit ? 'Excedido' : periodStatusLabel(row.status)}</StatusBadge>
                       </div>
                       <div className={`${styles.periodActions} flex items-center gap-1.5 md:justify-end`}>
-                        <ActionIconButton onClick={() => openPeriodDetail(row)} icon="view" label="Abrir este período y sus movimientos" testId={`budget-period-detail-${row.id}`} />
-                        <BudgetInfoHint label="Ayuda: ver este período y sus movimientos">
-                          Abre el detalle del período seleccionado y muestra los movimientos vinculados a sus fechas.
-                        </BudgetInfoHint>
+                        <ActionIconButton
+                          onClick={() => openPeriodDetail(row)}
+                          icon="view"
+                          label="Abrir este período y sus movimientos"
+                          title="Ver período"
+                          description="Abre el detalle y muestra los movimientos vinculados a sus fechas."
+                          testId={`budget-period-detail-${row.id}`}
+                        />
                         <ActionIconButton
                           onClick={() => {
                             const target = resolveBudgetPeriodEditTarget(row)

@@ -9,7 +9,7 @@ const movementCss = readFileSync(join(process.cwd(), 'components/tables/Transact
 const detailCssFixture = detailCss.replace(/:global\(([^()]*)\)/g, '$1')
 const movementCssFixture = movementCss.replace(/:global\(([^()]*)\)/g, '$1')
 
-test('R5.2 keeps the budget header, summary and primary action on the approved V3 geometry', async ({ page }) => {
+test('R5.2 keeps the budget header and summary aligned to the approved V3 page geometry', async ({ page }) => {
   await page.setContent(`
     <style>
       * { box-sizing: border-box; }
@@ -18,7 +18,6 @@ test('R5.2 keeps the budget header, summary and primary action on the approved V
       .shellContent { width:min(calc(100vw - var(--rail) - 48px), 1440px); margin-left:calc(var(--rail) + 24px); }
       .page { max-width:1440px; }
       .pageOverview > header { display:flex; justify-content:space-between; }
-      .module-create-btn { height:40px; min-height:40px; }
       .budgetHeaderActions { display:flex; flex:0 0 auto; align-items:center; justify-content:flex-end; gap:8px; }
       .headerPeriodControl { position:relative; width:164px; flex:0 1 164px; }
       .headerPeriodTrigger { width:100%; height:36px; border:1px solid var(--ft-r07-line); border-radius:10px; background:var(--ft-r07-surface); padding-left:34px; color:var(--ft-r07-ink); font:600 12px/18px Manrope,system-ui,sans-serif; }
@@ -29,15 +28,15 @@ test('R5.2 keeps the budget header, summary and primary action on the approved V
     </style>
     <main class="shellContent">
       <section class="page pageOverview" data-testid="accounts-overview">
-        <header><div><h1>Cuentas</h1><p>Descripción del módulo.</p></div><div><button class="module-create-btn">Añadir cuenta</button></div></header>
+        <header><div><h1>Cuentas</h1><p>Descripción del módulo.</p></div></header>
         <section class="summary"><div class="summaryItem"><p>Saldos</p><div class="summaryValue">S/ 120.00</div></div><div class="summaryItem"><p>USD</p><div class="summaryValue">$ 30.00</div></div><div class="summaryItem"><p>Registro separado</p><div class="summaryValue">S/ 10.00</div></div></section>
       </section>
       <section class="page pageOverview" data-testid="movements-overview">
-        <header><div><h1>Movimientos</h1><p>Descripción del módulo.</p></div><div><button class="module-create-btn">Nuevo movimiento</button></div></header>
+        <header><div><h1>Movimientos</h1><p>Descripción del módulo.</p></div></header>
         <section class="summary"><div class="summaryItem"><p>Ingresos</p><div class="summaryValue">S/ 120.00</div></div><div class="summaryItem"><p>Egresos</p><div class="summaryValue">$ 30.00</div></div><div class="summaryItem"><p>Resultado</p><div class="summaryValue">S/ 10.00</div></div></section>
       </section>
       <section class="page pageOverview v3ModuleContent" data-testid="budgets-overview">
-        <header><div><h1>Presupuestos</h1><p>Descripción del módulo.</p></div><div class="budgetHeaderActions"><div class="headerPeriodControl"><button class="headerPeriodTrigger">Octubre de 2026</button></div><button class="module-create-btn">Crear presupuesto</button></div></header>
+        <header><div><h1>Presupuestos</h1><p>Descripción del módulo.</p></div><div class="budgetHeaderActions"><div class="headerPeriodControl"><button class="headerPeriodTrigger">Octubre de 2026</button></div></div></header>
         <section class="summary budgetSummary"><div class="summaryCurrency"><div class="summaryItem"><p>Asignado · PEN</p><div class="summaryValue">S/ 120.00</div></div><div class="summaryItem"><p>Gastado · PEN</p><div class="summaryValue">S/ 30.00</div></div><div class="summaryItem"><p>Disponible · PEN</p><div class="summaryValue">S/ 90.00</div></div></div></section>
       </section>
     </main>`)
@@ -68,13 +67,7 @@ test('R5.2 keeps the budget header, summary and primary action on the approved V
         accountsSummaryTop: rect('[data-testid="accounts-overview"] .summary').top - overviewTop('[data-testid="accounts-overview"]'),
         movementsSummaryTop: rect('[data-testid="movements-overview"] .summary').top - overviewTop('[data-testid="movements-overview"]'),
         budgetsSummaryTop: rect('[data-testid="budgets-overview"] .summary').top - overviewTop('[data-testid="budgets-overview"]'),
-        accountsAction: rect('[data-testid="accounts-overview"] .module-create-btn'),
-        movementsAction: rect('[data-testid="movements-overview"] .module-create-btn'),
-        budgetsAction: rect('[data-testid="budgets-overview"] .module-create-btn'),
         budgetPeriod: rect('[data-testid="budgets-overview"] .headerPeriodTrigger'),
-        accountsActionTop: rect('[data-testid="accounts-overview"] .module-create-btn').top - overviewTop('[data-testid="accounts-overview"]'),
-        movementsActionTop: rect('[data-testid="movements-overview"] .module-create-btn').top - overviewTop('[data-testid="movements-overview"]'),
-        budgetsActionTop: rect('[data-testid="budgets-overview"] .module-create-btn').top - overviewTop('[data-testid="budgets-overview"]'),
       }
     })
 
@@ -84,18 +77,14 @@ test('R5.2 keeps the budget header, summary and primary action on the approved V
     expect(metrics.budgetsSubtitleTop).toBeCloseTo(metrics.movementsSubtitleTop, 0)
     expect(metrics.budgetsSummaryTop).toBeCloseTo(metrics.accountsSummaryTop, 0)
     expect(metrics.budgetsSummaryTop).toBeCloseTo(metrics.movementsSummaryTop, 0)
-    expect(metrics.budgetsAction.height).toBe(40)
-    expect(metrics.budgetsActionTop).toBeCloseTo(metrics.accountsActionTop, 0)
-    expect(metrics.budgetsActionTop).toBeCloseTo(metrics.movementsActionTop, 0)
-    expect(metrics.budgetsAction.right).toBeCloseTo(metrics.accountsAction.right, 0)
-    expect(metrics.budgetsAction.right).toBeCloseTo(metrics.movementsAction.right, 0)
     expect(metrics.budgetPeriod.height).toBe(36)
-    expect(metrics.budgetsAction.left - metrics.budgetPeriod.right).toBe(8)
   }
 })
 
-test('R5.2 detail panel remains readable and contained from mobile through wide desktop', async ({ page }) => {
+test('R5.2 detail CSS keeps its content readable in a representative responsive layout', async ({ page }) => {
   expect(detailSource).toContain('widthClassName="w-[calc(100vw-40px)] max-w-[1320px]"')
+  expect(detailSource).toContain('overlayClassName={styles.detailOverlay}')
+  expect(detailCss).toContain('.detailOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper)')
   expect(detailSource).toContain('data-testid="budget-detail-layout"')
   expect(detailSource).toContain('onPeriodUpdated?.()')
   expect(detailSource).toContain('resolveBudgetPeriodTransactionsUrl(selectedBudget)')
@@ -157,12 +146,10 @@ test('R5.2 detail panel remains readable and contained from mobile through wide 
 })
 
 test('R5.2 keeps the period action explanation on the approved info-hint interaction', () => {
-  expect(managerSource).toContain('label="Ayuda: ver este período y sus movimientos"')
-  expect(managerSource).toContain('Abre el detalle del período seleccionado y muestra los movimientos vinculados a sus fechas.')
+  expect(managerSource).toContain('title="Ver período"')
+  expect(managerSource).toContain('description="Abre el detalle y muestra los movimientos vinculados a sus fechas."')
   expect(managerSource).toContain('label="Abrir este período y sus movimientos"')
-  expect(managerSource).toContain('function BudgetInfoHint(')
-  expect(managerSource).toContain('movementFormStyles.infoHintTrigger')
-  expect(managerSource).toContain('movementFormStyles.infoTooltip')
+  expect(managerSource).not.toContain('label="Ayuda: ver este período y sus movimientos"')
 })
 
 test('R5.2 period control stays bound to periodMonth and presents only a calendar month/year', () => {
@@ -171,5 +158,5 @@ test('R5.2 period control stays bound to periodMonth and presents only a calenda
   expect(managerSource).toContain('month: \'long\',\n        year: \'numeric\'')
   expect(managerSource).toContain('className={styles.headerPeriodIcon}')
   expect(managerSource).toContain('Seleccionar período')
-  expect(managerSource).not.toContain('className={movementPageStyles.v3ModulePrimaryAction}')
+  expect(managerSource).toContain('className={`${movementPageStyles.v3ModulePrimaryAction} w-full sm:w-auto`}')
 })

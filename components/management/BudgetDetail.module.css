@@ -1,3 +1,16 @@
+.detailOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
+  width: min(1180px, calc(100vw - 48px));
+  margin: 12px;
+}
+
+@media (max-width: 767px) {
+  .detailOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
+    width: calc(100vw - 16px);
+    height: calc(100dvh - 16px);
+    margin: 8px;
+  }
+}
+
 .detailLayout {
   display: grid;
   grid-template-columns: 286px minmax(0, 1fr);
