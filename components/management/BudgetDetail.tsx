@@ -88,6 +88,7 @@ interface Props {
   open: boolean
   budget: BudgetRef
   periods?: BudgetRef[]
+  suspendFocusTrap?: boolean
   onClose: () => void
   onExitComplete?: () => void
   onPeriodUpdated?: () => void | Promise<void>
@@ -167,7 +168,7 @@ function parseAmountInput(value: string): number | null {
   return Math.round(parsed * 100) / 100
 }
 
-export function BudgetDetail({ open, budget, periods, onClose, onExitComplete, onPeriodUpdated, onContinueNextPeriod }: Props) {
+export function BudgetDetail({ open, budget, periods, suspendFocusTrap = false, onClose, onExitComplete, onPeriodUpdated, onContinueNextPeriod }: Props) {
   const [transactions, setTransactions] = useState<TxRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -175,13 +176,13 @@ export function BudgetDetail({ open, budget, periods, onClose, onExitComplete, o
   const [selectedBudgetId, setSelectedBudgetId] = useState(budget.id)
   const [periodItems, setPeriodItems] = useState<BudgetRef[]>(() => mergeBudgetPeriodItems(periods, budget))
   const [periodAmount, setPeriodAmount] = useState(() => Number(budget.amount ?? 0).toFixed(2))
+  const [editingPeriod, setEditingPeriod] = useState<BudgetRef | null>(null)
+  const [periodEditorOpen, setPeriodEditorOpen] = useState(false)
   const [amountSaving, setAmountSaving] = useState(false)
   const [amountError, setAmountError] = useState<string | null>(null)
   const [periodYearFilter, setPeriodYearFilter] = useState(() => getPeriodYear(budget))
   const [periodSearch, setPeriodSearch] = useState('')
   const [discardAmountConfirmationOpen, setDiscardAmountConfirmationOpen] = useState(false)
-  const [pendingPeriodSelectionId, setPendingPeriodSelectionId] = useState<string | null>(null)
-  const [continueAfterDiscard, setContinueAfterDiscard] = useState(false)
   const requestSequenceRef = useRef(0)
 
   const seriesPeriods = useMemo(
@@ -237,11 +238,6 @@ export function BudgetDetail({ open, budget, periods, onClose, onExitComplete, o
     setSelectedBudgetId(prev => (nextPeriods.some(period => period.id === prev) ? prev : budget.id))
   }, [budget, periods])
 
-  useEffect(() => {
-    setPeriodAmount(Number(selectedBudget.amount ?? 0).toFixed(2))
-    setAmountError(null)
-  }, [selectedBudget.id, selectedBudget.amount])
-
   const load = useCallback(async () => {
     const sequence = ++requestSequenceRef.current
     setLoading(true)
@@ -295,54 +291,51 @@ export function BudgetDetail({ open, budget, periods, onClose, onExitComplete, o
   const visibleRemaining = Number(selectedBudget.remaining_amount ?? Number(selectedBudget.amount ?? 0) - visibleSpent)
   const parsedPeriodAmount = parseAmountInput(periodAmount)
   const amountChanged =
-    parsedPeriodAmount !== null && Math.abs(parsedPeriodAmount - Number(selectedBudget.amount ?? 0)) >= 0.01
-  const hasAmountDraft = periodAmount !== Number(selectedBudget.amount ?? 0).toFixed(2)
+    editingPeriod !== null && parsedPeriodAmount !== null && Math.abs(parsedPeriodAmount - Number(editingPeriod.amount ?? 0)) >= 0.01
+  const hasAmountDraft = Boolean(editingPeriod && periodAmount !== Number(editingPeriod.amount ?? 0).toFixed(2))
+
+  const openPeriodAmountEditor = useCallback((period: BudgetRef) => {
+    setEditingPeriod(period)
+    setPeriodAmount(Number(period.amount ?? 0).toFixed(2))
+    setAmountError(null)
+    setDiscardAmountConfirmationOpen(false)
+    setPeriodEditorOpen(true)
+  }, [])
+
+  const closePeriodAmountEditor = useCallback(() => {
+    setDiscardAmountConfirmationOpen(false)
+    setPeriodEditorOpen(false)
+  }, [])
 
   const requestClose = useCallback(() => {
+    if (amountSaving || periodEditorOpen) return
+    onClose()
+  }, [amountSaving, onClose, periodEditorOpen])
+
+  const requestNextPeriod = useCallback(() => {
+    if (amountSaving || periodEditorOpen || !onContinueNextPeriod) return
+    onContinueNextPeriod()
+  }, [amountSaving, onContinueNextPeriod, periodEditorOpen])
+
+  const requestPeriodSelection = useCallback((periodId: string) => {
+    setSelectedBudgetId(periodId)
+  }, [])
+
+  const requestClosePeriodEditor = useCallback(() => {
     if (amountSaving) return
     if (hasAmountDraft) {
       setDiscardAmountConfirmationOpen(true)
       return
     }
-    onClose()
-  }, [amountSaving, hasAmountDraft, onClose])
-
-  const requestNextPeriod = useCallback(() => {
-    if (amountSaving || !onContinueNextPeriod) return
-    if (hasAmountDraft) {
-      setContinueAfterDiscard(true)
-      setDiscardAmountConfirmationOpen(true)
-      return
-    }
-    onContinueNextPeriod()
-  }, [amountSaving, hasAmountDraft, onContinueNextPeriod])
-
-  const requestPeriodSelection = useCallback((periodId: string) => {
-    if (hasAmountDraft) {
-      setPendingPeriodSelectionId(periodId)
-      setDiscardAmountConfirmationOpen(true)
-      return
-    }
-    setSelectedBudgetId(periodId)
-  }, [hasAmountDraft])
+    closePeriodAmountEditor()
+  }, [amountSaving, closePeriodAmountEditor, hasAmountDraft])
 
   const discardAmountDraft = useCallback(() => {
-    setDiscardAmountConfirmationOpen(false)
-    if (continueAfterDiscard) {
-      setContinueAfterDiscard(false)
-      setPendingPeriodSelectionId(null)
-      onContinueNextPeriod?.()
-      return
-    }
-    if (pendingPeriodSelectionId) {
-      setSelectedBudgetId(pendingPeriodSelectionId)
-      setPendingPeriodSelectionId(null)
-      return
-    }
-    onClose()
-  }, [continueAfterDiscard, onClose, onContinueNextPeriod, pendingPeriodSelectionId])
+    closePeriodAmountEditor()
+  }, [closePeriodAmountEditor])
 
   async function savePeriodAmount() {
+    if (!editingPeriod) return
     const nextAmount = parseAmountInput(periodAmount)
     if (nextAmount === null) {
       setAmountError('Ingresa un importe mayor a cero.')
@@ -352,17 +345,17 @@ export function BudgetDetail({ open, budget, periods, onClose, onExitComplete, o
     setAmountSaving(true)
     setAmountError(null)
     try {
-      const endpoint = resolveBudgetPeriodAmountUrl(selectedBudget)
+      const endpoint = resolveBudgetPeriodAmountUrl(editingPeriod)
       const res = await fetch(endpoint, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(selectedBudget.budget_period_id
+          body: JSON.stringify(editingPeriod.budget_period_id
             ? { amount: nextAmount }
             : {
                 amount: nextAmount,
                 action_scope: createBudgetRecordActionScope({
-                  ...selectedBudget,
-                  id: selectedBudget.legacy_budget_id ?? selectedBudget.id,
+                  ...editingPeriod,
+                  id: editingPeriod.legacy_budget_id ?? editingPeriod.id,
                 }),
               }),
       })
@@ -373,7 +366,7 @@ export function BudgetDetail({ open, budget, periods, onClose, onExitComplete, o
 
       setPeriodItems(prev =>
         prev.map(period => {
-          if (period.id !== selectedBudget.id) return period
+          if (period.id !== editingPeriod.id) return period
           const spent = Number(period.spent_amount ?? 0)
           const remaining = nextAmount - spent
           return {
@@ -386,6 +379,7 @@ export function BudgetDetail({ open, budget, periods, onClose, onExitComplete, o
         }),
       )
       await onPeriodUpdated?.()
+      closePeriodAmountEditor()
     } catch (caught) {
       setAmountError(caught instanceof Error ? caught.message : 'No se pudo actualizar el importe del periodo')
     } finally {
@@ -394,12 +388,14 @@ export function BudgetDetail({ open, budget, periods, onClose, onExitComplete, o
   }
 
   return (
+    <>
     <RecordModal
       open={open}
       onClose={requestClose}
       onExitComplete={onExitComplete}
       presentation="workbench"
       size="xl"
+      focusTrapActive={!suspendFocusTrap && !periodEditorOpen}
       overlayClassName={styles.detailOverlay}
       widthClassName="w-[calc(100vw-40px)] max-w-[1320px]"
       footer={onContinueNextPeriod ? (
@@ -471,27 +467,40 @@ export function BudgetDetail({ open, budget, periods, onClose, onExitComplete, o
               const tone = getToneClasses(periodStatus.tone)
 
               return (
-                <button
-                  key={period.id}
-                  type="button"
-                  onClick={() => requestPeriodSelection(period.id)}
-                  className={styles.periodOption}
-                  data-selected={selected}
-                  aria-current={selected ? 'true' : undefined}
-                  aria-label={`${formatRange(period.period_start, period.period_end)}, ${periodStatus.label}, ${formatBudgetCurrency(Number(period.amount ?? 0), period.currency)}`}
-                >
-                  <span className={styles.periodOptionTop}>
-                    <span className={styles.periodOptionRange}>{formatRange(period.period_start, period.period_end)}</span>
-                    <span className={`${styles.periodOptionDot} ${tone.dot}`} aria-hidden="true" />
-                  </span>
-                  <span className={styles.periodOptionAmounts}>
-                    <span className={styles.periodOptionAmount}>{formatBudgetCurrency(Number(period.amount ?? 0), period.currency)} · {periodStatus.label}</span>
-                    <span className={styles.periodOptionProgressLabel}>{periodProgress.toFixed(0)}%</span>
-                  </span>
-                  <span className={styles.progressTrack} aria-hidden="true">
-                    <span className={`${styles.progressFill} ${tone.bar}`} style={{ width: `${Math.min(100, periodProgress)}%` }} />
-                  </span>
-                </button>
+                <div key={period.id} className={styles.periodOption} data-selected={selected}>
+                  <button
+                    type="button"
+                    onClick={() => requestPeriodSelection(period.id)}
+                    className={styles.periodSelectButton}
+                    aria-current={selected ? 'true' : undefined}
+                    aria-label={`${formatRange(period.period_start, period.period_end)}, ${periodStatus.label}, ${formatBudgetCurrency(Number(period.amount ?? 0), period.currency)}`}
+                  >
+                    <span className={styles.periodOptionTop}>
+                      <span className={styles.periodOptionRange}>{formatRange(period.period_start, period.period_end)}</span>
+                      <span className={`${styles.periodOptionDot} ${tone.dot}`} aria-hidden="true" />
+                    </span>
+                    <span className={styles.periodOptionAmounts}>
+                      <span className={styles.periodOptionAmount}>{formatBudgetCurrency(Number(period.amount ?? 0), period.currency)} · {periodStatus.label}</span>
+                      <span className={styles.periodOptionProgressLabel}>{periodProgress.toFixed(0)}%</span>
+                    </span>
+                    <span className={styles.progressTrack} aria-hidden="true">
+                      <span className={`${styles.progressFill} ${tone.bar}`} style={{ width: `${Math.min(100, periodProgress)}%` }} />
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.periodEditButton}
+                    aria-label={`Editar importe del período ${formatRange(period.period_start, period.period_end)}`}
+                    data-testid={`budget-edit-period-${period.id}`}
+                    onClick={() => openPeriodAmountEditor(period)}
+                    disabled={amountSaving}
+                  >
+                    <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" />
+                    </svg>
+                    <span>Editar</span>
+                  </button>
+                </div>
               )
             })}
           </div>
@@ -506,29 +515,6 @@ export function BudgetDetail({ open, budget, periods, onClose, onExitComplete, o
                 <p className={styles.selectedStatusDescription}>{selectedStatus.description}</p>
               </div>
 
-              <form
-                onSubmit={event => {
-                  event.preventDefault()
-                  void savePeriodAmount()
-                }}
-                className={styles.amountForm}
-              >
-                <label htmlFor="budget-period-amount" className={styles.amountLabel}>Importe del período</label>
-                <div className={styles.amountControl}>
-                  <input
-                    id="budget-period-amount"
-                    value={periodAmount}
-                    onChange={event => setPeriodAmount(event.target.value)}
-                    inputMode="decimal"
-                    className={styles.amountInput}
-                    aria-invalid={amountError ? 'true' : 'false'}
-                  />
-                  <button type="submit" disabled={!amountChanged || amountSaving} className={styles.saveAmountButton}>
-                    {amountSaving ? 'Guardando…' : 'Guardar'}
-                  </button>
-                </div>
-                {amountError && <p className={styles.inlineError} role="alert">{amountError}</p>}
-              </form>
             </div>
 
             <div className={styles.detailMetrics} aria-label="Resumen del período">
@@ -620,17 +606,64 @@ export function BudgetDetail({ open, budget, periods, onClose, onExitComplete, o
 
         </section>
       </div>
+    </RecordModal>
+    <RecordModal
+      open={periodEditorOpen}
+      onClose={requestClosePeriodEditor}
+      presentation="workbench"
+      eyebrow="Presupuestos"
+      title="Editar período"
+      subtitle={editingPeriod ? formatRange(editingPeriod.period_start, editingPeriod.period_end) : undefined}
+      widthClassName="w-[calc(100vw-32px)] max-w-[580px]"
+      overlayClassName={styles.periodEditorOverlay}
+      testId="budget-period-editor-workbench"
+      footer={(
+        <div className={styles.periodEditorActions}>
+          <Button type="button" variant="secondary" size="lg" onClick={requestClosePeriodEditor} disabled={amountSaving}>
+            Cancelar
+          </Button>
+          <Button type="submit" form="budget-period-edit-form" variant="primary" size="lg" disabled={!amountChanged || amountSaving} loading={amountSaving} testId="budget-period-save-button">
+            Guardar cambios
+          </Button>
+        </div>
+      )}
+    >
+      <form
+        id="budget-period-edit-form"
+        onSubmit={event => { event.preventDefault(); void savePeriodAmount() }}
+        className={styles.periodEditorForm}
+      >
+        {editingPeriod ? (
+          <>
+            <div className={styles.periodEditorContext}>
+              <span className={styles.sectionEyebrow}>Límite actual</span>
+              <strong>{formatBudgetCurrency(Number(editingPeriod.amount ?? 0), editingPeriod.currency)}</strong>
+            </div>
+            <label htmlFor="budget-period-amount" className={styles.amountLabel}>Nuevo importe · {editingPeriod.currency}</label>
+            <input
+              id="budget-period-amount"
+              value={periodAmount}
+              onChange={event => setPeriodAmount(event.target.value)}
+              inputMode="decimal"
+              className={styles.amountInput}
+              aria-invalid={amountError ? 'true' : 'false'}
+              aria-describedby={amountError ? 'budget-period-amount-error' : undefined}
+              autoFocus
+            />
+            {amountError && <p id="budget-period-amount-error" className={styles.inlineError} role="alert">{amountError}</p>}
+          </>
+        ) : null}
+      </form>
       <ConfirmDialog
         open={discardAmountConfirmationOpen}
-        title={continueAfterDiscard ? 'Continuar sin guardar el importe' : 'Descartar cambio de importe'}
-        message={continueAfterDiscard
-          ? 'El cambio sin guardar se descartará antes de abrir el siguiente período.'
-          : 'El nuevo límite del período aún no se ha guardado. ¿Quieres cerrar y descartarlo?'}
-        onCancel={() => { setDiscardAmountConfirmationOpen(false); setPendingPeriodSelectionId(null); setContinueAfterDiscard(false) }}
+        title="Descartar cambio de importe"
+        message="El nuevo límite del período aún no se ha guardado. ¿Quieres cerrar y descartarlo?"
+        onCancel={() => setDiscardAmountConfirmationOpen(false)}
         onConfirm={discardAmountDraft}
-        confirmLabel={continueAfterDiscard ? 'Descartar y continuar' : 'Descartar cambio'}
-        testId="budget-detail-discard-modal"
+        confirmLabel="Descartar cambio"
+        testId="budget-period-discard-modal"
       />
     </RecordModal>
+    </>
   )
 }

@@ -482,7 +482,6 @@ export function BudgetsManager() {
   const [loadedPeriodMonth, setLoadedPeriodMonth] = useState<string | null>(null)
   const [detailBudget, setDetailBudget] = useState<BudgetSeriesItem | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
-  const detailContinuationRef = useRef<BudgetItem | null>(null)
   const periodFetchSequence = useRef(0)
   const resetAfterModalExitRef = useRef(false)
   const initialFormSnapshotRef = useRef(JSON.stringify(EMPTY_FORM))
@@ -492,7 +491,7 @@ export function BudgetsManager() {
 
   const openFromHeroQuery = searchParams.get('new') === 'budget'
 
-  const loadBudgets = useCallback(async () => {
+  const loadBudgets = useCallback(async (): Promise<BudgetItem[] | null> => {
     if (!hasLoadedBudgetsRef.current) setLoading(true)
     setError(null)
     try {
@@ -501,10 +500,13 @@ export function BudgetsManager() {
       if (!res.ok || !json?.ok) {
         throw new Error(getApiErrorMessage(json, 'No se pudieron cargar los presupuestos'))
       }
-      setBudgets((json.data as BudgetItem[]) ?? [])
+      const nextBudgets = (json.data as BudgetItem[]) ?? []
+      setBudgets(nextBudgets)
       hasLoadedBudgetsRef.current = true
+      return nextBudgets
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No se pudieron cargar los presupuestos')
+      return null
     } finally {
       setLoading(false)
     }
@@ -728,18 +730,20 @@ export function BudgetsManager() {
 
   const requestNextPeriodFromDetail = useCallback(() => {
     if (!detailBudget) return
-    detailContinuationRef.current = detailBudget
-    setDetailOpen(false)
-  }, [detailBudget])
+    openNewPeriod(detailBudget)
+  }, [detailBudget, openNewPeriod])
 
   const completeDetailExit = useCallback(() => {
     setDetailBudget(null)
-    const continuation = detailContinuationRef.current
-    detailContinuationRef.current = null
-    if (continuation) openNewPeriod(continuation)
-  }, [openNewPeriod])
+  }, [])
 
   const budgetSeries = useMemo(() => buildBudgetSeries(budgets), [budgets])
+
+  useEffect(() => {
+    if (!detailBudget) return
+    const refreshedSeries = budgetSeries.find(item => item.series_id === detailBudget.series_id)
+    if (refreshedSeries && refreshedSeries !== detailBudget) setDetailBudget(refreshedSeries)
+  }, [budgetSeries, detailBudget])
 
   const openSeriesDetail = useCallback((budget: BudgetSeriesItem) => {
     setDetailBudget(budget)
@@ -981,7 +985,26 @@ export function BudgetsManager() {
         throw new Error(getApiErrorMessage(json, 'No se pudo guardar el presupuesto'))
       }
 
-      await Promise.all([loadBudgets(), loadPeriodRows()])
+      const [updatedBudgets] = await Promise.all([loadBudgets(), loadPeriodRows()])
+      if (isContinuation && updatedBudgets) {
+        const updatedSeries = buildBudgetSeries(updatedBudgets).find(item => item.series_id === continuationPreview.sourceBudgetId || item.id === continuationPreview.sourceBudgetId)
+        if (updatedSeries) {
+          setDetailBudget(current => {
+            if (!current || current.series_id !== updatedSeries.series_id) return current
+            const periods = updatedSeries.periods.some(period => period.id === current.id)
+              ? updatedSeries.periods
+              : sortPeriods([...updatedSeries.periods, current])
+            return {
+              ...updatedSeries,
+              ...current,
+              periods,
+              period_count: periods.length,
+              active_period_count: periods.filter(period => period.is_active).length,
+              latest_period_end: updatedSeries.latest_period_end,
+            }
+          })
+        }
+      }
       performCloseModal()
       toast.success(
         editingId
@@ -1640,6 +1663,7 @@ export function BudgetsManager() {
         onClose={closeModal}
         onExitComplete={handleModalExitComplete}
         presentation="workbench"
+        overlayClassName={isContinuationMode ? styles.continuationOverlay : undefined}
         eyebrow="Presupuestos"
         title={
           editingId
@@ -1926,6 +1950,7 @@ export function BudgetsManager() {
           open={detailOpen}
           budget={detailBudget}
           periods={detailBudget.periods}
+          suspendFocusTrap={modalOpen && isContinuationMode}
           onPeriodUpdated={async () => { await Promise.all([loadBudgets(), loadPeriodRows()]) }}
           onClose={() => setDetailOpen(false)}
           onExitComplete={completeDetailExit}

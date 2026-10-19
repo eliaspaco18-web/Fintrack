@@ -9,6 +9,7 @@ declare global {
     __budgetExports: Record<string, any>
     __budgetRoot?: { render: (node: unknown) => void }
     __budgetCloseFrames?: Array<{ phase: string; opacity: number; veilOpacity: number; width: number; height: number } | { gone: true }>
+    __budgetRequests?: Array<{ url: string; method?: string; body?: string }>
   }
 }
 
@@ -88,7 +89,7 @@ async function installReactHarness(page: Page) {
     window.__budgetModules['react-dom'] = { default: ReactDOM, createPortal: ReactDOM.createPortal };
     window.__budgetModules['next/link'] = { default: ({ href, children, ...props }) => React.createElement('a', { href, ...props }, children) };
     window.__budgetModules['@/components/ui/accessibility'] = {
-      FocusTrap: ({ children, className }) => React.createElement('div', { className }, children),
+      FocusTrap: ({ children, className, active }) => React.createElement('div', { className, 'data-focus-trap-active': String(active) }, children),
     };
     window.__budgetModules['@/components/ui/Button'] = { Button: () => null };
     window.__budgetModules['@/components/ui/AppSelect'] = { AppSelect: () => null };
@@ -118,10 +119,14 @@ async function installReactHarness(page: Page) {
       resolveBudgetPeriodAmountUrl: period => '/mock/amount/' + period.id,
       resolveBudgetPeriodTransactionsUrl: period => '/mock/transactions/' + period.id,
     };
-    window.fetch = async () => ({ ok: true, json: async () => ({ ok: true, data: [{
-      id: 'tx-fixture', date: '2026-10-15', portfolio: 'Cuenta operativa', recipient: 'Proveedor',
-      description: 'Movimiento de prueba sintético', amount: 125, currency: 'PEN', exchange_rate: null,
-    }] }) });
+    window.__budgetRequests = [];
+    window.fetch = async (url, init) => {
+      window.__budgetRequests.push({ url: String(url), method: init?.method, body: init?.body });
+      return { ok: true, json: async () => ({ ok: true, data: init?.method === 'PATCH' ? {} : [{
+        id: 'tx-fixture', date: '2026-10-15', portfolio: 'Cuenta operativa', recipient: 'Proveedor',
+        description: 'Movimiento de prueba sintético', amount: 125, currency: 'PEN', exchange_rate: null,
+      }] }) };
+    };
 })();` })
 
   await page.addScriptTag({ content: compileComponent('components/ui/Button.tsx', 'Button') })
@@ -253,9 +258,13 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
   expect(source).toContain('overlayClassName={styles.detailOverlay}')
   expect(source).toContain('footer={onContinueNextPeriod ? (')
   expect(source).toContain('testId="budget-detail-next-period"')
+  expect(source).toContain('testId="budget-period-editor-workbench"')
+  expect(source).not.toContain('className={styles.amountForm}')
   const managerSource = sourceOf('components/management/BudgetsManager.tsx')
   expect(managerSource).toContain("formMode === 'continuation'\n              ? 'Crear siguiente período'")
   expect(managerSource).toContain("isContinuationMode ? 'w-[calc(100vw-32px)] max-w-[580px]'")
+  expect(managerSource).toContain('openNewPeriod(detailBudget)')
+  expect(managerSource).toContain('overlayClassName={isContinuationMode ? styles.continuationOverlay : undefined}')
 
   await page.addScriptTag({ content: `(() => {
     const React = window.React;
@@ -269,15 +278,24 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
       amount: 1000, spent_amount: 350, remaining_amount: 650, progress_percent: 35, over_limit: false,
       is_active: true, category: { name: 'Hogar' },
     };
+    const nextBudget = { ...budget, id: 'period-2026-11', budget_period_id: 'period-2026-11', start_date: '2026-11-01', end_date: '2026-11-30', period_start: '2026-11-01', period_end: '2026-11-30', amount: 1100 };
     function Host() {
       const [open, setOpen] = React.useState(true);
       const [mounted, setMounted] = React.useState(true);
+      const [continuationOpen, setContinuationOpen] = React.useState(false);
       window.__reopenBudgetDetail = () => { setMounted(true); setOpen(true); };
       if (!mounted) return null;
-      return React.createElement(window.__budgetExports.BudgetDetail, {
-        open, budget, periods: [budget], onClose: () => setOpen(false), onExitComplete: () => { window.__budgetExitComplete = true; setMounted(false); },
-        onContinueNextPeriod: () => { window.__budgetContinueCalled = true; setOpen(false); },
-      });
+      return React.createElement(React.Fragment, null,
+        React.createElement(window.__budgetExports.BudgetDetail, {
+          open, budget, periods: [budget, nextBudget], suspendFocusTrap: continuationOpen, onClose: () => setOpen(false), onExitComplete: () => { window.__budgetExitComplete = true; setMounted(false); },
+          onContinueNextPeriod: () => { window.__budgetContinueCalled = true; setContinuationOpen(true); },
+        }),
+        React.createElement(window.__budgetExports.RecordModal, {
+          open: continuationOpen, onClose: () => setContinuationOpen(false), presentation: 'workbench',
+          overlayClassName: 'continuationOverlay', widthClassName: 'w-[calc(100vw-32px)] max-w-[580px]',
+          title: 'Crear siguiente período', testId: 'budget-continuation-workbench',
+        }, React.createElement('p', null, 'Edición compacta del nuevo período')),
+      );
     }
     window.__budgetRoot = ReactDOM.createRoot(document.getElementById('root'));
     window.__budgetRoot.render(React.createElement(Host));
@@ -288,18 +306,19 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
   await expect(dialog).toBeVisible()
   await expect(dialog.locator('.periodRail')).toBeVisible()
   await expect(dialog.locator('.detailMetrics')).toBeVisible()
-  await expect(dialog.locator('.amountForm')).toBeVisible()
+  await expect(dialog.locator('.amountForm')).toHaveCount(0)
+  await expect(dialog.locator('[data-testid^="budget-edit-period-"]')).toHaveCount(2)
   await expect(dialog.locator('.transactionList')).toBeVisible()
   await expect(page.locator('[data-ft-workbench-overlay]')).toHaveAttribute('data-phase', 'open')
 
   for (const width of [390, 834, 1081, 1200, 1440, 1710]) {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
     const geometry = await page.evaluate(() => {
-      const wrapper = document.querySelector<HTMLElement>('.ft-v3-workbench-wrapper')!
       const dialogNode = document.querySelector<HTMLElement>('[data-testid="budget-detail-workbench"]')!
+      const wrapper = dialogNode.closest<HTMLElement>('.ft-v3-workbench-wrapper')!
       const bounds = wrapper.getBoundingClientRect()
       const dialogBounds = dialogNode.getBoundingClientRect()
-      const parts = ['.periodRail', '.detailOverview', '.amountForm', '.transactionList'].map(selector => {
+      const parts = ['.periodRail', '.detailOverview', '.detailMetrics', '.transactionList'].map(selector => {
         const rect = dialogNode.querySelector<HTMLElement>(selector)!.getBoundingClientRect()
         return { left: rect.left, right: rect.right, width: rect.width, height: rect.height }
       })
@@ -325,7 +344,7 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
       expect(geometry.wrapper.width).toBeGreaterThan(580)
       expect(geometry.wrapper.left).toBeGreaterThanOrEqual(11)
       expect(geometry.wrapper.right).toBeCloseTo(width - 12, 0)
-      expect(geometry.wrapper.height).toBeLessThan(900)
+      expect(geometry.wrapper.height).toBeCloseTo(876, 0)
       expect(Math.abs(geometry.layout.bottom - geometry.body.bottom)).toBeLessThanOrEqual(2)
       expect(Math.abs(geometry.detailMainBottom - geometry.layout.bottom)).toBeLessThanOrEqual(2)
       expect(geometry.footer.height).toBeGreaterThan(0)
@@ -334,14 +353,38 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
     else if (width <= 1120) expect(geometry.columns).not.toContain('286px')
   }
 
-  const amount = page.locator('#budget-period-amount')
-  await amount.fill('875')
-  await page.getByRole('button', { name: 'Cerrar panel' }).click()
+  await dialog.getByTestId('budget-edit-period-period-2026-10').click()
+  const editor = page.getByTestId('budget-period-editor-workbench')
+  await expect(editor).toBeVisible()
+  await expect(dialog.locator('#budget-period-amount')).toHaveCount(0)
+  await expect(editor.locator('#budget-period-amount')).toHaveValue('1000.00')
+  const editOverlays = await page.locator('[data-ft-workbench-overlay]').evaluateAll(nodes => nodes.map(node => ({
+    testId: node.querySelector('[data-testid]')?.getAttribute('data-testid'),
+    zIndex: Number(getComputedStyle(node).zIndex),
+  })))
+  expect(editOverlays.find(item => item.testId === 'budget-detail-workbench')?.zIndex).toBeLessThan(
+    editOverlays.find(item => item.testId === 'budget-period-editor-workbench')?.zIndex ?? 0,
+  )
+  await editor.locator('#budget-period-amount').fill('875')
+  await editor.getByRole('button', { name: 'Cerrar panel' }).click()
   await expect(page.getByRole('alertdialog', { name: 'Descartar cambio de importe' })).toBeVisible()
   await expect(dialog).toBeVisible()
+  await page.getByRole('button', { name: 'Descartar cambio' }).click()
+  await expect(editor).toHaveCount(0, { timeout: 1500 })
+  await expect(dialog).toBeVisible()
+
+  await dialog.getByTestId('budget-edit-period-period-2026-10').click()
+  await expect(editor).toBeVisible()
+  await editor.locator('#budget-period-amount').fill('875')
+  await editor.getByTestId('budget-period-save-button').click()
+  await expect(editor).toHaveCount(0, { timeout: 1500 })
+  const requests = await page.evaluate(() => window.__budgetRequests)
+  expect(requests?.some(request => request.url === '/mock/amount/period-2026-10' && request.method === 'PATCH' && request.body === '{"amount":875}')).toBe(true)
+  await expect(dialog).toBeVisible()
+
   await page.evaluate(() => {
     const sample = () => {
-      const overlay = document.querySelector<HTMLElement>('[data-ft-workbench-overlay]')
+      const overlay = document.querySelector<HTMLElement>('[data-ft-workbench-overlay]:has([data-testid="budget-detail-workbench"])')
       if (!overlay) {
         window.__budgetCloseFrames!.push({ gone: true })
         return
@@ -356,7 +399,7 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
     }
     requestAnimationFrame(sample)
   })
-  await page.getByRole('button', { name: 'Descartar cambio' }).click()
+  await dialog.getByRole('button', { name: 'Cerrar panel' }).click()
   await expect(dialog).toHaveCount(0, { timeout: 1500 })
   await expect.poll(() => page.evaluate(() => Reflect.get(window, '__budgetExitComplete'))).toBe(true)
   const frames = await page.evaluate(() => window.__budgetCloseFrames ?? [])
@@ -374,5 +417,21 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
   await expect(dialog).toBeVisible()
   await page.getByTestId('budget-detail-next-period').click()
   await expect.poll(() => page.evaluate(() => (window as any).__budgetContinueCalled)).toBe(true)
-  await expect(dialog).toHaveCount(0, { timeout: 1500 })
+  const continuation = page.getByTestId('budget-continuation-workbench')
+  await expect(continuation).toBeVisible()
+  await expect(dialog).toBeVisible()
+  const stacked = await page.locator('[data-ft-workbench-overlay]').evaluateAll(nodes => nodes.map(node => ({
+    testId: node.querySelector('[data-testid]')?.getAttribute('data-testid'),
+    zIndex: Number(getComputedStyle(node).zIndex),
+    blur: getComputedStyle(node.querySelector('[data-ft-workbench-veil]')!).backdropFilter,
+  })))
+  const detailStack = stacked.find(item => item.testId === 'budget-detail-workbench')
+  const continuationStack = stacked.find(item => item.testId === 'budget-continuation-workbench')
+  expect(detailStack).toBeDefined()
+  expect(continuationStack?.zIndex).toBeGreaterThan(detailStack?.zIndex ?? 0)
+  expect(continuationStack?.blur).toContain('blur(3px)')
+  expect(dialog.locator('xpath=ancestor::*[@data-focus-trap-active="false"]')).toHaveCount(1)
+  await continuation.getByRole('button', { name: 'Cerrar panel' }).click()
+  await expect(continuation).toHaveCount(0, { timeout: 1500 })
+  await expect(dialog).toBeVisible()
 })

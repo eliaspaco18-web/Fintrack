@@ -5,15 +5,24 @@
 
 .detailOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
   width: min(1180px, calc(100vw - 48px));
-  height: min(780px, calc(100dvh - 24px));
+  height: calc(100dvh - 24px);
   max-height: calc(100dvh - 24px);
   margin: 12px;
+}
+
+.periodEditorOverlay:global([data-ft-v3][data-ft-workbench-overlay]) {
+  z-index: 110;
+}
+
+.periodEditorOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-veil) {
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
 }
 
 @media (max-width: 1120px) {
   .detailOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
     width: calc(100vw - 48px);
-    height: min(760px, calc(100dvh - 24px));
+    height: calc(100dvh - 24px);
     max-height: calc(100dvh - 24px);
     margin: 12px;
   }
@@ -34,6 +43,7 @@
   height: 100%;
   min-height: 0;
   flex: 1 1 auto;
+  overflow: hidden;
   min-width: 0;
   color: var(--ft-text-strong);
   font-family: Manrope, system-ui, sans-serif;
@@ -136,34 +146,73 @@
 
 .periodOption {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   min-width: 0;
-  gap: 7px;
-  border: 1px solid transparent;
+  gap: 8px;
+  border: 1px solid var(--ft-border);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--ft-surface) 68%, transparent);
-  padding: 10px 11px;
+  background: var(--ft-surface);
+  padding: 9px 10px;
   color: var(--ft-text-muted);
-  text-align: left;
-  cursor: pointer;
   transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
 }
 
 .periodOption:hover {
-  border-color: var(--ft-border);
-  background: var(--ft-surface);
-  color: var(--ft-text-strong);
+  border-color: color-mix(in srgb, var(--ft-primary) 24%, var(--ft-border));
 }
 
-.periodOption:focus-visible {
+.periodOption[data-selected='true'] {
+  border-color: color-mix(in srgb, var(--ft-primary) 36%, var(--ft-border));
+  background: color-mix(in srgb, var(--ft-primary) 4%, var(--ft-surface));
+}
+
+.periodSelectButton {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.periodSelectButton:focus-visible,
+.periodEditButton:focus-visible {
   outline: 2px solid var(--ft-focus-ring-color);
   outline-offset: 2px;
 }
 
-.periodOption[data-selected='true'] {
-  border-color: color-mix(in srgb, var(--ft-primary) 34%, var(--ft-border));
-  background: var(--ft-surface);
+.periodEditButton {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  padding: 0 5px;
+  color: var(--ft-text-muted);
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  cursor: pointer;
+  transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease;
+}
+
+.periodEditButton:hover:not(:disabled) {
+  border-color: var(--ft-border);
+  background: var(--ft-surface-muted);
   color: var(--ft-text-strong);
-  box-shadow: 0 1px 3px rgb(24 39 33 / 5%);
+}
+
+.periodEditButton:disabled {
+  cursor: not-allowed;
+  opacity: .55;
 }
 
 .periodOptionTop,
@@ -277,13 +326,6 @@
   overflow-wrap: anywhere;
 }
 
-.amountForm {
-  display: grid;
-  width: min(100%, 360px);
-  flex: 0 0 min(100%, 360px);
-  gap: 7px;
-}
-
 .amountLabel,
 .detailMetricLabel,
 .transactionColumnLabel,
@@ -297,16 +339,10 @@
   text-transform: uppercase;
 }
 
-.amountControl {
-  display: flex;
-  min-width: 0;
-  gap: 8px;
-}
-
 .amountInput {
   width: 100%;
   min-width: 0;
-  height: 40px;
+  height: 48px;
   border: 1px solid var(--ft-border);
   border-radius: 10px;
   background: var(--ft-surface);
@@ -318,41 +354,41 @@
   font-variant-numeric: tabular-nums;
 }
 
+.periodEditorForm {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.periodEditorContext {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--ft-border);
+  padding-bottom: 14px;
+  margin-bottom: 6px;
+}
+
+.periodEditorContext strong {
+  color: var(--ft-text-strong);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 20px;
+  text-align: right;
+}
+
+.periodEditorActions {
+  display: flex;
+  min-width: 0;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .amountInput:focus-visible {
   border-color: var(--ft-primary);
-  outline: 2px solid var(--ft-focus-ring-color);
-  outline-offset: 2px;
-}
-
-.saveAmountButton {
-  min-width: 88px;
-  height: 40px;
-  border: 1px solid var(--ft-primary);
-  border-radius: 10px;
-  background: var(--ft-primary);
-  padding: 0 13px;
-  color: var(--ft-text-on-primary);
-  font-family: Manrope, system-ui, sans-serif;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 18px;
-  cursor: pointer;
-  transition: background-color 140ms ease, border-color 140ms ease;
-}
-
-.saveAmountButton:hover:not(:disabled) {
-  border-color: var(--ft-primary-hover);
-  background: var(--ft-primary-hover);
-}
-
-.saveAmountButton:disabled {
-  border-color: var(--ft-border);
-  background: var(--ft-surface-muted);
-  color: var(--ft-text-subtle);
-  cursor: not-allowed;
-}
-
-.saveAmountButton:focus-visible {
   outline: 2px solid var(--ft-focus-ring-color);
   outline-offset: 2px;
 }
@@ -649,7 +685,7 @@
     padding: 10px 12px 12px;
   }
 
-  .periodOption { gap: 5px; padding: 8px 10px; }
+  .periodOption { gap: 5px; padding: 8px 9px; }
 
   .detailMain { min-height: 0; }
 }
@@ -657,20 +693,19 @@
 @media (max-width: 767px) {
   .detailLayout {
     display: flex;
-    height: auto;
-    min-height: 100%;
+    height: 100%;
+    min-height: 0;
     flex-direction: column;
-    flex: 0 0 auto;
+    flex: 1 1 auto;
   }
   .periodRail { max-height: 260px; flex: 0 0 auto; }
   .periodFilters { grid-template-columns: 104px minmax(0, 1fr); }
   .periodSearch { height: 42px; }
   .periodList { grid-template-columns: minmax(0, 1fr); max-height: 140px; }
 
-  .detailMain { min-height: 0; flex: 0 0 auto; }
+  .detailMain { min-height: 0; flex: 1 1 auto; overflow: hidden; }
   .detailOverview { gap: 14px; padding: 16px; }
   .periodHeadingRow { align-items: stretch; flex-direction: column; gap: 13px; }
-  .amountForm { width: 100%; flex: 0 1 auto; }
   .detailMetric { padding: 0 10px; }
   .detailMetric:first-child { padding-left: 0; }
   .detailMetricValue { font-size: clamp(13px, 3.8vw, 17px); line-height: 21px; }
@@ -679,7 +714,7 @@
   .transactionToolbar { align-items: flex-start; flex-direction: column; gap: 8px; padding: 12px 16px; }
   .transactionToolbarSearch { width: 100%; }
   .transactionSearch { max-width: none; height: 42px; }
-  .transactionList { flex: 0 0 auto; overflow: visible; padding: 12px 16px; }
+  .transactionList { min-height: 0; flex: 1 1 auto; overflow: auto; padding: 12px 16px; }
   .transactionHeader { display: none; }
   .transactionRow {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -703,6 +738,8 @@
   .workbenchFooter { align-items: stretch; flex-direction: column; gap: 12px; }
   .footerTotals { justify-content: space-between; gap: 12px; }
   .workbenchFooter > :global(button) { width: 100%; }
+  .periodEditorActions { flex-direction: column-reverse; }
+  .periodEditorActions > :global(button) { width: 100%; }
 }
 
 @media (max-width: 420px) {
@@ -717,6 +754,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .periodOption,
-  .saveAmountButton,
+  .periodEditButton,
   .progressFill { transition: none; }
 }

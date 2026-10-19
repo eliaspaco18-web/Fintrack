@@ -9,6 +9,15 @@
   gap: 24px 36px;
 }
 
+.continuationOverlay:global([data-ft-v3][data-ft-workbench-overlay]) {
+  z-index: 110;
+}
+
+.continuationOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-veil) {
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
 .summaryCurrency > div {
   flex: 0 1 auto;
   min-width: min(130px, 100%);
