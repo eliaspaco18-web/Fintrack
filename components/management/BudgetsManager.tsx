@@ -35,7 +35,7 @@ import {
   BUDGET_SCOPE_REQUIRED_ERROR,
   createBudgetRecordActionScope,
 } from '@/modules/budgets/budget-action-scope'
-import { budgetRowsForSelectedMonth, displayBudgetProgress, formatBudgetCurrency, summarizeBudgetCurrencies } from '@/lib/budgets/presentation'
+import { budgetRowsForSelectedMonth, countBudgetStatuses, displayBudgetProgress, formatBudgetCurrency, summarizeBudgetCurrencies } from '@/lib/budgets/presentation'
 import { resolveBudgetPeriodEditTarget, resolveBudgetPeriodIdentity } from '@/lib/budgets/period-record'
 
 type BudgetCategoryRef = {
@@ -638,16 +638,6 @@ export function BudgetsManager() {
     setDetailOpen(true)
   }, [budgetSeries])
 
-  const activeCount = useMemo(
-    () => budgetSeries.filter(item => item.is_active).length,
-    [budgetSeries],
-  )
-
-  const inactiveCount = useMemo(
-    () => budgetSeries.filter(item => !item.is_active).length,
-    [budgetSeries],
-  )
-
   const overLimitCount = useMemo(
     () => budgetSeries.filter(item => item.is_active && item.over_limit).length,
     [budgetSeries],
@@ -658,6 +648,12 @@ export function BudgetsManager() {
     () => budgetRowsForSelectedMonth(periodRows, loadedPeriodMonth, periodMonth),
     [loadedPeriodMonth, periodMonth, periodRows],
   )
+
+  const statusCounts = useMemo(() => {
+    if (workspaceView === 'series') return countBudgetStatuses(budgetSeries)
+    if (!periodRowsReady) return null
+    return countBudgetStatuses(currentPeriodRows.map(row => row.budget))
+  }, [budgetSeries, currentPeriodRows, periodRowsReady, workspaceView])
 
   const periodSummary = useMemo(
     () => summarizeBudgetCurrencies(currentPeriodRows),
@@ -1008,19 +1004,19 @@ export function BudgetsManager() {
                 <DataFilterPreset
                   label="Activos"
                   active={statusFilter === 'active'}
-                  count={activeCount}
+                  count={statusCounts?.active}
                   onClick={() => setStatusFilter('active')}
                 />
                 <DataFilterPreset
                   label="Inactivos"
                   active={statusFilter === 'inactive'}
-                  count={inactiveCount}
+                  count={statusCounts?.inactive}
                   onClick={() => setStatusFilter('inactive')}
                 />
                 <DataFilterPreset
                   label="Todos"
                   active={statusFilter === 'all'}
-                  count={budgetSeries.length}
+                  count={statusCounts?.total}
                   onClick={() => setStatusFilter('all')}
                 />
               </>
@@ -1169,7 +1165,7 @@ export function BudgetsManager() {
             ) : null}
 
             {showPeriodSkeleton && loadedPeriodMonth !== periodMonth ? (
-              <div className="overflow-hidden rounded-[14px] border border-[var(--ft-border)] bg-[var(--ft-surface)]">
+              <div className={`${styles.periodTable} overflow-hidden rounded-[14px] border border-[var(--ft-border)] bg-[var(--ft-surface)]`}>
                 <div className="h-10 animate-pulse bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />
                 {Array.from({ length: Math.max(3, periodRows.length) }, (_, item) => (
                   <div key={item} className="h-[76px] border-t border-[var(--ft-border)] bg-[var(--ft-surface)]" />
@@ -1178,7 +1174,7 @@ export function BudgetsManager() {
             ) : periodRowsError && !periodRowsReady ? null : !periodRowsReady ? (
               <div
                 aria-hidden="true"
-                className="overflow-hidden rounded-[14px] border border-[var(--ft-border)] bg-[var(--ft-surface)]"
+                className={`${styles.periodTable} overflow-hidden rounded-[14px] border border-[var(--ft-border)] bg-[var(--ft-surface)]`}
               >
                 <div className={styles.periodHeader}>
                   <span>Presupuesto</span><span>Gastado</span><span>Límite</span><span>Ejecución</span><span>Disponible</span><span className="text-right">Acciones</span>
@@ -1206,7 +1202,7 @@ export function BudgetsManager() {
                 }}
               />
             ) : (
-              <div className="overflow-hidden rounded-[14px] border border-[var(--ft-border)] bg-[var(--ft-surface)]">
+              <div className={`${styles.periodTable} overflow-hidden rounded-[14px] border border-[var(--ft-border)] bg-[var(--ft-surface)]`}>
                 <div className={styles.periodHeader}>
                   <span>Presupuesto</span><span>Gastado</span><span>Límite</span><span>Ejecución</span><span>Disponible</span><span className="text-right">Acciones</span>
                 </div>

@@ -14,6 +14,20 @@ export type BudgetCurrencySummary = {
   available: number
 }
 
+export type BudgetStatusItem = { is_active: boolean }
+
+export type BudgetStatusCounts = {
+  active: number
+  inactive: number
+  total: number
+}
+
+/** Count the records represented by the current view, without changing filter semantics. */
+export function countBudgetStatuses(items: readonly BudgetStatusItem[]): BudgetStatusCounts {
+  const active = items.reduce((count, item) => count + (item.is_active ? 1 : 0), 0)
+  return { active, inactive: items.length - active, total: items.length }
+}
+
 /** Keep rows from a previous request out of the newly selected month while it loads. */
 export function budgetRowsForSelectedMonth<T>(
   rows: T[],

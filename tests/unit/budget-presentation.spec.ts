@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import {
   budgetRowsForSelectedMonth,
   clampBudgetProgress,
+  countBudgetStatuses,
   displayBudgetProgress,
   formatBudgetCurrency,
   summarizeBudgetCurrencies,
@@ -40,4 +41,19 @@ test('a month switch never exposes rows from the previously loaded month', () =>
 
   expect(budgetRowsForSelectedMonth(previousMonthRows, '2026-08', '2026-09')).toEqual([])
   expect(budgetRowsForSelectedMonth(previousMonthRows, '2026-08', '2026-08')).toEqual(previousMonthRows)
+})
+
+test('status counts follow the records represented by the selected workspace view', () => {
+  const series = [
+    { is_active: true },
+    { is_active: false },
+    { is_active: true },
+  ]
+  const displayedMonthRows = [
+    { budget: { is_active: false } },
+    { budget: { is_active: false } },
+  ]
+
+  expect(countBudgetStatuses(series)).toEqual({ active: 2, inactive: 1, total: 3 })
+  expect(countBudgetStatuses(displayedMonthRows.map(row => row.budget))).toEqual({ active: 0, inactive: 2, total: 2 })
 })

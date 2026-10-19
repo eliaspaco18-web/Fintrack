@@ -17,6 +17,11 @@
   white-space: nowrap;
 }
 
+.periodTable {
+  container-name: budget-period-table;
+  container-type: inline-size;
+}
+
 .periodHeader,
 .periodRow {
   display: grid;
@@ -85,13 +90,42 @@
   min-height: 44px;
 }
 
-@media (max-width: 1080px) {
+@container budget-period-table (max-width: 1040px) {
   .periodHeader,
   .periodRow {
-    grid-template-columns: minmax(132px, 1.35fr) minmax(92px, .9fr) minmax(92px, .9fr) minmax(118px, 1.1fr) minmax(92px, .9fr) minmax(76px, auto);
-    gap: 8px;
-    padding-left: 10px;
-    padding-right: 10px;
+    grid-template-columns: minmax(150px, 1.3fr) minmax(100px, .9fr) minmax(100px, .9fr) minmax(126px, 1.1fr) minmax(104px, .9fr) minmax(84px, auto);
+    gap: 6px;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .periodRow .summaryValue {
+    font-size: 12px;
+    line-height: 1.35;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .periodActions {
+    min-width: 0;
+    flex-wrap: nowrap;
+  }
+}
+
+@container budget-period-table (max-width: 740px) {
+  .periodHeader {
+    display: none;
+  }
+
+  .periodRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px 12px;
+    padding: 14px;
+  }
+
+  .periodActions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
   }
 }
 

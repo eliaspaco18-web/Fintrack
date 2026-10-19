@@ -75,14 +75,14 @@ test('an explicit period linked to a legacy row edits and reads the explicit per
   expect(merged.some(period => period.id === futureLegacyPeriod.id)).toBe(true)
 })
 
-test('tablet period table header and rows keep six matching grid columns', () => {
+test('period table keeps six matching columns in the compact container layout', () => {
   const css = readFileSync(join(process.cwd(), 'components/management/BudgetsManager.module.css'), 'utf8')
   const root = postcss.parse(css)
-  const tablet = root.nodes.find(node => node.type === 'atrule' && node.params === '(max-width: 1080px)')
-  expect(tablet?.type).toBe('atrule')
-  if (!tablet || tablet.type !== 'atrule') throw new Error('Tablet media query not found')
+  const compact = root.nodes.find(node => node.type === 'atrule' && node.params === 'budget-period-table (max-width: 1040px)')
+  expect(compact?.type).toBe('atrule')
+  if (!compact || compact.type !== 'atrule') throw new Error('Compact budget table container query not found')
 
-  const selectors = (tablet.nodes ?? []).filter(node => node.type === 'rule' && node.selector === '.periodHeader,\n  .periodRow')
+  const selectors = (compact.nodes ?? []).filter(node => node.type === 'rule' && node.selector === '.periodHeader,\n  .periodRow')
   expect(selectors).toHaveLength(1)
   const rule = selectors[0]
   if (!rule || rule.type !== 'rule') throw new Error('Tablet table grid rule not found')
@@ -90,4 +90,12 @@ test('tablet period table header and rows keep six matching grid columns', () =>
   expect(grid?.type).toBe('decl')
   if (!grid || grid.type !== 'decl') throw new Error('Tablet grid columns not found')
   expect((grid.value.match(/minmax\(/g) ?? []).length).toBe(6)
+})
+
+test('budget detail year filter uses the shared AppSelect and retains the all-years option', () => {
+  const source = readFileSync(join(process.cwd(), 'components/management/BudgetDetail.tsx'), 'utf8')
+  expect(source).toContain("import { AppSelect } from '@/components/ui/AppSelect'")
+  expect(source).toContain('options={periodYearOptions}')
+  expect(source).toContain("{ value: 'all', label: 'Todos' }")
+  expect(source).not.toMatch(/<select\b/)
 })

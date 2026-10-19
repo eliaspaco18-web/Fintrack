@@ -7,6 +7,7 @@ import { getApiErrorMessage } from '@/lib/api/error-message'
 import type { CurrencyCode, BudgetPeriod } from '@/types/database.types'
 import { createBudgetRecordActionScope } from '@/modules/budgets/budget-action-scope'
 import { formatBudgetCurrency } from '@/lib/budgets/presentation'
+import { AppSelect } from '@/components/ui/AppSelect'
 import {
   mergeBudgetPeriodItems,
   resolveBudgetPeriodAmountUrl,
@@ -203,6 +204,13 @@ export function BudgetDetail({ open, budget, periods, onClose, onExitComplete, o
   const periodYears = useMemo(
     () => Array.from(new Set(seriesPeriods.map(period => getPeriodYear(period)))),
     [seriesPeriods],
+  )
+  const periodYearOptions = useMemo(
+    () => [
+      { value: 'all', label: 'Todos' },
+      ...periodYears.map(year => ({ value: year, label: year })),
+    ],
+    [periodYears],
   )
   const baseBudgetYear = useMemo(() => getYearFromDate(budget.period_start), [budget.period_start])
 
@@ -409,17 +417,15 @@ export function BudgetDetail({ open, budget, periods, onClose, onExitComplete, o
                 </div>
 
                 <div className="mt-3 grid gap-2 sm:grid-cols-[120px_minmax(0,1fr)]">
-                  <select
+                  <AppSelect
                     value={periodYearFilter}
-                    onChange={event => setPeriodYearFilter(event.target.value)}
-                    className="field-base h-9 w-full px-2 text-[12px]"
+                    onChange={setPeriodYearFilter}
+                    className="w-full"
+                    compact
+                    searchable={false}
+                    options={periodYearOptions}
                     aria-label="Filtrar periodos por año"
-                  >
-                    <option value="all">Todos</option>
-                    {periodYears.map(year => (
-                      <option key={year} value={year}>{year}</option>
-                    ))}
-                  </select>
+                  />
                   <input
                     value={periodSearch}
                     onChange={event => setPeriodSearch(event.target.value)}
