@@ -1,7 +1,7 @@
 .summaryCurrency {
   display: grid;
-  min-width: min(100%, 490px);
-  width: min(100%, 560px);
+  min-width: 0;
+  width: 100%;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 24px;
 }
@@ -19,7 +19,7 @@
 .periodHeader,
 .periodRow {
   display: grid;
-  grid-template-columns: minmax(190px, 1.45fr) minmax(110px, 0.8fr) minmax(110px, 0.8fr) minmax(170px, 1fr) minmax(104px, 0.65fr) minmax(156px, auto);
+  grid-template-columns: minmax(180px, 1.35fr) minmax(160px, 1.1fr) minmax(150px, 1.05fr) minmax(132px, 0.9fr) minmax(96px, auto);
   align-items: center;
   gap: 14px;
 }
@@ -45,6 +45,27 @@
   padding: 12px 16px;
   border-top: 1px solid var(--ft-border);
   color: var(--ft-text-strong);
+}
+
+.periodProgress,
+.periodSpentLimit {
+  min-width: 0;
+}
+
+.periodSpentLimit {
+  display: grid;
+  gap: 5px;
+}
+
+.periodSpent,
+.periodLimit {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.periodLimit {
+  font-size: 11px;
 }
 
 .mobilePeriodRow {
@@ -79,8 +100,32 @@
   width: 100%;
 }
 
+.budgetHeaderActions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.headerPeriodSelect {
+  width: 164px;
+  flex: 0 0 164px;
+}
+
+.budgetCreateButton {
+  width: auto !important;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .budgetSummary {
   align-items: start;
+}
+
+.summaryCurrency + .summaryCurrency {
+  border-top: 1px solid var(--ft-r07-line);
+  padding-top: 16px;
 }
 
 .summaryCurrency .summaryValue {
@@ -89,7 +134,8 @@
 
 .summarySkeletonItem {
   display: grid;
-  min-width: min(100%, 490px);
+  min-width: 0;
+  flex: 1 1 180px;
   gap: 9px;
 }
 
@@ -108,7 +154,7 @@
 
 .budgetControls {
   display: grid;
-  gap: 12px;
+  gap: 0;
   margin-bottom: 4px;
 }
 
@@ -116,9 +162,8 @@
   display: flex;
   min-width: 0;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 16px;
-  border-bottom: 1px solid var(--ft-border);
 }
 
 .budgetTabs {
@@ -128,6 +173,11 @@
   gap: 24px;
   overflow-x: auto;
   scrollbar-width: none;
+}
+
+.budgetControls .budgetTabs {
+  border-bottom: 1px solid var(--ft-r07-line);
+  margin: 0 0 16px;
 }
 
 .budgetTabs::-webkit-scrollbar {
@@ -184,20 +234,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.periodControls {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 7px;
-  padding-bottom: 7px;
-}
-
-.periodControlsLabel {
-  margin-right: 2px;
-  color: var(--ft-text-muted);
-  font-size: 11px;
-}
-
 .budgetFilterToolbar {
   display: flex;
   flex-wrap: wrap;
@@ -221,6 +257,54 @@
 
 .budgetFilterToolbar > :last-child {
   flex: 0 0 auto;
+}
+
+.exceptionBand {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--ft-danger-border, var(--ft-border));
+  border-radius: 12px;
+  background: var(--ft-danger-soft);
+  padding: 12px 16px;
+}
+
+.exceptionCopy {
+  min-width: 0;
+}
+
+.exceptionEyebrow {
+  margin: 0;
+  color: var(--ft-danger);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+
+.exceptionTitle {
+  margin: 2px 0 0;
+  color: var(--ft-text-strong);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19px;
+  overflow-wrap: anywhere;
+}
+
+.exceptionValues {
+  margin: 3px 0 0;
+  color: var(--ft-text-muted);
+  font-size: 11px;
+  line-height: 17px;
+  font-variant-numeric: tabular-nums;
+}
+
+.exceptionValues strong {
+  color: var(--ft-danger);
+  font-weight: 600;
 }
 
 /* Create/edit share a compact, single-column form rhythm. */
@@ -393,11 +477,6 @@
     gap: 18px;
   }
 
-  .periodControls {
-    flex-wrap: wrap;
-    padding-bottom: 10px;
-  }
-
   .budgetFilterToolbar {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -454,10 +533,6 @@
     font-size: 11px;
   }
 
-  .periodControlsLabel {
-    width: 100%;
-  }
-
   .amountFields {
     grid-template-columns: minmax(0, 1fr) 96px;
     gap: 9px;
@@ -467,17 +542,18 @@
 @container budget-period-table (max-width: 1040px) {
   .periodHeader,
   .periodRow {
-    grid-template-columns: minmax(150px, 1.3fr) minmax(100px, .9fr) minmax(100px, .9fr) minmax(126px, 1.1fr) minmax(104px, .9fr) minmax(84px, auto);
-    gap: 6px;
-    padding-left: 8px;
-    padding-right: 8px;
+    grid-template-columns: minmax(154px, 1.25fr) minmax(132px, 1fr) minmax(132px, 1fr) minmax(116px, .9fr) minmax(82px, auto);
+    gap: 8px;
+    padding-left: 10px;
+    padding-right: 10px;
   }
 
   .periodRow .summaryValue {
     font-size: 12px;
     line-height: 1.35;
-    white-space: normal;
-    overflow-wrap: anywhere;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .periodActions {
@@ -492,9 +568,15 @@
   }
 
   .periodRow {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 10px 12px;
     padding: 14px;
+  }
+
+  .periodRow > :first-child,
+  .periodProgress,
+  .periodActions {
+    grid-column: 1 / -1;
   }
 
   .periodActions {
@@ -510,14 +592,42 @@
 
   .periodRow {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 10px 12px;
     padding: 14px;
+  }
+
+  .periodRow > :first-child,
+  .periodProgress,
+  .periodActions {
+    grid-column: 1 / -1;
   }
 
   .periodActions {
     grid-column: 1 / -1;
     justify-content: flex-start;
+  }
+}
+
+@media (max-width: 520px) {
+  .budgetHeaderActions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .headerPeriodSelect {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+  }
+
+  .exceptionBand {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .exceptionBand > button {
+    align-self: flex-start;
   }
 }
 

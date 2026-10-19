@@ -75,7 +75,7 @@ test('an explicit period linked to a legacy row edits and reads the explicit per
   expect(merged.some(period => period.id === futureLegacyPeriod.id)).toBe(true)
 })
 
-test('period table keeps six matching columns in the compact container layout', () => {
+test('period table keeps five matching columns in the compact container layout', () => {
   const css = readFileSync(join(process.cwd(), 'components/management/BudgetsManager.module.css'), 'utf8')
   const root = postcss.parse(css)
   const compact = root.nodes.find(node => node.type === 'atrule' && node.params === 'budget-period-table (max-width: 1040px)')
@@ -89,7 +89,7 @@ test('period table keeps six matching columns in the compact container layout', 
   const grid = rule.nodes.find(node => node.type === 'decl' && node.prop === 'grid-template-columns')
   expect(grid?.type).toBe('decl')
   if (!grid || grid.type !== 'decl') throw new Error('Tablet grid columns not found')
-  expect((grid.value.match(/minmax\(/g) ?? []).length).toBe(6)
+  expect((grid.value.match(/minmax\(/g) ?? []).length).toBe(5)
 })
 
 test('budget detail year filter uses the shared AppSelect and retains the all-years option', () => {

@@ -184,13 +184,6 @@ function isoToday(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-function updateMonthKeyPart(periodKey: string, patch: { month?: string; year?: string }): string {
-  const [currentYear, currentMonth] = periodKey.split('-')
-  const nextYear = patch.year ?? currentYear ?? isoToday().slice(0, 4)
-  const nextMonth = patch.month ?? currentMonth ?? isoToday().slice(5, 7)
-  return `${nextYear}-${nextMonth}`
-}
-
 const EMPTY_FORM: BudgetForm = {
   name: '',
   description: '',
@@ -869,6 +862,13 @@ export function BudgetsManager() {
     [currentPeriodRows],
   )
 
+  const priorityExceededPeriod = useMemo(
+    () => [...exceededPeriodRows].sort((left, right) =>
+      right.progress_percent - left.progress_percent || left.budget.name.localeCompare(right.budget.name),
+    )[0] ?? null,
+    [exceededPeriodRows],
+  )
+
   const periodMonthLabel = useMemo(() => {
     const year = Number(periodMonth.slice(0, 4))
     const month = Number(periodMonth.slice(5, 7))
@@ -901,6 +901,17 @@ export function BudgetsManager() {
       .sort((left, right) => Number(right) - Number(left))
       .map(year => ({ value: year, label: year }))
   }, [budgets, periodMonth])
+
+  const periodMonthOptions = useMemo(() => periodYearOptions.flatMap(({ value: year }) =>
+    MONTH_OPTIONS.map(({ value: month }) => ({
+      value: `${year}-${month}`,
+      label: new Date(Date.UTC(Number(year), Number(month) - 1, 15)).toLocaleDateString('es-PE', {
+        month: 'long',
+        year: 'numeric',
+        timeZone: 'UTC',
+      }),
+    })),
+  ), [periodYearOptions])
 
   const filteredBudgetSeries = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -1129,12 +1140,25 @@ export function BudgetsManager() {
                 <h1 id="budgets-heading" className="font-display text-[26px] font-semibold leading-8 tracking-[-0.035em] text-[var(--ft-text-strong)]">Presupuestos</h1>
                 <p className="mt-0.5 max-w-2xl text-[12px] leading-5 text-[var(--ft-text-muted)]">Límites que puedes revisar antes de tu próximo gasto.</p>
               </div>
-              <CreateModuleButton
-                onClick={openCreateModal}
-                label="Crear presupuesto"
-                className={`${movementPageStyles.v3ModulePrimaryAction} w-full sm:w-auto`}
-                testId="budgets-create-button"
-              />
+              <div className={styles.budgetHeaderActions}>
+                <AppSelect
+                  value={periodMonth}
+                  onChange={setPeriodMonth}
+                  className={`${styles.headerPeriodSelect} filters-control`}
+                  compact
+                  searchable={false}
+                  adaptiveMenuWidth
+                  options={periodMonthOptions}
+                  ariaLabel="Seleccionar período"
+                  testId="budgets-header-period-select"
+                />
+                <CreateModuleButton
+                  onClick={openCreateModal}
+                  label="Crear presupuesto"
+                  className={`${movementPageStyles.v3ModulePrimaryAction} ${styles.budgetCreateButton}`}
+                  testId="budgets-create-button"
+                />
+              </div>
             </header>
 
             <section aria-label={`Resumen de presupuestos: ${periodMonthLabel}`} className={`${movementPageStyles.summary} ${styles.budgetSummary}`}>
@@ -1173,7 +1197,7 @@ export function BudgetsManager() {
         controls={(
           <div className={styles.budgetControls}>
             <div className={styles.budgetPeriodNavigation}>
-              <nav aria-label="Vistas de presupuestos" className={styles.budgetTabs}>
+              <nav aria-label="Vistas de presupuestos" className={`${styles.budgetTabs} ${movementPageStyles.tabs}`}>
                 {([
                   ['current', 'Este período', periodRowsReady ? periodRows.length : null],
                   ['exceeded', 'Excedidos', periodRowsReady ? exceededPeriodRows.length : null],
@@ -1193,28 +1217,6 @@ export function BudgetsManager() {
                 ))}
               </nav>
 
-              <div className={styles.periodControls}>
-                <span className={styles.periodControlsLabel}>Período</span>
-                <AppSelect
-                  value={periodMonth.slice(5, 7)}
-                  onChange={value => setPeriodMonth(current => updateMonthKeyPart(current, { month: value }))}
-                  className="filters-control w-[140px]"
-                  compact searchable={false}
-                  options={MONTH_OPTIONS}
-                  ariaLabel="Seleccionar mes"
-                />
-                <AppSelect
-                  value={periodMonth.slice(0, 4)}
-                  onChange={value => setPeriodMonth(current => updateMonthKeyPart(current, { year: value }))}
-                  className="filters-control w-[104px]"
-                  compact searchable={false}
-                  options={periodYearOptions}
-                  ariaLabel="Seleccionar año"
-                />
-                <Button type="button" size="sm" variant="secondary" onClick={() => void loadPeriodRows()} disabled={periodRowsLoading} loading={periodRowsLoading}>
-                  Actualizar
-                </Button>
-              </div>
             </div>
 
             <div className={styles.budgetFilterToolbar}>
@@ -1257,6 +1259,9 @@ export function BudgetsManager() {
                 ]}
                 ariaLabel="Filtrar por categoría"
               />
+              <Button type="button" size="sm" variant="secondary" onClick={() => void loadPeriodRows()} disabled={periodRowsLoading} loading={periodRowsLoading}>
+                Actualizar
+              </Button>
               {workspaceView === 'series' ? <ViewToggle value={viewMode} onChange={setViewMode} id="budgets-view-toggle" /> : null}
               <StatusBadge tone="muted" dot={false}>
                 {workspaceView === 'series'
@@ -1275,26 +1280,24 @@ export function BudgetsManager() {
               <DataErrorBanner message={periodRowsError} onRetry={loadPeriodRows} />
             ) : null}
 
-            {periodRowsReady && exceededPeriodRows.length > 0 ? (
-              <aside className="flex flex-col gap-2 rounded-[12px] border border-[var(--ft-danger-border,var(--ft-border))] bg-[var(--ft-danger-soft)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <p className="text-[12px] font-semibold text-[var(--ft-danger)]">
-                    {exceededPeriodRows.length} período{exceededPeriodRows.length === 1 ? '' : 's'} por encima del límite
+            {periodRowsReady && priorityExceededPeriod ? (
+              <aside className={styles.exceptionBand} data-testid="budget-period-exception">
+                <div className={styles.exceptionCopy}>
+                  <p className={styles.exceptionEyebrow}>
+                    {exceededPeriodRows.length > 1 ? `${exceededPeriodRows.length} presupuestos excedidos · prioridad` : 'Presupuesto excedido'}
                   </p>
-                  <p className="mt-0.5 text-[11px] text-[var(--ft-text-muted)]">Excedentes reales de {periodMonthLabel}, sin combinar monedas.</p>
+                  <p className={styles.exceptionTitle}>{priorityExceededPeriod.budget.name}</p>
+                  <p className={styles.exceptionValues}>
+                    Gastado <strong>{formatBudgetCurrency(priorityExceededPeriod.spent_amount, priorityExceededPeriod.budget.currency)}</strong>
+                    <span aria-hidden="true"> · </span>
+                    Límite <strong>{formatBudgetCurrency(priorityExceededPeriod.amount, priorityExceededPeriod.budget.currency)}</strong>
+                    <span aria-hidden="true"> · </span>
+                    Exceso <strong>{formatBudgetCurrency(Math.abs(priorityExceededPeriod.remaining_amount), priorityExceededPeriod.budget.currency)}</strong>
+                  </p>
                 </div>
-                <div className="flex flex-wrap gap-x-4 gap-y-1">
-                  {summarizeBudgetCurrencies(exceededPeriodRows.map(row => ({
-                    amount: 0,
-                    spent_amount: 0,
-                    remaining_amount: Math.min(0, row.remaining_amount),
-                    budget: { currency: row.budget.currency },
-                  }))).map(item => (
-                    <span key={String(item.currency)} className="text-[12px] font-semibold tabular-nums text-[var(--ft-danger)]">
-                      {item.currency}: {formatBudgetCurrency(Math.abs(item.available), item.currency)}
-                    </span>
-                  ))}
-                </div>
+                <Button type="button" variant="secondary" size="sm" onClick={() => openPeriodDetail(priorityExceededPeriod)}>
+                  Ver este período
+                </Button>
               </aside>
             ) : null}
 
@@ -1311,7 +1314,7 @@ export function BudgetsManager() {
                 className={`${styles.periodTable} overflow-hidden rounded-[14px] border border-[var(--ft-border)] bg-[var(--ft-surface)]`}
               >
                 <div className={styles.periodHeader}>
-                  <span>Presupuesto</span><span>Gastado</span><span>Límite</span><span>Ejecución</span><span>Disponible</span><span className="text-right">Acciones</span>
+                  <span>Presupuesto</span><span>Uso del límite</span><span>Gasto / límite</span><span>Disponible</span><span className="text-right">Acciones</span>
                 </div>
                 {Array.from({ length: Math.max(3, periodRows.length) }, (_, item) => (
                   <div key={item} className={styles.periodReserveRow} />
@@ -1338,7 +1341,7 @@ export function BudgetsManager() {
             ) : (
               <div className={`${styles.periodTable} overflow-hidden rounded-[14px] border border-[var(--ft-border)] bg-[var(--ft-surface)]`}>
                 <div className={styles.periodHeader}>
-                  <span>Presupuesto</span><span>Gastado</span><span>Límite</span><span>Ejecución</span><span>Disponible</span><span className="text-right">Acciones</span>
+                  <span>Presupuesto</span><span>Uso del límite</span><span>Gasto / límite</span><span>Disponible</span><span className="text-right">Acciones</span>
                 </div>
                 {filteredPeriodRows.map(row => {
                   const progress = Math.max(0, Number(row.progress_percent ?? 0))
@@ -1352,23 +1355,25 @@ export function BudgetsManager() {
                         <p className="mt-0.5 truncate text-[11px] text-[var(--ft-text-muted)]">{row.budget.category?.name ?? 'General'} · {PERIOD_LABEL[row.budget.period_type]}</p>
                         <p className="mt-1 text-[11px] tabular-nums text-[var(--ft-text-subtle)]">{formatFullDate(row.period_start)} – {formatFullDate(row.period_end)}</p>
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-[10px] text-[var(--ft-text-subtle)] md:hidden">Gastado</p>
-                        <p className={`${styles.summaryValue} text-[13px] font-semibold tabular-nums text-[var(--ft-text-strong)]`}>{formatBudgetCurrency(Number(row.spent_amount ?? 0), row.budget.currency)}</p>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-[10px] text-[var(--ft-text-subtle)] md:hidden">Límite</p>
-                        <p className={`${styles.summaryValue} text-[13px] font-semibold tabular-nums text-[var(--ft-text-strong)]`}>{formatBudgetCurrency(Number(row.amount ?? 0), row.budget.currency)}</p>
-                      </div>
-                      <div className="min-w-0">
+                      <div className={styles.periodProgress}>
                         <div className="mb-1 flex items-center justify-between gap-2">
-                          <span className="text-[10px] text-[var(--ft-text-subtle)] md:hidden">Ejecución</span>
+                          <span className="text-[10px] text-[var(--ft-text-subtle)] md:hidden">Uso del límite</span>
                           <span className="text-[12px] font-semibold tabular-nums text-[var(--ft-text-strong)]">{displayBudgetProgress(progress)}</span>
                         </div>
                         <div className={styles.progressTrack} role="progressbar" aria-label={`Ejecución de ${row.budget.name}`} aria-valuemin={0} aria-valuemax={Math.max(100, progress)} aria-valuenow={progress}>
                           <div className={`${styles.progressFill} ${fillClass}`} style={{ width: `${visualProgress}%` }} />
                         </div>
                         <p className="mt-1 text-[10px] text-[var(--ft-text-muted)]">{row.over_limit ? `Excedido por ${formatBudgetCurrency(Math.abs(remaining), row.budget.currency)}` : 'Del límite asignado'}</p>
+                      </div>
+                      <div className={styles.periodSpentLimit}>
+                        <div>
+                          <p className="text-[10px] text-[var(--ft-text-subtle)] md:hidden">Gastado</p>
+                          <p className={`${styles.summaryValue} ${styles.periodSpent} text-[13px] font-semibold tabular-nums text-[var(--ft-text-strong)]`}>{formatBudgetCurrency(Number(row.spent_amount ?? 0), row.budget.currency)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-[var(--ft-text-subtle)] md:hidden">Límite</p>
+                          <p className={`${styles.summaryValue} ${styles.periodLimit} text-[11px] font-medium tabular-nums text-[var(--ft-text-muted)]`}>{formatBudgetCurrency(Number(row.amount ?? 0), row.budget.currency)}</p>
+                        </div>
                       </div>
                       <div className="min-w-0">
                         <p className="text-[10px] text-[var(--ft-text-subtle)] md:hidden">Disponible</p>
