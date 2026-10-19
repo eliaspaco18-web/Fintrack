@@ -1,9 +1,12 @@
 'use client'
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { BudgetPeriod, CurrencyCode } from '@/types/database.types'
 import styles from '@/components/management/BudgetsManager.module.css'
+import movementFormStyles from '@/components/forms/TransactionForm/IncomeTransactionForm.module.css'
+import movementPageStyles from '@/components/tables/TransactionsRound07.module.css'
 import { IncomeDatePicker } from '@/components/forms/TransactionForm/IncomeDatePicker'
 import { useToast } from '@/lib/toast/toast'
 import { fetchWithTimeout } from '@/lib/client/fetch-with-timeout'
@@ -14,18 +17,16 @@ import { NumericInput } from '@/components/ui/NumericInput'
 import { Button } from '@/components/ui/Button'
 import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
 import { ViewToggle } from '@/components/ui/ViewToggle'
-import { FormActions, FormField, FormSection, OptionalSection } from '@/components/forms/primitives'
+import { FormActions, FormField, FormSection } from '@/components/forms/primitives'
 import {
   AmountCell,
   ConfirmDialog,
-  ControlsBar,
   DataErrorBanner,
   DataFilterPreset,
   DataSearchField,
   EmptyState,
-  FilterBar,
+  PageLayout,
   ProgressMetric,
-  RegisterModule,
   StatusBadge,
 } from '@/components/finance'
 import { getApiErrorMessage } from '@/lib/api/error-message'
@@ -105,6 +106,7 @@ type PeriodFilter = 'all' | BudgetPeriod
 type ViewMode = 'list' | 'cards'
 type WorkspaceView = 'current' | 'exceeded' | 'series'
 type FormMode = 'create' | 'edit' | 'continuation'
+type BudgetOptionalKey = 'description' | 'notes'
 
 type ContinuationPreview = {
   sourceBudgetId: string
@@ -299,6 +301,170 @@ function formatFullDate(isoDate: string): string {
   })
 }
 
+function BudgetInfoHint({ label, children }: { label: string; children: string }) {
+  const tooltipId = useId()
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const tooltipRef = useRef<HTMLSpanElement>(null)
+  const lastInputRef = useRef<'mouse' | 'touch' | 'keyboard'>('mouse')
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [mounted, setMounted] = useState(false)
+  const [open, setOpen] = useState(false)
+  const [closing, setClosing] = useState(false)
+  const [position, setPosition] = useState<{ left: number; top: number } | null>(null)
+
+  useEffect(() => setMounted(true), [])
+
+  const showTooltip = useCallback(() => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    closeTimerRef.current = null
+    setClosing(false)
+    setOpen(true)
+  }, [])
+
+  const closeTooltip = useCallback((immediate = false) => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    closeTimerRef.current = null
+    if (immediate) {
+      setOpen(false)
+      setClosing(false)
+      return
+    }
+    setClosing(true)
+    closeTimerRef.current = setTimeout(() => {
+      setOpen(false)
+      setClosing(false)
+      closeTimerRef.current = null
+    }, 120)
+  }, [])
+
+  useEffect(() => () => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+  }, [])
+
+  const updatePosition = useCallback(() => {
+    const trigger = triggerRef.current
+    const tooltip = tooltipRef.current
+    if (!trigger || !tooltip) return
+
+    const margin = 12
+    const gap = 8
+    const triggerRect = trigger.getBoundingClientRect()
+    const tooltipRect = tooltip.getBoundingClientRect()
+    const left = Math.min(
+      Math.max(margin, window.innerWidth - tooltipRect.width - margin),
+      Math.max(margin, triggerRect.left + triggerRect.width / 2 - tooltipRect.width / 2),
+    )
+    const spaceAbove = triggerRect.top - margin
+    const spaceBelow = window.innerHeight - triggerRect.bottom - margin
+    const fitsAbove = spaceAbove >= tooltipRect.height + gap
+    const fitsBelow = spaceBelow >= tooltipRect.height + gap
+    const top = fitsAbove || (!fitsBelow && spaceAbove > spaceBelow)
+      ? Math.max(margin, triggerRect.top - tooltipRect.height - gap)
+      : Math.min(window.innerHeight - tooltipRect.height - margin, triggerRect.bottom + gap)
+
+    setPosition(previous => previous?.left === left && previous.top === top ? previous : { left, top })
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!open || !mounted) return
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [mounted, open, updatePosition])
+
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      const restoreFocus = document.activeElement === triggerRef.current
+      closeTooltip(true)
+      if (restoreFocus) triggerRef.current?.focus()
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (!triggerRef.current?.contains(event.target as Node)) closeTooltip()
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    document.addEventListener('pointerdown', onPointerDown, true)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, true)
+      document.removeEventListener('pointerdown', onPointerDown, true)
+    }
+  }, [closeTooltip, open])
+
+  const triggerIsV3 = Boolean(triggerRef.current?.closest('[data-ft-v3], [data-ft-v3-shell]'))
+
+  return (
+    <span className={movementFormStyles.infoHint}>
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-label={label}
+        aria-describedby={open ? tooltipId : undefined}
+        aria-expanded={open && !closing}
+        className={movementFormStyles.infoHintTrigger}
+        onPointerDown={event => { lastInputRef.current = event.pointerType === 'touch' ? 'touch' : 'mouse' }}
+        onPointerEnter={event => {
+          if (event.pointerType !== 'mouse') return
+          lastInputRef.current = 'mouse'
+          showTooltip()
+        }}
+        onPointerLeave={event => {
+          if (event.pointerType === 'mouse' && lastInputRef.current === 'mouse') closeTooltip()
+        }}
+        onFocus={event => {
+          if (lastInputRef.current === 'touch') return
+          lastInputRef.current = event.currentTarget.matches(':focus-visible') ? 'keyboard' : 'mouse'
+          showTooltip()
+        }}
+        onBlur={() => { if (lastInputRef.current === 'keyboard') closeTooltip() }}
+        onKeyDown={event => {
+          if (event.key !== 'Escape') lastInputRef.current = 'keyboard'
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            event.stopPropagation()
+            closeTooltip(true)
+          }
+        }}
+        onClick={event => {
+          if (event.detail > 0 && lastInputRef.current === 'touch') {
+            if (open && !closing) closeTooltip()
+            else showTooltip()
+          }
+        }}
+      >
+        <svg aria-hidden="true" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="6.25" />
+          <path d="M8 7.1v3.7M8 5.2h.01" />
+        </svg>
+      </button>
+      {open && mounted ? createPortal(
+        <span
+          ref={tooltipRef}
+          id={tooltipId}
+          role="tooltip"
+          className={movementFormStyles.infoTooltip}
+          data-ft-v3={triggerIsV3 ? '' : undefined}
+          data-state={closing ? 'closing' : 'open'}
+          style={{
+            left: position?.left ?? 12,
+            top: position?.top ?? 12,
+            visibility: position ? 'visible' : 'hidden',
+          }}
+        >
+          {children}
+        </span>,
+        document.body,
+      ) : null}
+    </span>
+  )
+}
+
 export function BudgetsManager() {
   const router = useRouter()
   const pathname = usePathname()
@@ -313,6 +479,10 @@ export function BudgetsManager() {
   const [form, setForm] = useState<BudgetForm>(EMPTY_FORM)
   const [dateInputError, setDateInputError] = useState<string | null>(null)
   const [formMode, setFormMode] = useState<FormMode>('create')
+  const [additionalOptionsOpen, setAdditionalOptionsOpen] = useState<Record<BudgetOptionalKey, boolean>>({
+    description: false,
+    notes: false,
+  })
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingBudget, setEditingBudget] = useState<BudgetItem | null>(null)
   const [continuationPreview, setContinuationPreview] = useState<ContinuationPreview | null>(null)
@@ -486,6 +656,7 @@ export function BudgetsManager() {
     setDiscardConfirmationOpen(false)
     setDateInputError(null)
     setError(null)
+    setAdditionalOptionsOpen({ description: false, notes: false })
     resetForm()
     setModalOpen(true)
   }, [resetForm])
@@ -507,6 +678,7 @@ export function BudgetsManager() {
     setDateInputError(null)
     setError(null)
     setFormMode('edit')
+    setAdditionalOptionsOpen({ description: false, notes: false })
     setEditingId(budget.id)
     setEditingBudget(budget)
     setContinuationPreview(null)
@@ -533,6 +705,7 @@ export function BudgetsManager() {
     setDiscardConfirmationOpen(false)
     setDateInputError(null)
     setError(null)
+    setAdditionalOptionsOpen({ description: false, notes: false })
     const seriesBudgets = budgets.filter(item => item.series_id === budget.series_id)
     const latestBudget = [...seriesBudgets]
       .sort((left, right) => {
@@ -754,14 +927,6 @@ export function BudgetsManager() {
     })
   }, [budgetSeries, categoryFilter, currencyFilter, periodFilter, query, statusFilter])
 
-  const optionalSummary = useMemo(() => {
-    const summary: string[] = []
-    if (form.description.trim()) summary.push('Descripcion')
-    if (form.notes.trim()) summary.push('Notas')
-    if (!form.is_active) summary.push('Inactivo')
-    return summary
-  }, [form.description, form.is_active, form.notes])
-
   const handleSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const trimmedName = form.name.trim()
@@ -955,185 +1120,154 @@ export function BudgetsManager() {
 
   return (
     <>
-      <RegisterModule
-        eyebrow="Control presupuestal"
-        title="Presupuestos"
-        description="Límites que puedes revisar antes de tu próximo gasto."
-        headerMode="content"
-        actions={(
-          <CreateModuleButton
-            onClick={openCreateModal}
-            label="Nuevo presupuesto"
-            testId="budgets-create-button"
-          />
-        )}
-        stats={(
-          <div className={`${periodRowsReady && periodSummary.length > 0 ? styles.periodSummary : styles.summarySkeleton} ${!showPeriodSkeleton ? styles.summaryPlaceholder : ''}`}>
-            {!periodRowsReady && !periodRowsError ? (showPeriodSkeleton ? [0, 1, 2].map(item => (
-              <div key={item} aria-hidden="true" className="min-w-[155px] space-y-3">
-                <div className="h-3 w-24 animate-pulse rounded-full bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />
-                <div className="h-6 w-36 animate-pulse rounded-full bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />
-                <div className="h-3 w-28 animate-pulse rounded-full bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />
+      <PageLayout
+        className="max-w-none !gap-0"
+        header={(
+          <div className={`${movementPageStyles.pageOverview} ${styles.budgetOverview}`} data-testid="budgets-page-overview">
+            <header aria-labelledby="budgets-heading" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <h1 id="budgets-heading" className="font-display text-[26px] font-semibold leading-8 tracking-[-0.035em] text-[var(--ft-text-strong)]">Presupuestos</h1>
+                <p className="mt-0.5 max-w-2xl text-[12px] leading-5 text-[var(--ft-text-muted)]">Límites que puedes revisar antes de tu próximo gasto.</p>
               </div>
-            )) : null) : periodRowsReady && periodSummary.length > 0 ? periodSummary.map(summary => (
-              <section key={String(summary.currency)} className={styles.summaryCurrency} aria-label={`Resumen ${summary.currency}`}>
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ft-text-muted)]">Asignado · {summary.currency}</p>
-                  <p className={`${styles.summaryValue} mt-1 text-[17px] font-semibold text-[var(--ft-text-strong)]`}>{formatBudgetCurrency(summary.assigned, summary.currency)}</p>
+              <CreateModuleButton
+                onClick={openCreateModal}
+                label="Crear presupuesto"
+                className={`${movementPageStyles.v3ModulePrimaryAction} w-full sm:w-auto`}
+                testId="budgets-create-button"
+              />
+            </header>
+
+            <section aria-label={`Resumen de presupuestos: ${periodMonthLabel}`} className={`${movementPageStyles.summary} ${styles.budgetSummary}`}>
+              {!periodRowsReady && !periodRowsError ? (showPeriodSkeleton ? [0, 1, 2].map(item => (
+                <div key={item} aria-hidden="true" className={styles.summarySkeletonItem}>
+                  <div className="h-3 w-24 animate-pulse rounded-full bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />
+                  <div className="h-7 w-36 animate-pulse rounded-full bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />
+                  <div className="h-3 w-28 animate-pulse rounded-full bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />
                 </div>
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ft-text-muted)]">Gastado</p>
-                  <p className={`${styles.summaryValue} mt-1 text-[17px] font-semibold text-[var(--ft-text-strong)]`}>{formatBudgetCurrency(summary.spent, summary.currency)}</p>
+              )) : <span className={styles.summaryReserve} aria-hidden="true" />) : periodRowsReady && periodSummary.length > 0 ? periodSummary.map(summary => (
+                <div key={String(summary.currency)} className={styles.summaryCurrency} aria-label={`Resumen ${summary.currency}`}>
+                  <div className={movementPageStyles.summaryItem}>
+                    <p>Asignado · {summary.currency}</p>
+                    <div className={`${movementPageStyles.summaryValue} ${styles.summaryValue} tabular-nums`}>{formatBudgetCurrency(summary.assigned, summary.currency)}</div>
+                  </div>
+                  <div className={movementPageStyles.summaryItem}>
+                    <p>Gasto vinculado · {summary.currency}</p>
+                    <div className={`${movementPageStyles.summaryValue} ${styles.summaryValue} tabular-nums`}>{formatBudgetCurrency(summary.spent, summary.currency)}</div>
+                  </div>
+                  <div className={movementPageStyles.summaryItem}>
+                    <p>Disponible · {summary.currency}</p>
+                    <div className={`${movementPageStyles.summaryValue} ${styles.summaryValue} tabular-nums ${summary.available < 0 ? 'text-[var(--ft-danger)]' : ''}`}>
+                      {formatBudgetCurrency(summary.available, summary.currency)}
+                    </div>
+                    {summary.available < 0 ? <small className={movementPageStyles.summaryNote}>Excedido por {formatBudgetCurrency(Math.abs(summary.available), summary.currency)}</small> : null}
+                  </div>
                 </div>
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ft-text-muted)]">Disponible</p>
-                  <p className={`${styles.summaryValue} mt-1 text-[17px] font-semibold ${summary.available < 0 ? 'text-[var(--ft-danger)]' : 'text-[var(--ft-text-strong)]'}`}>{formatBudgetCurrency(summary.available, summary.currency)}</p>
-                </div>
-              </section>
-            )) : (
-              <p className="text-[13px] text-[var(--ft-text-muted)]">
-                {periodRowsError ? 'Resumen no disponible para este período.' : `Sin presupuestos en ${periodMonthLabel}.`}
-              </p>
-            )}
+              )) : (
+                <p className={styles.summaryUnavailable}>
+                  {periodRowsError ? 'Resumen no disponible para este período.' : `Sin presupuestos en ${periodMonthLabel}.`}
+                </p>
+              )}
+            </section>
           </div>
         )}
         controls={(
-          <ControlsBar
-            presets={(
-              <>
-                <DataFilterPreset
-                  label="Activos"
-                  active={statusFilter === 'active'}
-                  count={statusCounts?.active}
-                  onClick={() => setStatusFilter('active')}
+          <div className={styles.budgetControls}>
+            <div className={styles.budgetPeriodNavigation}>
+              <nav aria-label="Vistas de presupuestos" className={styles.budgetTabs}>
+                {([
+                  ['current', 'Este período', periodRowsReady ? periodRows.length : null],
+                  ['exceeded', 'Excedidos', periodRowsReady ? exceededPeriodRows.length : null],
+                  ['series', 'Otros períodos', budgetSeries.length],
+                ] as const).map(([view, label, count]) => (
+                  <button
+                    key={view}
+                    type="button"
+                    aria-pressed={workspaceView === view}
+                    onClick={() => setWorkspaceView(view)}
+                    className={styles.budgetTab}
+                    data-active={workspaceView === view}
+                  >
+                    {label}
+                    {count !== null ? <span className={styles.budgetTabCount}>{count}</span> : null}
+                  </button>
+                ))}
+              </nav>
+
+              <div className={styles.periodControls}>
+                <span className={styles.periodControlsLabel}>Período</span>
+                <AppSelect
+                  value={periodMonth.slice(5, 7)}
+                  onChange={value => setPeriodMonth(current => updateMonthKeyPart(current, { month: value }))}
+                  className="filters-control w-[140px]"
+                  compact searchable={false}
+                  options={MONTH_OPTIONS}
+                  ariaLabel="Seleccionar mes"
                 />
-                <DataFilterPreset
-                  label="Inactivos"
-                  active={statusFilter === 'inactive'}
-                  count={statusCounts?.inactive}
-                  onClick={() => setStatusFilter('inactive')}
+                <AppSelect
+                  value={periodMonth.slice(0, 4)}
+                  onChange={value => setPeriodMonth(current => updateMonthKeyPart(current, { year: value }))}
+                  className="filters-control w-[104px]"
+                  compact searchable={false}
+                  options={periodYearOptions}
+                  ariaLabel="Seleccionar año"
                 />
-                <DataFilterPreset
-                  label="Todos"
-                  active={statusFilter === 'all'}
-                  count={statusCounts?.total}
-                  onClick={() => setStatusFilter('all')}
-                />
-              </>
-            )}
-            search={(
+                <Button type="button" size="sm" variant="secondary" onClick={() => void loadPeriodRows()} disabled={periodRowsLoading} loading={periodRowsLoading}>
+                  Actualizar
+                </Button>
+              </div>
+            </div>
+
+            <div className={styles.budgetFilterToolbar}>
+              <div className={styles.statusFilters} role="group" aria-label="Filtrar por estado">
+                <DataFilterPreset label="Activos" active={statusFilter === 'active'} count={statusCounts?.active} onClick={() => setStatusFilter('active')} />
+                <DataFilterPreset label="Inactivos" active={statusFilter === 'inactive'} count={statusCounts?.inactive} onClick={() => setStatusFilter('inactive')} />
+                <DataFilterPreset label="Todos" active={statusFilter === 'all'} count={statusCounts?.total} onClick={() => setStatusFilter('all')} />
+              </div>
               <DataSearchField
                 value={query}
                 onChange={setQuery}
-                placeholder="Buscar presupuesto, descripcion, categoria o periodo"
+                placeholder="Buscar presupuesto, descripción, categoría o período"
+                aria-label="Buscar presupuestos"
+                className={styles.budgetSearch}
               />
-            )}
-            filters={(
-              <FilterBar>
-                <AppSelect
-                  value={currencyFilter}
-                  onChange={value => setCurrencyFilter(value as CurrencyFilter)}
-                  className="filters-control sm:w-[112px]"
-                  compact
-                  searchable={false}
-                  options={budgetCurrencyOptions}
-                />
-                <AppSelect
-                  value={periodFilter}
-                  onChange={value => setPeriodFilter(value as PeriodFilter)}
-                  className="filters-control sm:w-[150px]"
-                  compact
-                  searchable={false}
-                  options={[
-                    { value: 'all', label: 'Periodo' },
-                    { value: 'WEEKLY', label: 'Semanal' },
-                    { value: 'MONTHLY', label: 'Mensual' },
-                    { value: 'QUARTERLY', label: 'Trimestral' },
-                    { value: 'YEARLY', label: 'Anual' },
-                  ]}
-                />
-                <AppSelect
-                  value={categoryFilter}
-                  onChange={setCategoryFilter}
-                  className="filters-control sm:w-[220px]"
-                  compact
-                  searchPlaceholder="Buscar categoria..."
-                  options={[
-                    { value: 'all', label: 'Categoria' },
-                    { value: 'none', label: 'General (sin categoria)' },
-                    ...categories.map(category => ({
-                      value: category.id,
-                      label: category.name,
-                    })),
-                  ]}
-                />
-              </FilterBar>
-            )}
-            viewToggle={workspaceView === 'series'
-              ? <ViewToggle value={viewMode} onChange={setViewMode} id="budgets-view-toggle" />
-              : null}
-            actions={(
+              <AppSelect value={currencyFilter} onChange={value => setCurrencyFilter(value as CurrencyFilter)} className="filters-control w-[112px]" compact searchable={false} options={budgetCurrencyOptions} ariaLabel="Filtrar por moneda" />
+              <AppSelect
+                value={periodFilter}
+                onChange={value => setPeriodFilter(value as PeriodFilter)}
+                className="filters-control w-[150px]"
+                compact searchable={false}
+                options={[
+                  { value: 'all', label: 'Periodicidad' },
+                  { value: 'WEEKLY', label: 'Semanal' },
+                  { value: 'MONTHLY', label: 'Mensual' },
+                  { value: 'QUARTERLY', label: 'Trimestral' },
+                  { value: 'YEARLY', label: 'Anual' },
+                ]}
+                ariaLabel="Filtrar por periodicidad"
+              />
+              <AppSelect
+                value={categoryFilter}
+                onChange={setCategoryFilter}
+                className="filters-control w-[220px]"
+                searchPlaceholder="Buscar categoría..."
+                options={[
+                  { value: 'all', label: 'Categoría' },
+                  { value: 'none', label: 'General (sin categoría)' },
+                  ...categories.map(category => ({ value: category.id, label: category.name })),
+                ]}
+                ariaLabel="Filtrar por categoría"
+              />
+              {workspaceView === 'series' ? <ViewToggle value={viewMode} onChange={setViewMode} id="budgets-view-toggle" /> : null}
               <StatusBadge tone="muted" dot={false}>
                 {workspaceView === 'series'
                   ? `${filteredBudgetSeries.length} serie${filteredBudgetSeries.length === 1 ? '' : 's'}`
                   : `${filteredPeriodRows.length} presupuesto${filteredPeriodRows.length === 1 ? '' : 's'}`}
               </StatusBadge>
-            )}
-          />
+            </div>
+          </div>
         )}
       >
         {error ? <DataErrorBanner message={error} onRetry={loadBudgets} /> : null}
-
-        <div className="flex flex-col gap-3 border-b border-[var(--ft-border)] sm:flex-row sm:items-end sm:justify-between">
-          <nav aria-label="Vistas de presupuestos" className="flex min-w-0 gap-5 overflow-x-auto">
-            {([
-              ['current', 'Este período', periodRowsReady ? periodRows.length : null],
-              ['exceeded', 'Excedidos', periodRowsReady ? exceededPeriodRows.length : null],
-              ['series', 'Otros períodos', budgetSeries.length],
-            ] as const).map(([view, label, count]) => (
-              <button
-                key={view}
-                type="button"
-                aria-pressed={workspaceView === view}
-                onClick={() => setWorkspaceView(view)}
-                className={`flex shrink-0 items-center gap-2 border-b-2 px-0.5 pb-2.5 text-[13px] font-semibold transition-colors ${workspaceView === view ? 'border-[var(--ft-accent)] text-[var(--ft-text-strong)]' : 'border-transparent text-[var(--ft-text-muted)] hover:text-[var(--ft-text-strong)]'}`}
-              >
-                {label}
-                {count !== null ? <span className="text-[11px] font-medium tabular-nums text-[var(--ft-text-subtle)]">{count}</span> : null}
-              </button>
-            ))}
-          </nav>
-
-          <div className="flex shrink-0 flex-wrap items-center gap-2 pb-2">
-            <span className="text-[11px] font-medium text-[var(--ft-text-muted)]">Período</span>
-            <AppSelect
-              value={periodMonth.slice(5, 7)}
-              onChange={value => setPeriodMonth(current => updateMonthKeyPart(current, { month: value }))}
-              className="filters-control w-[140px]"
-              compact
-              searchable={false}
-              options={MONTH_OPTIONS}
-            />
-            <AppSelect
-              value={periodMonth.slice(0, 4)}
-              onChange={value => setPeriodMonth(current => updateMonthKeyPart(current, { year: value }))}
-              className="filters-control w-[104px]"
-              compact
-              searchable={false}
-              options={periodYearOptions}
-            />
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              onClick={() => void loadPeriodRows()}
-              disabled={periodRowsLoading}
-              loading={periodRowsLoading}
-            >
-              Actualizar
-            </Button>
-          </div>
-        </div>
 
         {workspaceView !== 'series' ? (
           <div className="space-y-3">
@@ -1532,7 +1666,7 @@ export function BudgetsManager() {
             })}
           </div>
         )}
-      </RegisterModule>
+      </PageLayout>
 
       <RecordModal
         open={modalOpen}
@@ -1549,10 +1683,10 @@ export function BudgetsManager() {
         }
         subtitle={
           editingBudget
-            ? `Los cambios se aplican solo a ${formatRange(editingBudget.period_start, editingBudget.period_end)}. Los demas periodos de la serie no se modifican.`
+            ? `Solo cambia el período ${formatRange(editingBudget.period_start, editingBudget.period_end)}.`
             : formMode === 'continuation'
-            ? 'Previsualiza el siguiente rango y conserva la configuración operativa de la serie.'
-            : 'Define límites por categoría y controla tu gasto del período actual.'
+              ? `Siguiente período de ${form.name}.`
+              : 'Define el límite y su vigencia.'
         }
         widthClassName={isContinuationMode ? 'w-[calc(100vw-32px)] max-w-[880px]' : 'w-[calc(100vw-32px)] max-w-[720px]'}
       >
@@ -1563,112 +1697,56 @@ export function BudgetsManager() {
           className="space-y-[var(--ft-form-section-gap)]"
         >
           {isContinuationMode && continuationPreview ? (
-            <>
-              <div className="grid gap-3 xl:grid-cols-[minmax(0,1.02fr)_minmax(360px,0.98fr)]">
-                <FormSection
-                  title="Periodo anterior"
-                  description="Resumen readonly del último presupuesto activo dentro de la serie."
-                  columns="1"
-                  className="rounded-[var(--ft-form-radius)] border border-[color:color-mix(in_srgb,var(--c-border)_72%,transparent)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--c-surface)_90%,transparent),color-mix(in_srgb,var(--c-surface-2)_96%,transparent))] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3 rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] px-3.5 py-3">
-                    <div className="min-w-0">
-                      <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--ft-form-muted)]">Serie activa</p>
-                      <p className="mt-1 text-[15px] font-semibold tracking-[-0.02em] text-[var(--c-text)]">
-                        {form.name}
-                      </p>
-                      <p className="mt-1 text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-                        {PERIOD_LABEL[form.period_type]} · {form.currency}
-                      </p>
-                    </div>
-                    <StatusBadge tone="primary" dot={false}>
-                      Activo
-                    </StatusBadge>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
-                      <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--ft-form-muted)]">Monto vigente</p>
-                      <p className="mt-1 text-[15px] font-semibold tracking-[-0.02em] text-[var(--c-text)]">
-                        {formatBudgetCurrency(roundToDecimals(parseNumericInput(form.amount, 0), 2), form.currency)}
-                      </p>
-                    </div>
-                    <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
-                      <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--ft-form-muted)]">Rango consolidado</p>
-                      <p className="mt-1 text-[13px] font-medium text-[var(--c-text)]">
-                        {formatRange(continuationPreview.lastPeriodStart, continuationPreview.lastPeriodEnd)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] px-3.5 py-3">
-                    <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--ft-form-muted)]">Contexto heredado</p>
-                    <p className="mt-1 text-[12px] leading-[1.5] text-[var(--c-text-muted)]">
-                      Nombre, categoría, moneda, periodicidad y notas se mantienen para conservar la serie consistente.
+            <div className={styles.budgetFormSections}>
+              <FormSection title="Continuidad de la serie" columns="1" className={styles.budgetFormSection}>
+                <div className={styles.continuationContext}>
+                  <div className="min-w-0">
+                    <span className={styles.contextEyebrow}>Serie activa</span>
+                    <p className={styles.contextTitle}>{form.name}</p>
+                    <p className={styles.contextMeta}>
+                      {form.category_id ? categories.find(category => category.id === form.category_id)?.name ?? 'Categoría guardada' : 'General'}
+                      {' · '}{PERIOD_LABEL[form.period_type]} · {form.currency}
                     </p>
                   </div>
-                </FormSection>
-
-                <FormSection
-                  title="Nuevo periodo"
-                  description="La continuidad usa el rango siguiente calculado por la serie actual. Puedes ajustar el importe sin romper la serie."
-                  columns="1"
-                  className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
-                >
-                  <FormField label="Periodo siguiente calculado">
-                    <div className="rounded-[var(--ft-form-radius)] border border-[color:color-mix(in_srgb,var(--c-border)_60%,transparent)] bg-[color:color-mix(in_srgb,var(--c-surface-2)_90%,transparent)] px-3.5 py-3">
-                      <p className="text-[13px] font-semibold text-[var(--c-text)]">
-                        {formatRange(continuationPreview.nextPeriodStart, continuationPreview.nextPeriodEnd)}
-                      </p>
-                    </div>
-                  </FormField>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <FormField label="Importe del nuevo periodo">
-                      <NumericInput
-                        step="0.01"
-                        decimals={2}
-                        min={0}
-                        value={form.amount}
-                        onValueChange={value => setForm(prev => ({ ...prev, amount: value }))}
-                        required
-                        data-testid="budget-continuation-amount-input"
-                        className="field-base ft-form-amount-input w-full px-3.5 py-3 text-base font-semibold"
-                        placeholder="0.00"
-                      />
-                    </FormField>
-
-                    <FormField label="Fecha de inicio">
-                      <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3 text-sm font-medium text-[var(--c-text)]">
-                        {continuationPreview.nextPeriodStart}
-                      </div>
-                    </FormField>
+                  <div className={styles.contextRange}>
+                    <span className={styles.contextEyebrow}>Período anterior</span>
+                    <span>{formatRange(continuationPreview.lastPeriodStart, continuationPreview.lastPeriodEnd)}</span>
                   </div>
-                </FormSection>
-              </div>
-
-              <FormSection
-                title="Opciones"
-                description="Las notas siguen la configuración heredada de la serie en este flujo continuo."
-                columns="1"
-                className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
-              >
-                <FormField label="Notas" optional>
-                  <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3 text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-                    Las notas y ajustes finos del nuevo período siguen la configuración heredada de la serie.
-                  </div>
-                </FormField>
+                  <BudgetInfoHint label="Ayuda sobre la continuidad">
+                    Se conserva la configuración de la serie. Solo puedes ajustar el importe del nuevo período.
+                  </BudgetInfoHint>
+                </div>
               </FormSection>
-            </>
+
+              <FormSection title="Siguiente período" columns="1" className={styles.budgetFormSection}>
+                <div className={styles.continuationNextPeriod}>
+                  <div>
+                    <span className={styles.contextEyebrow}>Vigencia calculada</span>
+                    <p className={styles.nextPeriodRange}>{formatRange(continuationPreview.nextPeriodStart, continuationPreview.nextPeriodEnd)}</p>
+                  </div>
+                  <FormField label="Importe del nuevo período" className="min-w-0">
+                    <NumericInput
+                      step="0.01"
+                      decimals={2}
+                      min={0}
+                      value={form.amount}
+                      onValueChange={value => setForm(prev => ({ ...prev, amount: value }))}
+                      required
+                      data-testid="budget-continuation-amount-input"
+                      className="field-base ft-form-amount-input w-full px-3.5 py-3 text-base font-semibold"
+                      placeholder="0.00"
+                    />
+                  </FormField>
+                </div>
+                {form.notes.trim() ? (
+                  <p className={styles.inheritedNotes}><span>Notas heredadas:</span> {form.notes}</p>
+                ) : null}
+              </FormSection>
+            </div>
           ) : (
-            <>
-              <div className="grid gap-3 xl:grid-cols-[minmax(0,0.98fr)_minmax(340px,1.02fr)]">
-                <FormSection
-                  title="Presupuesto"
-                  description="Agrupa la identidad operativa, la categoría y el estado del límite que vas a seguir."
-                  columns="1"
-                  className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
-                >
+            <div className={styles.budgetFormSections}>
+              <FormSection title="Datos del presupuesto" columns="1" className={styles.budgetFormSection}>
+                <div className={styles.fieldWithHint}>
                   <FormField label="Nombre">
                     <input
                       value={form.name}
@@ -1676,151 +1754,165 @@ export function BudgetsManager() {
                       required
                       data-testid="budget-name-input"
                       className="field-base ft-form-input w-full"
-                      placeholder="Ej: Marketing mensual"
+                      placeholder="Ej. Alimentación"
                     />
                   </FormField>
+                  <span className={styles.fieldHint}><BudgetInfoHint label="Ayuda sobre el nombre">Un nombre breve te ayudará a encontrar este presupuesto en su período.</BudgetInfoHint></span>
+                </div>
 
-                  <FormField label="Categoria" optional optionalLabel="General si no eliges una">
-                    <AppSelect
-                      value={form.category_id}
-                      onChange={value => setForm(prev => ({ ...prev, category_id: value }))}
-                      searchPlaceholder="Buscar categoría..."
-                      options={[
-                        { value: '', label: 'General (todos los egresos)' },
-                        ...categories.map(category => ({
-                          value: category.id,
-                          label: category.name,
-                        })),
-                      ]}
-                    />
-                  </FormField>
-
-                  <FormField label="Periodicidad">
-                    <AppSelect
-                      value={form.period_type}
-                      onChange={value => handlePeriodOrDateChange({ period_type: value as BudgetPeriod })}
-                      searchable={false}
-                      options={[
-                        { value: 'WEEKLY', label: 'Semanal' },
-                        { value: 'MONTHLY', label: 'Mensual' },
-                        { value: 'QUARTERLY', label: 'Trimestral' },
-                        { value: 'YEARLY', label: 'Anual' },
-                      ]}
-                    />
-                  </FormField>
-
-                  <label className="flex items-start gap-3 rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
-                    <input
-                      type="checkbox"
-                      checked={form.is_active}
-                      onChange={event => setForm(prev => ({ ...prev, is_active: event.target.checked }))}
-                      className="mt-1"
-                    />
-                    <span className="block">
-                      <span className="block text-sm font-medium text-[var(--c-text)]">Presupuesto activo</span>
-                      <span className="block text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-                        Mantiene este límite visible en el seguimiento operativo del período actual.
-                      </span>
-                    </span>
-                  </label>
-                </FormSection>
-
-                <FormSection
-                  title="Monto y fechas"
-                  description="El importe y la vigencia viven juntos para que el rango del presupuesto se lea de una sola vez."
-                  columns="1"
-                  className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
-                >
-                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_128px]">
-                    <FormField label="Monto">
-                      <NumericInput
-                        step="0.01"
-                        decimals={2}
-                        min={0}
-                        value={form.amount}
-                        onValueChange={value => setForm(prev => ({ ...prev, amount: value }))}
-                        required
-                        data-testid="budget-amount-input"
-                        className="field-base ft-form-amount-input w-full px-3.5 py-3 text-base font-semibold"
-                        placeholder="0.00"
-                      />
-                    </FormField>
-
-                    <FormField label="Moneda">
+                <div className={styles.identityFields}>
+                  <div className={styles.fieldWithHint}>
+                    <FormField label="Categoría" optional optionalLabel="General si no eliges una">
                       <AppSelect
-                        value={form.currency}
-                        onChange={value => setForm(prev => ({ ...prev, currency: value as CurrencyCode }))}
-                        compact
-                        searchable={false}
+                        value={form.category_id}
+                        onChange={value => setForm(prev => ({ ...prev, category_id: value }))}
+                        searchPlaceholder="Buscar categoría..."
                         options={[
-                          { value: 'PEN', label: 'PEN' },
-                          { value: 'USD', label: 'USD' },
+                          { value: '', label: 'General (todos los egresos)' },
+                          ...categories.map(category => ({ value: category.id, label: category.name })),
                         ]}
                       />
                     </FormField>
+                    <span className={styles.fieldHint}><BudgetInfoHint label="Ayuda sobre la categoría">Sin categoría, el presupuesto queda asociado a todos los egresos del período.</BudgetInfoHint></span>
                   </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <FormField label="Fecha de inicio">
-                      <IncomeDatePicker
-                        value={form.start_date}
-                        onChange={value => handlePeriodOrDateChange({ start_date: value })}
-                        onInvalidInput={setDateInputError}
-                        error={dateInputError ?? undefined}
-                        inputLabel="Fecha de inicio del presupuesto, día, mes y año"
-                        inputTestId="budget-start-date-input"
+                  <div className={styles.fieldWithHint}>
+                    <FormField label="Periodicidad">
+                      <AppSelect
+                        value={form.period_type}
+                        onChange={value => handlePeriodOrDateChange({ period_type: value as BudgetPeriod })}
+                        searchable={false}
+                        options={[
+                          { value: 'WEEKLY', label: 'Semanal' },
+                          { value: 'MONTHLY', label: 'Mensual' },
+                          { value: 'QUARTERLY', label: 'Trimestral' },
+                          { value: 'YEARLY', label: 'Anual' },
+                        ]}
                       />
                     </FormField>
+                    <span className={styles.fieldHint}><BudgetInfoHint label="Ayuda sobre la periodicidad">La periodicidad determina la duración del período; las fechas se calculan desde la fecha de inicio.</BudgetInfoHint></span>
+                  </div>
+                </div>
+              </FormSection>
 
-                    <FormField
-                      label="Fecha de fin calculada"
-                      description="Se actualiza automáticamente cuando cambias la fecha de inicio o la periodicidad."
-                    >
-                      <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
-                        <p className="text-sm font-medium text-[var(--c-text)]">
-                          {form.end_date ? formatFullDate(form.end_date) : 'Se calculará al completar la fecha de inicio'}
-                        </p>
+              <FormSection title="Límite y vigencia" columns="1" className={styles.budgetFormSection}>
+                <div className={styles.amountFields}>
+                  <FormField label="Monto">
+                    <NumericInput
+                      step="0.01"
+                      decimals={2}
+                      min={0}
+                      value={form.amount}
+                      onValueChange={value => setForm(prev => ({ ...prev, amount: value }))}
+                      required
+                      data-testid="budget-amount-input"
+                      className="field-base ft-form-amount-input w-full px-3.5 py-3 text-base font-semibold"
+                      placeholder="0.00"
+                    />
+                  </FormField>
+                  <FormField label="Moneda">
+                    <AppSelect
+                      value={form.currency}
+                      onChange={value => setForm(prev => ({ ...prev, currency: value as CurrencyCode }))}
+                      compact
+                      searchable={false}
+                      options={[{ value: 'PEN', label: 'PEN' }, { value: 'USD', label: 'USD' }]}
+                    />
+                  </FormField>
+                </div>
+
+                <div className={styles.dateFields}>
+                  <FormField label="Fecha de inicio">
+                    <IncomeDatePicker
+                      value={form.start_date}
+                      onChange={value => handlePeriodOrDateChange({ start_date: value })}
+                      onInvalidInput={setDateInputError}
+                      error={dateInputError ?? undefined}
+                      inputLabel="Fecha de inicio del presupuesto, día, mes y año"
+                      inputTestId="budget-start-date-input"
+                    />
+                  </FormField>
+                  <div className={styles.fieldWithHint}>
+                    <FormField label="Fecha de fin calculada">
+                      <div className={styles.calculatedDate}>
+                        <span>{form.end_date ? formatFullDate(form.end_date) : 'Se calculará al completar el inicio'}</span>
                       </div>
                     </FormField>
+                    <span className={styles.fieldHint}><BudgetInfoHint label="Ayuda sobre la fecha de fin">Se calcula automáticamente según la periodicidad y la fecha de inicio.</BudgetInfoHint></span>
                   </div>
+                </div>
 
-              <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] px-3.5 py-3">
-                    <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--ft-form-muted)]">Rango del período</p>
-                    <p className="mt-1 text-[13px] font-medium text-[var(--c-text)]">
-                      {form.start_date && form.end_date ? formatRange(form.start_date, form.end_date) : 'El rango aparecera al completar la vigencia'}
-                    </p>
+                <div className={styles.activeToggle}>
+                  <input
+                    id="budget-active"
+                    type="checkbox"
+                    checked={form.is_active}
+                    onChange={event => setForm(prev => ({ ...prev, is_active: event.target.checked }))}
+                  />
+                  <label htmlFor="budget-active">Presupuesto activo</label>
+                  <BudgetInfoHint label="Ayuda sobre el estado activo">Los períodos activos aparecen en el seguimiento de presupuestos.</BudgetInfoHint>
+                </div>
+              </FormSection>
+
+              <section className={movementFormStyles.incomeOptionalSection} aria-label="Información adicional" data-testid="budget-additional-information">
+                <div className={movementFormStyles.incomeOptionsHeader}>
+                  <div>
+                    <h3 className={movementFormStyles.incomeSectionHeading}>Información adicional</h3>
+                    <p className={movementFormStyles.incomeOptionsDescription}>Opcional · agrega detalles cuando los necesites</p>
                   </div>
-                </FormSection>
-              </div>
+                </div>
 
-              <OptionalSection
-                title="Opciones"
-                summary={optionalSummary}
-                className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4"
-              >
-                <FormSection columns="2">
-                  <FormField label="Descripcion" optional>
-                    <input
-                      value={form.description}
-                      onChange={event => setForm(prev => ({ ...prev, description: event.target.value }))}
-                      className="field-base ft-form-input w-full"
-                      placeholder="Ej: Presupuesto para pauta y herramientas"
-                      maxLength={300}
-                    />
-                  </FormField>
+                <div className={movementFormStyles.incomeOptionControls} role="group" aria-label="Opciones adicionales del presupuesto">
+                  {([
+                    ['description', 'Descripción', form.description],
+                    ['notes', 'Notas', form.notes],
+                  ] as const).map(([key, label, value]) => {
+                    const isOpen = additionalOptionsOpen[key]
+                    const panelId = `budget-additional-${key}`
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        aria-expanded={isOpen}
+                        aria-controls={panelId}
+                        data-active={isOpen ? 'true' : 'false'}
+                        data-has-value={value.trim() ? 'true' : 'false'}
+                        className={movementFormStyles.incomeOptionButton}
+                        onClick={() => setAdditionalOptionsOpen(current => ({ ...current, [key]: !current[key] }))}
+                      >
+                        <span aria-hidden="true" className={movementFormStyles.incomeOptionMark}>{isOpen ? '−' : '+'}</span>
+                        <span>{label}</span>
+                        {value.trim() ? <span className={styles.optionalValueMark}>Guardado</span> : null}
+                      </button>
+                    )
+                  })}
+                </div>
 
-                  <FormField label="Notas" optional>
-                    <textarea
-                      rows={3}
-                      value={form.notes}
-                      onChange={event => setForm(prev => ({ ...prev, notes: event.target.value }))}
-                      className="field-base ft-form-textarea w-full resize-none"
-                      placeholder="Observaciones internas para el seguimiento del presupuesto"
-                    />
-                  </FormField>
-                </FormSection>
-              </OptionalSection>
-            </>
+                <div className={movementFormStyles.incomeOptionPanels}>
+                  <div id="budget-additional-description" data-income-option="description" hidden={!additionalOptionsOpen.description} className={movementFormStyles.incomeOptionPanel}>
+                    <FormField label="Descripción" optional>
+                      <input
+                        value={form.description}
+                        onChange={event => setForm(prev => ({ ...prev, description: event.target.value }))}
+                        className="field-base ft-form-input w-full"
+                        placeholder="¿Qué incluye este límite?"
+                        maxLength={300}
+                      />
+                    </FormField>
+                  </div>
+                  <div id="budget-additional-notes" data-income-option="notes" hidden={!additionalOptionsOpen.notes} className={movementFormStyles.incomeOptionPanel}>
+                    <FormField label="Notas" optional>
+                      <textarea
+                        rows={3}
+                        value={form.notes}
+                        onChange={event => setForm(prev => ({ ...prev, notes: event.target.value }))}
+                        className="field-base ft-form-textarea w-full resize-none"
+                        placeholder="Una nota para consultar después"
+                      />
+                    </FormField>
+                  </div>
+                </div>
+              </section>
+            </div>
           )}
 
           {error ? (
