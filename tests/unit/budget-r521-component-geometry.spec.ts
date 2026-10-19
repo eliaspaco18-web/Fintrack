@@ -328,6 +328,23 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
         body: (() => { const rect = dialogNode.querySelector<HTMLElement>('[data-record-modal-body]')!.getBoundingClientRect(); return { top: rect.top, bottom: rect.bottom, height: rect.height } })(),
         layout: (() => { const rect = dialogNode.querySelector<HTMLElement>('.detailLayout')!.getBoundingClientRect(); return { top: rect.top, bottom: rect.bottom, height: rect.height } })(),
         detailMainBottom: dialogNode.querySelector<HTMLElement>('.detailMain')!.getBoundingClientRect().bottom,
+        overviewHeight: dialogNode.querySelector<HTMLElement>('.detailOverview')!.getBoundingClientRect().height,
+        transactionListHeight: dialogNode.querySelector<HTMLElement>('.transactionList')!.getBoundingClientRect().height,
+        periodRailWidth: dialogNode.querySelector<HTMLElement>('.periodRail')!.getBoundingClientRect().width,
+        periodCard: (() => {
+          const card = dialogNode.querySelector<HTMLElement>('.periodOption')!
+          const range = card.querySelector<HTMLElement>('.periodOptionRange')!
+          const status = card.querySelector<HTMLElement>('.periodOptionStatus')!
+          const edit = card.querySelector<HTMLElement>('.periodEditButton')!
+          return {
+            width: card.getBoundingClientRect().width,
+            rangeClientWidth: range.clientWidth,
+            rangeScrollWidth: range.scrollWidth,
+            statusVisible: status.getBoundingClientRect().width > 0,
+            editVisible: edit.getBoundingClientRect().width > 0,
+            selectedBackground: getComputedStyle(card).backgroundColor,
+          }
+        })(),
         footer: (() => { const rect = dialogNode.lastElementChild!.getBoundingClientRect(); return { top: rect.top, bottom: rect.bottom, height: rect.height } })(),
         documentWidth: document.documentElement.scrollWidth,
         parts,
@@ -340,6 +357,10 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
     expect(geometry.dialog.width).toBeGreaterThan(width <= 767 ? width - 30 : Math.min(580, width - 50))
     expect(geometry.documentWidth).toBeLessThanOrEqual(width)
     expect(geometry.parts.every(part => part.width > 0 && part.right <= geometry.dialog.right + 1)).toBe(true)
+    expect(geometry.periodCard.statusVisible).toBe(true)
+    expect(geometry.periodCard.editVisible).toBe(true)
+    expect(geometry.periodCard.rangeScrollWidth).toBeLessThanOrEqual(geometry.periodCard.rangeClientWidth + 1)
+    expect(geometry.periodRailWidth).toBeGreaterThan(0)
     if (width > 767) {
       expect(geometry.wrapper.width).toBeGreaterThan(580)
       expect(geometry.wrapper.left).toBeGreaterThanOrEqual(11)
@@ -349,8 +370,13 @@ test('the real RecordModal wrapper expands for budget detail and keeps its conte
       expect(Math.abs(geometry.detailMainBottom - geometry.layout.bottom)).toBeLessThanOrEqual(2)
       expect(geometry.footer.height).toBeGreaterThan(0)
     }
+    if (width >= 1200) {
+      expect(geometry.periodRailWidth).toBeGreaterThanOrEqual(318)
+      expect(geometry.overviewHeight).toBeLessThanOrEqual(200)
+      expect(geometry.transactionListHeight).toBeGreaterThan(260)
+    }
     if (width <= 767) expect(geometry.display).toBe('flex')
-    else if (width <= 1120) expect(geometry.columns).not.toContain('286px')
+    else if (width <= 1120) expect(geometry.columns).not.toContain('318px')
   }
 
   await dialog.getByTestId('budget-edit-period-period-2026-10').click()

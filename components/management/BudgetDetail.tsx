@@ -476,11 +476,14 @@ export function BudgetDetail({ open, budget, periods, suspendFocusTrap = false, 
                     aria-label={`${formatRange(period.period_start, period.period_end)}, ${periodStatus.label}, ${formatBudgetCurrency(Number(period.amount ?? 0), period.currency)}`}
                   >
                     <span className={styles.periodOptionTop}>
-                      <span className={styles.periodOptionRange}>{formatRange(period.period_start, period.period_end)}</span>
-                      <span className={`${styles.periodOptionDot} ${tone.dot}`} aria-hidden="true" />
+                      <span className={styles.periodOptionRange}>{formatRangeCompact(period.period_start, period.period_end)}</span>
+                      <span className={`${styles.periodOptionStatus} ${tone.badge}`}>
+                        <span className={`${styles.periodOptionDot} ${tone.dot}`} aria-hidden="true" />
+                        {periodStatus.label}
+                      </span>
                     </span>
                     <span className={styles.periodOptionAmounts}>
-                      <span className={styles.periodOptionAmount}>{formatBudgetCurrency(Number(period.amount ?? 0), period.currency)} · {periodStatus.label}</span>
+                      <span className={styles.periodOptionAmount}>{formatBudgetCurrency(Number(period.amount ?? 0), period.currency)}</span>
                       <span className={styles.periodOptionProgressLabel}>{periodProgress.toFixed(0)}%</span>
                     </span>
                     <span className={styles.progressTrack} aria-hidden="true">

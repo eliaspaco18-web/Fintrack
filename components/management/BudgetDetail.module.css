@@ -4,7 +4,7 @@
 }
 
 .detailOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
-  width: min(1180px, calc(100vw - 48px));
+  width: min(1280px, calc(100vw - 48px));
   height: calc(100dvh - 24px);
   max-height: calc(100dvh - 24px);
   margin: 12px;
@@ -39,7 +39,7 @@
 
 .detailLayout {
   display: grid;
-  grid-template-columns: 286px minmax(0, 1fr);
+  grid-template-columns: 318px minmax(0, 1fr);
   height: 100%;
   min-height: 0;
   flex: 1 1 auto;
@@ -60,9 +60,9 @@
 
 .periodRailHeader {
   display: grid;
-  gap: 14px;
+  gap: 12px;
   border-bottom: 1px solid var(--ft-border);
-  padding: 18px 18px 16px;
+  padding: 16px 16px 14px;
 }
 
 .periodRailTitleRow {
@@ -138,24 +138,24 @@
   min-height: 0;
   flex: 1 1 auto;
   align-content: start;
-  gap: 6px;
+  gap: 5px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 12px;
+  padding: 10px;
 }
 
 .periodOption {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
+  align-items: center;
   min-width: 0;
-  gap: 8px;
+  gap: 9px;
   border: 1px solid var(--ft-border);
-  border-radius: 10px;
+  border-radius: 11px;
   background: var(--ft-surface);
   padding: 9px 10px;
   color: var(--ft-text-muted);
-  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
+  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease, color 140ms ease;
 }
 
 .periodOption:hover {
@@ -163,14 +163,16 @@
 }
 
 .periodOption[data-selected='true'] {
-  border-color: color-mix(in srgb, var(--ft-primary) 36%, var(--ft-border));
-  background: color-mix(in srgb, var(--ft-primary) 4%, var(--ft-surface));
+  border-color: color-mix(in srgb, var(--ft-primary) 48%, var(--ft-border));
+  background: color-mix(in srgb, var(--ft-primary) 6%, var(--ft-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ft-primary) 12%, transparent);
+  color: var(--ft-text-strong);
 }
 
 .periodSelectButton {
   display: grid;
   min-width: 0;
-  gap: 7px;
+  gap: 6px;
   border: 0;
   background: transparent;
   padding: 0;
@@ -234,6 +236,27 @@
   white-space: nowrap;
 }
 
+.periodOptionStatus {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--ft-border);
+  border-radius: 999px;
+  background: var(--ft-surface-muted);
+  padding: 2px 6px;
+  color: var(--ft-text-muted);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 13px;
+  white-space: nowrap;
+}
+
+.periodOption[data-selected='true'] .periodOptionStatus {
+  background: var(--ft-surface);
+}
+
 .periodOptionDot {
   width: 7px;
   height: 7px;
@@ -253,6 +276,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.periodOption[data-selected='true'] .periodOptionAmount {
+  color: var(--ft-text-strong);
+  font-weight: 600;
 }
 
 .periodOptionProgress {
@@ -291,9 +319,9 @@
 
 .detailOverview {
   display: grid;
-  gap: 18px;
+  gap: 11px;
   border-bottom: 1px solid var(--ft-border);
-  padding: 20px 24px 18px;
+  padding: 14px 22px 12px;
 }
 
 .periodHeadingRow {
@@ -310,16 +338,16 @@
 }
 
 .selectedPeriodDate {
-  margin: 5px 0 0;
+  margin: 3px 0 0;
   color: var(--ft-text-strong);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
-  line-height: 23px;
+  line-height: 21px;
   overflow-wrap: anywhere;
 }
 
 .selectedStatusDescription {
-  margin: 4px 0 0;
+  margin: 2px 0 0;
   color: var(--ft-text-muted);
   font-size: 12px;
   line-height: 18px;
@@ -405,7 +433,7 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   border-top: 1px solid var(--ft-border);
   border-bottom: 1px solid var(--ft-border);
-  padding: 13px 0;
+  padding: 9px 0;
 }
 
 .detailMetric {
@@ -418,12 +446,12 @@
 
 .detailMetricValue {
   display: block;
-  margin-top: 4px;
+  margin-top: 2px;
   color: var(--ft-text-strong);
-  font-size: clamp(15px, 1.2vw, 19px);
+  font-size: clamp(14px, 1.15vw, 18px);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  line-height: 25px;
+  line-height: 22px;
   letter-spacing: -.02em;
   overflow-wrap: anywhere;
 }
@@ -432,7 +460,7 @@
 
 .execution {
   display: grid;
-  gap: 8px;
+  gap: 5px;
 }
 
 .executionHeading {
@@ -453,7 +481,7 @@
 }
 
 .progressTrack {
-  height: 7px;
+  height: 6px;
   overflow: hidden;
   border-radius: 999px;
   background: var(--ft-surface-muted);
@@ -510,7 +538,7 @@
   justify-content: space-between;
   gap: 14px;
   border-bottom: 1px solid var(--ft-border);
-  padding: 12px 24px;
+  padding: 10px 22px;
 }
 
 .transactionTitle {
@@ -538,7 +566,7 @@
   flex: 1 1 auto;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 14px 24px;
+  padding: 11px 22px;
 }
 
 .transactionTable {
@@ -674,18 +702,18 @@
   }
 
   .periodRailHeader {
-    gap: 11px;
-    padding: 14px 18px 12px;
+    gap: 10px;
+    padding: 12px 16px 10px;
   }
 
   .periodList {
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
     flex: 0 1 auto;
     max-height: 112px;
-    padding: 10px 12px 12px;
+    padding: 8px 10px 10px;
   }
 
-  .periodOption { gap: 5px; padding: 8px 9px; }
+  .periodOption { gap: 7px; padding: 8px 9px; }
 
   .detailMain { min-height: 0; }
 }
@@ -698,17 +726,17 @@
     flex-direction: column;
     flex: 1 1 auto;
   }
-  .periodRail { max-height: 260px; flex: 0 0 auto; }
+  .periodRail { max-height: 244px; flex: 0 0 auto; }
   .periodFilters { grid-template-columns: 104px minmax(0, 1fr); }
   .periodSearch { height: 42px; }
-  .periodList { grid-template-columns: minmax(0, 1fr); max-height: 140px; }
+  .periodList { grid-template-columns: minmax(0, 1fr); max-height: 128px; }
 
   .detailMain { min-height: 0; flex: 1 1 auto; overflow: hidden; }
-  .detailOverview { gap: 14px; padding: 16px; }
+  .detailOverview { gap: 10px; padding: 13px 16px 11px; }
   .periodHeadingRow { align-items: stretch; flex-direction: column; gap: 13px; }
   .detailMetric { padding: 0 10px; }
   .detailMetric:first-child { padding-left: 0; }
-  .detailMetricValue { font-size: clamp(13px, 3.8vw, 17px); line-height: 21px; }
+  .detailMetricValue { font-size: clamp(13px, 3.8vw, 17px); line-height: 20px; }
   .detailMetricLabel { font-size: 9px; line-height: 13px; }
 
   .transactionToolbar { align-items: flex-start; flex-direction: column; gap: 8px; padding: 12px 16px; }
@@ -750,6 +778,10 @@
   .footerTotals { align-items: flex-start; flex-direction: column; gap: 9px; }
   .detailFooterSecondary { text-align: left; }
   .detailFooterValue { font-size: 15px; }
+}
+
+@media (max-width: 767px) {
+  .periodEditButton { min-height: 40px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

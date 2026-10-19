@@ -90,7 +90,7 @@ test('R5.2 detail CSS keeps its content readable in a representative responsive 
   expect(detailSource).toContain('data-testid="budget-detail-layout"')
   expect(detailSource).toContain('onPeriodUpdated?.()')
   expect(detailSource).toContain('resolveBudgetPeriodTransactionsUrl(selectedBudget)')
-  expect(detailCss).toContain('grid-template-columns: 286px minmax(0, 1fr)')
+  expect(detailCss).toContain('grid-template-columns: 318px minmax(0, 1fr)')
   expect(detailCss).toContain('@media (max-width: 1120px)')
   expect(detailCss).toContain('@media (max-width: 767px)')
   expect(detailCss).toContain('font-family: Manrope, system-ui, sans-serif')
@@ -139,8 +139,8 @@ test('R5.2 detail CSS keeps its content readable in a representative responsive 
     expect(measured.font.toLowerCase()).toContain('manrope')
     expect(measured.metricWidths.every(metric => metric.scroll <= metric.client + 2)).toBe(true)
     if (width <= 767) expect(measured.display).toBe('flex')
-    else if (width <= 1120) expect(measured.columns).not.toContain('286px')
-    else expect(measured.columns).toContain('286px')
+    else if (width <= 1120) expect(measured.columns).not.toContain('318px')
+    else expect(measured.columns).toContain('318px')
   }
 
   await page.locator('html').evaluate(element => element.setAttribute('data-theme', 'dark'))
