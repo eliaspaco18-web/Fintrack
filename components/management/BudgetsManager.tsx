@@ -1746,51 +1746,53 @@ export function BudgetsManager() {
           ) : (
             <div className={styles.budgetFormSections}>
               <FormSection title="Datos del presupuesto" columns="1" className={styles.budgetFormSection}>
-                <div className={styles.fieldWithHint}>
-                  <FormField label="Nombre">
-                    <input
-                      value={form.name}
-                      onChange={event => setForm(prev => ({ ...prev, name: event.target.value }))}
-                      required
-                      data-testid="budget-name-input"
-                      className="field-base ft-form-input w-full"
-                      placeholder="Ej. Alimentación"
-                    />
-                  </FormField>
-                  <span className={styles.fieldHint}><BudgetInfoHint label="Ayuda sobre el nombre">Un nombre breve te ayudará a encontrar este presupuesto en su período.</BudgetInfoHint></span>
-                </div>
+                <FormField
+                  label="Nombre"
+                  labelAdornment={<BudgetInfoHint label="Ayuda sobre el nombre">Un nombre breve te ayudará a encontrar este presupuesto en su período.</BudgetInfoHint>}
+                >
+                  <input
+                    value={form.name}
+                    onChange={event => setForm(prev => ({ ...prev, name: event.target.value }))}
+                    required
+                    data-testid="budget-name-input"
+                    className="field-base ft-form-input w-full"
+                    placeholder="Ej. Alimentación"
+                  />
+                </FormField>
 
                 <div className={styles.identityFields}>
-                  <div className={styles.fieldWithHint}>
-                    <FormField label="Categoría" optional optionalLabel="General si no eliges una">
-                      <AppSelect
-                        value={form.category_id}
-                        onChange={value => setForm(prev => ({ ...prev, category_id: value }))}
-                        searchPlaceholder="Buscar categoría..."
-                        options={[
-                          { value: '', label: 'General (todos los egresos)' },
-                          ...categories.map(category => ({ value: category.id, label: category.name })),
-                        ]}
-                      />
-                    </FormField>
-                    <span className={styles.fieldHint}><BudgetInfoHint label="Ayuda sobre la categoría">Sin categoría, el presupuesto queda asociado a todos los egresos del período.</BudgetInfoHint></span>
-                  </div>
-                  <div className={styles.fieldWithHint}>
-                    <FormField label="Periodicidad">
-                      <AppSelect
-                        value={form.period_type}
-                        onChange={value => handlePeriodOrDateChange({ period_type: value as BudgetPeriod })}
-                        searchable={false}
-                        options={[
-                          { value: 'WEEKLY', label: 'Semanal' },
-                          { value: 'MONTHLY', label: 'Mensual' },
-                          { value: 'QUARTERLY', label: 'Trimestral' },
-                          { value: 'YEARLY', label: 'Anual' },
-                        ]}
-                      />
-                    </FormField>
-                    <span className={styles.fieldHint}><BudgetInfoHint label="Ayuda sobre la periodicidad">La periodicidad determina la duración del período; las fechas se calculan desde la fecha de inicio.</BudgetInfoHint></span>
-                  </div>
+                  <FormField
+                    label="Categoría"
+                    optional
+                    optionalLabel="General si no eliges una"
+                    labelAdornment={<BudgetInfoHint label="Ayuda sobre la categoría">Sin categoría, el presupuesto queda asociado a todos los egresos del período.</BudgetInfoHint>}
+                  >
+                    <AppSelect
+                      value={form.category_id}
+                      onChange={value => setForm(prev => ({ ...prev, category_id: value }))}
+                      searchPlaceholder="Buscar categoría..."
+                      options={[
+                        { value: '', label: 'General (todos los egresos)' },
+                        ...categories.map(category => ({ value: category.id, label: category.name })),
+                      ]}
+                    />
+                  </FormField>
+                  <FormField
+                    label="Periodicidad"
+                    labelAdornment={<BudgetInfoHint label="Ayuda sobre la periodicidad">La periodicidad determina la duración del período; las fechas se calculan desde la fecha de inicio.</BudgetInfoHint>}
+                  >
+                    <AppSelect
+                      value={form.period_type}
+                      onChange={value => handlePeriodOrDateChange({ period_type: value as BudgetPeriod })}
+                      searchable={false}
+                      options={[
+                        { value: 'WEEKLY', label: 'Semanal' },
+                        { value: 'MONTHLY', label: 'Mensual' },
+                        { value: 'QUARTERLY', label: 'Trimestral' },
+                        { value: 'YEARLY', label: 'Anual' },
+                      ]}
+                    />
+                  </FormField>
                 </div>
               </FormSection>
 
@@ -1831,14 +1833,14 @@ export function BudgetsManager() {
                       inputTestId="budget-start-date-input"
                     />
                   </FormField>
-                  <div className={styles.fieldWithHint}>
-                    <FormField label="Fecha de fin calculada">
-                      <div className={styles.calculatedDate}>
-                        <span>{form.end_date ? formatFullDate(form.end_date) : 'Se calculará al completar el inicio'}</span>
-                      </div>
-                    </FormField>
-                    <span className={styles.fieldHint}><BudgetInfoHint label="Ayuda sobre la fecha de fin">Se calcula automáticamente según la periodicidad y la fecha de inicio.</BudgetInfoHint></span>
-                  </div>
+                  <FormField
+                    label="Fecha de fin calculada"
+                    labelAdornment={<BudgetInfoHint label="Ayuda sobre la fecha de fin">Se calcula automáticamente según la periodicidad y la fecha de inicio.</BudgetInfoHint>}
+                  >
+                    <div className={styles.calculatedDate}>
+                      <span>{form.end_date ? formatFullDate(form.end_date) : 'Se calculará al completar el inicio'}</span>
+                    </div>
+                  </FormField>
                 </div>
 
                 <div className={styles.activeToggle}>
@@ -1881,7 +1883,6 @@ export function BudgetsManager() {
                       >
                         <span aria-hidden="true" className={movementFormStyles.incomeOptionMark}>{isOpen ? '−' : '+'}</span>
                         <span>{label}</span>
-                        {value.trim() ? <span className={styles.optionalValueMark}>Guardado</span> : null}
                       </button>
                     )
                   })}

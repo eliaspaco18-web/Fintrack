@@ -238,21 +238,6 @@
   gap: 14px 18px;
 }
 
-.fieldWithHint {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 24px;
-  align-items: end;
-  gap: 8px;
-  min-width: 0;
-}
-
-.fieldHint {
-  display: flex;
-  min-height: 40px;
-  align-items: center;
-  justify-content: center;
-}
-
 .identityFields,
 .amountFields,
 .dateFields {
@@ -299,12 +284,6 @@
   width: 16px;
   height: 16px;
   accent-color: var(--ft-primary);
-}
-
-.optionalValueMark {
-  color: var(--ft-primary);
-  font-size: 10px;
-  font-weight: 600;
 }
 
 .continuationContext {
@@ -394,7 +373,8 @@
   }
 
   .summaryCurrency {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 176px), 1fr));
+    min-width: 0;
     gap: 8px;
   }
 
@@ -463,7 +443,6 @@
 
 @media (max-width: 420px) {
   .summaryCurrency {
-    grid-template-columns: minmax(0, 1fr);
     gap: 14px;
   }
 
@@ -525,12 +504,6 @@
 }
 
 @media (max-width: 767px) {
-  .summaryCurrency {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    min-width: 0;
-    gap: 8px;
-  }
-
   .periodHeader {
     display: none;
   }
