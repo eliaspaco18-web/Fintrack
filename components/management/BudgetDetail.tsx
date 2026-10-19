@@ -1,17 +1,24 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ModalOverlayPortal } from '@/components/ui/ModalOverlayPortal'
-import { FocusTrap } from '@/components/ui/accessibility'
-import { formatCurrency } from '@/lib/contracts/ui.contracts'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { RecordModal } from '@/components/ui/RecordModal'
+import { ConfirmDialog } from '@/components/finance'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import type { CurrencyCode, BudgetPeriod } from '@/types/database.types'
 import { createBudgetRecordActionScope } from '@/modules/budgets/budget-action-scope'
+import { formatBudgetCurrency } from '@/lib/budgets/presentation'
+import {
+  mergeBudgetPeriodItems,
+  resolveBudgetPeriodAmountUrl,
+  resolveBudgetPeriodTransactionsUrl,
+} from '@/lib/budgets/period-record'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
 type BudgetRef = {
   id: string
+  budget_period_id?: string
+  legacy_budget_id?: string
   series_id: string
   name: string
   description: string | null
@@ -75,9 +82,11 @@ function formatDate(d: string): string {
 // ── Component ────────────────────────────────────────────────────────────────
 
 interface Props {
+  open: boolean
   budget: BudgetRef
   periods?: BudgetRef[]
   onClose: () => void
+  onExitComplete?: () => void
   onPeriodUpdated?: () => void | Promise<void>
 }
 
@@ -107,7 +116,7 @@ function getPeriodStatus(period: BudgetRef): {
     return {
       label: 'Excedido',
       tone: 'danger',
-      description: `Exceso ${formatCurrency(Math.abs(Number(period.remaining_amount ?? 0)), period.currency)}`,
+      description: `Exceso ${formatBudgetCurrency(Math.abs(Number(period.remaining_amount ?? 0)), period.currency)}`,
     }
   }
 
@@ -130,7 +139,7 @@ function getPeriodStatus(period: BudgetRef): {
   return {
     label: 'En rango',
     tone: 'ok',
-    description: `Disponible ${formatCurrency(Math.max(0, Number(period.remaining_amount ?? 0)), period.currency)}`,
+    description: `Disponible ${formatBudgetCurrency(Math.max(0, Number(period.remaining_amount ?? 0)), period.currency)}`,
   }
 }
 
@@ -170,18 +179,21 @@ function parseAmountInput(value: string): number | null {
   return Math.round(parsed * 100) / 100
 }
 
-export function BudgetDetail({ budget, periods, onClose, onPeriodUpdated }: Props) {
+export function BudgetDetail({ open, budget, periods, onClose, onExitComplete, onPeriodUpdated }: Props) {
   const [transactions, setTransactions] = useState<TxRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [selectedBudgetId, setSelectedBudgetId] = useState(budget.id)
-  const [periodItems, setPeriodItems] = useState<BudgetRef[]>(() => (periods && periods.length > 0 ? periods : [budget]))
+  const [periodItems, setPeriodItems] = useState<BudgetRef[]>(() => mergeBudgetPeriodItems(periods, budget))
   const [periodAmount, setPeriodAmount] = useState(() => Number(budget.amount ?? 0).toFixed(2))
   const [amountSaving, setAmountSaving] = useState(false)
   const [amountError, setAmountError] = useState<string | null>(null)
   const [periodYearFilter, setPeriodYearFilter] = useState(() => getPeriodYear(budget))
   const [periodSearch, setPeriodSearch] = useState('')
+  const [discardAmountConfirmationOpen, setDiscardAmountConfirmationOpen] = useState(false)
+  const [pendingPeriodSelectionId, setPendingPeriodSelectionId] = useState<string | null>(null)
+  const requestSequenceRef = useRef(0)
 
   const seriesPeriods = useMemo(
     () => periodItems.slice().sort((a, b) => a.period_start.localeCompare(b.period_start)),
@@ -224,7 +236,7 @@ export function BudgetDetail({ budget, periods, onClose, onPeriodUpdated }: Prop
   }, [baseBudgetYear, budget.id])
 
   useEffect(() => {
-    const nextPeriods = periods && periods.length > 0 ? periods : [budget]
+    const nextPeriods = mergeBudgetPeriodItems(periods, budget)
     setPeriodItems(nextPeriods)
     setSelectedBudgetId(prev => (nextPeriods.some(period => period.id === prev) ? prev : budget.id))
   }, [budget, periods])
@@ -235,27 +247,28 @@ export function BudgetDetail({ budget, periods, onClose, onPeriodUpdated }: Prop
   }, [selectedBudget.id, selectedBudget.amount])
 
   const load = useCallback(async () => {
+    const sequence = ++requestSequenceRef.current
     setLoading(true)
     setError(null)
     try {
-      const params = new URLSearchParams({
-        period_start: selectedBudget.period_start,
-        period_end: selectedBudget.period_end,
-      })
-      const res = await fetch(`/api/budgets/${selectedBudget.id}/transactions?${params.toString()}`, {
+      const endpoint = resolveBudgetPeriodTransactionsUrl(selectedBudget)
+      const res = await fetch(endpoint, {
         cache: 'no-store',
       })
       const json = await res.json().catch(() => null)
       if (!res.ok || !json?.ok) {
         throw new Error(getApiErrorMessage(json, 'No se pudieron cargar las transacciones'))
       }
+      if (sequence !== requestSequenceRef.current) return
       setTransactions((json.data as TxRow[]) ?? [])
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'No se pudieron cargar las transacciones')
+      if (sequence === requestSequenceRef.current) {
+        setError(caught instanceof Error ? caught.message : 'No se pudieron cargar las transacciones')
+      }
     } finally {
-      setLoading(false)
+      if (sequence === requestSequenceRef.current) setLoading(false)
     }
-  }, [selectedBudget.id, selectedBudget.period_start, selectedBudget.period_end])
+  }, [selectedBudget])
 
   useEffect(() => {
     void load()
@@ -287,6 +300,35 @@ export function BudgetDetail({ budget, periods, onClose, onPeriodUpdated }: Prop
   const parsedPeriodAmount = parseAmountInput(periodAmount)
   const amountChanged =
     parsedPeriodAmount !== null && Math.abs(parsedPeriodAmount - Number(selectedBudget.amount ?? 0)) >= 0.01
+  const hasAmountDraft = periodAmount !== Number(selectedBudget.amount ?? 0).toFixed(2)
+
+  const requestClose = useCallback(() => {
+    if (amountSaving) return
+    if (hasAmountDraft) {
+      setDiscardAmountConfirmationOpen(true)
+      return
+    }
+    onClose()
+  }, [amountSaving, hasAmountDraft, onClose])
+
+  const requestPeriodSelection = useCallback((periodId: string) => {
+    if (hasAmountDraft) {
+      setPendingPeriodSelectionId(periodId)
+      setDiscardAmountConfirmationOpen(true)
+      return
+    }
+    setSelectedBudgetId(periodId)
+  }, [hasAmountDraft])
+
+  const discardAmountDraft = useCallback(() => {
+    setDiscardAmountConfirmationOpen(false)
+    if (pendingPeriodSelectionId) {
+      setSelectedBudgetId(pendingPeriodSelectionId)
+      setPendingPeriodSelectionId(null)
+      return
+    }
+    onClose()
+  }, [onClose, pendingPeriodSelectionId])
 
   async function savePeriodAmount() {
     const nextAmount = parseAmountInput(periodAmount)
@@ -298,13 +340,19 @@ export function BudgetDetail({ budget, periods, onClose, onPeriodUpdated }: Prop
     setAmountSaving(true)
     setAmountError(null)
     try {
-      const res = await fetch(`/api/budgets/${selectedBudget.id}`, {
+      const endpoint = resolveBudgetPeriodAmountUrl(selectedBudget)
+      const res = await fetch(endpoint, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: nextAmount,
-          action_scope: createBudgetRecordActionScope(selectedBudget),
-        }),
+          body: JSON.stringify(selectedBudget.budget_period_id
+            ? { amount: nextAmount }
+            : {
+                amount: nextAmount,
+                action_scope: createBudgetRecordActionScope({
+                  ...selectedBudget,
+                  id: selectedBudget.legacy_budget_id ?? selectedBudget.id,
+                }),
+              }),
       })
       const json = await res.json().catch(() => null)
       if (!res.ok || !json?.ok) {
@@ -334,49 +382,21 @@ export function BudgetDetail({ budget, periods, onClose, onPeriodUpdated }: Prop
   }
 
   return (
-    <ModalOverlayPortal className="z-[97]" onClick={onClose}>
-      <FocusTrap active onEscape={onClose}>
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="budget-detail-title"
-          onClick={event => event.stopPropagation()}
-          className="flex h-[min(92vh,920px)] w-[min(98vw,1500px)] max-h-[92vh] flex-col overflow-hidden rounded-2xl border border-[var(--c-border)] bg-[var(--c-modal-bg)] shadow-2xl shadow-[color:var(--c-shadow)]"
-        >
-          <header className="flex items-start justify-between gap-5 border-b border-[var(--c-border)] px-5 py-4">
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-[10px] font-semibold uppercase text-[var(--c-text-muted)]">
-                  Detalle de presupuesto
-                </p>
-                <span className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold ${selectedTone.badge}`}>
-                  {selectedStatus.label}
-                </span>
-              </div>
-              <h2 id="budget-detail-title" className="mt-1 text-lg font-bold text-[var(--c-text)] truncate">
-                {budget.name}
-              </h2>
-              {budget.description && (
-                <p className="mt-0.5 text-[12px] text-[var(--c-text-muted)]">{budget.description}</p>
-              )}
-              <p className="mt-1 text-[11px] text-[var(--c-text-faint)]">
-                {formatRange(selectedBudget.period_start, selectedBudget.period_end)}
-                {budget.category && ` · ${budget.category.name}`}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Cerrar panel"
-              className="shrink-0 rounded-lg border border-[var(--c-border)] p-1.5 text-[var(--c-text-muted)] transition-colors hover:border-[var(--c-border-hover)] hover:text-[var(--c-text)]"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </header>
-
-          <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[440px_minmax(0,1fr)]">
+    <RecordModal
+      open={open}
+      onClose={requestClose}
+      onExitComplete={onExitComplete}
+      presentation="workbench"
+      size="xl"
+      widthClassName="w-[calc(100vw-32px)] max-w-[1120px]"
+      eyebrow="Detalle de presupuesto"
+      title={budget.name}
+      subtitle={`${formatRange(selectedBudget.period_start, selectedBudget.period_end)}${budget.category ? ` · ${budget.category.name}` : ''}`}
+      headerBadge={<span className={`rounded-md border px-2 py-1 text-[10px] font-semibold ${selectedTone.badge}`}>{selectedStatus.label}</span>}
+      bodyClassName="!p-0"
+      testId="budget-detail-workbench"
+    >
+          <div className="grid min-h-[min(68dvh,680px)] grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)]">
             <aside className="flex min-h-0 flex-col border-b border-[var(--c-border)] bg-[var(--c-surface-2)] lg:border-b-0 lg:border-r">
               <div className="border-b border-[var(--c-border)] px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
@@ -428,7 +448,7 @@ export function BudgetDetail({ budget, periods, onClose, onPeriodUpdated }: Prop
                         <button
                           key={period.id}
                           type="button"
-                          onClick={() => setSelectedBudgetId(period.id)}
+                          onClick={() => requestPeriodSelection(period.id)}
                           className={`min-h-[86px] rounded-xl border px-2.5 py-2 text-left transition-all duration-200 active:scale-[0.99] ${
                             selected
                               ? 'border-[var(--c-accent)] bg-[var(--c-surface)] shadow-sm text-[var(--c-text)]'
@@ -443,7 +463,7 @@ export function BudgetDetail({ budget, periods, onClose, onPeriodUpdated }: Prop
                           </div>
                           <div className="mt-1 flex items-baseline justify-between gap-2">
                             <span className="truncate text-[10px] tabular-nums text-[var(--c-text-faint)]">
-                              {formatCurrency(Number(period.amount ?? 0), period.currency)}
+                              {formatBudgetCurrency(Number(period.amount ?? 0), period.currency)}
                             </span>
                             <span className="text-[10px] font-semibold tabular-nums text-[var(--c-text-muted)]">
                               {periodProgress.toFixed(0)}%
@@ -509,13 +529,13 @@ export function BudgetDetail({ budget, periods, onClose, onPeriodUpdated }: Prop
                   <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-3">
                     <p className="text-[10px] font-semibold uppercase text-[var(--c-text-muted)]">Presupuesto</p>
                     <p className="mt-1 text-base font-bold tabular-nums text-[var(--c-text)]">
-                      {formatCurrency(Number(selectedBudget.amount ?? 0), selectedBudget.currency)}
+                      {formatBudgetCurrency(Number(selectedBudget.amount ?? 0), selectedBudget.currency)}
                     </p>
                   </div>
                   <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-3">
                     <p className="text-[10px] font-semibold uppercase text-[var(--c-text-muted)]">Ejecutado</p>
                     <p className="mt-1 text-base font-bold tabular-nums text-[var(--c-text)]">
-                      {formatCurrency(visibleSpent, selectedBudget.currency)}
+                      {formatBudgetCurrency(visibleSpent, selectedBudget.currency)}
                     </p>
                   </div>
                   <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-3">
@@ -523,7 +543,7 @@ export function BudgetDetail({ budget, periods, onClose, onPeriodUpdated }: Prop
                       {visibleRemaining < 0 ? 'Exceso' : 'Disponible'}
                     </p>
                     <p className={`mt-1 text-base font-bold tabular-nums ${visibleRemaining < 0 ? 'text-red-500' : 'text-[var(--c-text)]'}`}>
-                      {formatCurrency(Math.abs(visibleRemaining), selectedBudget.currency)}
+                      {formatBudgetCurrency(Math.abs(visibleRemaining), selectedBudget.currency)}
                     </p>
                   </div>
                 </div>
@@ -613,7 +633,7 @@ export function BudgetDetail({ budget, periods, onClose, onPeriodUpdated }: Prop
                         <div className="md:text-right">
                           <p className="text-[10px] uppercase text-[var(--c-text-faint)] md:hidden">Importe</p>
                           <span className="shrink-0 text-sm font-bold tabular-nums text-red-500">
-                            -{formatCurrency(Number(tx.amount ?? 0), tx.currency)}
+                            -{formatBudgetCurrency(Number(tx.amount ?? 0), tx.currency)}
                           </span>
                         </div>
                       </div>
@@ -628,20 +648,27 @@ export function BudgetDetail({ budget, periods, onClose, onPeriodUpdated }: Prop
                     Total gastado ({filtered.length} transaccion{filtered.length !== 1 ? 'es' : ''})
                   </p>
                   <p className="text-lg font-bold tabular-nums text-[var(--c-text)]">
-                    {formatCurrency(Math.round(totalSpent * 100) / 100, selectedBudget.currency)}
+                    {formatBudgetCurrency(Math.round(totalSpent * 100) / 100, selectedBudget.currency)}
                   </p>
                 </div>
                 <div className="text-right">
                   <p className="text-[10px] font-semibold uppercase text-[var(--c-text-muted)]">Presupuesto</p>
                   <p className="text-sm font-semibold tabular-nums text-[var(--c-text-muted)]">
-                    {formatCurrency(Number(selectedBudget.amount ?? 0), selectedBudget.currency)}
+                    {formatBudgetCurrency(Number(selectedBudget.amount ?? 0), selectedBudget.currency)}
                   </p>
                 </div>
               </footer>
             </section>
           </div>
-        </div>
-      </FocusTrap>
-    </ModalOverlayPortal>
+      <ConfirmDialog
+        open={discardAmountConfirmationOpen}
+        title="Descartar cambio de importe"
+        message="El nuevo límite del período aún no se ha guardado. ¿Quieres cerrar y descartarlo?"
+        onCancel={() => { setDiscardAmountConfirmationOpen(false); setPendingPeriodSelectionId(null) }}
+        onConfirm={discardAmountDraft}
+        confirmLabel="Descartar cambio"
+        testId="budget-detail-discard-modal"
+      />
+    </RecordModal>
   )
 }

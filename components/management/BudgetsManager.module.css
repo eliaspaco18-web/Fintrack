@@ -1,0 +1,132 @@
+.periodSummary {
+  display: grid;
+  gap: 18px 36px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 490px), max-content));
+  align-items: start;
+}
+
+.summaryCurrency {
+  display: grid;
+  min-width: min(100%, 490px);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.summaryValue {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.periodHeader,
+.periodRow {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.45fr) minmax(110px, 0.8fr) minmax(110px, 0.8fr) minmax(170px, 1fr) minmax(104px, 0.65fr) minmax(156px, auto);
+  align-items: center;
+  gap: 14px;
+}
+
+.periodReserveRow {
+  min-height: 76px;
+  border-top: 1px solid var(--ft-border);
+}
+
+.periodHeader {
+  min-height: 42px;
+  padding: 0 16px;
+  background: var(--ft-surface-muted);
+  color: var(--ft-text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.periodRow {
+  min-height: 76px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--ft-border);
+  color: var(--ft-text-strong);
+}
+
+.mobilePeriodRow {
+  display: grid;
+  gap: 10px;
+}
+
+.progressTrack {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--ft-surface-muted);
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ft-accent, var(--c-accent));
+  transition: width 180ms ease;
+}
+
+.progressFillWarning {
+  background: var(--ft-warning, #b7791f);
+}
+
+.progressFillDanger {
+  background: var(--ft-danger, #c2413a);
+}
+
+.summarySkeleton {
+  display: grid;
+  gap: 18px 36px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 490px), max-content));
+}
+
+.summaryPlaceholder {
+  min-height: 44px;
+}
+
+@media (max-width: 1080px) {
+  .periodHeader,
+  .periodRow {
+    grid-template-columns: minmax(132px, 1.35fr) minmax(92px, .9fr) minmax(92px, .9fr) minmax(118px, 1.1fr) minmax(92px, .9fr) minmax(76px, auto);
+    gap: 8px;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+}
+
+@media (max-width: 767px) {
+  .periodSummary,
+  .summarySkeleton {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .summaryCurrency {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    min-width: 0;
+    gap: 8px;
+  }
+
+  .periodHeader {
+    display: none;
+  }
+
+  .periodRow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px 12px;
+    padding: 14px;
+  }
+
+  .periodActions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progressFill {
+    transition: none;
+  }
+}

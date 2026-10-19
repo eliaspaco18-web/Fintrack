@@ -3,7 +3,8 @@
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { BudgetPeriod, CurrencyCode } from '@/types/database.types'
-import { formatCurrency } from '@/lib/contracts/ui.contracts'
+import styles from '@/components/management/BudgetsManager.module.css'
+import { IncomeDatePicker } from '@/components/forms/TransactionForm/IncomeDatePicker'
 import { useToast } from '@/lib/toast/toast'
 import { fetchWithTimeout } from '@/lib/client/fetch-with-timeout'
 import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
@@ -25,8 +26,6 @@ import {
   FilterBar,
   ProgressMetric,
   RegisterModule,
-  StatCard,
-  StatGrid,
   StatusBadge,
 } from '@/components/finance'
 import { getApiErrorMessage } from '@/lib/api/error-message'
@@ -36,6 +35,8 @@ import {
   BUDGET_SCOPE_REQUIRED_ERROR,
   createBudgetRecordActionScope,
 } from '@/modules/budgets/budget-action-scope'
+import { budgetRowsForSelectedMonth, displayBudgetProgress, formatBudgetCurrency, summarizeBudgetCurrencies } from '@/lib/budgets/presentation'
+import { resolveBudgetPeriodEditTarget, resolveBudgetPeriodIdentity } from '@/lib/budgets/period-record'
 
 type BudgetCategoryRef = {
   id: string
@@ -47,6 +48,8 @@ type BudgetCategoryRef = {
 
 type BudgetItem = {
   id: string
+  budget_period_id?: string
+  legacy_budget_id?: string
   series_id: string
   name: string
   description: string | null
@@ -100,7 +103,7 @@ type StatusFilter = 'all' | 'active' | 'inactive'
 type CurrencyFilter = 'all' | CurrencyCode
 type PeriodFilter = 'all' | BudgetPeriod
 type ViewMode = 'list' | 'cards'
-type WorkspaceView = 'series' | 'periods'
+type WorkspaceView = 'current' | 'exceeded' | 'series'
 type FormMode = 'create' | 'edit' | 'continuation'
 
 type ContinuationPreview = {
@@ -126,6 +129,7 @@ type BudgetPeriodViewItem = {
   budget: {
     id: string
     name: string
+    description?: string | null
     category_id: string | null
     currency: CurrencyCode
     period_type: BudgetPeriod
@@ -289,6 +293,12 @@ function periodStatusLabel(status: string): string {
   return 'Activo'
 }
 
+function formatFullDate(isoDate: string): string {
+  return new Date(`${isoDate}T12:00:00`).toLocaleDateString('es-PE', {
+    day: '2-digit', month: 'short', year: 'numeric',
+  })
+}
+
 export function BudgetsManager() {
   const router = useRouter()
   const pathname = usePathname()
@@ -301,11 +311,13 @@ export function BudgetsManager() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState<BudgetForm>(EMPTY_FORM)
+  const [dateInputError, setDateInputError] = useState<string | null>(null)
   const [formMode, setFormMode] = useState<FormMode>('create')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingBudget, setEditingBudget] = useState<BudgetItem | null>(null)
   const [continuationPreview, setContinuationPreview] = useState<ContinuationPreview | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [discardConfirmationOpen, setDiscardConfirmationOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [currencyFilter, setCurrencyFilter] = useState<CurrencyFilter>('all')
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all')
@@ -314,19 +326,26 @@ export function BudgetsManager() {
   const [rowActionId, setRowActionId] = useState<string | null>(null)
   const [pendingDeleteBudget, setPendingDeleteBudget] = useState<BudgetItem | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('list')
-  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>('series')
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>('current')
   const [periodMonth, setPeriodMonth] = useState(() => isoToday().slice(0, 7))
   const [periodRows, setPeriodRows] = useState<BudgetPeriodViewItem[]>([])
   const [periodRowsLoading, setPeriodRowsLoading] = useState(false)
+  const [showPeriodSkeleton, setShowPeriodSkeleton] = useState(false)
   const [periodRowsError, setPeriodRowsError] = useState<string | null>(null)
+  const [loadedPeriodMonth, setLoadedPeriodMonth] = useState<string | null>(null)
   const [detailBudget, setDetailBudget] = useState<BudgetSeriesItem | null>(null)
+  const [detailOpen, setDetailOpen] = useState(false)
+  const periodFetchSequence = useRef(0)
+  const resetAfterModalExitRef = useRef(false)
+  const initialFormSnapshotRef = useRef(JSON.stringify(EMPTY_FORM))
   const handledQueryOpenRef = useRef(false)
+  const hasLoadedBudgetsRef = useRef(false)
   const isContinuationMode = formMode === 'continuation' && continuationPreview !== null
 
   const openFromHeroQuery = searchParams.get('new') === 'budget'
 
   const loadBudgets = useCallback(async () => {
-    setLoading(true)
+    if (!hasLoadedBudgetsRef.current) setLoading(true)
     setError(null)
     try {
       const res = await fetchWithTimeout('/api/budgets?include_inactive=true', { cache: 'no-store' })
@@ -335,6 +354,7 @@ export function BudgetsManager() {
         throw new Error(getApiErrorMessage(json, 'No se pudieron cargar los presupuestos'))
       }
       setBudgets((json.data as BudgetItem[]) ?? [])
+      hasLoadedBudgetsRef.current = true
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No se pudieron cargar los presupuestos')
     } finally {
@@ -363,6 +383,7 @@ export function BudgetsManager() {
   }, [loadBudgets, loadCategories])
 
   const loadPeriodRows = useCallback(async () => {
+    const sequence = ++periodFetchSequence.current
     setPeriodRowsLoading(true)
     setPeriodRowsError(null)
     try {
@@ -371,26 +392,43 @@ export function BudgetsManager() {
       if (!res.ok || !json?.ok) {
         throw new Error(getApiErrorMessage(json, 'No se pudieron cargar los periodos'))
       }
+      if (sequence !== periodFetchSequence.current) return
       setPeriodRows((json.data as BudgetPeriodViewItem[]) ?? [])
+      setLoadedPeriodMonth(periodMonth)
     } catch (caught) {
-      setPeriodRows([])
+      if (sequence !== periodFetchSequence.current) return
       setPeriodRowsError(caught instanceof Error ? caught.message : 'No se pudieron cargar los periodos')
     } finally {
-      setPeriodRowsLoading(false)
+      if (sequence === periodFetchSequence.current) setPeriodRowsLoading(false)
     }
   }, [periodMonth])
 
   useEffect(() => {
-    if (workspaceView !== 'periods') return
     void loadPeriodRows()
-  }, [loadPeriodRows, workspaceView])
+    return () => {
+      periodFetchSequence.current += 1
+    }
+  }, [loadPeriodRows])
+
+  useEffect(() => {
+    if (!periodRowsLoading || loadedPeriodMonth === periodMonth) {
+      setShowPeriodSkeleton(false)
+      return
+    }
+    const timer = window.setTimeout(() => setShowPeriodSkeleton(true), 120)
+    return () => window.clearTimeout(timer)
+  }, [loadedPeriodMonth, periodMonth, periodRowsLoading])
 
   const resetForm = useCallback(() => {
-    setForm({
+    const nextForm = {
       ...EMPTY_FORM,
       start_date: isoToday(),
       end_date: calcEndDate(isoToday(), 'MONTHLY'),
-    })
+    }
+    initialFormSnapshotRef.current = JSON.stringify(nextForm)
+    setForm(nextForm)
+    setDateInputError(null)
+    setError(null)
     setFormMode('create')
     setEditingId(null)
     setEditingBudget(null)
@@ -400,6 +438,7 @@ export function BudgetsManager() {
   // Recalcular fecha fin automáticamente cuando cambia periodicidad o fecha inicio
   const handlePeriodOrDateChange = useCallback(
     (patch: Partial<BudgetForm>) => {
+      if (patch.start_date !== undefined) setDateInputError(null)
       setForm(prev => {
         const next = { ...prev, ...patch }
         // Solo auto-calcular si el usuario no está editando un presupuesto existente
@@ -420,14 +459,33 @@ export function BudgetsManager() {
     router.replace(nextUrl, { scroll: false })
   }, [pathname, router, searchParams])
 
+  const performCloseModal = useCallback(() => {
+    setDiscardConfirmationOpen(false)
+    resetAfterModalExitRef.current = true
+    setModalOpen(false)
+    clearCreateQueryParam()
+  }, [clearCreateQueryParam])
+
   const closeModal = useCallback(() => {
     if (saving) return
-    setModalOpen(false)
+    if (JSON.stringify(form) !== initialFormSnapshotRef.current) {
+      setDiscardConfirmationOpen(true)
+      return
+    }
+    performCloseModal()
+  }, [form, performCloseModal, saving])
+
+  const handleModalExitComplete = useCallback(() => {
+    if (!resetAfterModalExitRef.current) return
+    resetAfterModalExitRef.current = false
     resetForm()
-    clearCreateQueryParam()
-  }, [clearCreateQueryParam, resetForm, saving])
+  }, [resetForm])
 
   const openCreateModal = useCallback(() => {
+    resetAfterModalExitRef.current = false
+    setDiscardConfirmationOpen(false)
+    setDateInputError(null)
+    setError(null)
     resetForm()
     setModalOpen(true)
   }, [resetForm])
@@ -444,11 +502,15 @@ export function BudgetsManager() {
   }, [openCreateModal, openFromHeroQuery])
 
   const startEdit = useCallback((budget: BudgetItem) => {
+    resetAfterModalExitRef.current = false
+    setDiscardConfirmationOpen(false)
+    setDateInputError(null)
+    setError(null)
     setFormMode('edit')
     setEditingId(budget.id)
     setEditingBudget(budget)
     setContinuationPreview(null)
-    setForm({
+    const nextForm = {
       name: budget.name,
       description: budget.description ?? '',
       category_id: budget.category_id ?? '',
@@ -459,12 +521,18 @@ export function BudgetsManager() {
       end_date: budget.end_date ?? '',
       is_active: budget.is_active,
       notes: budget.notes ?? '',
-    })
+    }
+    initialFormSnapshotRef.current = JSON.stringify(nextForm)
+    setForm(nextForm)
     setModalOpen(true)
   }, [])
 
   // A.2 — Nuevo período con continuidad automática
   const openNewPeriod = useCallback((budget: BudgetItem) => {
+    resetAfterModalExitRef.current = false
+    setDiscardConfirmationOpen(false)
+    setDateInputError(null)
+    setError(null)
     const seriesBudgets = budgets.filter(item => item.series_id === budget.series_id)
     const latestBudget = [...seriesBudgets]
       .sort((left, right) => {
@@ -490,7 +558,7 @@ export function BudgetsManager() {
       nextPeriodStart: nextStart,
       nextPeriodEnd: nextEnd,
     })
-    setForm({
+    const nextForm = {
       name: budget.name,
       description: budget.description ?? '',
       category_id: budget.category_id ?? '',
@@ -501,11 +569,74 @@ export function BudgetsManager() {
       end_date: nextEnd,
       is_active: true,
       notes: budget.notes ?? '',
-    })
+    }
+    initialFormSnapshotRef.current = JSON.stringify(nextForm)
+    setForm(nextForm)
     setModalOpen(true)
   }, [budgets])
 
   const budgetSeries = useMemo(() => buildBudgetSeries(budgets), [budgets])
+
+  const openSeriesDetail = useCallback((budget: BudgetSeriesItem) => {
+    setDetailBudget(budget)
+    setDetailOpen(true)
+  }, [])
+
+  const openPeriodDetail = useCallback((row: BudgetPeriodViewItem) => {
+    const recordIdentity = resolveBudgetPeriodIdentity(row)
+    const series = budgetSeries.find(item => item.series_id === row.budget_id)
+    const base: BudgetSeriesItem = series ?? {
+      id: row.legacy_budget_id ?? row.id,
+      series_id: row.budget_id,
+      name: row.budget.name,
+      description: null,
+      category_id: row.budget.category_id,
+      category: row.budget.category ?? null,
+      amount: Number(row.amount ?? 0),
+      currency: row.budget.currency,
+      period_type: row.budget.period_type,
+      start_date: row.period_start,
+      end_date: row.period_end,
+      period_start: row.period_start,
+      period_end: row.period_end,
+      spent_amount: Number(row.spent_amount ?? 0),
+      remaining_amount: Number(row.remaining_amount ?? 0),
+      progress_percent: Number(row.progress_percent ?? 0),
+      over_limit: row.over_limit,
+      is_active: row.budget.is_active,
+      notes: null,
+      created_at: '',
+      updated_at: '',
+      periods: [],
+      period_count: 1,
+      active_period_count: row.budget.is_active ? 1 : 0,
+      latest_period_end: row.period_end,
+    }
+    const exactPeriod: BudgetItem = {
+      ...base,
+      ...recordIdentity,
+      amount: Number(row.amount ?? 0),
+      period_start: row.period_start,
+      period_end: row.period_end,
+      start_date: row.period_start,
+      end_date: row.period_end,
+      spent_amount: Number(row.spent_amount ?? 0),
+      remaining_amount: Number(row.remaining_amount ?? 0),
+      progress_percent: Number(row.progress_percent ?? 0),
+      over_limit: row.over_limit,
+      is_active: row.budget.is_active,
+    }
+    const otherPeriods = base.periods.filter(period =>
+      period.period_start !== row.period_start || period.period_end !== row.period_end,
+    )
+    setDetailBudget({
+      ...base,
+      ...exactPeriod,
+      periods: sortPeriods([...otherPeriods, exactPeriod]),
+      period_count: Math.max(base.period_count, otherPeriods.length + 1),
+    })
+    setDetailOpen(true)
+  }, [budgetSeries])
 
   const activeCount = useMemo(
     () => budgetSeries.filter(item => item.is_active).length,
@@ -517,24 +648,65 @@ export function BudgetsManager() {
     [budgetSeries],
   )
 
-  const totalPen = useMemo(
-    () => budgetSeries
-      .filter(item => item.is_active && item.currency === 'PEN')
-      .reduce((sum, item) => sum + Number(item.amount ?? 0), 0),
-    [budgetSeries],
-  )
-
-  const totalUsd = useMemo(
-    () => budgetSeries
-      .filter(item => item.is_active && item.currency === 'USD')
-      .reduce((sum, item) => sum + Number(item.amount ?? 0), 0),
-    [budgetSeries],
-  )
-
   const overLimitCount = useMemo(
     () => budgetSeries.filter(item => item.is_active && item.over_limit).length,
     [budgetSeries],
   )
+
+  const periodRowsReady = loadedPeriodMonth === periodMonth
+  const currentPeriodRows = useMemo(
+    () => budgetRowsForSelectedMonth(periodRows, loadedPeriodMonth, periodMonth),
+    [loadedPeriodMonth, periodMonth, periodRows],
+  )
+
+  const periodSummary = useMemo(
+    () => summarizeBudgetCurrencies(currentPeriodRows),
+    [currentPeriodRows],
+  )
+
+  const budgetCurrencyOptions = useMemo(() => {
+    const currencies = new Set([
+      ...budgets.map(budget => String(budget.currency)),
+      ...periodRows.map(row => String(row.budget.currency)),
+    ])
+    return [
+      { value: 'all', label: 'Moneda' },
+      ...Array.from(currencies).sort().map(currency => ({ value: currency, label: currency })),
+    ]
+  }, [budgets, periodRows])
+
+  const filteredPeriodRows = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase()
+    return currentPeriodRows.filter(row => {
+      if (workspaceView === 'exceeded' && !row.over_limit) return false
+      if (currencyFilter !== 'all' && row.budget.currency !== currencyFilter) return false
+      if (periodFilter !== 'all' && row.budget.period_type !== periodFilter) return false
+      if (statusFilter === 'active' && !row.budget.is_active) return false
+      if (statusFilter === 'inactive' && row.budget.is_active) return false
+      if (categoryFilter === 'none' && row.budget.category_id) return false
+      if (categoryFilter !== 'all' && categoryFilter !== 'none' && row.budget.category_id !== categoryFilter) return false
+      if (!normalizedQuery) return true
+      return row.budget.name.toLowerCase().includes(normalizedQuery)
+        || (row.budget.description ?? '').toLowerCase().includes(normalizedQuery)
+        || (row.budget.category?.name ?? '').toLowerCase().includes(normalizedQuery)
+        || formatFullDate(row.period_start).toLowerCase().includes(normalizedQuery)
+        || formatFullDate(row.period_end).toLowerCase().includes(normalizedQuery)
+        || PERIOD_LABEL[row.budget.period_type].toLowerCase().includes(normalizedQuery)
+    })
+  }, [categoryFilter, currencyFilter, currentPeriodRows, periodFilter, query, statusFilter, workspaceView])
+
+  const exceededPeriodRows = useMemo(
+    () => currentPeriodRows.filter(row => row.over_limit),
+    [currentPeriodRows],
+  )
+
+  const periodMonthLabel = useMemo(() => {
+    const year = Number(periodMonth.slice(0, 4))
+    const month = Number(periodMonth.slice(5, 7))
+    return new Date(Date.UTC(year, month - 1, 15)).toLocaleDateString('es-PE', {
+      month: 'long', year: 'numeric', timeZone: 'UTC',
+    })
+  }, [periodMonth])
 
   const periodYearOptions = useMemo(() => {
     const years = new Set<string>()
@@ -601,6 +773,14 @@ export function BudgetsManager() {
       const msg = 'El nombre debe tener al menos 2 caracteres.'
       setError(msg)
       toast.error('No se pudo guardar el presupuesto', msg)
+      return
+    }
+
+    if (!form.start_date || dateInputError) {
+      const msg = dateInputError ?? 'Selecciona una fecha de inicio válida.'
+      setDateInputError(msg)
+      setError(msg)
+      toast.error('Revisa la fecha del periodo', msg)
       return
     }
 
@@ -677,10 +857,8 @@ export function BudgetsManager() {
         throw new Error(getApiErrorMessage(json, 'No se pudo guardar el presupuesto'))
       }
 
-      await loadBudgets()
-      setModalOpen(false)
-      resetForm()
-      clearCreateQueryParam()
+      await Promise.all([loadBudgets(), loadPeriodRows()])
+      performCloseModal()
       toast.success(
         editingId
           ? 'Periodo actualizado'
@@ -701,7 +879,7 @@ export function BudgetsManager() {
     } finally {
       setSaving(false)
     }
-  }, [clearCreateQueryParam, continuationPreview, editingBudget, editingId, form, formMode, loadBudgets, resetForm, toast])
+  }, [continuationPreview, dateInputError, editingBudget, editingId, form, formMode, loadBudgets, loadPeriodRows, performCloseModal, toast])
 
   const toggleActive = useCallback(async (budget: BudgetItem, nextValue: boolean) => {
     setRowActionId(budget.id)
@@ -720,7 +898,7 @@ export function BudgetsManager() {
         throw new Error(getApiErrorMessage(json, 'No se pudo actualizar el estado del presupuesto'))
       }
 
-      await loadBudgets()
+      await Promise.all([loadBudgets(), loadPeriodRows()])
       toast.success(
         nextValue ? 'Periodo reactivado' : 'Periodo desactivado',
         `${formatRange(budget.period_start, budget.period_end)}. Los demas periodos de la serie no cambiaron.`,
@@ -733,7 +911,7 @@ export function BudgetsManager() {
     } finally {
       setRowActionId(null)
     }
-  }, [loadBudgets, toast])
+  }, [loadBudgets, loadPeriodRows, toast])
 
   const confirmDelete = useCallback((budget: BudgetItem) => {
     if (saving || loading || rowActionId !== null) return
@@ -763,7 +941,7 @@ export function BudgetsManager() {
         throw new Error(getApiErrorMessage(json, 'No se pudo eliminar el presupuesto'))
       }
 
-      await loadBudgets()
+      await Promise.all([loadBudgets(), loadPeriodRows()])
       setPendingDeleteBudget(null)
       toast.success(
         'Periodo eliminado',
@@ -777,14 +955,14 @@ export function BudgetsManager() {
     } finally {
       setRowActionId(null)
     }
-  }, [loadBudgets, pendingDeleteBudget, toast])
+  }, [loadBudgets, loadPeriodRows, pendingDeleteBudget, toast])
 
   return (
     <>
       <RegisterModule
         eyebrow="Control presupuestal"
         title="Presupuestos"
-        description="Limites por categoria y periodo con lectura clara de ejecucion, margen restante y continuidad operativa."
+        description="Límites que puedes revisar antes de tu próximo gasto."
         headerMode="content"
         actions={(
           <CreateModuleButton
@@ -794,32 +972,34 @@ export function BudgetsManager() {
           />
         )}
         stats={(
-          <StatGrid>
-            <StatCard
-              label="Presupuestos activos"
-              value={String(activeCount)}
-              detail={inactiveCount > 0 ? `${inactiveCount} inactivo${inactiveCount === 1 ? '' : 's'}` : 'Sin bajas'}
-              caption="Controles vigentes sobre gasto del periodo actual."
-            />
-            <StatCard
-              label="Monto PEN"
-              value={formatCurrency(totalPen, 'PEN')}
-              detail="Base operativa"
-              caption="Limites activos definidos en soles peruanos."
-            />
-            <StatCard
-              label="Monto USD"
-              value={formatCurrency(totalUsd, 'USD')}
-              detail={totalUsd === 0 ? 'Sin exposicion' : 'Exposicion dolarizada'}
-              caption="Limites activos registrados en dolares."
-            />
-            <StatCard
-              label="Presupuestos excedidos"
-              value={String(overLimitCount)}
-              detail={overLimitCount > 0 ? 'Atencion requerida' : 'Sin desbordes'}
-              caption="Casos donde el gasto ya sobrepaso el limite del periodo."
-            />
-          </StatGrid>
+          <div className={`${periodRowsReady && periodSummary.length > 0 ? styles.periodSummary : styles.summarySkeleton} ${!showPeriodSkeleton ? styles.summaryPlaceholder : ''}`}>
+            {!periodRowsReady && !periodRowsError ? (showPeriodSkeleton ? [0, 1, 2].map(item => (
+              <div key={item} aria-hidden="true" className="min-w-[155px] space-y-3">
+                <div className="h-3 w-24 animate-pulse rounded-full bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />
+                <div className="h-6 w-36 animate-pulse rounded-full bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />
+                <div className="h-3 w-28 animate-pulse rounded-full bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />
+              </div>
+            )) : null) : periodRowsReady && periodSummary.length > 0 ? periodSummary.map(summary => (
+              <section key={String(summary.currency)} className={styles.summaryCurrency} aria-label={`Resumen ${summary.currency}`}>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ft-text-muted)]">Asignado · {summary.currency}</p>
+                  <p className={`${styles.summaryValue} mt-1 text-[17px] font-semibold text-[var(--ft-text-strong)]`}>{formatBudgetCurrency(summary.assigned, summary.currency)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ft-text-muted)]">Gastado</p>
+                  <p className={`${styles.summaryValue} mt-1 text-[17px] font-semibold text-[var(--ft-text-strong)]`}>{formatBudgetCurrency(summary.spent, summary.currency)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ft-text-muted)]">Disponible</p>
+                  <p className={`${styles.summaryValue} mt-1 text-[17px] font-semibold ${summary.available < 0 ? 'text-[var(--ft-danger)]' : 'text-[var(--ft-text-strong)]'}`}>{formatBudgetCurrency(summary.available, summary.currency)}</p>
+                </div>
+              </section>
+            )) : (
+              <p className="text-[13px] text-[var(--ft-text-muted)]">
+                {periodRowsError ? 'Resumen no disponible para este período.' : `Sin presupuestos en ${periodMonthLabel}.`}
+              </p>
+            )}
+          </div>
         )}
         controls={(
           <ControlsBar
@@ -860,11 +1040,7 @@ export function BudgetsManager() {
                   className="filters-control sm:w-[112px]"
                   compact
                   searchable={false}
-                  options={[
-                    { value: 'all', label: 'Moneda' },
-                    { value: 'PEN', label: 'PEN' },
-                    { value: 'USD', label: 'USD' },
-                  ]}
+                  options={budgetCurrencyOptions}
                 />
                 <AppSelect
                   value={periodFilter}
@@ -902,7 +1078,9 @@ export function BudgetsManager() {
               : null}
             actions={(
               <StatusBadge tone="muted" dot={false}>
-                {filteredBudgetSeries.length} serie{filteredBudgetSeries.length === 1 ? '' : 's'}
+                {workspaceView === 'series'
+                  ? `${filteredBudgetSeries.length} serie${filteredBudgetSeries.length === 1 ? '' : 's'}`
+                  : `${filteredPeriodRows.length} presupuesto${filteredPeriodRows.length === 1 ? '' : 's'}`}
               </StatusBadge>
             )}
           />
@@ -910,139 +1088,184 @@ export function BudgetsManager() {
       >
         {error ? <DataErrorBanner message={error} onRetry={loadBudgets} /> : null}
 
-        <div className="flex flex-col gap-3 rounded-[14px] border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-3 md:flex-row md:items-center md:justify-between">
-          <div className="inline-flex w-fit items-center gap-1 rounded-[10px] border border-[var(--c-border)] bg-[var(--c-surface-2)] p-1">
+        <div className="flex flex-col gap-3 border-b border-[var(--ft-border)] sm:flex-row sm:items-end sm:justify-between">
+          <nav aria-label="Vistas de presupuestos" className="flex min-w-0 gap-5 overflow-x-auto">
+            {([
+              ['current', 'Este período', periodRowsReady ? periodRows.length : null],
+              ['exceeded', 'Excedidos', periodRowsReady ? exceededPeriodRows.length : null],
+              ['series', 'Otros períodos', budgetSeries.length],
+            ] as const).map(([view, label, count]) => (
+              <button
+                key={view}
+                type="button"
+                aria-pressed={workspaceView === view}
+                onClick={() => setWorkspaceView(view)}
+                className={`flex shrink-0 items-center gap-2 border-b-2 px-0.5 pb-2.5 text-[13px] font-semibold transition-colors ${workspaceView === view ? 'border-[var(--ft-accent)] text-[var(--ft-text-strong)]' : 'border-transparent text-[var(--ft-text-muted)] hover:text-[var(--ft-text-strong)]'}`}
+              >
+                {label}
+                {count !== null ? <span className="text-[11px] font-medium tabular-nums text-[var(--ft-text-subtle)]">{count}</span> : null}
+              </button>
+            ))}
+          </nav>
+
+          <div className="flex shrink-0 flex-wrap items-center gap-2 pb-2">
+            <span className="text-[11px] font-medium text-[var(--ft-text-muted)]">Período</span>
+            <AppSelect
+              value={periodMonth.slice(5, 7)}
+              onChange={value => setPeriodMonth(current => updateMonthKeyPart(current, { month: value }))}
+              className="filters-control w-[140px]"
+              compact
+              searchable={false}
+              options={MONTH_OPTIONS}
+            />
+            <AppSelect
+              value={periodMonth.slice(0, 4)}
+              onChange={value => setPeriodMonth(current => updateMonthKeyPart(current, { year: value }))}
+              className="filters-control w-[104px]"
+              compact
+              searchable={false}
+              options={periodYearOptions}
+            />
             <Button
               type="button"
               size="sm"
-              variant={workspaceView === 'series' ? 'success' : 'ghost'}
-              onClick={() => setWorkspaceView('series')}
+              variant="secondary"
+              onClick={() => void loadPeriodRows()}
+              disabled={periodRowsLoading}
+              loading={periodRowsLoading}
             >
-              Presupuestos
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={workspaceView === 'periods' ? 'success' : 'ghost'}
-              onClick={() => setWorkspaceView('periods')}
-            >
-              Por periodo
+              Actualizar
             </Button>
           </div>
-
-          {workspaceView === 'periods' ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[11px] font-medium text-[var(--ft-text-muted)]">
-                Periodo
-              </span>
-              <AppSelect
-                value={periodMonth.slice(5, 7)}
-                onChange={value => setPeriodMonth(current => updateMonthKeyPart(current, { month: value }))}
-                className="filters-control w-[140px]"
-                compact
-                searchable={false}
-                options={MONTH_OPTIONS}
-              />
-              <AppSelect
-                value={periodMonth.slice(0, 4)}
-                onChange={value => setPeriodMonth(current => updateMonthKeyPart(current, { year: value }))}
-                className="filters-control w-[104px]"
-                compact
-                searchable={false}
-                options={periodYearOptions}
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                onClick={() => void loadPeriodRows()}
-                disabled={periodRowsLoading}
-                loading={periodRowsLoading}
-              >
-                Actualizar
-              </Button>
-            </div>
-          ) : null}
         </div>
 
-        {workspaceView === 'periods' ? (
+        {workspaceView !== 'series' ? (
           <div className="space-y-3">
             {periodRowsError ? (
               <DataErrorBanner message={periodRowsError} onRetry={loadPeriodRows} />
             ) : null}
 
-            {periodRowsLoading ? (
-              <div className="grid gap-3">
-                {[0, 1, 2].map(item => (
-                  <div key={item} className="rounded-[14px] border border-[var(--c-border)] bg-[var(--c-surface)] px-4 py-4">
-                    <div className="flex animate-pulse items-center justify-between gap-4">
-                      <div className="space-y-2">
-                        <div className="h-3 w-24 rounded-full bg-[var(--c-surface-2)]" />
-                        <div className="h-5 w-56 rounded-full bg-[var(--c-surface-2)]" />
-                      </div>
-                      <div className="h-10 w-32 rounded-full bg-[var(--c-surface-2)]" />
-                    </div>
-                  </div>
+            {periodRowsReady && exceededPeriodRows.length > 0 ? (
+              <aside className="flex flex-col gap-2 rounded-[12px] border border-[var(--ft-danger-border,var(--ft-border))] bg-[var(--ft-danger-soft)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-[12px] font-semibold text-[var(--ft-danger)]">
+                    {exceededPeriodRows.length} período{exceededPeriodRows.length === 1 ? '' : 's'} por encima del límite
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-[var(--ft-text-muted)]">Excedentes reales de {periodMonthLabel}, sin combinar monedas.</p>
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  {summarizeBudgetCurrencies(exceededPeriodRows.map(row => ({
+                    amount: 0,
+                    spent_amount: 0,
+                    remaining_amount: Math.min(0, row.remaining_amount),
+                    budget: { currency: row.budget.currency },
+                  }))).map(item => (
+                    <span key={String(item.currency)} className="text-[12px] font-semibold tabular-nums text-[var(--ft-danger)]">
+                      {item.currency}: {formatBudgetCurrency(Math.abs(item.available), item.currency)}
+                    </span>
+                  ))}
+                </div>
+              </aside>
+            ) : null}
+
+            {showPeriodSkeleton && loadedPeriodMonth !== periodMonth ? (
+              <div className="overflow-hidden rounded-[14px] border border-[var(--ft-border)] bg-[var(--ft-surface)]">
+                <div className="h-10 animate-pulse bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />
+                {Array.from({ length: Math.max(3, periodRows.length) }, (_, item) => (
+                  <div key={item} className="h-[76px] border-t border-[var(--ft-border)] bg-[var(--ft-surface)]" />
                 ))}
               </div>
-            ) : periodRows.length === 0 ? (
+            ) : periodRowsError && !periodRowsReady ? null : !periodRowsReady ? (
+              <div
+                aria-hidden="true"
+                className="overflow-hidden rounded-[14px] border border-[var(--ft-border)] bg-[var(--ft-surface)]"
+              >
+                <div className={styles.periodHeader}>
+                  <span>Presupuesto</span><span>Gastado</span><span>Límite</span><span>Ejecución</span><span>Disponible</span><span className="text-right">Acciones</span>
+                </div>
+                {Array.from({ length: Math.max(3, periodRows.length) }, (_, item) => (
+                  <div key={item} className={styles.periodReserveRow} />
+                ))}
+              </div>
+            ) : periodRowsReady && currentPeriodRows.length === 0 ? (
               <EmptyState
-                title="No hay periodos para el mes seleccionado."
-                description="Crea periodos desde cada presupuesto o cambia el mes de consulta."
+                title={`No hay presupuestos en ${periodMonthLabel}.`}
+                description="Puedes consultar otros períodos o crear un presupuesto para empezar a asignar límites."
                 action={{
-                  label: 'Volver a presupuestos',
+                  label: 'Ver otros períodos',
                   onClick: () => setWorkspaceView('series'),
                 }}
               />
+            ) : periodRowsReady && filteredPeriodRows.length === 0 ? (
+              <EmptyState
+                title={workspaceView === 'exceeded' ? 'Sin excedentes en este período.' : 'No encontramos presupuestos para esos filtros.'}
+                description={workspaceView === 'exceeded' ? `No hay límites que superen el monto asignado en ${periodMonthLabel}.` : 'Prueba con otra moneda, categoría, estado o búsqueda.'}
+                action={workspaceView === 'exceeded' ? undefined : {
+                  label: 'Limpiar filtros',
+                  onClick: () => { setQuery(''); setCurrencyFilter('all'); setPeriodFilter('all'); setCategoryFilter('all'); setStatusFilter('all') },
+                }}
+              />
             ) : (
-              <div className="overflow-hidden rounded-[14px] border border-[var(--c-border)] bg-[var(--c-surface)]">
-                <div className="grid grid-cols-[minmax(0,1.3fr)_minmax(120px,0.7fr)_minmax(120px,0.7fr)_minmax(180px,1fr)_120px] gap-3 border-b border-[var(--c-border)] bg-[var(--c-surface-2)] px-4 py-3 text-[10px] uppercase tracking-[0.1em] text-[var(--c-text-faint)]">
-                  <span>Presupuesto</span>
-                  <span>Importe</span>
-                  <span>Gastado</span>
-                  <span>Ejecucion</span>
-                  <span>Estado</span>
+              <div className="overflow-hidden rounded-[14px] border border-[var(--ft-border)] bg-[var(--ft-surface)]">
+                <div className={styles.periodHeader}>
+                  <span>Presupuesto</span><span>Gastado</span><span>Límite</span><span>Ejecución</span><span>Disponible</span><span className="text-right">Acciones</span>
                 </div>
-                <div className="divide-y divide-[var(--c-border)]">
-                  {periodRows.map(row => {
-                    const progress = Math.max(0, Math.min(100, row.progress_percent))
-                    const tone = budgetProgressTone(row.over_limit, progress)
-
-                    return (
-                      <article
-                        key={row.id}
-                        className="grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,1.3fr)_minmax(120px,0.7fr)_minmax(120px,0.7fr)_minmax(180px,1fr)_120px] md:items-center"
-                      >
-                        <div className="min-w-0">
-                          <p className="truncate text-[13px] font-semibold text-[var(--c-text)]">
-                            {row.budget.name}
-                          </p>
-                          <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">
-                            {row.budget.category?.name ?? 'General'} · {formatRange(row.period_start, row.period_end)}
-                          </p>
+                {filteredPeriodRows.map(row => {
+                  const progress = Math.max(0, Number(row.progress_percent ?? 0))
+                  const visualProgress = Math.min(100, progress)
+                  const fillClass = row.over_limit ? styles.progressFillDanger : progress >= 80 ? styles.progressFillWarning : styles.progressFill
+                  const remaining = Number(row.remaining_amount ?? 0)
+                  return (
+                    <article key={row.id} className={styles.periodRow} data-testid={`budget-period-row-${row.id}`}>
+                      <div className="min-w-0">
+                        <p className="truncate text-[13px] font-semibold text-[var(--ft-text-strong)]">{row.budget.name}</p>
+                        <p className="mt-0.5 truncate text-[11px] text-[var(--ft-text-muted)]">{row.budget.category?.name ?? 'General'} · {PERIOD_LABEL[row.budget.period_type]}</p>
+                        <p className="mt-1 text-[11px] tabular-nums text-[var(--ft-text-subtle)]">{formatFullDate(row.period_start)} – {formatFullDate(row.period_end)}</p>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[10px] text-[var(--ft-text-subtle)] md:hidden">Gastado</p>
+                        <p className={`${styles.summaryValue} text-[13px] font-semibold tabular-nums text-[var(--ft-text-strong)]`}>{formatBudgetCurrency(Number(row.spent_amount ?? 0), row.budget.currency)}</p>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[10px] text-[var(--ft-text-subtle)] md:hidden">Límite</p>
+                        <p className={`${styles.summaryValue} text-[13px] font-semibold tabular-nums text-[var(--ft-text-strong)]`}>{formatBudgetCurrency(Number(row.amount ?? 0), row.budget.currency)}</p>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <span className="text-[10px] text-[var(--ft-text-subtle)] md:hidden">Ejecución</span>
+                          <span className="text-[12px] font-semibold tabular-nums text-[var(--ft-text-strong)]">{displayBudgetProgress(progress)}</span>
                         </div>
-                        <p className="text-[13px] font-semibold tabular-nums text-[var(--c-text)]">
-                          {formatCurrency(Number(row.amount ?? 0), row.budget.currency)}
-                        </p>
-                        <p className="text-[13px] font-semibold tabular-nums text-[var(--c-text-muted)]">
-                          {formatCurrency(Number(row.spent_amount ?? 0), row.budget.currency)}
-                        </p>
-                        <ProgressMetric
-                          value={progress}
-                          label="Ejecucion"
-                          valueLabel={`${progress.toFixed(0)}%`}
-                          tone={tone}
-                          description={row.over_limit
-                            ? `Excedido por ${formatCurrency(Math.abs(Number(row.remaining_amount ?? 0)), row.budget.currency)}`
-                            : `Disponible ${formatCurrency(Math.max(0, Number(row.remaining_amount ?? 0)), row.budget.currency)}`}
+                        <div className={styles.progressTrack} role="progressbar" aria-label={`Ejecución de ${row.budget.name}`} aria-valuemin={0} aria-valuemax={Math.max(100, progress)} aria-valuenow={progress}>
+                          <div className={`${styles.progressFill} ${fillClass}`} style={{ width: `${visualProgress}%` }} />
+                        </div>
+                        <p className="mt-1 text-[10px] text-[var(--ft-text-muted)]">{row.over_limit ? `Excedido por ${formatBudgetCurrency(Math.abs(remaining), row.budget.currency)}` : 'Del límite asignado'}</p>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[10px] text-[var(--ft-text-subtle)] md:hidden">Disponible</p>
+                        <p className={`${styles.summaryValue} text-[13px] font-semibold tabular-nums ${remaining < 0 ? 'text-[var(--ft-danger)]' : 'text-[var(--ft-text-strong)]'}`}>{formatBudgetCurrency(remaining, row.budget.currency)}</p>
+                        <StatusBadge tone={periodStatusTone(row.status, row.over_limit)} dot={row.status !== 'CLOSED'}>{row.over_limit ? 'Excedido' : periodStatusLabel(row.status)}</StatusBadge>
+                      </div>
+                      <div className={`${styles.periodActions} flex items-center gap-1.5 md:justify-end`}>
+                        <ActionIconButton onClick={() => openPeriodDetail(row)} icon="view" label="Ver este período y sus movimientos" testId={`budget-period-detail-${row.id}`} />
+                        <ActionIconButton
+                          onClick={() => {
+                            const target = resolveBudgetPeriodEditTarget(row)
+                            if (target.kind === 'explicit-period') {
+                              openPeriodDetail(row)
+                              return
+                            }
+                            const legacy = budgets.find(item => item.id === target.budgetId)
+                            if (legacy) startEdit(legacy)
+                            else openPeriodDetail(row)
+                          }}
+                          disabled={saving || rowActionId !== null}
+                          icon="edit"
+                          label={row.id === row.legacy_budget_id ? 'Editar presupuesto heredado' : 'Editar el importe de este período'}
                         />
-                        <StatusBadge tone={periodStatusTone(row.status, row.over_limit)} dot={row.status !== 'CLOSED'}>
-                          {row.over_limit ? 'Excedido' : periodStatusLabel(row.status)}
-                        </StatusBadge>
-                      </article>
-                    )
-                  })}
-                </div>
+                      </div>
+                    </article>
+                  )
+                })}
               </div>
             )}
           </div>
@@ -1087,8 +1310,9 @@ export function BudgetsManager() {
         ) : viewMode === 'list' ? (
           <div className="space-y-2">
             {filteredBudgetSeries.map(budget => {
-              const progress = Math.max(0, Math.min(100, budget.progress_percent))
-              const tone = budgetProgressTone(budget.over_limit, progress)
+              const actualProgress = Math.max(0, Number(budget.progress_percent ?? 0))
+              const progress = Math.min(100, actualProgress)
+              const tone = budgetProgressTone(budget.over_limit, actualProgress)
 
               return (
                 <article
@@ -1126,7 +1350,7 @@ export function BudgetsManager() {
                         </StatusBadge>
                       </div>
                       <p className="mt-2 text-[12px] text-[var(--c-text-muted)]">
-                        Periodo visible {formatCurrency(Number(budget.amount ?? 0), budget.currency)}
+                        Periodo visible {formatBudgetCurrency(Number(budget.amount ?? 0), budget.currency)}
                       </p>
                       {budget.period_count > 1 ? (
                         <p className="mt-1 text-[11px] text-[var(--c-text-faint)]">
@@ -1139,17 +1363,17 @@ export function BudgetsManager() {
                       <ProgressMetric
                         value={progress}
                         label="Ejecucion"
-                        valueLabel={`${progress.toFixed(0)}%`}
+                        valueLabel={displayBudgetProgress(actualProgress)}
                         tone={tone}
                         description={budget.over_limit
-                          ? `Excedido por ${formatCurrency(Math.abs(Number(budget.remaining_amount ?? 0)), budget.currency)}`
-                          : `Disponible ${formatCurrency(Math.max(0, Number(budget.remaining_amount ?? 0)), budget.currency)}`}
+                          ? `Excedido por ${formatBudgetCurrency(Math.abs(Number(budget.remaining_amount ?? 0)), budget.currency)}`
+                          : `Disponible ${formatBudgetCurrency(Math.max(0, Number(budget.remaining_amount ?? 0)), budget.currency)}`}
                       />
                     </div>
 
                     <div className="flex shrink-0 items-center gap-1.5 md:justify-self-end">
                       <ActionIconButton
-                        onClick={() => setDetailBudget(budget)}
+                        onClick={() => openSeriesDetail(budget)}
                         disabled={saving || loading || rowActionId !== null}
                         title="Ver periodos y transacciones"
                         icon="view"
@@ -1208,8 +1432,9 @@ export function BudgetsManager() {
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {filteredBudgetSeries.map(budget => {
-              const progress = Math.max(0, Math.min(100, budget.progress_percent))
-              const tone = budgetProgressTone(budget.over_limit, progress)
+              const actualProgress = Math.max(0, Number(budget.progress_percent ?? 0))
+              const progress = Math.min(100, actualProgress)
+              const tone = budgetProgressTone(budget.over_limit, actualProgress)
 
               return (
                 <article
@@ -1241,16 +1466,16 @@ export function BudgetsManager() {
                       <ProgressMetric
                         value={progress}
                         label="Ejecucion"
-                        valueLabel={`${progress.toFixed(1)}%`}
+                        valueLabel={displayBudgetProgress(actualProgress)}
                         tone={tone}
-                        description={`Gastado ${formatCurrency(Number(budget.spent_amount ?? 0), budget.currency)}`}
+                        description={`Gastado ${formatBudgetCurrency(Number(budget.spent_amount ?? 0), budget.currency)}`}
                       />
                     </div>
 
                     <div className="mt-4 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
                       <AmountCell
                         label={budget.over_limit ? 'Excedido por' : 'Disponible'}
-                        value={formatCurrency(Math.abs(Number(budget.remaining_amount ?? 0)), budget.currency)}
+                        value={formatBudgetCurrency(Math.abs(Number(budget.remaining_amount ?? 0)), budget.currency)}
                         meta={`Periodo visible: ${formatRange(budget.period_start, budget.period_end)}`}
                         align="left"
                         tone={tone}
@@ -1260,7 +1485,7 @@ export function BudgetsManager() {
                     <div className="mt-4 border-t border-[var(--c-border)] pt-4">
                       <div className="flex items-center justify-end gap-1.5">
                         <ActionIconButton
-                          onClick={() => setDetailBudget(budget)}
+                          onClick={() => openSeriesDetail(budget)}
                           disabled={saving || loading || rowActionId !== null}
                           icon="view"
                           label="Ver transacciones del periodo"
@@ -1316,6 +1541,8 @@ export function BudgetsManager() {
       <RecordModal
         open={modalOpen}
         onClose={closeModal}
+        onExitComplete={handleModalExitComplete}
+        presentation="workbench"
         eyebrow="Presupuestos"
         title={
           editingId
@@ -1331,7 +1558,7 @@ export function BudgetsManager() {
             ? 'Previsualiza el siguiente rango y conserva la configuración operativa de la serie.'
             : 'Define límites por categoría y controla tu gasto del período actual.'
         }
-        widthClassName={isContinuationMode ? 'w-[calc(100vw-32px)] max-w-[920px]' : 'w-[calc(100vw-32px)] max-w-[1040px]'}
+        widthClassName={isContinuationMode ? 'w-[calc(100vw-32px)] max-w-[880px]' : 'w-[calc(100vw-32px)] max-w-[720px]'}
       >
         <form
           id="budget-form"
@@ -1341,7 +1568,7 @@ export function BudgetsManager() {
         >
           {isContinuationMode && continuationPreview ? (
             <>
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.02fr)_minmax(360px,0.98fr)]">
+              <div className="grid gap-3 xl:grid-cols-[minmax(0,1.02fr)_minmax(360px,0.98fr)]">
                 <FormSection
                   title="Periodo anterior"
                   description="Resumen readonly del último presupuesto activo dentro de la serie."
@@ -1367,7 +1594,7 @@ export function BudgetsManager() {
                     <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
                       <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--ft-form-muted)]">Monto vigente</p>
                       <p className="mt-1 text-[15px] font-semibold tracking-[-0.02em] text-[var(--c-text)]">
-                        {formatCurrency(roundToDecimals(parseNumericInput(form.amount, 0), 2), form.currency)}
+                        {formatBudgetCurrency(roundToDecimals(parseNumericInput(form.amount, 0), 2), form.currency)}
                       </p>
                     </div>
                     <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
@@ -1439,7 +1666,7 @@ export function BudgetsManager() {
             </>
           ) : (
             <>
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,0.98fr)_minmax(400px,1.02fr)]">
+              <div className="grid gap-3 xl:grid-cols-[minmax(0,0.98fr)_minmax(340px,1.02fr)]">
                 <FormSection
                   title="Presupuesto"
                   description="Agrupa la identidad operativa, la categoría y el estado del límite que vas a seguir."
@@ -1508,7 +1735,7 @@ export function BudgetsManager() {
                   columns="1"
                   className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
                 >
-                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_128px]">
                     <FormField label="Monto">
                       <NumericInput
                         step="0.01"
@@ -1539,12 +1766,13 @@ export function BudgetsManager() {
 
                   <div className="grid gap-3 sm:grid-cols-2">
                     <FormField label="Fecha de inicio">
-                      <input
-                        type="date"
+                      <IncomeDatePicker
                         value={form.start_date}
-                        onChange={event => handlePeriodOrDateChange({ start_date: event.target.value })}
-                        className="field-base ft-form-input w-full"
-                        required
+                        onChange={value => handlePeriodOrDateChange({ start_date: value })}
+                        onInvalidInput={setDateInputError}
+                        error={dateInputError ?? undefined}
+                        inputLabel="Fecha de inicio del presupuesto, día, mes y año"
+                        inputTestId="budget-start-date-input"
                       />
                     </FormField>
 
@@ -1554,14 +1782,14 @@ export function BudgetsManager() {
                     >
                       <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
                         <p className="text-sm font-medium text-[var(--c-text)]">
-                          {form.end_date || 'Se calculara al guardar'}
+                          {form.end_date ? formatFullDate(form.end_date) : 'Se calculará al completar la fecha de inicio'}
                         </p>
                       </div>
                     </FormField>
                   </div>
 
-                  <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] px-3.5 py-3">
-                    <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--ft-form-muted)]">Preview del periodo</p>
+              <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] px-3.5 py-3">
+                    <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--ft-form-muted)]">Rango del período</p>
                     <p className="mt-1 text-[13px] font-medium text-[var(--c-text)]">
                       {form.start_date && form.end_date ? formatRange(form.start_date, form.end_date) : 'El rango aparecera al completar la vigencia'}
                     </p>
@@ -1639,12 +1867,26 @@ export function BudgetsManager() {
       {/* A.3 — Panel de detalle de transacciones por presupuesto */}
       {detailBudget && (
         <BudgetDetail
+          open={detailOpen}
           budget={detailBudget}
           periods={detailBudget.periods}
-          onPeriodUpdated={loadBudgets}
-          onClose={() => setDetailBudget(null)}
+          onPeriodUpdated={async () => { await Promise.all([loadBudgets(), loadPeriodRows()]) }}
+          onClose={() => setDetailOpen(false)}
+          onExitComplete={() => setDetailBudget(null)}
         />
       )}
+
+      <ConfirmDialog
+        open={discardConfirmationOpen}
+        title="Descartar cambios sin guardar"
+        message="Los cambios de este presupuesto todavía no se han guardado. ¿Quieres cerrar y descartarlos?"
+        onCancel={() => setDiscardConfirmationOpen(false)}
+        onConfirm={performCloseModal}
+        confirmLabel="Descartar cambios"
+        testId="budgets-discard-modal"
+        cancelTestId="budgets-discard-cancel-button"
+        confirmTestId="budgets-discard-confirm-button"
+      />
 
       <ConfirmDialog
         open={Boolean(pendingDeleteBudget)}
