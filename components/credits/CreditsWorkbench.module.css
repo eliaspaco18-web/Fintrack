@@ -8,9 +8,43 @@
   width: min(1240px, calc(100vw - 24px));
 }
 
+/* The card-cycle workbench follows its content for one or two cycles, then caps
+   its height and scrolls the cycle list for larger schedules. */
+.creditCardScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
+  width: min(1240px, calc(100vw - 24px));
+  height: auto;
+  max-height: calc(100dvh - 24px);
+  align-self: center;
+}
+
+.creditCardScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-ft-workbench='schedule']) {
+  height: auto;
+  max-height: calc(100dvh - 24px);
+}
+
+.creditCardScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-ft-workbench='schedule'] [data-record-modal-body]) {
+  flex: 0 1 auto;
+  max-height: calc(100dvh - 240px);
+  overflow-y: auto;
+}
+
 @media (max-width: 767px) {
   .creditFormOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper),
   .creditScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
     width: calc(100vw - 16px);
+  }
+
+  .creditCardScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+    margin: 8px;
+  }
+
+  .creditCardScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-ft-workbench='schedule']) {
+    max-height: calc(100dvh - 16px);
+  }
+
+  .creditCardScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-ft-workbench='schedule'] [data-record-modal-body]) {
+    max-height: calc(100dvh - 220px);
   }
 }

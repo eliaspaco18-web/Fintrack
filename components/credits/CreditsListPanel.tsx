@@ -24,7 +24,6 @@ import { CreditCardForm } from '@/components/credits/CreditCardForm'
 import { BankLoanForm } from '@/components/credits/BankLoanForm'
 import { LoanDetailsModal } from '@/components/credits/LoanDetailsModal'
 import {
-  AmountCell,
   ConfirmDialog,
   DataErrorBanner,
   DataSearchField,
@@ -34,6 +33,7 @@ import {
 } from '@/components/finance'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { summarizeCredits } from '@/lib/credits/overview'
+import { getCreditDetailPresentation } from '@/modules/credits/credit-detail-presentation'
 import type { Credit } from '@/types/database.types'
 import pageStyles from '@/components/tables/TransactionsRound07.module.css'
 import styles from './CreditsListPanel.module.css'
@@ -93,50 +93,131 @@ function moneyValues(credit: CreditListItem, field: 'used' | 'limit') {
   return values
 }
 
-function CreditAmount({ credit }: { credit: CreditListItem }) {
-  const isCard = credit.display_type === 'CARD'
-  const amounts = moneyValues(credit, isCard ? 'used' : 'limit')
-  const label = isCard
-    ? 'Deuda registrada'
-    : credit.display_type === 'LOAN' ? 'Capital original' : 'Importe registrado'
-
-  return amounts.length ? (
-    <div className={styles.amountStack}>
-      <span className={styles.cellLabel}>{label}</span>
-      {amounts.map(item => (
-        <span className={styles.amountLine} key={item.currency}>
-          <AmountCell value={formatCurrency(item.amount, item.currency)} align="left" />
-          {amounts.length > 1 ? <span className={styles.currencyCode}>{item.currency}</span> : null}
-        </span>
-      ))}
-    </div>
-  ) : <span className={styles.unavailableValue}>No disponible</span>
+function creditNativeAmount(credit: CreditListItem, field: 'used' | 'limit') {
+  const raw = field === 'used' ? credit.used_amount : credit.credit_limit
+  const amount = Number(raw)
+  return Number.isFinite(amount) && amount >= 0 ? amount : null
 }
 
-function CreditSecondaryFacts({ credit }: { credit: CreditListItem }) {
+function CreditAmount({ credit }: { credit: CreditListItem }) {
   if (credit.display_type === 'CARD') {
+    const amounts = moneyValues(credit, 'used')
+    if (amounts.length === 0 && (credit.currency || credit.used_amount !== null)) {
+      const primary = creditNativeAmount(credit, 'used')
+      if (primary !== null) amounts.push({ currency: credit.currency, amount: primary })
+    }
+    return amounts.length ? (
+      <div className={styles.amountStack}>
+        <span className={styles.cellLabel}>Deuda registrada</span>
+        {amounts.map(item => (
+          <span className={styles.amountLine} key={item.currency}>
+            <strong>{formatCurrency(item.amount, item.currency)}</strong>
+            {amounts.length > 1 ? <span className={styles.currencyCode}>{item.currency}</span> : null}
+          </span>
+        ))}
+      </div>
+    ) : <span className={styles.unavailableValue}>Deuda no disponible</span>
+  }
+
+  if (credit.display_type === 'LOAN') {
+    const capital = credit.has_loan ? creditNativeAmount(credit, 'limit') : null
+    return capital !== null ? (
+      <div className={styles.amountStack}>
+        <span className={styles.cellLabel}>Capital original</span>
+        <span className={styles.amountLine}><strong>{formatCurrency(capital, credit.currency)}</strong></span>
+      </div>
+    ) : <span className={styles.unavailableValue}>Capital no verificable</span>
+  }
+
+  const presentation = getCreditDetailPresentation(credit, { status: 'NOT_APPLICABLE' })
+  const available = presentation.availability.status === 'AVAILABLE'
+    ? presentation.availability.amount
+    : null
+  return available !== null && presentation.currency ? (
+    <div className={styles.amountStack}>
+      <span className={styles.cellLabel}>Disponible de la línea</span>
+      <span className={styles.amountLine}><strong>{formatCurrency(available, presentation.currency)}</strong></span>
+    </div>
+  ) : <span className={styles.unavailableValue}>Importe no verificable</span>
+}
+
+function CreditLineContext({ credit }: { credit: CreditListItem }) {
+  if (credit.display_type === 'CARD') {
+    const presentation = getCreditDetailPresentation(credit, { status: 'NOT_APPLICABLE' })
+    const otherCurrencyUsed = credit.currency === 'PEN'
+      ? Number(credit.used_amount_usd ?? 0)
+      : credit.currency === 'USD'
+        ? Number(credit.used_amount_pen ?? 0)
+        : 0
+    const usage = presentation.availability.status === 'AVAILABLE' && otherCurrencyUsed <= 0
+      ? presentation.availability
+      : null
+    const usagePercent = usage ? usage.used / usage.limit * 100 : null
     return (
-      <div className={styles.secondaryFacts}>
-        <span>Límite: {moneyValues(credit, 'limit').map(item => formatCurrency(item.amount, item.currency)).join(' · ') || 'No registrado'}</span>
-        <span>{credit.closing_day ? `Corte día ${credit.closing_day}` : 'Corte no registrado'}</span>
-        <span>{credit.payment_day ? `Pago día ${credit.payment_day}` : 'Pago no registrado'}</span>
+      <div className={styles.creditContext}>
+        {usage && usagePercent !== null ? (
+          <>
+            <div className={styles.usageHeading}>
+              <span>Uso de línea · {presentation.currency}</span>
+              <strong>{usagePercent.toFixed(1)}%</strong>
+            </div>
+            <div className={styles.usageTrack} role="progressbar" aria-label={`Uso de línea en ${presentation.currency}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(usagePercent, 100)}>
+              <span style={{ width: `${Math.min(usagePercent, 100)}%` }} />
+            </div>
+            <span className={styles.contextNote}>Límite {formatCurrency(usage.limit, presentation.currency!)}</span>
+          </>
+        ) : (
+          <>
+            <strong className={styles.contextPrimary}>Uso no verificable</strong>
+            <span className={styles.contextNote}>{otherCurrencyUsed > 0 ? 'Hay deuda en otra moneda sin equivalencia verificada' : 'Límite o moneda base no disponible'}</span>
+          </>
+        )}
       </div>
     )
   }
 
   if (credit.display_type === 'LOAN') {
     return (
-      <div className={styles.secondaryFacts}>
-        <span>{credit.has_loan ? 'Cronograma vinculado' : 'Cronograma no disponible'}</span>
-        <span>Sin vencimiento registrado en esta vista</span>
+      <div className={styles.creditContext}>
+        <strong className={styles.contextPrimary}>{credit.has_loan ? 'Cronograma vinculado' : 'Sin cronograma verificado'}</strong>
+        <span className={styles.contextNote}>Componentes disponibles en el detalle</span>
+      </div>
+    )
+  }
+
+  const presentation = getCreditDetailPresentation(credit, { status: 'NOT_APPLICABLE' })
+  const limit = presentation.availability.status === 'AVAILABLE' ? presentation.availability.limit : null
+  return (
+    <div className={styles.creditContext}>
+      <strong className={styles.contextPrimary}>{presentation.currency && limit !== null ? `Límite ${formatCurrency(limit, presentation.currency)}` : 'Límite no verificable'}</strong>
+      <span className={styles.contextNote}>Importe registrado en la moneda de la línea</span>
+    </div>
+  )
+}
+
+function CreditDueContext({ credit }: { credit: CreditListItem }) {
+  if (credit.display_type === 'CARD') {
+    return (
+      <div className={styles.dueContext}>
+        <strong>{credit.payment_day ? `Día ${credit.payment_day}` : 'Sin día registrado'}</strong>
+        <span>{credit.payment_day ? 'Día de pago registrado' : 'No hay día de pago registrado'}</span>
+      </div>
+    )
+  }
+
+  if (credit.display_type === 'LOAN') {
+    return (
+      <div className={styles.dueContext}>
+        <strong>{credit.has_loan ? 'Ver cuotas' : 'No disponible'}</strong>
+        <span>{credit.has_loan ? 'Fechas en el cronograma' : 'Sin cronograma verificado'}</span>
       </div>
     )
   }
 
   return (
-    <div className={styles.secondaryFacts}>
-      <span>Línea: {moneyValues(credit, 'limit').map(item => formatCurrency(item.amount, item.currency)).join(' · ') || 'Importe no registrado'}</span>
-      <span>Uso y disponibilidad se consultan en el detalle</span>
+    <div className={styles.dueContext}>
+      <strong>Sin vencimiento registrado</strong>
+      <span>Esta línea no tiene una fecha asociada</span>
     </div>
   )
 }
@@ -170,9 +251,27 @@ function CreditActions({
   return (
     <div className={styles.rowActions}>
       {view}
-      <ActionIconButton className={styles.directEditAction} icon="edit" label={credit.display_type === 'LOAN' ? 'Editar préstamo' : 'Editar'} disabled={loading} testId={`credit-edit-${credit.id}`} onClick={() => onEdit(credit)} />
-      <span className={styles.desktopMoreAction}><AnchoredActionMenu label={`Más acciones de ${credit.name}`} actions={secondaryActions} disabled={loading} align="end" /></span>
-      <span className={styles.compactMoreAction}><AnchoredActionMenu label={`Acciones de ${credit.name}`} actions={actions} disabled={loading} align="end" /></span>
+      <button
+        type="button"
+        className={styles.directEditAction}
+        disabled={loading}
+        data-testid={`credit-edit-${credit.id}`}
+        onClick={() => onEdit(credit)}
+      >
+        Editar
+      </button>
+      <span className={styles.desktopMoreAction}><AnchoredActionMenu
+        label={`Más acciones de ${credit.name}`}
+        triggerContent={<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg>}
+        className="h-8 w-8 rounded-control text-[var(--ft-text-muted)] hover:bg-[var(--ft-surface-hover)] hover:text-[var(--ft-text-strong)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]"
+        actions={secondaryActions} disabled={loading} align="end" menuClassName={styles.rowActionMenu}
+      /></span>
+      <span className={styles.compactMoreAction}><AnchoredActionMenu
+        label={`Acciones de ${credit.name}`}
+        triggerContent={<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg>}
+        className="h-8 w-8 rounded-control text-[var(--ft-text-muted)] hover:bg-[var(--ft-surface-hover)] hover:text-[var(--ft-text-strong)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]"
+        actions={actions} disabled={loading} align="end" menuClassName={styles.rowActionMenu}
+      /></span>
     </div>
   )
 }
@@ -396,22 +495,17 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
           <span className={`${styles.creditIcon} ${creditIconClass(credit.display_type)}`}>{creditIcon(credit.credit_type)}</span>
           <span className={styles.productCopy}>
             <span className={styles.productName}>{credit.name}</span>
-            <span className={styles.productMeta}>{issuer} · {credit.account?.name ?? 'Cuenta no vinculada'}</span>
+            <span className={styles.productMeta}>{issuer}{credit.account?.name ? ` · ${credit.account.name}` : ''}</span>
           </span>
         </div>
         <div className={styles.amountCell}><CreditAmount credit={credit} /></div>
         <div className={styles.detailsCell}>
-          <span className={styles.kindLine}>
-            <StatusBadge tone={getCreditDisplayTone(credit.display_type)} dot={false}>{getCreditDisplayLabel(credit.display_type)}</StatusBadge>
-            <StatusBadge tone={statusTone(credit.status)}>{statusLabel(credit.status)}</StatusBadge>
+          <CreditLineContext credit={credit} />
+          <span className={`${styles.productStatus} ${isActive ? styles.productStatusActive : credit.status === 'BLOCKED' ? styles.productStatusWarning : styles.productStatusMuted}`}>
+            {statusLabel(credit.status)}
           </span>
-          <CreditSecondaryFacts credit={credit} />
         </div>
-        <div className={styles.dateCell}>
-          {credit.display_type === 'CARD'
-            ? credit.payment_day ? `Pago día ${credit.payment_day}` : 'Sin día de pago'
-            : credit.display_type === 'LOAN' ? 'Ver cronograma' : 'No registrado'}
-        </div>
+        <div className={styles.dateCell}><CreditDueContext credit={credit} /></div>
         <div className={styles.actionCell}>{renderActions(credit)}</div>
       </article>
     ) : (
@@ -427,7 +521,8 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
         <div className={styles.cardAmount}><CreditAmount credit={credit} /></div>
         <div className={styles.cardFacts}>
           <StatusBadge tone={getCreditDisplayTone(credit.display_type)} dot={false}>{getCreditDisplayLabel(credit.display_type)}</StatusBadge>
-          <CreditSecondaryFacts credit={credit} />
+          <CreditLineContext credit={credit} />
+          <CreditDueContext credit={credit} />
         </div>
         <footer className={styles.cardActions}>{renderActions(credit)}</footer>
       </article>
@@ -569,7 +664,7 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
         ) : viewMode === 'list' ? (
           <DataTable density="credit" className={styles.table}>
             <div className={styles.tableHeader}>
-              <span>Producto</span><span>Importe</span><span>Línea / cronograma</span><span>Vencimiento</span><span className="text-right">Acciones</span>
+              <span>Producto</span><span>Importe y significado</span><span>Línea / cronograma</span><span>Vencimiento registrado</span><span className="text-right">Acciones</span>
             </div>
             <div className={styles.records}>{filtered.map(renderRecord)}</div>
           </DataTable>

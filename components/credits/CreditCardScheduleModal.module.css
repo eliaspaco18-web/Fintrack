@@ -1,0 +1,163 @@
+.scheduleEditor {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 14px;
+  color: var(--ft-text-strong);
+}
+
+.scheduleHeader {
+  display: flex;
+  min-width: 0;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.scheduleHeading {
+  display: flex;
+  min-width: 0;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.scheduleTitle { margin: 0; color: var(--ft-text-strong); font-size: 14px; font-weight: 650; line-height: 20px; }
+.scheduleSubtitle { margin: 3px 0 0; color: var(--ft-text-muted); font-size: 12px; line-height: 17px; }
+
+.scheduleTotals {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  margin: 0;
+  border-left: 1px solid var(--ft-border);
+}
+.scheduleTotals > div { min-width: 82px; padding: 0 14px; }
+.scheduleTotals > div + div { border-left: 1px solid var(--ft-border); }
+.scheduleTotals dt { color: var(--ft-text-muted); font-size: 10px; font-weight: 600; letter-spacing: .035em; text-transform: uppercase; }
+.scheduleTotals dd { margin: 3px 0 0; color: var(--ft-text-strong); font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
+
+.cycleList {
+  width: 100%;
+  min-width: 0;
+  max-height: min(56vh, 560px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  border-top: 1px solid var(--ft-border);
+  border-bottom: 1px solid var(--ft-border);
+  scrollbar-gutter: stable;
+}
+
+.cycleRow { min-width: 0; padding: 14px 2px 15px; }
+.cycleRow + .cycleRow { border-top: 1px solid var(--ft-border); }
+.cycleTopline {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(250px, 1.05fr) minmax(280px, 1fr) minmax(250px, .95fr);
+  align-items: end;
+  gap: 18px;
+}
+.periodBlock { min-width: 0; }
+.fieldLabel { display: block; margin-bottom: 6px; color: var(--ft-text-muted); font-size: 11px; font-weight: 600; line-height: 16px; }
+.periodFields { min-width: 0; }
+.periodControls { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) 92px; gap: 8px; }
+.monthSelect,
+.yearSelect { width: 100%; min-width: 0; }
+.cycleIssue { margin: 6px 0 0; color: var(--ft-form-error); font-size: 11px; font-weight: 600; line-height: 15px; }
+
+.cycleTotals {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: end;
+}
+.cycleTotals > div { min-width: 0; }
+.cycleTotals .fieldLabel { margin-bottom: 3px; font-size: 10px; text-transform: uppercase; letter-spacing: .035em; }
+.cycleTotals strong { display: block; overflow-wrap: anywhere; color: var(--ft-text-strong); font-size: 13px; font-weight: 650; line-height: 19px; font-variant-numeric: tabular-nums; }
+
+.cycleTools { display: flex; min-width: 0; align-items: end; justify-content: flex-end; gap: 18px; }
+.statementBlock,
+.actionBlock { min-width: 0; }
+.statementBlock { flex: 1 1 auto; }
+.actionBlock { flex: 0 0 auto; }
+.statementControl { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 3px; }
+.statementButtons { display: flex; min-width: 0; align-items: center; gap: 6px; }
+.statementStatus { display: block; max-width: 100%; overflow: hidden; color: var(--ft-text-muted); font-size: 10px; font-weight: 500; line-height: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.iconButton {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ft-border);
+  border-radius: var(--ft-radius-control);
+  background: var(--ft-surface);
+  color: var(--ft-text-muted);
+  transition: border-color 120ms ease, color 120ms ease, background-color 120ms ease;
+}
+.iconButton:hover { border-color: var(--ft-border-strong); color: var(--ft-text-strong); }
+.iconButton:focus-visible { outline: 2px solid var(--ft-focus-ring-color); outline-offset: 2px; }
+.iconButton:disabled,
+.disabledIconButton { cursor: not-allowed; opacity: .48; }
+.iconButton:disabled:hover,
+.disabledIconButton:hover { border-color: var(--ft-border); color: var(--ft-text-muted); }
+.deleteButton:hover { border-color: color-mix(in srgb, var(--ft-danger) 24%, var(--ft-border)); background: var(--ft-danger-soft); color: var(--ft-danger); }
+.cycleActions { display: flex; align-items: center; gap: 6px; }
+
+.cycleDates {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ft-border);
+}
+.dateField { min-width: 0; }
+.dateField label { display: block; margin-bottom: 5px; color: var(--ft-text-muted); font-size: 11px; font-weight: 600; line-height: 16px; }
+
+.registeredTotals {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, auto) minmax(120px, auto);
+  align-items: center;
+  gap: 18px;
+  padding: 2px 4px 0;
+}
+.registeredTotals > span { color: var(--ft-text-muted); font-size: 11px; font-weight: 600; letter-spacing: .045em; text-transform: uppercase; }
+.registeredTotals strong { color: var(--ft-text-strong); font-size: 13px; font-weight: 700; line-height: 19px; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.duplicateNotice { border: 1px solid color-mix(in srgb, var(--ft-danger) 24%, transparent); border-radius: var(--ft-radius-control); background: var(--ft-danger-soft); padding: 10px 12px; }
+.duplicateNotice p { margin: 0; color: var(--ft-danger); font-size: 12px; font-weight: 600; line-height: 17px; }
+
+@media (max-width: 1199px) {
+  .scheduleHeader { align-items: start; flex-direction: column; gap: 12px; }
+  .scheduleHeading { width: 100%; }
+  .scheduleTotals { border-left: 0; }
+  .scheduleTotals > div:first-child { padding-left: 0; }
+  .cycleTopline { grid-template-columns: minmax(240px, 1fr) minmax(0, 1fr); align-items: end; gap: 14px 18px; }
+  .cycleTools { grid-column: 1 / -1; justify-content: space-between; border-top: 1px solid var(--ft-border); padding-top: 10px; }
+}
+
+@media (max-width: 639px) {
+  .scheduleEditor { gap: 11px; }
+  .scheduleHeading { align-items: start; flex-direction: column; gap: 10px; }
+  .scheduleHeading > button { width: 100%; }
+  .scheduleTotals { width: 100%; justify-content: space-between; border-top: 1px solid var(--ft-border); padding-top: 9px; }
+  .scheduleTotals > div { min-width: 0; padding: 0 9px; }
+  .scheduleTotals > div:first-child { padding-left: 0; }
+  .cycleRow { padding: 12px 0; }
+  .cycleTopline { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .cycleTools { grid-column: auto; gap: 14px; }
+  .cycleTotals { gap: 10px; }
+  .cycleDates { grid-template-columns: minmax(0, 1fr); gap: 10px; margin-top: 12px; padding-top: 10px; }
+  .registeredTotals { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px 12px; }
+  .registeredTotals > span { grid-column: 1 / -1; }
+  .registeredTotals strong { font-size: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .iconButton { transition: none; }
+}

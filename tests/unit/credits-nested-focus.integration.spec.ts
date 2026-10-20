@@ -77,23 +77,44 @@ function compileBackgroundManager() {
   return `(() => { ${compiled}\nwindow.__creditsModules['@/lib/ui/v3-modal-background'] = { acquireV3ModalBackground }; })();`
 }
 
+function compileIncomeDateHelpers() {
+  const source = readFileSync(join(process.cwd(), 'modules/transactions/income-date.ts'), 'utf8')
+    .replace(/export function /g, 'function ')
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+  }).outputText.replace(/^export\s*\{\s*\};?\s*$/gm, '')
+  return `(() => { ${compiled}\nwindow.__creditsModules['@/modules/transactions/income-date'] = { calendarMonthDays, formatIsoDateForDisplay, moveCalendarMonth, parseDisplayDateToIso, parseIsoCalendarDate, toIsoCalendarDate }; })();`
+}
+
 async function mountRealCreditModals(
   page: Page,
   type: 'card' | 'loan',
   mode: 'create' | 'edit',
   viewport = { width: 1440, height: 900 },
+  statementUrl: string | null = null,
 ) {
   const runtimeErrors: string[] = []
   page.on('pageerror', error => runtimeErrors.push(error.message))
   await page.setViewportSize(viewport)
   await page.setContent('<div class="fin-shell" data-ft-v3-shell><div id="root"></div></div>')
-  await page.addScriptTag({ content: "if (!crypto.randomUUID) Object.defineProperty(crypto, 'randomUUID', { value: () => 'credits-test-id' })" })
+  await page.addScriptTag({ content: "let creditFixtureId = 0; Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: () => creditFixtureId++ === 0 ? 'credits-test-id' : `credits-test-id-${creditFixtureId}` })" })
   const cssPath = join(process.cwd(), '.next/static/css')
   const css = readdirSync(cssPath).filter(file => file.endsWith('.css')).sort().map(file => readFileSync(join(cssPath, file), 'utf8')).join('\n')
   const moduleClass = (localName: string) => css.match(new RegExp(`\\.([\\w-]*${localName}__[\\w-]+)`))?.[1] ?? localName
   const footerClassName = moduleClass('operationFormActions')
   const creditFormOverlayClass = moduleClass('creditFormOverlay')
   const creditScheduleOverlayClass = moduleClass('creditScheduleOverlay')
+  const creditCardScheduleOverlayClass = moduleClass('creditCardScheduleOverlay')
+  const scheduleClasses = Object.fromEntries([
+    'scheduleEditor', 'scheduleHeader', 'scheduleHeading', 'scheduleTitle', 'scheduleSubtitle', 'scheduleTotals',
+    'cycleList', 'cycleRow', 'cycleTopline', 'periodBlock', 'fieldLabel', 'periodFields', 'periodControls',
+    'monthSelect', 'yearSelect', 'cycleIssue', 'cycleTotals', 'cycleTools', 'statementBlock', 'actionBlock',
+    'statementControl', 'statementButtons', 'statementStatus', 'iconButton', 'disabledIconButton', 'deleteButton',
+    'cycleActions', 'cycleDates', 'dateField', 'registeredTotals', 'duplicateNotice',
+  ].map(name => [name, moduleClass(name)]))
+  const datePickerClasses = Object.fromEntries([
+    'picker', 'input', 'trigger', 'error', 'popover', 'header', 'selectors', 'arrow', 'weekdays', 'days', 'week', 'day', 'footer',
+  ].map(name => [name, moduleClass(name)]))
   await page.addStyleTag({ content: `${css}\n.app-modal-overlay{position:fixed;inset:0;display:flex;justify-content:flex-end;align-items:center;background:rgba(0,0,0,.24)}.ft-v3-workbench-wrapper{position:relative;z-index:1;width:min(580px,calc(100vw - 24px));height:calc(100dvh - 24px);margin:12px}.ft-v3-workbench-veil{position:absolute;inset:0}.app-modal-overlay [role=dialog]{height:100%;background:white}.app-modal-overlay [data-record-modal-body]{overflow:auto;flex:1;min-height:0}` })
   await page.addScriptTag({ path: reactPath })
   await page.addScriptTag({ path: reactDomPath })
@@ -114,7 +135,6 @@ async function mountRealCreditModals(
     window.__creditsModules['react'] = { ...React };
     window.__creditsModules['react-dom'] = { createPortal: ReactDOM.createPortal };
     window.__creditsModules['@/components/ui/Button'] = { Button: ({children, type='button', onClick, disabled, id, ariaLabel, className, title, ...props}) => React.createElement('button', { type, onClick, disabled, id, 'aria-label': ariaLabel, className, title, ...props }, children) };
-    window.__creditsModules['@/components/ui/AppSelect'] = { AppSelect: ({options=[], value='', onChange, ariaLabel, disabled, className, ...props}) => React.createElement('select', { value, onChange: event => onChange?.(event.target.value), 'aria-label': ariaLabel, disabled, className, ...props }, options.map(option => React.createElement('option', { key: option.value, value: option.value }, option.label))) };
     window.__creditsModules['@/components/ui/NumericInput'] = { NumericInput: ({value='', onValueChange, disabled, ...props}) => React.createElement('input', { value: String(value ?? ''), onChange: event => onValueChange?.(event.target.value), disabled, ...props }) };
     window.__creditsModules['@/components/forms/TransactionForm/IncomeTransactionForm.module.css'] = { default: { operationFormActions: ${JSON.stringify(footerClassName)} } };
     window.__creditsModules['@/components/forms/primitives'] = {
@@ -123,9 +143,8 @@ async function mountRealCreditModals(
       FormSection: ({title, description, children}) => React.createElement('section', null, React.createElement('h3', null, title), description ? React.createElement('p', null, description) : null, children),
     };
     window.__creditsModules['@/components/credits/CreditInfoHint'] = { CreditInfoHint: ({label, children}) => React.createElement('span', { title: label }, children) };
-    window.__creditsModules['@/components/forms/TransactionForm/IncomeDatePicker'] = { IncomeDatePicker: props => React.createElement('input', { type: 'date', ...props }) };
     window.__creditsModules['@/components/credits/credits-schedule.constants'] = {
-      SCHEDULE_MONTHS: Array.from({length:12}, (_, index) => ({ value: String(index + 1).padStart(2, '0'), label: String(index + 1) })),
+      SCHEDULE_MONTHS: ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map((label,index) => ({ value: String(index + 1).padStart(2, '0'), label })),
       CREDIT_CARD_DATE_INPUT_MIN_WIDTH: 120, BANK_LOAN_DATE_INPUT_MIN_WIDTH: 120,
       formatBillingCycleLabel: (month, year) => month + '/' + year,
       formatDuplicateCycleMessage: () => '', formatScheduleDateLabel: value => value,
@@ -147,18 +166,22 @@ async function mountRealCreditModals(
     window.__creditsModules['@/modules/credits/exchange-rate-integrity'] = { resolveCreditExchangeRateInput: () => ({ok:true, value:1}) };
     window.__creditsModules['@/modules/loans/loan-schedule-integrity'] = { resizeScheduleRows: (rows, count, buildRow) => Array.from({length:count}, (_, index) => rows[index] || buildRow(index)) };
     window.__creditsModules['@/modules/loans/loan-type'] = { LOAN_TYPE_VALUES: ['CONSUMPTION'], getLoanTypeLabel: value => value };
-    window.__creditsModules['@/components/credits/CreditsWorkbench.module.css'] = { default: { creditFormOverlay:${JSON.stringify(creditFormOverlayClass)}, creditScheduleOverlay:${JSON.stringify(creditScheduleOverlayClass)} } };
+    window.__creditsModules['@/components/credits/CreditsWorkbench.module.css'] = { default: { creditFormOverlay:${JSON.stringify(creditFormOverlayClass)}, creditScheduleOverlay:${JSON.stringify(creditScheduleOverlayClass)}, creditCardScheduleOverlay:${JSON.stringify(creditCardScheduleOverlayClass)} } };
+    window.__creditsModules['@/components/credits/CreditCardScheduleModal.module.css'] = { default: ${JSON.stringify(scheduleClasses)} };
     window.__creditRequests = [];
     window.__creditSaved = null;
+    window.__creditCycleStatementUrl = ${JSON.stringify(statementUrl)};
+    window.__openedStatement = null;
     window.fetch = async (input, init = {}) => {
       const path = String(input);
       window.__creditRequests.push({path,method:init.method || 'GET'});
       const bank = {id:'bank-1',name:'Banco de prueba',short_name:'Banco',is_active:true};
-      const cycle = {id:'cycle-1',billing_month:10,billing_year:2026,consumption_from:'2026-10-01',consumption_to:'2026-10-31',payment_date:'2026-11-10',total_to_pay:25,total_to_pay_pen:25,total_to_pay_usd:0,movement_summary:null,can_delete:true,statement_url:null};
+      const cycle = {id:'cycle-1',billing_month:10,billing_year:2026,consumption_from:'2026-10-01',consumption_to:'2026-10-31',payment_date:'2026-11-10',total_to_pay:25,total_to_pay_pen:25,total_to_pay_usd:0,movement_summary:null,can_delete:true,statement_url:window.__creditCycleStatementUrl};
       let data = [];
       if (path === '/api/bank-entities') data = [bank];
       else if (path === '/api/accounts') data = [{id:'account-1',name:'Cuenta de prueba',type:'CHECKING',currency:'PEN',is_active:true}];
       else if (path === '/api/credits/card-1/billing-cycles') data = [cycle];
+      else if (path === '/api/credits/card-1/billing-cycles/cycle-1/statement') data = {signed_url:'https://example.test/signed-statement'};
       else if (path === '/api/credits' && init.method === 'POST') data = {credit:{id:'created-card-1'}};
       else if (path === '/api/credits/created-card-1/billing-cycles' && init.method === 'POST') data = {id:'created-cycle-1'};
       else if (path === '/api/credits/loan-1') data = {credit:{account_id:'account-1',name:'Préstamo de prueba'},loan:{bank_entity_id:'bank-1',loan_type:'CONSUMPTION',name:'Préstamo de prueba',start_date:'2026-01-01',total_installments:1},disbursement:{transaction_date:'2026-01-01',description:'',exchange_rate:null},installments:[{id:'installment-1',due_date:'2026-02-01',principal_amount:100,interest_amount:0,insurance_amount:0,other_charges:0}],permissions:{can_edit_loan_finances:true}};
@@ -169,6 +192,10 @@ async function mountRealCreditModals(
   await page.addScriptTag({ content: compileFocusTrap() })
   await page.addScriptTag({ content: compilePresenceHook() })
   await page.addScriptTag({ content: compileBackgroundManager() })
+  await page.addScriptTag({ content: compileIncomeDateHelpers() })
+  await page.addScriptTag({ content: compileComponent('components/ui/AppSelect.tsx', '@/components/ui/AppSelect', ['AppSelect']) })
+  await page.addScriptTag({ content: `window.__creditsModules['./IncomeDatePicker.module.css'] = { default: ${JSON.stringify(datePickerClasses)} };` })
+  await page.addScriptTag({ content: compileComponent('components/forms/TransactionForm/IncomeDatePicker.tsx', '@/components/forms/TransactionForm/IncomeDatePicker', ['IncomeDatePicker']) })
   await page.addScriptTag({ content: compileComponent('components/ui/RecordModal.tsx', '@/components/ui/RecordModal', ['RecordModal', 'RecordModalFooter']) })
   await page.addScriptTag({ content: compileComponent('components/credits/CreditScheduleDateField.tsx', '@/components/credits/CreditScheduleDateField', ['CreditScheduleDateField']) })
   await page.addScriptTag({ content: compileComponent('components/credits/CreditCardScheduleModal.tsx', '@/components/credits/CreditCardScheduleModal', ['CreditCardScheduleModal', 'CreditCardScheduleEditor']) })
@@ -280,65 +307,154 @@ test('new card can stage a statement and uploads it after the persisted billing 
     .toContainEqual({ path: '/api/credits/created-card-1/billing-cycles', method: 'POST' })
 })
 
-for (const width of [1440, 1710]) {
-  test(`card schedule fits its desktop workbench without horizontal scrolling at ${width}px`, async ({ page }) => {
-    await mountRealCreditModals(page, 'card', 'create', { width, height: 900 })
-    await page.getByRole('button', { name: 'Revisar ciclos' }).click()
-    const schedule = page.getByRole('dialog', { name: 'Cronograma completo de la tarjeta' })
-    await expect(schedule).toBeVisible()
-    const measurements = await page.getByTestId('credit-card-schedule-table-scroll').evaluate(element => {
-      const table = element.querySelector('table')!
-      const headers = Array.from(table.querySelectorAll('thead tr:first-child th')).map(header => header.textContent?.trim())
-      return {
-        viewport: window.innerWidth,
-        clientWidth: element.clientWidth,
-        scrollWidth: element.scrollWidth,
-        tableWidth: table.getBoundingClientRect().width,
-        tableScrollWidth: table.scrollWidth,
-        columnCount: table.querySelectorAll('colgroup col').length,
-        headers,
-        inputOverflow: Array.from(table.querySelectorAll('input')).map(input => {
-          const cell = input.closest('td')!
-          return input.getBoundingClientRect().right <= cell.getBoundingClientRect().right + 1
-        }),
-      }
-    })
-    expect(measurements.viewport).toBe(width)
-    expect(measurements.columnCount).toBe(8)
-    expect(measurements.headers).toEqual(['Periodo', 'Consumo desde', 'Consumo hasta', 'Fecha de pago', 'Total a pagar', 'Estado de cuenta', 'Acciones'])
-    expect(measurements.scrollWidth).toBeLessThanOrEqual(measurements.clientWidth + 1)
-    expect(measurements.tableScrollWidth).toBeLessThanOrEqual(measurements.clientWidth + 1)
-    expect(measurements.tableWidth).toBeLessThanOrEqual(measurements.clientWidth + 1)
-    expect(measurements.inputOverflow.every(Boolean)).toBe(true)
-    await expect(page.getByTestId('credit-card-schedule-compact-list')).toBeHidden()
-    await expect(page.getByTestId('billing-cycle-statement-upload-credits-test-id')).toBeVisible()
+test('edit card opens and replaces a saved billing-cycle statement through its record-scoped endpoint', async ({ page }) => {
+  await mountRealCreditModals(page, 'card', 'edit', undefined, 'credits/card-1/cycles/cycle-1/statement.pdf')
+  await page.evaluate(() => {
+    const state = window as unknown as { __openedStatement: string | null }
+    window.open = ((url?: string | URL | null) => { state.__openedStatement = String(url); return null }) as typeof window.open
   })
-}
+  await page.getByRole('button', { name: 'Revisar ciclos' }).click()
+  const schedule = page.getByRole('dialog', { name: 'Cronograma completo de la tarjeta' })
+  const row = page.getByTestId('credit-cycle-row-cycle-1')
+  await expect(row.getByText('Estado adjunto')).toBeVisible()
+  await row.getByRole('button', { name: 'Abrir estado de cuenta de 10/2026' }).click()
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __openedStatement: string | null }).__openedStatement))
+    .toBe('https://example.test/signed-statement')
 
-for (const width of [390, 834]) {
-  test(`card schedule exposes all cycle data and actions in the compact layout at ${width}px`, async ({ page }) => {
-    await mountRealCreditModals(page, 'card', 'create', { width, height: 850 })
-    await page.getByRole('button', { name: 'Revisar ciclos' }).click()
-    await expect(page.getByRole('dialog', { name: 'Cronograma completo de la tarjeta' })).toBeVisible()
-    const compact = page.getByTestId('credit-card-schedule-compact-list')
-    await expect(compact).toBeVisible()
-    await expect(page.getByTestId('credit-card-schedule-table-scroll')).toBeHidden()
-    await expect(compact.getByText('Consumo desde')).toBeVisible()
-    await expect(compact.getByText('Consumo hasta')).toBeVisible()
-    await expect(compact.getByText('Fecha de pago')).toBeVisible()
-    await expect(compact.getByText('Total PEN')).toBeVisible()
-    await expect(compact.getByText('Total USD')).toBeVisible()
-    await expect(compact.locator('label[role="button"][aria-label="Adjuntar estado de cuenta de 10/2026"]')).toBeVisible()
-    await expect(compact.getByRole('button', { name: 'Ver movimientos de 10/2026' })).toBeVisible()
-    await expect(compact.getByTestId('billing-cycle-statement-upload-credits-test-id-compact')).toBeAttached()
-    const geometry = await page.evaluate(() => ({
-      viewport: window.innerWidth,
-      documentWidth: document.documentElement.scrollWidth,
-    }))
-    expect(geometry.documentWidth).toBeLessThanOrEqual(width)
-    const listGeometry = await compact.evaluate(element => ({ clientWidth: element.clientWidth, scrollWidth: element.scrollWidth }))
-    expect(listGeometry.scrollWidth).toBeLessThanOrEqual(listGeometry.clientWidth + 1)
-  })
+  const replaceInput = row.getByTestId('billing-cycle-statement-upload-cycle-1')
+  await replaceInput.setInputFiles({ name: 'estado-reemplazo.pdf', mimeType: 'application/pdf', buffer: Buffer.from('synthetic replacement') })
+  await expect(row.getByText('Estado adjunto')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __attachmentCalls: Array<{endpoint:string;name:string}> }).__attachmentCalls.at(-1)))
+    .toMatchObject({ endpoint:'/api/credits/card-1/billing-cycles/cycle-1/statement', name:'estado-reemplazo.pdf' })
+  await expect(schedule).toBeVisible()
+})
+
+for (const width of [390, 834, 1440, 1710]) {
+  for (const cycleCount of [1, 6, 12]) {
+    test(`card schedule keeps every cycle readable without horizontal overflow at ${width}px (${cycleCount} cycles)`, async ({ page }) => {
+      await mountRealCreditModals(page, 'card', 'create', { width, height: width < 500 ? 850 : 900 })
+      await page.getByRole('button', { name: 'Revisar ciclos' }).click()
+      const schedule = page.getByRole('dialog', { name: 'Cronograma completo de la tarjeta' })
+      await expect(schedule).toBeVisible()
+      await page.waitForTimeout(300)
+      for (let index = 1; index < cycleCount; index += 1) await schedule.getByRole('button', { name: 'Agregar ciclo' }).click()
+
+      const cycles = page.getByTestId('credit-card-schedule-cycles')
+      const rows = page.locator('[data-testid^="credit-cycle-row-"]')
+      await expect(rows).toHaveCount(cycleCount)
+      await expect(rows.first().locator('label[aria-label^="Adjuntar estado de cuenta"]')).toBeVisible()
+      const firstCycle = rows.first()
+      const monthTrigger = firstCycle.getByTestId('credit-cycle-month-credits-test-id')
+      const yearTrigger = firstCycle.getByTestId('credit-cycle-year-credits-test-id')
+      await expect(monthTrigger).toBeVisible()
+      await expect(yearTrigger).toBeVisible()
+      await expect(monthTrigger).toContainText('Octubre')
+      await expect(yearTrigger).toContainText('2026')
+      await expect(firstCycle.locator('input[placeholder="DD/MM/AAAA"]').first()).toHaveValue(/^\d{2}\/10\/2026$/)
+
+      const measurement = await cycles.evaluate(element => {
+        const rect = element.getBoundingClientRect()
+        const rows = Array.from(element.querySelectorAll<HTMLElement>('[data-testid^="credit-cycle-row-"]'))
+        const rectOf = (item: Element) => {
+          const box = item.getBoundingClientRect()
+          return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width, height: box.height }
+        }
+        const rowDetails = rows.map(row => {
+          const topline = row.querySelector<HTMLElement>('[class*="cycleTopline"]')!
+          const dates = row.querySelector<HTMLElement>('[class*="cycleDates"]')!
+          const controls = Array.from(row.querySelectorAll<HTMLElement>('select, input[type="date"], button'))
+          const labels = Array.from(row.querySelectorAll<HTMLElement>('label, [class*="fieldLabel"]')).map(label => ({
+            text: label.textContent?.trim(), client: label.clientWidth, scroll: label.scrollWidth,
+          }))
+          return {
+            row: rectOf(row), topline: rectOf(topline), dates: rectOf(dates),
+            controls: controls.map(rectOf), labels,
+            text: row.innerText,
+            badOverlap: controls.some((control, index) => controls.slice(index + 1).some(other => {
+              const a = control.getBoundingClientRect(), b = other.getBoundingClientRect()
+              return a.width > 0 && b.width > 0 && a.left < b.right - 2 && a.right > b.left + 2 && a.top < b.bottom - 2 && a.bottom > b.top + 2
+            })),
+          }
+        })
+        const overlay = element.closest<HTMLElement>('.app-modal-overlay')
+        const workbench = overlay?.querySelector<HTMLElement>('.ft-v3-workbench-wrapper')
+        const panel = overlay?.querySelector<HTMLElement>('[data-ft-workbench]')
+        const body = panel?.querySelector<HTMLElement>('[data-record-modal-body]')
+        const measureRect = (node: HTMLElement | null | undefined) => {
+          if (!node) return null
+          const box = node.getBoundingClientRect()
+          return { left: box.left, right: box.right, width: box.width }
+        }
+        return {
+          viewport: window.innerWidth, clientWidth: element.clientWidth, scrollWidth: element.scrollWidth,
+          right: rect.right, rows: rowDetails,
+          wrapper: measureRect(workbench), panel: measureRect(panel), body: measureRect(body),
+          documentWidth: document.documentElement.scrollWidth,
+          listHeight: element.clientHeight, listScrollHeight: element.scrollHeight,
+        }
+      })
+      expect(measurement.viewport).toBe(width)
+      expect(measurement.right).toBeLessThanOrEqual(width)
+      expect(measurement.scrollWidth).toBeLessThanOrEqual(measurement.clientWidth + 1)
+      expect(measurement.documentWidth).toBeLessThanOrEqual(width)
+      expect(measurement.rows).toHaveLength(cycleCount)
+      for (const row of measurement.rows) {
+        expect(row.row.width).toBeGreaterThan(width < 500 ? 300 : 500)
+        expect(row.topline.width).toBeGreaterThan(0)
+        expect(row.dates.width).toBeGreaterThan(0)
+        expect(row.badOverlap).toBe(false)
+        expect(row.controls.every(control => control.width > 0 && control.right <= measurement.right + 1)).toBe(true)
+        expect(row.labels.every(label => label.client === 0 || label.scroll <= label.client + 1)).toBe(true)
+        expect(row.text).toContain('Octubre')
+        expect(row.text).toContain('2026')
+        expect(row.text).toContain('Consumo desde')
+        expect(row.text).toContain('Fecha de pago')
+      }
+      if (cycleCount === 1) {
+        if ([390, 1440].includes(width)) {
+          await page.screenshot({ path: `/tmp/fintrack-credits-r5-schedule-${width}.png`, fullPage: true })
+        }
+        const componentGeometry = await firstCycle.evaluate(element => {
+          const month = element.querySelector<HTMLElement>('[data-testid="credit-cycle-month-credits-test-id"]')!
+          const year = element.querySelector<HTMLElement>('[data-testid="credit-cycle-year-credits-test-id"]')!
+          const date = element.querySelector<HTMLElement>('input[placeholder="DD/MM/AAAA"]')!
+          const rect = (item: HTMLElement) => ({ width: item.getBoundingClientRect().width, left: item.getBoundingClientRect().left, right: item.getBoundingClientRect().right })
+          return { month: rect(month), year: rect(year), date: rect(date), rowHeight: element.getBoundingClientRect().height }
+        })
+        console.log(`Credit schedule ${width}px actual controls`, JSON.stringify(componentGeometry))
+        await monthTrigger.click()
+        const monthMenu = page.getByRole('dialog', { name: 'Mes del periodo' })
+        await expect(monthMenu).toBeVisible()
+        const monthMenuGeometry = await monthMenu.evaluate(element => ({
+          width: element.getBoundingClientRect().width,
+          triggerWidth: document.querySelector<HTMLElement>('[data-testid="credit-cycle-month-credits-test-id"]')!.getBoundingClientRect().width,
+          right: element.getBoundingClientRect().right,
+          viewport: window.innerWidth,
+          scrollWidth: element.scrollWidth,
+          clientWidth: element.clientWidth,
+        }))
+        expect(Math.abs(monthMenuGeometry.width - monthMenuGeometry.triggerWidth)).toBeLessThanOrEqual(2)
+        expect(monthMenuGeometry.right).toBeLessThanOrEqual(width)
+        expect(monthMenuGeometry.scrollWidth).toBeLessThanOrEqual(monthMenuGeometry.clientWidth + 1)
+        await page.keyboard.press('Escape')
+        await expect(monthMenu).toHaveCount(0)
+        await expect(monthTrigger).toBeFocused()
+
+        const dateTrigger = firstCycle.getByRole('button', { name: 'Abrir calendario' }).first()
+        await dateTrigger.click()
+        const calendar = page.getByRole('dialog', { name: 'Seleccionar fecha' })
+        await expect(calendar).toBeVisible()
+        const calendarGeometry = await calendar.evaluate(element => ({ left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right, width: element.getBoundingClientRect().width, viewport: window.innerWidth }))
+        expect(calendarGeometry.left).toBeGreaterThanOrEqual(0)
+        expect(calendarGeometry.right).toBeLessThanOrEqual(width)
+        expect(calendarGeometry.width).toBeGreaterThan(250)
+        await page.keyboard.press('Escape')
+        await expect(calendar).toHaveCount(0)
+      }
+      if (cycleCount > 6) expect(measurement.listScrollHeight).toBeGreaterThan(measurement.listHeight)
+      await expect(rows.first().getByRole('button', { name: 'Ver movimientos de 10/2026' })).toBeVisible()
+    })
+  }
 }
 
 test('bank loan form keeps schedule content scrollable above the shared anchored action footer', async ({ page }) => {
