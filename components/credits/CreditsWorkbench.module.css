@@ -8,24 +8,26 @@
   width: min(1240px, calc(100vw - 24px));
 }
 
-/* The card-cycle workbench follows its content for one or two cycles, then caps
-   its height and scrolls the cycle list for larger schedules. */
+/* The card-cycle workbench uses the same full-height shell as approved V3
+   drawers; its cycle list owns scrolling between the fixed header and footer. */
 .creditCardScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper:has([data-ft-workbench='schedule'])) {
   width: min(1240px, calc(100vw - 24px));
-  height: auto;
+  height: calc(100dvh - 24px);
   max-height: calc(100dvh - 24px);
   align-self: center;
 }
 
 .creditCardScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-ft-workbench='schedule']) {
-  height: auto;
-  max-height: calc(100dvh - 24px);
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
 }
 
 .creditCardScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-ft-workbench='schedule'] [data-record-modal-body]) {
-  flex: 0 1 auto;
-  max-height: calc(100dvh - 240px);
-  overflow-y: auto;
+  flex: 1 1 0%;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
 }
 
 @media (max-width: 767px) {
@@ -34,17 +36,19 @@
     width: calc(100vw - 16px);
   }
 
-  .creditCardScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
+  .creditCardScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper:has([data-ft-workbench='schedule'])) {
     width: calc(100vw - 16px);
+    height: calc(100dvh - 16px);
     max-height: calc(100dvh - 16px);
     margin: 8px;
   }
 
   .creditCardScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-ft-workbench='schedule']) {
-    max-height: calc(100dvh - 16px);
+    height: 100%;
+    max-height: 100%;
   }
 
   .creditCardScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-ft-workbench='schedule'] [data-record-modal-body]) {
-    max-height: calc(100dvh - 220px);
+    max-height: none;
   }
 }

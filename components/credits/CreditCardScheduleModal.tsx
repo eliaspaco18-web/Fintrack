@@ -13,6 +13,7 @@ import {
 } from '@/components/credits/credits-schedule.constants'
 import { formatNumber } from '@/lib/contracts/ui.contracts'
 import { getBillingCycleDateIssue } from '@/modules/credits/billing-cycle-integrity'
+import tableHeaderStyles from '@/components/credits/CreditsTableHeader.module.css'
 import workbenchStyles from '@/components/credits/CreditsWorkbench.module.css'
 import styles from '@/components/credits/CreditCardScheduleModal.module.css'
 
@@ -426,9 +427,9 @@ export function CreditCardScheduleEditor({
       <div className={styles.cycleList} data-testid="credit-card-schedule-table-scroll">
         <div className={styles.cycleTable} role="table" aria-label="Ciclos de facturación" data-testid="credit-card-schedule-table">
           <div className={styles.cycleHeader} role="rowgroup">
-            <div className={styles.cycleHeaderRow} role="row">
+            <div className={`${styles.cycleHeaderRow} ${tableHeaderStyles.creditsTableHead}`} role="row">
               {['Periodo', 'Consumo desde', 'Consumo hasta', 'Fecha de pago', 'Total PEN', 'Total USD', 'Estado de cuenta', 'Acciones'].map(label => (
-                <div key={label} role="columnheader">{label}</div>
+                <div key={label} role="columnheader" className={`${tableHeaderStyles.creditsTableHeaderGridCell} ${tableHeaderStyles.creditsTableHeaderCenter}`}>{label}</div>
               ))}
             </div>
           </div>
@@ -567,13 +568,13 @@ export function CreditCardScheduleEditor({
             </div>
             <div className="max-h-[360px] overflow-auto">
               <table className="w-full min-w-[720px] text-[12px]">
-                <thead className="sticky top-0 bg-[var(--ft-surface-muted)] text-[var(--ft-form-muted)]">
+                <thead className={`sticky top-0 z-[1] ${tableHeaderStyles.creditsTableHead}`}>
                   <tr>
-                    <th className="px-3 py-2 text-left font-semibold">Fecha</th>
-                    <th className="px-3 py-2 text-left font-semibold">Descripción</th>
-                    <th className="px-3 py-2 text-left font-semibold">Tipo</th>
-                    <th className="px-3 py-2 text-right font-semibold">PEN</th>
-                    <th className="px-3 py-2 text-right font-semibold">USD</th>
+                    <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderLeft}`}>Fecha</th>
+                    <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderLeft}`}>Descripción</th>
+                    <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderLeft}`}>Tipo</th>
+                    <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderRight}`}>PEN</th>
+                    <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderRight}`}>USD</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -631,7 +632,7 @@ export function CreditCardScheduleModal({
       size="full-form"
       widthClassName="w-[calc(100vw-32px)] max-w-[1240px]"
       overlayClassName={`z-[132] ${workbenchStyles.creditCardScheduleOverlay}`}
-      bodyClassName="credits-modal-body !overflow-y-auto py-4"
+      bodyClassName="credits-modal-body !overflow-hidden py-4"
       presentation="workbench"
       workbenchKind="schedule"
       focusTrapActive={!movementModalOpen}

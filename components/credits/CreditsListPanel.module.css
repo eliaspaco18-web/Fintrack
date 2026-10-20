@@ -134,15 +134,9 @@
   gap: 10px;
 }
 .tableHeader {
-  min-height: 38px;
+  height: 38px;
   border-bottom: 1px solid var(--ft-border);
-  background: var(--ft-surface-muted);
   padding: 0 16px;
-  color: var(--ft-text-muted);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: .035em;
-  text-transform: uppercase;
 }
 .records > :not(:last-child) { border-bottom: 1px solid var(--ft-border); }
 .recordRow {
@@ -272,7 +266,6 @@
     gap: 7px;
     padding-inline: 9px;
   }
-  .tableHeader { min-height: 36px; font-size: 9px; }
   .recordRow { min-height: 80px; padding-block: 10px; }
   .creditIcon { display: none; }
   .productCell { gap: 0; }

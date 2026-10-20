@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { RecordModal } from '@/components/ui/RecordModal'
 import { LoanMarketRateComparison } from '@/components/credits/LoanMarketRateComparison'
+import tableHeaderStyles from '@/components/credits/CreditsTableHeader.module.css'
 import { formatScheduleDateLabel } from '@/components/credits/credits-schedule.constants'
 import { formatCurrency, formatNumber } from '@/lib/contracts/ui.contracts'
 import { getLoanTypeLabel } from '@/modules/loans/loan-type'
@@ -173,14 +174,14 @@ export function LoanDetailsModal({
             </div>
             <div className="max-h-[42dvh] overflow-auto">
               <table className="w-full min-w-[760px] text-left text-[12px]">
-                <thead className="sticky top-0 bg-[var(--ft-surface-muted)] text-[var(--ft-form-muted)]">
+                <thead className={`sticky top-0 z-[1] ${tableHeaderStyles.creditsTableHead}`}>
                   <tr>
-                    <th className="px-4 py-2.5 font-semibold">Cuota</th>
-                    <th className="px-4 py-2.5 font-semibold">Vencimiento</th>
-                    <th className="px-4 py-2.5 text-right font-semibold">Capital</th>
-                    <th className="px-4 py-2.5 text-right font-semibold">Interés</th>
-                    <th className="px-4 py-2.5 text-right font-semibold">Total</th>
-                    <th className="px-4 py-2.5 text-right font-semibold">Estado</th>
+                    <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderLeft}`}>Cuota</th>
+                    <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderLeft}`}>Vencimiento</th>
+                    <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderRight}`}>Capital</th>
+                    <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderRight}`}>Interés</th>
+                    <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderRight}`}>Total</th>
+                    <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderRight}`}>Estado</th>
                   </tr>
                 </thead>
                 <tbody>

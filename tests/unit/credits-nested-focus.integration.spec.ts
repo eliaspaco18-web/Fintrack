@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import * as ts from 'typescript'
@@ -101,21 +101,29 @@ async function mountRealCreditModals(
   await page.addScriptTag({ content: "let creditFixtureId = 0; Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: () => creditFixtureId++ === 0 ? 'credits-test-id' : `credits-test-id-${creditFixtureId}` })" })
   const cssPath = join(process.cwd(), '.next/static/css')
   const css = readdirSync(cssPath).filter(file => file.endsWith('.css')).sort().map(file => readFileSync(join(cssPath, file), 'utf8')).join('\n')
-  const moduleClass = (localName: string) => css.match(new RegExp(`\\.([\\w-]*${localName}__[\\w-]+)`))?.[1] ?? localName
+  const moduleClass = (localName: string, modulePrefix?: string) => css.match(new RegExp(
+    modulePrefix
+      ? `\\.(${modulePrefix}_${localName}__[\\w-]+)`
+      : `\\.([\\w-]*${localName}__[\\w-]+)`,
+  ))?.[1] ?? localName
   const footerClassName = moduleClass('operationFormActions')
   const creditFormOverlayClass = moduleClass('creditFormOverlay')
   const creditScheduleOverlayClass = moduleClass('creditScheduleOverlay')
   const creditCardScheduleOverlayClass = moduleClass('creditCardScheduleOverlay')
+  const creditsTableHeaderClasses = Object.fromEntries([
+    'creditsTableHead', 'creditsTableHeaderTableCell', 'creditsTableHeaderGridCell',
+    'creditsTableHeaderLeft', 'creditsTableHeaderCenter', 'creditsTableHeaderRight',
+  ].map(name => [name, moduleClass(name)]))
   const scheduleClasses = Object.fromEntries([
     'scheduleEditor', 'scheduleHeader', 'scheduleHeading', 'scheduleTitle', 'scheduleSubtitle', 'scheduleTotals',
     'cycleList', 'cycleTable', 'cycleHeader', 'cycleHeaderRow', 'cycleRows', 'cycleRow', 'cycleCell', 'cellLabel',
     'periodCell', 'periodFields', 'periodControls', 'monthSelect', 'yearSelect', 'cycleIssue', 'amountCell',
     'statementControl', 'statementButtons', 'statementStatus', 'iconButton', 'disabledIconButton', 'deleteButton',
     'cycleActions', 'registeredTotals', 'duplicateNotice',
-  ].map(name => [name, moduleClass(name)]))
+  ].map(name => [name, moduleClass(name, 'CreditCardScheduleModal')]))
   const datePickerClasses = Object.fromEntries([
     'picker', 'input', 'trigger', 'error', 'popover', 'header', 'selectors', 'arrow', 'weekdays', 'days', 'week', 'day', 'footer',
-  ].map(name => [name, moduleClass(name)]))
+  ].map(name => [name, moduleClass(name, 'IncomeDatePicker')]))
   await page.addStyleTag({ content: `${css}\n.app-modal-overlay{position:fixed;inset:0;display:flex;justify-content:flex-end;align-items:center;background:rgba(0,0,0,.24)}.ft-v3-workbench-wrapper{position:relative;z-index:1;width:min(580px,calc(100vw - 24px));height:calc(100dvh - 24px);margin:12px}.ft-v3-workbench-veil{position:absolute;inset:0}.app-modal-overlay [role=dialog]{height:100%;background:white}.app-modal-overlay [data-record-modal-body]{overflow:auto;flex:1;min-height:0}` })
   await page.addScriptTag({ path: reactPath })
   await page.addScriptTag({ path: reactDomPath })
@@ -168,6 +176,7 @@ async function mountRealCreditModals(
     window.__creditsModules['@/modules/loans/loan-schedule-integrity'] = { resizeScheduleRows: (rows, count, buildRow) => Array.from({length:count}, (_, index) => rows[index] || buildRow(index)) };
     window.__creditsModules['@/modules/loans/loan-type'] = { LOAN_TYPE_VALUES: ['CONSUMPTION'], getLoanTypeLabel: value => value };
     window.__creditsModules['@/components/credits/CreditsWorkbench.module.css'] = { default: { creditFormOverlay:${JSON.stringify(creditFormOverlayClass)}, creditScheduleOverlay:${JSON.stringify(creditScheduleOverlayClass)}, creditCardScheduleOverlay:${JSON.stringify(creditCardScheduleOverlayClass)} } };
+    window.__creditsModules['@/components/credits/CreditsTableHeader.module.css'] = { default: ${JSON.stringify(creditsTableHeaderClasses)} };
     window.__creditsModules['@/components/credits/CreditCardScheduleModal.module.css'] = { default: ${JSON.stringify(scheduleClasses)} };
     window.__creditRequests = [];
     window.__creditSaved = null;
@@ -230,6 +239,39 @@ async function activeTrapCount(page: Page) {
   return page.evaluate(() => (window as unknown as { __activeFocusTraps: Set<unknown> }).__activeFocusTraps.size)
 }
 
+async function readCreditHeaderStyles(locator: Locator) {
+  return locator.evaluateAll(elements => elements.map(element => {
+    const style = getComputedStyle(element)
+    const rect = element.getBoundingClientRect()
+    return {
+      fontFamily: style.fontFamily,
+      fontSize: style.fontSize,
+      fontWeight: style.fontWeight,
+      lineHeight: style.lineHeight,
+      letterSpacing: style.letterSpacing,
+      color: style.color,
+      textTransform: style.textTransform,
+      textAlign: style.textAlign,
+      height: rect.height,
+    }
+  }))
+}
+
+function expectCreditsHeaderStyles(headers: Awaited<ReturnType<typeof readCreditHeaderStyles>>, alignment?: 'left' | 'center' | 'right') {
+  expect(headers.length).toBeGreaterThan(0)
+  for (const header of headers) {
+    expect(header.fontFamily).toContain('Manrope')
+    expect(header.fontSize).toBe('10px')
+    expect(header.fontWeight).toBe('600')
+    expect(header.lineHeight).toBe('16px')
+    expect(Number.parseFloat(header.letterSpacing)).toBeGreaterThan(0)
+    expect(header.color).not.toBe('')
+    expect(header.textTransform).toBe('uppercase')
+    expect(Math.abs(header.height - 38)).toBeLessThanOrEqual(1)
+    if (alignment) expect(header.textAlign).toBe(alignment)
+  }
+}
+
 for (const type of ['card', 'loan'] as const) {
   for (const mode of ['create', 'edit'] as const) {
     test(`${mode} ${type} form suspends lower workbenches until nested close completes`, async ({ page }) => {
@@ -242,11 +284,20 @@ for (const type of ['card', 'loan'] as const) {
       await expect(page.locator('#nested-state')).toHaveText('true')
       await expect.poll(() => activeTrapCount(page)).toBe(1)
       await expect(page.locator('[data-ft-workbench-overlay]')).toHaveCount(2)
+      await page.waitForTimeout(240)
+
+      if (type === 'card') {
+        expectCreditsHeaderStyles(await readCreditHeaderStyles(schedule.locator('[role="columnheader"]')), 'center')
+      } else {
+        expectCreditsHeaderStyles(await readCreditHeaderStyles(schedule.locator('thead th')))
+      }
 
       if (type === 'card') {
         const movementTrigger = page.getByRole('button', { name: /Ver movimientos de/ }).first()
         await movementTrigger.click()
-        await expect(page.getByRole('dialog', { name: /Movimientos de/ })).toBeVisible()
+        const movementDialog = page.getByRole('dialog', { name: /Movimientos de/ })
+        await expect(movementDialog).toBeVisible()
+        expectCreditsHeaderStyles(await readCreditHeaderStyles(movementDialog.locator('thead th')))
         await expect.poll(() => activeTrapCount(page)).toBe(1)
         await expect(page.locator('[data-ft-workbench-overlay]')).toHaveCount(3)
         await page.keyboard.press('Escape')
@@ -400,13 +451,15 @@ for (const width of [390, 834, 1440, 1710]) {
         const workbench = overlay?.querySelector<HTMLElement>('.ft-v3-workbench-wrapper')
         const panel = overlay?.querySelector<HTMLElement>('[data-ft-workbench]')
         const body = panel?.querySelector<HTMLElement>('[data-record-modal-body]')
+        const footer = panel?.lastElementChild instanceof HTMLElement ? panel.lastElementChild : null
         const measureRect = (node: HTMLElement | null | undefined) => {
           if (!node) return null
           const box = node.getBoundingClientRect()
-          return { left: box.left, right: box.right, width: box.width }
+          return { top: box.top, bottom: box.bottom, left: box.left, right: box.right, width: box.width, height: box.height }
         }
         return {
           viewport: window.innerWidth,
+          viewportHeight: window.innerHeight,
           clientWidth: scrollContainer?.clientWidth ?? element.clientWidth,
           scrollWidth: scrollContainer?.scrollWidth ?? element.scrollWidth,
           right: rect.right, rows: rowDetails,
@@ -414,7 +467,8 @@ for (const width of [390, 834, 1440, 1710]) {
           headers: headerCells.map(rectOf),
           periodText,
           registeredTotals,
-          wrapper: measureRect(workbench), panel: measureRect(panel), body: measureRect(body),
+          wrapper: measureRect(workbench), panel: measureRect(panel), body: measureRect(body), footer: measureRect(footer),
+          cycleList: measureRect(scrollContainer),
           documentWidth: document.documentElement.scrollWidth,
           listHeight: scrollContainer?.clientHeight ?? 0, listScrollHeight: scrollContainer?.scrollHeight ?? 0,
         }
@@ -424,6 +478,16 @@ for (const width of [390, 834, 1440, 1710]) {
       expect(measurement.scrollWidth).toBeLessThanOrEqual(measurement.clientWidth + 1)
       expect(measurement.documentWidth).toBeLessThanOrEqual(width)
       expect(measurement.rows).toHaveLength(cycleCount)
+      const viewportHeight = measurement.viewportHeight
+      const expectedWorkbenchHeight = viewportHeight - (width < 768 ? 16 : 24)
+      console.log(`Credit schedule workbench ${width}px`, JSON.stringify({ viewportHeight, wrapper: measurement.wrapper, panel: measurement.panel, body: measurement.body, footer: measurement.footer, cycleList: measurement.cycleList }))
+      expect(measurement.wrapper?.height).toBeCloseTo(expectedWorkbenchHeight, 0)
+      expect(measurement.panel?.height).toBeCloseTo(expectedWorkbenchHeight, 0)
+      expect(measurement.wrapper?.top).toBeGreaterThanOrEqual(width < 768 ? 7 : 11)
+      expect(measurement.wrapper?.bottom).toBeLessThanOrEqual(viewportHeight - (width < 768 ? 7 : 11))
+      expect(measurement.body?.bottom).toBeLessThanOrEqual((measurement.footer?.top ?? 0) + 1)
+      expect(Math.abs((measurement.footer?.bottom ?? 0) - (measurement.panel?.bottom ?? 0))).toBeLessThanOrEqual(2)
+      expect(measurement.cycleList?.bottom).toBeLessThanOrEqual((measurement.footer?.top ?? 0) + 1)
       measurement.rows.forEach((row, rowIndex) => {
         expect(row.row.width).toBeGreaterThan(width < 500 ? 300 : 500)
         expect(row.cells).toHaveLength(8)
@@ -554,6 +618,25 @@ test('bank loan form keeps schedule content scrollable above the shared anchored
   expect(layout.footerClass).toContain('operationFormActions')
   expect(layout.footerBottom).toBeLessThanOrEqual(layout.bodyBottom + 3)
   expect(layout.contentBottom).toBeLessThanOrEqual(layout.footerBottom + 1)
+})
+
+test('every active credits register table opts into the shared table-header contract', () => {
+  const sources = [
+    'components/credits/CreditsListPanel.tsx',
+    'components/credits/CreditCardScheduleModal.tsx',
+    'components/credits/BankLoanScheduleModal.tsx',
+    'components/credits/LoanDetailsModal.tsx',
+  ].map(path => readFileSync(join(process.cwd(), path), 'utf8'))
+
+  for (const source of sources) {
+    expect(source).toContain('@/components/credits/CreditsTableHeader.module.css')
+    expect(source).toContain('creditsTableHead')
+  }
+  expect(sources[0]).toContain('creditsTableHeaderGridCell')
+  expect(sources[1]).toContain('creditsTableHeaderTableCell')
+  expect(sources[1]).toContain('creditsTableHeaderGridCell')
+  expect(sources[2]).toContain('creditsTableHeaderTableCell')
+  expect(sources[3]).toContain('creditsTableHeaderTableCell')
 })
 
 test('credits create and edit parents wire nested workbench state to the actual RecordModal focus trap', () => {

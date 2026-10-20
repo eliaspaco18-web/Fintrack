@@ -5,6 +5,7 @@ import { NumericInput } from '@/components/ui/NumericInput'
 import { FormActions } from '@/components/forms/primitives'
 import { RecordModal } from '@/components/ui/RecordModal'
 import { CreditScheduleDateField } from '@/components/credits/CreditScheduleDateField'
+import tableHeaderStyles from '@/components/credits/CreditsTableHeader.module.css'
 import workbenchStyles from '@/components/credits/CreditsWorkbench.module.css'
 import { formatNumber } from '@/lib/contracts/ui.contracts'
 import { parseNumericInput } from '@/lib/utils/numeric-input'
@@ -155,15 +156,15 @@ export function BankLoanScheduleModal({
                 <col style={colWidth(BANK_LOAN_SCHEDULE_COLUMN_SHARES.others)} />
                 <col style={colWidth(BANK_LOAN_SCHEDULE_COLUMN_SHARES.installmentTotal)} />
               </colgroup>
-              <thead className="sticky top-0 z-[1] bg-[var(--ft-surface-muted)]">
-                <tr className="text-[var(--ft-form-muted)]">
-                  <th className="px-3 py-2 text-center font-semibold">#</th>
-                  <th className="px-3 py-2 text-center font-semibold">Vencimiento</th>
-                  <th className="px-3 py-2 text-center font-semibold">Capital</th>
-                  <th className="px-3 py-2 text-center font-semibold">Intereses</th>
-                  <th className="px-3 py-2 text-center font-semibold">Seguro</th>
-                  <th className="px-3 py-2 text-center font-semibold">Otros</th>
-                  <th className="px-3 py-2 text-center font-semibold">Cuota</th>
+              <thead className={`sticky top-0 z-[1] ${tableHeaderStyles.creditsTableHead}`}>
+                <tr>
+                  <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderCenter}`}>#</th>
+                  <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderLeft}`}>Vencimiento</th>
+                  <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderRight}`}>Capital</th>
+                  <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderRight}`}>Intereses</th>
+                  <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderRight}`}>Seguro</th>
+                  <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderRight}`}>Otros</th>
+                  <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderRight}`}>Cuota</th>
                 </tr>
               </thead>
               <tbody>

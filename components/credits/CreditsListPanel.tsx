@@ -35,6 +35,7 @@ import { getApiErrorMessage } from '@/lib/api/error-message'
 import { summarizeCredits } from '@/lib/credits/overview'
 import { getCreditDetailPresentation } from '@/modules/credits/credit-detail-presentation'
 import type { Credit } from '@/types/database.types'
+import tableHeaderStyles from '@/components/credits/CreditsTableHeader.module.css'
 import pageStyles from '@/components/tables/TransactionsRound07.module.css'
 import styles from './CreditsListPanel.module.css'
 import workbenchStyles from './CreditsWorkbench.module.css'
@@ -663,8 +664,12 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
           />
         ) : viewMode === 'list' ? (
           <DataTable density="credit" className={styles.table}>
-            <div className={styles.tableHeader}>
-              <span>Producto</span><span>Importe y significado</span><span>Línea / cronograma</span><span>Vencimiento registrado</span><span className="text-right">Acciones</span>
+            <div className={`${styles.tableHeader} ${tableHeaderStyles.creditsTableHead}`} role="row">
+              <span className={`${tableHeaderStyles.creditsTableHeaderGridCell} ${tableHeaderStyles.creditsTableHeaderLeft}`}>Producto</span>
+              <span className={`${tableHeaderStyles.creditsTableHeaderGridCell} ${tableHeaderStyles.creditsTableHeaderLeft}`}>Importe y significado</span>
+              <span className={`${tableHeaderStyles.creditsTableHeaderGridCell} ${tableHeaderStyles.creditsTableHeaderLeft}`}>Línea / cronograma</span>
+              <span className={`${tableHeaderStyles.creditsTableHeaderGridCell} ${tableHeaderStyles.creditsTableHeaderLeft}`}>Vencimiento registrado</span>
+              <span className={`${tableHeaderStyles.creditsTableHeaderGridCell} ${tableHeaderStyles.creditsTableHeaderRight}`}>Acciones</span>
             </div>
             <div className={styles.records}>{filtered.map(renderRecord)}</div>
           </DataTable>
