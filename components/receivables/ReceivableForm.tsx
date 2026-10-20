@@ -13,6 +13,8 @@ import { Button }                           from '@/components/ui/Button'
 import { NumericInput }                     from '@/components/ui/NumericInput'
 import { AppSelect }                        from '@/components/ui/AppSelect'
 import { CheckboxToggle }                   from '@/components/forms/TransactionForm/FormFields'
+import { IncomeDatePicker } from '@/components/forms/TransactionForm/IncomeDatePicker'
+import { CreditInfoHint } from '@/components/credits/CreditInfoHint'
 import { FormActions, FormField, FormSection, OptionalSection } from '@/components/forms/primitives'
 import { RecordModalFooter }                from '@/components/ui/RecordModal'
 import { getApiErrorMessage }               from '@/lib/api/error-message'
@@ -35,12 +37,13 @@ type AccountOption = {
   is_active: boolean
 }
 
-type ReceivableRow = {
+export type ReceivableRow = {
   id:              string
   debtor_id:       string | null
   debtor_name:     string
   concept:         string | null
   amount:          number
+  collected_amount: number
   currency:        string
   issue_date:      string
   due_date:        string | null
@@ -73,6 +76,7 @@ type ReceivableFormProps = {
   /** Llamado para refrescar lista de deudores tras crear uno nuevo */
   onAddDebtor?: () => void
   disabled?:    boolean
+  onDirtyChange?: (dirty: boolean) => void
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -119,6 +123,7 @@ export function ReceivableForm({
   onCancel,
   defaultDebtorId,
   disabled = false,
+  onDirtyChange,
 }: ReceivableFormProps) {
   const { toast } = useToast()
   const isEdit    = !!receivable
@@ -129,13 +134,18 @@ export function ReceivableForm({
       : { ...EMPTY_FORM, debtor_id: defaultDebtorId ?? EMPTY_FORM.debtor_id }
   )
   const [accounts, setAccounts] = useState<AccountOption[]>([])
+  const [accountsLoading, setAccountsLoading] = useState(!isEdit)
+  const [accountsError, setAccountsError] = useState<string | null>(null)
   const [saving, setSaving]     = useState(false)
   const [error, setError]       = useState<string | null>(null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [dateError, setDateError] = useState<string | null>(null)
 
   const patch = useCallback((updates: Partial<FormState>) => {
     setForm(prev => ({ ...prev, ...updates }))
-  }, [])
+    setError(null)
+    onDirtyChange?.(true)
+  }, [onDirtyChange])
 
   useEffect(() => {
     const nextForm = receivable
@@ -144,31 +154,38 @@ export function ReceivableForm({
 
     setForm(nextForm)
     setError(null)
+    setDateError(null)
+    onDirtyChange?.(false)
     setAdvancedOpen(Boolean(
       receivable?.notes?.trim() ||
       receivable?.attachment_url ||
       nextForm.save_recurring ||
       nextForm.recurring_name.trim(),
     ))
-  }, [defaultDebtorId, receivable])
+  }, [defaultDebtorId, onDirtyChange, receivable])
 
   // Cargar portafolios activos. Las tarjetas se permiten como origen:
   // el backend las registra como consumo de línea disponible.
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      try {
-        const res  = await fetch('/api/accounts?is_active=true', { cache: 'no-store' })
-        const json = await res.json().catch(() => null)
-        if (!cancelled && res.ok && json?.ok) {
-          const list = (json.data as AccountOption[]).filter(account => account.is_active)
-          setAccounts(list)
-        }
-      } catch { /* silencioso */ }
+  const loadAccounts = useCallback(async () => {
+    setAccountsLoading(true)
+    setAccountsError(null)
+    try {
+      const response = await fetch('/api/accounts?is_active=true', { cache: 'no-store' })
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.ok || !Array.isArray(json.data)) {
+        throw new Error(getApiErrorMessage(json, 'No se pudieron cargar los portafolios.'))
+      }
+      setAccounts((json.data as AccountOption[]).filter(account => account.is_active))
+    } catch (caught) {
+      setAccountsError(caught instanceof Error ? caught.message : 'No se pudieron cargar los portafolios.')
+    } finally {
+      setAccountsLoading(false)
     }
-    void load()
-    return () => { cancelled = true }
   }, [])
+
+  useEffect(() => {
+    void loadAccounts()
+  }, [loadAccounts])
 
   // Auto-moneda desde portafolio seleccionado
   useEffect(() => {
@@ -252,6 +269,7 @@ export function ReceivableForm({
         `${debtorRow.name} — ${formatCurrency(amount, form.currency)}.`,
         { persist: false },
       )
+      onDirtyChange?.(false)
       onSuccess()
     } catch (caught) {
       const msg = caught instanceof Error ? caught.message : 'No se pudo guardar la cuenta por cobrar'
@@ -260,13 +278,13 @@ export function ReceivableForm({
     } finally {
       setSaving(false)
     }
-  }, [debtors, form, isEdit, onSuccess, receivable, toast])
+  }, [debtors, form, isEdit, onDirtyChange, onSuccess, receivable, toast])
 
-  const isDisabled = disabled || saving
+  const isDisabled = disabled || saving || (!isEdit && (accountsLoading || Boolean(accountsError) || accounts.length === 0))
 
   // ── Opciones de select ───────────────────────────────────────────────────────
   const accountOptions = [
-    { value: '', label: 'Selecciona portafolio...' },
+    { value: '', label: accountsLoading ? 'Cargando portafolios…' : accountsError ? 'Portafolios no disponibles' : accounts.length === 0 ? 'Sin portafolios activos' : 'Selecciona portafolio…' },
     ...accounts.map(a => ({ value: a.id, label: `${a.name} (${a.currency})` })),
   ]
 
@@ -289,12 +307,11 @@ export function ReceivableForm({
       id="receivable-form"
       onSubmit={handleSubmit}
       data-testid="receivable-form"
-      className="space-y-[var(--ft-form-section-gap)]"
+      className="space-y-5"
     >
       <div className="grid grid-cols-1 gap-5 min-[860px]:grid-cols-[minmax(0,1.04fr)_minmax(300px,0.96fr)] min-[860px]:items-start">
         <FormSection
           title="Contexto"
-          description="Define quién te debe y desde qué portafolio estás registrando el cobro esperado."
           className="space-y-4"
         >
           <FormField label="Deudor">
@@ -322,6 +339,14 @@ export function ReceivableForm({
                 className="w-full"
                 data-testid="receivable-account-select"
               />
+                  {accountsError ? (
+                    <p className="mt-2 flex items-center gap-2 text-[11px] text-[var(--ft-danger)]" role="alert">
+                      {accountsError}
+                      <Button type="button" variant="ghost" size="sm" onClick={() => void loadAccounts()}>Reintentar</Button>
+                    </p>
+                  ) : accounts.length === 0 && !accountsLoading ? (
+                    <p className="mt-2 text-[11px] text-[var(--ft-text-muted)]" role="status">No hay portafolios activos disponibles.</p>
+                  ) : null}
             </FormField>
           ) : (
             <FormField
@@ -331,7 +356,7 @@ export function ReceivableForm({
                 : 'El portafolio asociado se mantiene sin cambios durante la edición.'}
             >
               <div
-                className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--c-surface-2)] px-3.5 py-3 text-sm text-[var(--c-text)]"
+                className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3 text-sm text-[var(--ft-text-strong)]"
                 data-testid="receivable-account-context"
               >
                 <span className="font-medium">{sourceAccountName ?? 'Portafolio original'}</span>
@@ -342,7 +367,6 @@ export function ReceivableForm({
 
         <FormSection
           title="Registro"
-          description="Confirma importe, moneda y fechas para dejar el seguimiento listo."
           className="space-y-4"
         >
           <FormField label="Monto">
@@ -360,50 +384,51 @@ export function ReceivableForm({
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div
-              className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--c-surface-2)] px-3.5 py-3"
+              className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3"
               data-testid="receivable-currency-display"
             >
-              <p className="text-[11px] font-medium text-[var(--ft-form-muted)]">Moneda</p>
-              <p className="mt-1 text-sm font-semibold text-[var(--c-text)]">{form.currency || '—'}</p>
+              <p className="flex items-center gap-1 text-[11px] font-medium text-[var(--ft-form-muted)]">Moneda <CreditInfoHint label="Ayuda sobre la moneda">La moneda procede del portafolio asociado y se conserva al editar.</CreditInfoHint></p>
+              <p className="mt-1 text-sm font-semibold text-[var(--ft-text-strong)]">{form.currency || '—'}</p>
             </div>
-            <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--c-surface-2)] px-3.5 py-3">
+            <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
               <p className="text-[11px] font-medium text-[var(--ft-form-muted)]">Equivalencia</p>
-              <p className="mt-1 text-sm font-semibold text-[var(--c-text)]">{equivLabel}</p>
+              <p className="mt-1 text-sm font-semibold text-[var(--ft-text-strong)]">{equivLabel}</p>
             </div>
           </div>
 
           <div className="grid grid-cols-1 gap-[var(--ft-form-field-gap)] sm:grid-cols-2">
             <FormField label="Fecha de emisión">
-              <input
-                type="date"
+              <IncomeDatePicker
                 value={form.issue_date}
-                onChange={e => patch({ issue_date: e.target.value })}
-                required
+                onChange={value => patch({ issue_date: value })}
+                onInvalidInput={setDateError}
+                error={dateError ?? undefined}
                 disabled={isDisabled}
-                className="field-base ft-form-input w-full"
-                data-testid="receivable-date-input"
+                inputLabel="Fecha de emisión"
+                inputTestId="receivable-date-input"
               />
             </FormField>
 
             <FormField
               label="Fecha de vencimiento"
               optional
-              description="Mantenla visible para operar cobros, alertas y priorización."
+              labelAdornment={<CreditInfoHint label="Ayuda sobre la fecha de vencimiento">Es opcional. Se usa para mostrar la fecha registrada y priorizar el seguimiento; no significa que el cobro ya ocurrió.</CreditInfoHint>}
             >
-              <input
-                type="date"
+              <IncomeDatePicker
                 value={form.due_date}
-                onChange={e => patch({ due_date: e.target.value })}
+                onChange={value => patch({ due_date: value })}
+                onInvalidInput={setDateError}
+                error={dateError ?? undefined}
                 disabled={isDisabled}
-                className="field-base ft-form-input w-full"
-                data-testid="receivable-due-date-input"
+                inputLabel="Fecha de vencimiento"
+                inputTestId="receivable-due-date-input"
               />
             </FormField>
           </div>
         </FormSection>
 
         <div className="min-[860px]:col-span-2">
-          <FormField label="Descripción" optional description="Usa una referencia reconocible para el seguimiento del cobro.">
+          <FormField label="Descripción" optional>
             <input
               value={form.concept}
               onChange={e => patch({ concept: e.target.value })}
@@ -418,7 +443,7 @@ export function ReceivableForm({
 
         <div className="min-[860px]:col-span-2">
           <OptionalSection
-            title="Mas opciones"
+            title="Información adicional"
             summary={optionalSummary}
             open={advancedOpen}
             onOpenChange={setAdvancedOpen}

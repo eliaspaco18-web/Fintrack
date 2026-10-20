@@ -4,26 +4,20 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AppSelect } from '@/components/ui/AppSelect'
 import { Button } from '@/components/ui/Button'
 import { RecordModal } from '@/components/ui/RecordModal'
-import {
-  ControlsBar,
-  DataSearchField,
-  EmptyState,
-  FilterBar,
-  StatusBadge,
-} from '@/components/finance'
-import { formatCurrency } from '@/lib/contracts/ui.contracts'
+import { ConfirmDialog, DataErrorBanner, DataSearchField, EmptyState } from '@/components/finance'
+import { IncomeDatePicker } from '@/components/forms/TransactionForm/IncomeDatePicker'
 import { getApiErrorMessage } from '@/lib/api/error-message'
-import { ObligationCurrencyProgress } from '@/components/obligations/ObligationCurrencyProgress'
+import { formatCurrency } from '@/lib/contracts/ui.contracts'
 import {
-  formatObligationLedgerSummaries,
   formatVerifiedObligationAmount,
   getObligationSettlementState,
   resolveVerifiedObligationCurrency,
   summarizeObligationLedgerCurrencies,
   type ObligationCurrencySummary,
 } from '@/modules/obligations/obligation-currency-presentation'
-import type { DebtorRow } from './DebtorForm'
 import { ReceivableForm } from './ReceivableForm'
+import type { DebtorRow } from './DebtorForm'
+import styles from './DebtorDetail.module.css'
 
 export type DebtorWithStats = DebtorRow & {
   total_lent: number
@@ -74,24 +68,20 @@ type Props = {
   debtor: DebtorWithStats
   exchangeRate: number
   onChanged?: () => void | Promise<void>
+  onNestedModalOpenChange?: (open: boolean) => void
 }
 
 function formatDate(iso: string) {
-  return new Date(`${iso}T12:00:00`).toLocaleDateString('es-PE', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
+  return new Date(`${iso}T12:00:00Z`).toLocaleDateString('es-PE', {
+    day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC',
   })
 }
 
 function isOverdue(row: ReceivableRow) {
-  if (!row.due_date || row.status === 'COLLECTED') return false
-  return new Date(`${row.due_date}T12:00:00`).getTime() < Date.now()
-}
-
-function matchesText(value: string | null | undefined, query: string) {
-  if (!query) return true
-  return (value ?? '').toLowerCase().includes(query)
+  if (!row.due_date || !['PENDING', 'PARTIAL'].includes(row.status)) return false
+  const today = new Date()
+  const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  return row.due_date < todayIso
 }
 
 function resolveLedgerMeta(row: LedgerRow) {
@@ -99,107 +89,49 @@ function resolveLedgerMeta(row: LedgerRow) {
   const verifiedAmount = currency ? formatCurrency(row.amount, currency) : 'Importe no verificable'
 
   if (row.type === 'INCOME') {
-    return {
-      label: 'Ingreso',
-      tone: 'success' as const,
-      detail: 'Cobro registrado',
-      signedAmount: currency ? `+${verifiedAmount}` : verifiedAmount,
-    }
+    return { label: 'Cobro', tone: styles.income, detail: 'Cobro registrado', signedAmount: currency ? `+${verifiedAmount}` : verifiedAmount }
   }
+  return { label: 'Préstamo', tone: styles.expense, detail: 'Capital entregado', signedAmount: currency ? `−${verifiedAmount}` : verifiedAmount }
+}
 
-  return {
-    label: 'Egreso',
-    tone: 'warning' as const,
-    detail: 'Prestamo entregado',
-    signedAmount: currency ? `-${verifiedAmount}` : verifiedAmount,
+function summaryStateLabel(state: ReturnType<typeof getObligationSettlementState>) {
+  switch (state) {
+    case 'SETTLED': return 'Cobranza cerrada'
+    case 'UNVERIFIED': return 'Importe no verificable'
+    case 'EMPTY': return 'Sin cuentas documentadas'
+    default: return 'Cobranza abierta'
   }
 }
 
-function RecoveryVisual({
-  summaries,
-  hasUnverifiedInitialBalance,
-  unverifiedRecordCount,
-  className = '',
-}: {
-  summaries: readonly ObligationCurrencySummary[]
-  hasUnverifiedInitialBalance: boolean
-  unverifiedRecordCount: number
-  className?: string
-}) {
-  const hasUnverifiedAmount = hasUnverifiedInitialBalance || unverifiedRecordCount > 0
-
-  return (
-    <section
-      className={`rounded-[22px] border border-[var(--c-border)] bg-[var(--c-surface)] px-4 py-4 ${className}`.trim()}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-            Recuperacion documentada
-          </p>
-          <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">
-            Totales separados por moneda original.
-          </p>
-        </div>
-        <StatusBadge tone={summaries.some(summary => summary.pending > 0) || hasUnverifiedAmount ? 'warning' : 'success'} dot={false}>
-          {summaries.some(summary => summary.pending > 0)
-            ? 'Saldo abierto'
-            : hasUnverifiedAmount
-              ? 'Importe no verificable'
-              : 'Sin saldo documentado'}
-        </StatusBadge>
-      </div>
-
-      <div className="mt-3.5 space-y-3">
-        {summaries.map(summary => (
-          <div key={summary.currency} className="grid grid-cols-3 gap-2.5 rounded-[18px] border border-[var(--c-border)] bg-[var(--c-surface-2)] p-3">
-            <div className="min-w-0">
-              <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Total · {summary.currency}</p>
-              <p className="mt-1.5 truncate font-mono text-[13px] font-semibold tabular-nums text-[var(--c-text)]">
-                {formatVerifiedObligationAmount(summary.total, summary.currency)}
-              </p>
-            </div>
-            <div className="min-w-0">
-              <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Cobrado</p>
-              <p className="mt-1.5 truncate font-mono text-[13px] font-semibold tabular-nums text-[var(--c-success)]">
-                {formatVerifiedObligationAmount(summary.settled, summary.currency)}
-              </p>
-            </div>
-            <div className="min-w-0">
-              <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Pendiente</p>
-              <p className="mt-1.5 truncate font-mono text-[13px] font-semibold tabular-nums text-[var(--c-warning)]">
-                {formatVerifiedObligationAmount(summary.pending, summary.currency)}
-              </p>
-            </div>
-          </div>
-        ))}
-
-        <ObligationCurrencyProgress
-          summaries={summaries}
-          kind="receivable"
-          hasUnverifiedInitialBalance={hasUnverifiedInitialBalance}
-          unverifiedRecordCount={unverifiedRecordCount}
-          compact
-        />
-      </div>
-    </section>
-  )
+function receivableStateLabel(status: string) {
+  switch (status.toUpperCase()) {
+    case 'COLLECTED': return 'Cobrado'
+    case 'PARTIAL': return 'Parcial'
+    case 'PENDING': return 'Pendiente'
+    default: return 'Estado no verificable'
+  }
 }
 
-export function DebtorDetail({ debtor, exchangeRate, onChanged }: Props) {
+function formatReceivableAmount(value: unknown, currency: string | null) {
+  const amount = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN
+  return currency && Number.isFinite(amount) ? formatCurrency(amount, currency) : 'Importe no verificable'
+}
+
+export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpenChange }: Props) {
   const [rows, setRows] = useState<ReceivableRow[]>([])
   const [ledgerRows, setLedgerRows] = useState<LedgerRow[]>([])
   const [accounts, setAccounts] = useState<AccountOption[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-
   const [query, setQuery] = useState('')
   const [accountFilter, setAccountFilter] = useState('all')
   const [movementFilter, setMovementFilter] = useState<'all' | 'income' | 'expense'>('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
-
+  const [dateError, setDateError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
+  const [createDirty, setCreateDirty] = useState(false)
+  const [discardOpen, setDiscardOpen] = useState(false)
   const settlementState = getObligationSettlementState({
     summaries: debtor.currency_summaries,
     unverifiedRecordCount: debtor.unverified_currency_records,
@@ -209,30 +141,22 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged }: Props) {
   const loadRows = useCallback(async () => {
     setLoading(true)
     setError(null)
-
     try {
+      // Preserve the existing detail reads: the debtor_id route is intentionally unchanged.
       const [receivablesRes, ledgerRes] = await Promise.all([
         fetch(`/api/receivables?debtor_id=${debtor.id}`, { cache: 'no-store' }),
         fetch(`/api/debtors/${debtor.id}/ledger`, { cache: 'no-store' }),
       ])
-
       const [receivablesJson, ledgerJson] = await Promise.all([
         receivablesRes.json().catch(() => null),
         ledgerRes.json().catch(() => null),
       ])
-
-      if (!receivablesRes.ok || !receivablesJson?.ok) {
-        throw new Error(getApiErrorMessage(receivablesJson, 'No se pudieron cargar las cuentas por cobrar'))
-      }
-
-      if (!ledgerRes.ok || !ledgerJson?.ok) {
-        throw new Error(getApiErrorMessage(ledgerJson, 'No se pudo cargar el historial del deudor'))
-      }
-
+      if (!receivablesRes.ok || !receivablesJson?.ok) throw new Error(getApiErrorMessage(receivablesJson, 'No se pudieron cargar las cuentas por cobrar.'))
+      if (!ledgerRes.ok || !ledgerJson?.ok) throw new Error(getApiErrorMessage(ledgerJson, 'No se pudo cargar el historial del deudor.'))
       setRows((receivablesJson.data as ReceivableRow[]) ?? [])
       setLedgerRows((ledgerJson.data as LedgerRow[]) ?? [])
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al cargar el detalle del deudor')
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Error al cargar el detalle del deudor.')
     } finally {
       setLoading(false)
     }
@@ -240,69 +164,57 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged }: Props) {
 
   useEffect(() => {
     void loadRows()
+    let cancelled = false
     fetch('/api/accounts?is_active=true', { cache: 'no-store' })
       .then(response => response.json())
-      .then(json => {
-        if (json?.ok) setAccounts((json.data as AccountOption[]) ?? [])
-      })
+      .then(json => { if (!cancelled && json?.ok) setAccounts((json.data as AccountOption[]) ?? []) })
       .catch(() => null)
+    return () => { cancelled = true }
   }, [loadRows])
 
-  const normalizedQuery = query.trim().toLowerCase()
-  const accountOptions = useMemo(
-    () => [
-      { value: 'all', label: 'Todos los portafolios' },
-      ...accounts.map(account => ({
-        value: account.id,
-        label: account.name,
-      })),
-    ],
-    [accounts],
-  )
-
-  const filteredLedger = useMemo(() => {
-    return ledgerRows.filter(row => {
-      if (movementFilter === 'income' && row.type !== 'INCOME') return false
-      if (movementFilter === 'expense' && row.type !== 'EXPENSE') return false
-      if (accountFilter !== 'all' && row.source_account?.id !== accountFilter) return false
-      if (dateFrom && row.transaction_date < dateFrom) return false
-      if (dateTo && row.transaction_date > dateTo) return false
-
-      if (
-        normalizedQuery &&
-        !matchesText(row.description, normalizedQuery) &&
-        !matchesText(row.notes, normalizedQuery) &&
-        !matchesText(row.category?.name, normalizedQuery) &&
-        !matchesText(row.source_account?.name, normalizedQuery)
-      ) {
-        return false
-      }
-
-      return true
-    })
-  }, [accountFilter, dateFrom, dateTo, ledgerRows, movementFilter, normalizedQuery])
-
-  const filteredLedgerBreakdown = useMemo(
-    () => summarizeObligationLedgerCurrencies(filteredLedger),
-    [filteredLedger],
-  )
-  const overdueCount = useMemo(
-    () => rows.filter(isOverdue).length,
-    [rows],
-  )
-  const openAccountsCount = rows.filter(row => row.status !== 'COLLECTED').length
+  const normalizedQuery = query.trim().toLocaleLowerCase('es-PE')
+  const accountOptions = useMemo(() => [
+    { value: 'all', label: 'Todos los portafolios' },
+    ...accounts.map(account => ({ value: account.id, label: account.name })),
+  ], [accounts])
+  const filteredLedger = useMemo(() => ledgerRows.filter(row => {
+    if (movementFilter === 'income' && row.type !== 'INCOME') return false
+    if (movementFilter === 'expense' && row.type !== 'EXPENSE') return false
+    if (accountFilter !== 'all' && row.source_account?.id !== accountFilter) return false
+    if (dateFrom && row.transaction_date < dateFrom) return false
+    if (dateTo && row.transaction_date > dateTo) return false
+    if (normalizedQuery && ![row.description, row.notes, row.category?.name, row.source_account?.name]
+      .some(value => (value ?? '').toLocaleLowerCase('es-PE').includes(normalizedQuery))) return false
+    return true
+  }), [accountFilter, dateFrom, dateTo, ledgerRows, movementFilter, normalizedQuery])
+  const filteredLedgerBreakdown = useMemo(() => summarizeObligationLedgerCurrencies(filteredLedger), [filteredLedger])
+  const overdueCount = useMemo(() => rows.filter(isOverdue).length, [rows])
+  const openAccountsCount = rows.filter(row => ['PENDING', 'PARTIAL'].includes(row.status)).length
   const hasPositiveLedgerBalance = filteredLedgerBreakdown.summaries.some(summary => summary.balance > 0)
 
-  const syncParent = useCallback(async () => {
-    if (!onChanged) return
-    await onChanged()
-  }, [onChanged])
-
   const handleFormSuccess = useCallback(async () => {
+    setCreateDirty(false)
     setCreateOpen(false)
     await loadRows()
-    await syncParent()
-  }, [loadRows, syncParent])
+    await onChanged?.()
+  }, [loadRows, onChanged])
+
+  const requestCloseCreate = useCallback(() => {
+    if (createDirty) setDiscardOpen(true)
+    else setCreateOpen(false)
+  }, [createDirty])
+
+  const openCreate = useCallback(() => {
+    setCreateDirty(false)
+    setCreateOpen(true)
+    onNestedModalOpenChange?.(true)
+  }, [onNestedModalOpenChange])
+
+  const confirmDiscard = useCallback(() => {
+    setCreateDirty(false)
+    setDiscardOpen(false)
+    setCreateOpen(false)
+  }, [])
 
   const clearFilters = useCallback(() => {
     setQuery('')
@@ -310,287 +222,185 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged }: Props) {
     setMovementFilter('all')
     setDateFrom('')
     setDateTo('')
+    setDateError(null)
   }, [])
 
   return (
-    <div className="grid h-full min-h-0 gap-4 overflow-hidden xl:grid-cols-[388px_minmax(0,1fr)] 2xl:grid-cols-[404px_minmax(0,1fr)]">
-      <aside className="min-h-0 overflow-hidden">
-        <section className="flex h-full flex-col rounded-[24px] border border-[var(--c-border)] bg-[linear-gradient(180deg,var(--c-surface),var(--c-surface-2))] px-4 py-3.5">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-                Detalle del deudor
-              </p>
-              <div className="mt-2">
-                <p className="break-words text-[20px] font-semibold tracking-[-0.03em] text-[var(--c-text)]">
-                  {debtor.relationship?.trim() || 'Sin relacion registrada'}
-                </p>
-                <p className="mt-1 text-[13px] text-[var(--c-text-muted)]">
-                  {openAccountsCount} cuenta{openAccountsCount === 1 ? '' : 's'} abierta{openAccountsCount === 1 ? '' : 's'}
-                  {' · '}
-                  {ledgerRows.length} movimiento{ledgerRows.length === 1 ? '' : 's'}
-                </p>
-              </div>
-            </div>
-            <Button
-              type="button"
-              onClick={() => setCreateOpen(true)}
-              variant="secondary"
-              size="sm"
-              className="shrink-0"
-            >
-              Nueva cuenta
-            </Button>
+    <div className={styles.detailLayout} data-testid="debtor-detail-content">
+      <section className={styles.recoveryPanel} aria-labelledby="debtor-recovery-title">
+        <div className={styles.panelHeading}>
+          <div>
+            <h3 id="debtor-recovery-title">Recuperación documentada</h3>
+            <p>Importes pendientes y cobrados por moneda original.</p>
           </div>
-
-          <div className="mt-3.5 flex flex-wrap items-center gap-2">
-            <StatusBadge tone={settlementState === 'SETTLED' ? 'success' : settlementState === 'UNVERIFIED' ? 'muted' : 'warning'}>
-              {settlementState === 'SETTLED'
-                ? 'Cobranza cerrada'
-                : settlementState === 'UNVERIFIED'
-                  ? 'Estado no verificable'
-                  : settlementState === 'EMPTY'
-                    ? 'Sin cuentas documentadas'
-                    : 'Cobranza abierta'}
-            </StatusBadge>
-            <StatusBadge tone={debtor.is_active ? 'primary' : 'muted'} dot={false}>
-              {debtor.is_active ? 'Deudor activo' : 'Deudor inactivo'}
-            </StatusBadge>
-            {overdueCount > 0 ? (
-              <StatusBadge tone="danger" dot={false}>
-                {overdueCount} vencida{overdueCount === 1 ? '' : 's'}
-              </StatusBadge>
-            ) : null}
+          <span className={`${styles.stateBadge} ${settlementState === 'SETTLED' ? styles.stateSuccess : settlementState === 'UNVERIFIED' ? styles.stateMuted : styles.stateWarning}`}>
+            {summaryStateLabel(settlementState)}
+          </span>
+        </div>
+        {debtor.currency_summaries.length ? (
+          <div className={styles.currencySummaries}>
+            {debtor.currency_summaries.map(summary => (
+              <article key={summary.currency} className={styles.currencySummary}>
+                <p>{summary.currency}</p>
+                <div className={styles.currencyMetrics}>
+                  <div><span>Total</span><strong>{formatVerifiedObligationAmount(summary.total, summary.currency)}</strong></div>
+                  <div><span>Cobrado</span><strong className={styles.settledAmount}>{formatVerifiedObligationAmount(summary.settled, summary.currency)}</strong></div>
+                  <div><span>Pendiente</span><strong className={summary.pending > 0 ? styles.pendingAmount : ''}>{formatVerifiedObligationAmount(summary.pending, summary.currency)}</strong></div>
+                </div>
+              </article>
+            ))}
           </div>
+        ) : (
+          <p className={styles.noSummary}>{debtor.has_unverified_initial_debt ? 'El saldo inicial no tiene una moneda documentada y se mantiene fuera de estos totales.' : 'Todavía no hay importes documentados para mostrar.'}</p>
+        )}
+        {debtor.unverified_currency_records > 0 || debtor.has_unverified_initial_debt ? (
+          <p className={styles.unverifiedNote} role="note">
+            {debtor.has_unverified_initial_debt ? 'Saldo inicial sin moneda verificable' : `${debtor.unverified_currency_records} registro${debtor.unverified_currency_records === 1 ? '' : 's'} sin moneda verificable`}. Excluido de los importes por moneda.
+          </p>
+        ) : null}
+        <div className={styles.recoveryProgress} aria-label="Porcentaje cobrado por moneda">
+          {debtor.currency_summaries.map(summary => {
+            const percent = summary.total > 0 ? Math.min(100, Math.max(0, summary.settled / summary.total * 100)) : 0
+            return <div key={summary.currency} className={styles.progressLine}><span>{summary.currency}</span><div role="progressbar" aria-label={`Cobrado ${summary.currency}`} aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${percent}%` }} /></div><strong>{Math.round(percent)}%</strong></div>
+          })}
+        </div>
+      </section>
 
-          <RecoveryVisual
-            summaries={debtor.currency_summaries}
-            hasUnverifiedInitialBalance={debtor.has_unverified_initial_debt}
-            unverifiedRecordCount={debtor.unverified_currency_records}
-            className="mt-3.5"
+      <section className={styles.obligationsPanel} aria-labelledby="debtor-obligations-title" data-testid="debtor-obligations">
+        <div className={styles.obligationsHeading}>
+          <div>
+            <h3 id="debtor-obligations-title">Cuentas por cobrar</h3>
+            <p>{rows.length} registro{rows.length === 1 ? '' : 's'} documentado{rows.length === 1 ? '' : 's'} · importes en su moneda original</p>
+          </div>
+        </div>
+        {loading && rows.length === 0 ? (
+          <div className={styles.obligationLoading} aria-busy="true" aria-label="Cargando cuentas por cobrar">
+            {[0, 1].map(item => <span key={item} />)}
+          </div>
+        ) : rows.length === 0 ? (
+          <p className={styles.noObligations}>Todavía no hay cuentas por cobrar documentadas para esta persona.</p>
+        ) : (
+          <div className={styles.obligationList}>
+            {rows.map(row => {
+              const currency = resolveVerifiedObligationCurrency(row.currency)
+              const amount = typeof row.amount === 'number' ? row.amount : typeof row.amount === 'string' ? Number(row.amount) : NaN
+              const collected = typeof row.collected_amount === 'number' ? row.collected_amount : typeof row.collected_amount === 'string' ? Number(row.collected_amount) : NaN
+              const canShowPending = Boolean(currency) && Number.isFinite(amount) && Number.isFinite(collected)
+              const pendingAmount = canShowPending ? amount - collected : null
+              const normalizedStatus = row.status.toUpperCase()
+              const stateClass = normalizedStatus === 'COLLECTED' ? styles.stateSuccess : normalizedStatus === 'PENDING' || normalizedStatus === 'PARTIAL' ? styles.stateWarning : styles.stateMuted
+
+              return (
+                <article className={styles.obligationRow} key={row.id} data-testid={`debtor-obligation-${row.id}`}>
+                  <div className={styles.obligationCopy}>
+                    <strong>{row.concept?.trim() || 'Cuenta por cobrar'}</strong>
+                    <span>
+                      Emitida {formatDate(row.issue_date)}
+                      {row.due_date ? ` · Vence ${formatDate(row.due_date)}` : ' · Sin vencimiento registrado'}
+                    </span>
+                    {row.attachment_url ? <a href={row.attachment_url} target="_blank" rel="noreferrer">Ver documento asociado</a> : null}
+                  </div>
+                  <div className={styles.obligationAmounts}>
+                    <span>Total <strong>{formatReceivableAmount(row.amount, currency)}</strong></span>
+                    <span>Cobrado <strong>{formatReceivableAmount(row.collected_amount, currency)}</strong></span>
+                    <span>Pendiente <strong className={pendingAmount !== null && pendingAmount > 0 ? styles.pendingAmount : ''}>{pendingAmount !== null && currency ? formatCurrency(pendingAmount, currency) : 'Importe no verificable'}</strong></span>
+                  </div>
+                  <span className={`${styles.stateBadge} ${stateClass}`}>{receivableStateLabel(row.status)}</span>
+                </article>
+              )
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className={styles.historyPanel} aria-labelledby="debtor-ledger-title">
+        <div className={styles.historyHeading}>
+          <div>
+            <h3 id="debtor-ledger-title">Movimientos vinculados</h3>
+            <p>{filteredLedger.length} movimiento{filteredLedger.length === 1 ? '' : 's'} · {openAccountsCount} cuenta{openAccountsCount === 1 ? '' : 's'} pendiente{openAccountsCount === 1 ? '' : 's'}{overdueCount ? ` · ${overdueCount} vencida${overdueCount === 1 ? '' : 's'}` : ''}</p>
+          </div>
+          <Button type="button" variant="secondary" size="sm" onClick={openCreate}>Nueva cuenta por cobrar</Button>
+        </div>
+
+        <div className={styles.detailToolbar}>
+          <DataSearchField
+            value={query}
+            onChange={setQuery}
+            placeholder="Buscar movimientos vinculados"
+            aria-label="Buscar movimientos vinculados"
+            className={styles.detailSearch}
+            data-testid="debtor-detail-search"
           />
+          <AppSelect value={accountFilter} onChange={setAccountFilter} options={accountOptions} compact searchable={false} className={styles.detailFilter} aria-label="Filtrar por portafolio" />
+          <AppSelect value={movementFilter} onChange={value => setMovementFilter(value as 'all' | 'income' | 'expense')} options={[
+            { value: 'all', label: 'Todos los movimientos' },
+            { value: 'expense', label: 'Solo préstamos' },
+            { value: 'income', label: 'Solo cobros' },
+          ]} compact searchable={false} className={styles.detailFilter} aria-label="Filtrar por tipo de movimiento" />
+          <IncomeDatePicker value={dateFrom} onChange={setDateFrom} onInvalidInput={setDateError} error={dateError ?? undefined} inputLabel="Fecha desde" inputTestId="debtor-detail-date-from" positioningBoundary="viewport" />
+          <IncomeDatePicker value={dateTo} onChange={setDateTo} onInvalidInput={setDateError} error={dateError ?? undefined} inputLabel="Fecha hasta" inputTestId="debtor-detail-date-to" positioningBoundary="viewport" />
+          <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>Limpiar</Button>
+        </div>
+        {dateError ? <p className={styles.dateError} role="alert">{dateError}</p> : null}
 
-        </section>
-      </aside>
-
-      <div className="min-h-0 min-w-0 overflow-y-auto pr-1">
-        <div className="space-y-4">
-        <ControlsBar
-          className="rounded-[18px] px-3.5 py-2.5"
-          presets={(
-            <>
-              <StatusBadge tone="muted" dot={false}>
-                Ledger {filteredLedger.length}
-              </StatusBadge>
-              <StatusBadge tone={hasPositiveLedgerBalance ? 'warning' : 'success'} dot={false}>
-                Saldos {formatObligationLedgerSummaries(filteredLedgerBreakdown.summaries, 'balance')}
-              </StatusBadge>
-              {filteredLedgerBreakdown.unverifiedRecordCount > 0 ? (
-                <StatusBadge tone="warning" dot={false}>
-                  {filteredLedgerBreakdown.unverifiedRecordCount} sin moneda verificable
-                </StatusBadge>
-              ) : null}
-            </>
-          )}
-          search={(
-            <DataSearchField
-              value={query}
-              onChange={setQuery}
-              placeholder="Buscar concepto, categoria, nota o portafolio"
-              data-testid="debtor-detail-search"
-            />
-          )}
-          filters={(
-            <FilterBar>
-              <AppSelect
-                value={accountFilter}
-                onChange={setAccountFilter}
-                options={accountOptions}
-                compact
-                searchable={false}
-                className="w-[210px]"
-              />
-              <AppSelect
-                value={movementFilter}
-                onChange={value => setMovementFilter(value as 'all' | 'income' | 'expense')}
-                options={[
-                  { value: 'all', label: 'Todos los movimientos' },
-                  { value: 'expense', label: 'Solo egresos' },
-                  { value: 'income', label: 'Solo ingresos' },
-                ]}
-                compact
-                searchable={false}
-                className="w-[220px]"
-              />
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={event => setDateFrom(event.target.value)}
-                className="field-base h-9 w-[140px]"
-                title="Fecha desde"
-                data-testid="debtor-detail-date-from"
-              />
-              <input
-                type="date"
-                value={dateTo}
-                onChange={event => setDateTo(event.target.value)}
-                className="field-base h-9 w-[140px]"
-                title="Fecha hasta"
-                data-testid="debtor-detail-date-to"
-              />
-            </FilterBar>
-          )}
-          actions={(
-            <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
-              Limpiar filtros
-            </Button>
-          )}
-        />
-
-        {error ? (
-          <div className="rounded-[18px] border border-[rgba(184,74,74,0.22)] bg-[var(--c-danger-soft)] px-4 py-3">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-[12px] font-medium text-[var(--c-danger)]">{error}</p>
-              <Button type="button" onClick={() => void loadRows()} variant="danger" size="sm">
-                Reintentar
-              </Button>
-            </div>
+        {error ? <DataErrorBanner message={error} onRetry={() => void loadRows()} /> : null}
+        {loading ? (
+          <div className={styles.loadingList} aria-label="Cargando movimientos" aria-busy="true">
+            {[0, 1, 2].map(item => <div key={item} className={styles.loadingLine}><span /><span /><span /></div>)}
+          </div>
+        ) : !error && filteredLedger.length === 0 ? (
+          <EmptyState
+            title={query || accountFilter !== 'all' || movementFilter !== 'all' || dateFrom || dateTo ? 'No encontramos movimientos con esos filtros.' : 'Todavía no hay movimientos vinculados.'}
+            description={query || accountFilter !== 'all' || movementFilter !== 'all' || dateFrom || dateTo ? 'Prueba otro rango de fechas o limpia los filtros.' : 'Los préstamos y cobros registrados aparecerán aquí.'}
+            action={query || accountFilter !== 'all' || movementFilter !== 'all' || dateFrom || dateTo ? { label: 'Limpiar filtros', onClick: clearFilters } : undefined}
+          />
+        ) : !error ? (
+          <div className={styles.ledgerList}>
+            <div className={styles.ledgerHead} aria-hidden="true"><span>Tipo</span><span>Descripción</span><span>Portafolio</span><span>Categoría</span><span>Fecha</span><span className="text-right">Importe</span></div>
+            {filteredLedger.map(row => {
+              const meta = resolveLedgerMeta(row)
+              return <article key={row.id} className={styles.ledgerRow} data-testid={`debtor-ledger-row-${row.id}`}>
+                <div><span className={`${styles.typeBadge} ${meta.tone}`}>{meta.label}</span></div>
+                <div className={styles.ledgerDescription}><strong>{row.description?.trim() || 'Movimiento sin descripción'}</strong><span>{row.notes?.trim() || meta.detail}</span></div>
+                <div className={styles.ledgerCell}>{row.source_account?.name || 'Sin portafolio'}</div>
+                <div className={styles.ledgerCell}>{row.category?.name || 'Sin categoría'}</div>
+                <time className={styles.ledgerDate} dateTime={row.transaction_date}>{formatDate(row.transaction_date)}</time>
+                <strong className={`${styles.ledgerAmount} ${row.type === 'INCOME' ? styles.incomeAmount : styles.expenseAmount}`}>{meta.signedAmount}</strong>
+              </article>
+            })}
           </div>
         ) : null}
-
-        <section className="overflow-hidden rounded-[18px] border border-[var(--c-border)] bg-[var(--c-surface)]">
-          <div className="flex flex-col gap-2.5 border-b border-[var(--c-border)] px-3.5 py-3 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-base font-semibold tracking-[-0.02em] text-[var(--c-text)]">
-                Movimientos del deudor
-              </p>
-              <p className="mt-1 text-[12px] leading-5 text-[var(--c-text-muted)]">
-                Prestamos y cobros con saldos separados por moneda original, sin conversion.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <StatusBadge tone="warning" dot={false}>
-                Egresos {formatObligationLedgerSummaries(filteredLedgerBreakdown.summaries, 'expense')}
-              </StatusBadge>
-              <StatusBadge tone="success" dot={false}>
-                Ingresos {formatObligationLedgerSummaries(filteredLedgerBreakdown.summaries, 'income')}
-              </StatusBadge>
-              <StatusBadge tone={hasPositiveLedgerBalance ? 'warning' : 'success'} dot={false}>
-                Saldos {formatObligationLedgerSummaries(filteredLedgerBreakdown.summaries, 'balance')}
-              </StatusBadge>
-              {filteredLedgerBreakdown.unverifiedRecordCount > 0 ? (
-                <StatusBadge tone="warning" dot={false}>
-                  {filteredLedgerBreakdown.unverifiedRecordCount} sin moneda verificable
-                </StatusBadge>
-              ) : null}
-            </div>
-          </div>
-
-          {loading ? (
-            <div className="divide-y divide-[var(--c-border)]">
-              {[0, 1, 2, 3].map(item => (
-                <div key={item} className="px-3.5 py-3">
-                  <div className="flex animate-pulse flex-col gap-2">
-                    <div className="h-4 w-36 rounded-full bg-[var(--c-surface-2)]" />
-                    <div className="h-3 w-full rounded-full bg-[var(--c-surface-2)]" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : filteredLedger.length === 0 ? (
-            <div className="p-3.5">
-              <EmptyState
-                title={query || accountFilter !== 'all' || movementFilter !== 'all' || dateFrom || dateTo
-                  ? 'No encontramos movimientos con esos filtros.'
-                  : 'Este deudor aun no tiene movimientos asociados.'}
-                description={query || accountFilter !== 'all' || movementFilter !== 'all' || dateFrom || dateTo
-                  ? 'Prueba con otro rango, otro tipo de movimiento o una busqueda mas amplia.'
-                  : 'Cuando registres prestamos o cobros, aqui veras el historial completo del deudor.'}
-                compact
-              />
-            </div>
-          ) : (
-            <div>
-              <div className="hidden border-b border-[var(--c-border)] bg-[var(--c-surface-2)] px-3.5 py-2.5 lg:grid lg:grid-cols-[96px_minmax(0,2.35fr)_150px_190px_112px_120px] lg:gap-3">
-                {['Tipo', 'Descripcion', 'Portafolio', 'Categoria', 'Fecha', 'Monto'].map(label => (
-                  <p key={label} className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-                    {label}
-                  </p>
-                ))}
-              </div>
-
-              <div className="divide-y divide-[var(--c-border)]">
-                {filteredLedger.map(row => {
-                  const meta = resolveLedgerMeta(row)
-                  return (
-                    <article key={row.id} className="px-3.5 py-3">
-                      <div className="grid gap-3 lg:grid-cols-[96px_minmax(0,2.35fr)_150px_190px_112px_120px] lg:items-center lg:gap-3">
-                        <div>
-                          <StatusBadge tone={meta.tone} dot={false}>
-                            {meta.label}
-                          </StatusBadge>
-                          <p className="mt-2 text-[12px] text-[var(--c-text-muted)] lg:hidden">
-                            {meta.detail}
-                          </p>
-                        </div>
-
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-[var(--c-text)]">
-                            {row.description?.trim() || 'Movimiento sin descripcion'}
-                          </p>
-                          <p className="mt-1 truncate text-[12px] leading-5 text-[var(--c-text-muted)]">
-                            {row.notes?.trim() || meta.detail}
-                          </p>
-                        </div>
-
-                        <div className="min-w-0">
-                          <p className="text-[12px] font-medium text-[var(--c-text)]">
-                            {row.source_account?.name || 'Sin portafolio'}
-                          </p>
-                        </div>
-
-                        <div className="min-w-0">
-                          <p className="truncate text-[12px] text-[var(--c-text)]">
-                            {row.category?.name || 'Sin categoria'}
-                          </p>
-                        </div>
-
-                        <div>
-                          <p className="text-[12px] text-[var(--c-text)]">{formatDate(row.transaction_date)}</p>
-                        </div>
-
-                        <div className="lg:text-right">
-                          <p className={`font-mono text-sm font-semibold tabular-nums ${row.type === 'INCOME' ? 'text-[var(--c-success)]' : 'text-[var(--c-warning)]'}`}>
-                            {meta.signedAmount}
-                          </p>
-                        </div>
-                      </div>
-                    </article>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-        </section>
-        </div>
-      </div>
+      </section>
 
       <RecordModal
         open={createOpen}
-        onClose={() => setCreateOpen(false)}
+        onClose={requestCloseCreate}
+        onExitComplete={() => onNestedModalOpenChange?.(false)}
         eyebrow="Cuentas por cobrar"
         title="Nueva cuenta por cobrar"
         subtitle="Registra un nuevo compromiso dentro del mismo deudor."
         size="lg"
+        presentation="workbench"
+        focusTrapActive={!discardOpen}
+        preserveFocusOnResume
       >
         <ReceivableForm
           debtors={[debtor]}
           exchangeRate={exchangeRate}
           defaultDebtorId={debtor.id}
           onSuccess={handleFormSuccess}
-          onCancel={() => setCreateOpen(false)}
+          onCancel={requestCloseCreate}
+          onDirtyChange={setCreateDirty}
         />
       </RecordModal>
+      <ConfirmDialog
+        open={discardOpen}
+        title="Descartar cambios sin guardar"
+        message="Los cambios realizados en esta cuenta por cobrar se perderán."
+        onConfirm={confirmDiscard}
+        onCancel={() => setDiscardOpen(false)}
+        confirmLabel="Descartar cambios"
+      />
     </div>
   )
 }
