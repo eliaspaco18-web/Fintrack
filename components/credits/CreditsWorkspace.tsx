@@ -141,6 +141,7 @@ export function CreditsWorkspace() {
         subtitle={modalSubtitle}
         size={modalSize}
         focusTrapActive={!isNestedModalOpen}
+        preserveFocusOnResume
         bodyClassName={modalStep === 'form' ? 'credits-modal-body !overflow-hidden py-4' : ''}
         presentation="workbench"
         overlayClassName={modalStep === 'form' ? workbenchStyles.creditFormOverlay : undefined}

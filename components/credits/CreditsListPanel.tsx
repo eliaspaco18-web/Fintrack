@@ -200,6 +200,7 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
   const [bankEntitiesLoading, setBankEntitiesLoading] = useState(true)
   const [bankEntitiesError, setBankEntitiesError] = useState<string | null>(null)
   const [editingCredit, setEditingCredit] = useState<CreditListItem | null>(null)
+  const [isNestedEditModalOpen, setIsNestedEditModalOpen] = useState(false)
   const [isLoanFinancialEdit, setIsLoanFinancialEdit] = useState(false)
   const [viewingLoan, setViewingLoan] = useState<CreditListItem | null>(null)
   const [editForm, setEditForm] = useState<CreditEditForm>({ name: '', notes: '' })
@@ -250,6 +251,7 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
 
   const openEditModal = useCallback(async (credit: CreditListItem) => {
     setActionError(null)
+    setIsNestedEditModalOpen(false)
     let canEditLoanFinances = false
     if (credit.display_type === 'LOAN') {
       try {
@@ -581,6 +583,8 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
         subtitle={editIsCard ? 'Ajusta los datos permitidos de la tarjeta.' : editIsLoanFinancial ? 'Actualiza el préstamo y cronograma si sus cuotas aún no tienen pagos.' : 'Actualiza la referencia sin modificar el cronograma existente.'}
         size={editIsLoanFinancial ? 'xl' : undefined}
         widthClassName={editIsCard || editIsLoanFinancial ? 'w-[calc(100vw-32px)] max-w-[1120px]' : 'w-[calc(100vw-32px)] max-w-[720px]'}
+        focusTrapActive={!isNestedEditModalOpen}
+        preserveFocusOnResume
         bodyClassName={editIsLoanFinancial ? 'credits-modal-body !overflow-hidden py-4' : undefined}
         presentation="workbench"
         overlayClassName={editIsCard || editIsLoanFinancial ? workbenchStyles.creditFormOverlay : undefined}
@@ -588,9 +592,9 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
         testId="credits-edit-modal"
       >
         {editIsCard && editingCredit ? (
-          <CreditCardForm mode="edit" credit={editingCredit} onCancel={closeEditModal} onSuccess={name => void afterFormSuccess(name, 'Tarjeta')} />
+          <CreditCardForm mode="edit" credit={editingCredit} onCancel={closeEditModal} onSuccess={name => void afterFormSuccess(name, 'Tarjeta')} onNestedModalOpenChange={setIsNestedEditModalOpen} />
         ) : editIsLoanFinancial && editingCredit ? (
-          <BankLoanForm key={editingCredit.id} mode="edit" creditId={editingCredit.id} onCancel={closeEditModal} onSuccess={name => void afterFormSuccess(name, 'Préstamo')} />
+          <BankLoanForm key={editingCredit.id} mode="edit" creditId={editingCredit.id} onCancel={closeEditModal} onSuccess={name => void afterFormSuccess(name, 'Préstamo')} onNestedModalOpenChange={setIsNestedEditModalOpen} />
         ) : (
           <>
             <div className="space-y-[var(--ft-form-section-gap)]">

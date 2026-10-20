@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { FormActions } from '@/components/forms/primitives'
 import { RecordModal } from '@/components/ui/RecordModal'
@@ -198,9 +198,11 @@ export function CreditCardScheduleEditor({
     [cycles],
   )
 
-  useEffect(() => {
-    onMovementModalOpenChange?.(Boolean(movementCycle))
-  }, [movementCycle, onMovementModalOpenChange])
+  const openMovementModal = (cycleId: string) => {
+    onMovementModalOpenChange?.(true)
+    setMovementCycleId(cycleId)
+  }
+  const finishMovementModalClose = () => onMovementModalOpenChange?.(false)
 
   return (
     <div className="flex min-h-0 w-full flex-col gap-3">
@@ -429,7 +431,7 @@ export function CreditCardScheduleEditor({
                       <div className="flex items-center justify-center gap-1.5">
                         <button
                           type="button"
-                          onClick={() => setMovementCycleId(cycle.id)}
+                          onClick={() => openMovementModal(cycle.id)}
                           className="
                             inline-flex h-9 w-9 items-center justify-center rounded-[var(--ft-radius-control)]
                             border border-[var(--ft-form-border)] text-[var(--ft-form-muted)]
@@ -499,6 +501,7 @@ export function CreditCardScheduleEditor({
       <RecordModal
         open={Boolean(movementCycle)}
         onClose={() => closeMovementModal(setMovementCycleId, setMovementKindFilter, setMovementSearch)}
+        onExitComplete={finishMovementModalClose}
         eyebrow="Créditos"
         title={movementCycle ? `Movimientos de ${formatBillingCycleLabel(movementCycle.billing_month, movementCycle.billing_year)}` : 'Movimientos del periodo'}
         subtitle="Consumos y pagos vinculados a esta tarjeta dentro del rango de facturación."
@@ -623,6 +626,8 @@ export function CreditCardScheduleModal({
   onExitComplete,
   ...editorProps
 }: CreditCardScheduleModalProps) {
+  const [movementModalOpen, setMovementModalOpen] = useState(false)
+
   return (
     <RecordModal
       open={open}
@@ -637,6 +642,8 @@ export function CreditCardScheduleModal({
       bodyClassName="credits-modal-body !overflow-hidden py-4"
       presentation="workbench"
       workbenchKind="schedule"
+      focusTrapActive={!movementModalOpen}
+      preserveFocusOnResume
       motionSource="pointer"
       footer={(
         <FormActions
@@ -653,7 +660,7 @@ export function CreditCardScheduleModal({
         />
       )}
     >
-      <CreditCardScheduleEditor {...editorProps} />
+      <CreditCardScheduleEditor {...editorProps} onMovementModalOpenChange={setMovementModalOpen} />
     </RecordModal>
   )
 }

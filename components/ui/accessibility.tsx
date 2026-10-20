@@ -64,9 +64,10 @@ interface FocusTrapProps {
   selectPortalHost?: boolean
   initialFocusRef?: RefObject<HTMLElement | null>
   deferRestoreFocus?: boolean
+  preserveFocusIfAlreadyWithin?: boolean
 }
 
-export function FocusTrap({ active, children, onEscape, className, selectPortalHost = false, initialFocusRef, deferRestoreFocus = false }: FocusTrapProps) {
+export function FocusTrap({ active, children, onEscape, className, selectPortalHost = false, initialFocusRef, deferRestoreFocus = false, preserveFocusIfAlreadyWithin = false }: FocusTrapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const onEscapeRef = useRef(onEscape)
 
@@ -83,12 +84,16 @@ export function FocusTrap({ active, children, onEscape, className, selectPortalH
     // Guardar el elemento que tenía foco antes de abrir
     const previouslyFocused = document.activeElement as HTMLElement
 
-    // Enfocar el primer elemento focusable
+    // A nested workbench can temporarily suspend this trap. When it resumes,
+    // preserve focus restored by the child if it is still inside this dialog.
     const firstFocusable = container.querySelector<HTMLElement>(FOCUSABLE)
-    if (initialFocusRef?.current && container.contains(initialFocusRef.current)) {
-      initialFocusRef.current.focus()
-    } else {
-      firstFocusable?.focus()
+    const currentFocusIsWithin = document.activeElement instanceof HTMLElement && container.contains(document.activeElement)
+    if (!preserveFocusIfAlreadyWithin || !currentFocusIsWithin) {
+      if (initialFocusRef?.current && container.contains(initialFocusRef.current)) {
+        initialFocusRef.current.focus()
+      } else {
+        firstFocusable?.focus()
+      }
     }
 
     const handleKeyDown = (e: globalThis.KeyboardEvent) => {
@@ -132,7 +137,7 @@ export function FocusTrap({ active, children, onEscape, className, selectPortalH
         previouslyFocused?.focus?.()
       }
     }
-  }, [active, initialFocusRef, deferRestoreFocus])
+  }, [active, initialFocusRef, deferRestoreFocus, preserveFocusIfAlreadyWithin])
 
   return <div ref={containerRef} className={className} data-app-select-portal-root={selectPortalHost ? '' : undefined}>{children}</div>
 }

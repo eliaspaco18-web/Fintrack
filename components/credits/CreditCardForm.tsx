@@ -706,7 +706,6 @@ export function CreditCardForm({
         onStatementUpload={mode === 'edit' ? uploadStatement : undefined}
         onStatementOpen={mode === 'edit' ? openStatement : undefined}
         statementUploadCycleId={statementUploadCycleId}
-        onMovementModalOpenChange={onNestedModalOpenChange}
       />
 
       <RecordModalFooter>

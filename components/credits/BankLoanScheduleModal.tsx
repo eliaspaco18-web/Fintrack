@@ -110,6 +110,7 @@ export function BankLoanScheduleModal({
       bodyClassName="credits-modal-body !flex !flex-col !overflow-hidden py-4"
       presentation="workbench"
       workbenchKind="schedule"
+      preserveFocusOnResume
       motionSource="pointer"
       footer={(
         <FormActions
