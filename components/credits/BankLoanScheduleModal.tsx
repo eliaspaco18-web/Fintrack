@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button'
 import { NumericInput } from '@/components/ui/NumericInput'
 import { FormActions } from '@/components/forms/primitives'
 import { RecordModal } from '@/components/ui/RecordModal'
+import workbenchStyles from '@/components/credits/CreditsWorkbench.module.css'
 import {
   BANK_LOAN_DATE_INPUT_MIN_WIDTH,
 } from '@/components/credits/credits-schedule.constants'
@@ -30,6 +31,7 @@ type ScheduleTotals = {
 interface BankLoanScheduleModalProps {
   open: boolean
   onClose: () => void
+  onExitComplete?: () => void
   installments: InstallmentRow[]
   totalInstallmentsNum: number
   scheduleTotal: ScheduleTotals
@@ -85,6 +87,7 @@ function SummaryMetric({
 export function BankLoanScheduleModal({
   open,
   onClose,
+  onExitComplete,
   installments,
   totalInstallmentsNum,
   scheduleTotal,
@@ -97,12 +100,13 @@ export function BankLoanScheduleModal({
     <RecordModal
       open={open}
       onClose={onClose}
+      onExitComplete={onExitComplete}
       eyebrow="Créditos"
       title="Cronograma completo del préstamo"
       subtitle="Edita el calendario entero de cuotas en una ventana dedicada, con columnas estables y totales visibles."
       size="full-form"
       widthClassName="w-[calc(100vw-32px)] max-w-[1240px]"
-      overlayClassName="z-[132]"
+      overlayClassName={`z-[132] ${workbenchStyles.creditScheduleOverlay}`}
       bodyClassName="credits-modal-body !flex !flex-col !overflow-hidden py-4"
       presentation="workbench"
       workbenchKind="schedule"

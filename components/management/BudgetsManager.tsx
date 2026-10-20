@@ -1112,7 +1112,7 @@ export function BudgetsManager() {
           <div className={`${movementPageStyles.pageOverview} ${styles.budgetOverview}`} data-testid="budgets-page-overview">
             <header aria-labelledby="budgets-heading" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
-                <h1 id="budgets-heading" className="font-display text-[26px] font-semibold leading-8 tracking-[-0.035em] text-[var(--ft-text-strong)]">Presupuestos</h1>
+                <h1 id="budgets-heading" data-ft-route-heading="" tabIndex={-1} className="font-display text-[26px] font-semibold leading-8 tracking-[-0.035em] text-[var(--ft-text-strong)]">Presupuestos</h1>
                 <p className="mt-0.5 max-w-2xl text-[12px] leading-5 text-[var(--ft-text-muted)]">Límites que puedes revisar antes de tu próximo gasto.</p>
               </div>
               <div className={styles.budgetHeaderActions}>
@@ -1132,7 +1132,7 @@ export function BudgetsManager() {
               </div>
             </header>
 
-            <section aria-label={`Resumen de presupuestos: ${periodMonthLabel}`} className={`${movementPageStyles.summary} ${styles.budgetSummary}`}>
+            <section aria-label={`Resumen de presupuestos: ${periodMonthLabel}`} data-ft-route-group="summary" className={`${movementPageStyles.summary} ${styles.budgetSummary}`}>
               {!periodRowsReady && !periodRowsError ? (showPeriodSkeleton ? [0, 1, 2].map(item => (
                 <div key={item} aria-hidden="true" className={styles.summarySkeletonItem}>
                   <div className="h-3 w-24 animate-pulse rounded-full bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />

@@ -37,6 +37,7 @@ import { summarizeCredits } from '@/lib/credits/overview'
 import type { Credit } from '@/types/database.types'
 import pageStyles from '@/components/tables/TransactionsRound07.module.css'
 import styles from './CreditsListPanel.module.css'
+import workbenchStyles from './CreditsWorkbench.module.css'
 
 type ViewMode = 'list' | 'cards'
 type StatusFilter = 'all' | 'ACTIVE' | 'CLOSED' | 'BLOCKED'
@@ -127,7 +128,7 @@ function CreditSecondaryFacts({ credit }: { credit: CreditListItem }) {
     return (
       <div className={styles.secondaryFacts}>
         <span>{credit.has_loan ? 'Cronograma vinculado' : 'Cronograma no disponible'}</span>
-        <span>Vencimiento: consulta el detalle</span>
+        <span>Sin vencimiento registrado en esta vista</span>
       </div>
     )
   }
@@ -160,15 +161,18 @@ function CreditActions({
     ? <ActionIconButton icon="view" label={`Ver ${credit.display_type === 'CARD' ? 'tarjeta' : 'línea'}`} href={`/credits/${credit.id}`} testId={`credit-view-${credit.id}`} />
     : <ActionIconButton icon="view" label="Ver préstamo" testId={`credit-view-${credit.id}`} onClick={() => onViewLoan(credit)} />
   const actions: AnchoredAction[] = [
+    { id: 'edit', label: credit.display_type === 'LOAN' ? 'Editar préstamo' : 'Editar', onSelect: () => onEdit(credit) },
     { id: 'status', label: isActive ? 'Desactivar' : 'Activar', icon: isActive ? '−' : '+', onSelect: () => onToggle(credit) },
     { id: 'delete', label: 'Eliminar', icon: '×', destructive: true, onSelect: () => onDelete(credit) },
   ]
+  const secondaryActions = actions.filter(action => action.id !== 'edit')
 
   return (
     <div className={styles.rowActions}>
       {view}
-      <ActionIconButton icon="edit" label={credit.display_type === 'LOAN' ? 'Editar préstamo' : 'Editar'} disabled={loading} testId={`credit-edit-${credit.id}`} onClick={() => onEdit(credit)} />
-      <AnchoredActionMenu label={`Más acciones de ${credit.name}`} actions={actions} disabled={loading} align="end" />
+      <ActionIconButton className={styles.directEditAction} icon="edit" label={credit.display_type === 'LOAN' ? 'Editar préstamo' : 'Editar'} disabled={loading} testId={`credit-edit-${credit.id}`} onClick={() => onEdit(credit)} />
+      <span className={styles.desktopMoreAction}><AnchoredActionMenu label={`Más acciones de ${credit.name}`} actions={secondaryActions} disabled={loading} align="end" /></span>
+      <span className={styles.compactMoreAction}><AnchoredActionMenu label={`Acciones de ${credit.name}`} actions={actions} disabled={loading} align="end" /></span>
     </div>
   )
 }
@@ -434,7 +438,7 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
         <header className={`${pageStyles.pageOverview} ${styles.pageOverview}`} data-testid="credits-page-overview">
           <div className={styles.heroHeader}>
             <div className={styles.heroCopy}>
-              <h1>Créditos</h1>
+              <h1 data-ft-route-heading="" tabIndex={-1}>Créditos</h1>
               <p>Tarjetas, préstamos y líneas de crédito en su moneda y contexto.</p>
             </div>
             <CreateModuleButton
@@ -445,7 +449,7 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
             />
           </div>
 
-          <section className={`${pageStyles.summary} ${styles.summary}`} aria-label="Resumen de créditos">
+          <section className={`${pageStyles.summary} ${styles.summary}`} aria-label="Resumen de créditos" data-ft-route-group="summary">
             <div className={pageStyles.summaryItem}>
               <p>Deuda activa en tarjetas</p>
               <div className={`${pageStyles.summaryValue} ${styles.summaryValue}`}>
@@ -493,21 +497,22 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
               >{label}</button>
             ))}
           </div>
-          <div className={`${pageStyles.portfolioControls} ${styles.filterBar}`}>
+          <div className={`${pageStyles.controls} ${pageStyles.portfolioFilterBar} ${pageStyles.portfolioControls} ${styles.filterBar}`}>
+            <div className={pageStyles.controlsMain}>
             <DataSearchField
               value={search}
               onChange={setSearch}
               placeholder="Buscar crédito o entidad"
               aria-label="Buscar crédito o entidad"
               data-testid="credits-search-input"
-              className={styles.search}
+              className={`${pageStyles.searchControl} ${styles.search}`}
             />
             <AppSelect
               ariaLabel="Filtrar créditos por estado"
               value={statusFilter}
               onChange={value => setStatusFilter(value as StatusFilter)}
               compact
-              className={`${styles.filterSelect} filters-control`}
+              className={`${styles.filterSelect} ${styles.statusFilter} filters-control`}
               options={[
                 { value: 'all', label: 'Todos los estados' }, { value: 'ACTIVE', label: 'Activos' },
                 { value: 'CLOSED', label: 'Cerrados' }, { value: 'BLOCKED', label: 'Bloqueados' },
@@ -519,7 +524,7 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
               value={currencyFilter}
               onChange={value => setCurrencyFilter(value as CurrencyFilter)}
               compact
-              className={`${styles.filterSelect} filters-control`}
+              className={`${styles.filterSelect} ${styles.currencyFilter} filters-control`}
               options={[{ value: 'all', label: 'Todas las monedas' }, ...currencyOptions]}
               testId="credits-currency-filter"
             />
@@ -536,7 +541,8 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
               searchPlaceholder="Buscar entidad…"
               testId="credits-entity-filter"
             />
-            <div className={styles.toolbarActions}>
+            </div>
+            <div className={`${pageStyles.controlsActions} ${styles.toolbarActions}`}>
               <ViewToggle value={viewMode} onChange={setViewMode} id="credits-view-toggle" />
               <span className={styles.resultCount} aria-live="polite">{isLoading ? 'Cargando…' : `${filtered.length} productos`}</span>
             </div>
@@ -558,7 +564,7 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
         ) : viewMode === 'list' ? (
           <DataTable density="credit" className={styles.table}>
             <div className={styles.tableHeader}>
-              <span>Producto</span><span>Importe</span><span>Condiciones</span><span>Vencimiento</span><span className="text-right">Acciones</span>
+              <span>Producto</span><span>Importe</span><span>Línea / cronograma</span><span>Vencimiento</span><span className="text-right">Acciones</span>
             </div>
             <div className={styles.records}>{filtered.map(renderRecord)}</div>
           </DataTable>
@@ -577,6 +583,7 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
         widthClassName={editIsCard || editIsLoanFinancial ? 'w-[calc(100vw-32px)] max-w-[1120px]' : 'w-[calc(100vw-32px)] max-w-[720px]'}
         bodyClassName={editIsLoanFinancial ? 'credits-modal-body !overflow-hidden py-4' : undefined}
         presentation="workbench"
+        overlayClassName={editIsCard || editIsLoanFinancial ? workbenchStyles.creditFormOverlay : undefined}
         motionSource="pointer"
         testId="credits-edit-modal"
       >

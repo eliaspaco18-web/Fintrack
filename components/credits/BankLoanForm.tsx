@@ -206,14 +206,6 @@ export function BankLoanForm({
   }, [onLayoutPreferenceChange])
 
   useEffect(() => {
-    onNestedModalOpenChange?.(isScheduleModalOpen)
-
-    return () => {
-      onNestedModalOpenChange?.(false)
-    }
-  }, [isScheduleModalOpen, onNestedModalOpenChange])
-
-  useEffect(() => {
     if (totalInstallmentsNum < 1) return
 
     setInstallments(prev => {
@@ -494,12 +486,17 @@ export function BankLoanForm({
   }, [bankEntities, creditId, form, installments, mode, officialScheduleFile, onSuccess, saving, selectedAccount, totalInstallmentsNum, validateDetailsStep])
 
   const isDisabled = saving
+  const openScheduleModal = useCallback(() => {
+    onNestedModalOpenChange?.(true)
+    setIsScheduleModalOpen(true)
+  }, [onNestedModalOpenChange])
   const closeScheduleModal = useCallback(() => {
     setIsScheduleModalOpen(false)
-    requestAnimationFrame(() => {
-      document.getElementById('bank-loan-schedule-trigger')?.focus()
-    })
   }, [])
+  const finishScheduleClose = useCallback(() => {
+    onNestedModalOpenChange?.(false)
+    document.getElementById('bank-loan-schedule-trigger')?.focus({ preventScroll: true })
+  }, [onNestedModalOpenChange])
 
   return (
     <form
@@ -517,7 +514,7 @@ export function BankLoanForm({
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto pr-1 xl:grid-cols-[minmax(0,0.98fr)_minmax(0,1.02fr)] xl:overflow-visible xl:pr-0">
         <FormSection
           title="Datos del préstamo"
-          description="Entidad, destino del desembolso y nombre del préstamo."
+          description="Entidad, desembolso y nombre del préstamo."
           columns="2"
           className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
         >
@@ -599,7 +596,7 @@ export function BankLoanForm({
 
         <FormSection
           title="Condiciones iniciales"
-          description="Fechas, cuotas y moneda del desembolso."
+          description="Moneda, cuotas y fechas."
           columns="2"
           className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
         >
@@ -707,10 +704,10 @@ export function BankLoanForm({
 
         <FormSection
           title="Cronograma"
-          description="Revisa el alcance registrado del cronograma y abre el editor completo solo cuando quieras ajustar cada cuota."
+          description="Capital, intereses, seguros y cargos por cuota."
           className="flex min-h-0 flex-col rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-section-gap:12px] xl:col-span-2"
         >
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-[1fr_0.7fr_1fr_1fr_1.1fr_1fr_auto]">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-[1fr_0.7fr_1fr_1fr_1.1fr_1fr_auto]">
             <SummaryStat label="Capital total" value={formatNumber(scheduleTotal.principal)} numeric />
             <SummaryStat label="Cuotas" value={installments.length} numeric />
             <SummaryStat label="Primera cuota" value={firstInstallmentDate} />
@@ -722,7 +719,7 @@ export function BankLoanForm({
               type="button"
               variant="secondary"
               size="md"
-              onClick={() => setIsScheduleModalOpen(true)}
+              onClick={openScheduleModal}
               disabled={isDisabled}
               className="h-full min-h-[76px] w-full lg:w-auto"
             >
@@ -739,6 +736,7 @@ export function BankLoanForm({
       <BankLoanScheduleModal
         open={isScheduleModalOpen}
         onClose={closeScheduleModal}
+        onExitComplete={finishScheduleClose}
         installments={installments}
         totalInstallmentsNum={totalInstallmentsNum}
         scheduleTotal={scheduleTotal}

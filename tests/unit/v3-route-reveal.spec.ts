@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolve } from 'node:path'
 import * as ts from 'typescript'
 
 function hookSource(): string {
@@ -68,4 +69,12 @@ test('pointer module commits use only the 0/24/48ms three-group reveal; keyboard
   await page.locator('#pointer').click()
   await expect(page.locator('#announcement')).toHaveText('/portfolio')
   expect(await page.evaluate(() => (window as unknown as { routeAnimations: unknown[] }).routeAnimations.length)).toBe(3)
+})
+
+test('Budgets route reveal targets only its heading and summary, leaving the tab divider outside the animation group', () => {
+  const source = readFileSync(resolve(process.cwd(), 'components/management/BudgetsManager.tsx'), 'utf8')
+  expect(source).toContain('data-ft-route-heading=""')
+  expect(source).toContain('data-ft-route-group="summary"')
+  expect(source).toContain('className={`${styles.budgetTabs} ${movementPageStyles.tabs}`}')
+  expect(source).not.toContain('data-ft-route-group="work"')
 })

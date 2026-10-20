@@ -4,16 +4,16 @@ import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { FormActions } from '@/components/forms/primitives'
 import { RecordModal } from '@/components/ui/RecordModal'
+import { AppSelect } from '@/components/ui/AppSelect'
 import {
   CREDIT_CARD_DATE_INPUT_MIN_WIDTH,
-  CREDIT_CARD_MONTH_SELECT_MIN_WIDTH,
-  CREDIT_CARD_YEAR_SELECT_MIN_WIDTH,
   SCHEDULE_MONTHS,
   formatBillingCycleLabel,
   formatDuplicateCycleMessage,
 } from '@/components/credits/credits-schedule.constants'
 import { formatNumber } from '@/lib/contracts/ui.contracts'
 import { getBillingCycleDateIssue } from '@/modules/credits/billing-cycle-integrity'
+import workbenchStyles from '@/components/credits/CreditsWorkbench.module.css'
 
 export type BillingCycleRow = {
   id: string
@@ -82,6 +82,7 @@ interface CreditCardScheduleEditorProps {
 interface CreditCardScheduleModalProps extends CreditCardScheduleEditorProps {
   open: boolean
   onClose: () => void
+  onExitComplete?: () => void
 }
 
 const CREDIT_CARD_SCHEDULE_COLUMN_SHARES = {
@@ -286,35 +287,32 @@ export function CreditCardScheduleEditor({
                             : 'border-[var(--ft-form-border)] bg-[var(--ft-form-surface)]'}
                         `}
                       >
-                        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_84px] items-center gap-2">
-                          <select
-                            aria-label="Mes del periodo"
+                        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_88px] items-center gap-2">
+                          <AppSelect
+                            ariaLabel="Mes del periodo"
                             value={cycle.billing_month}
-                            onChange={event => onUpdateCycle(cycle.id, { billing_month: event.target.value })}
-                            className="field-base ft-form-input h-10 w-full min-w-[128px] px-2.5 py-0 text-left text-[12px]"
-                            style={{ minWidth: `${CREDIT_CARD_MONTH_SELECT_MIN_WIDTH}px` }}
+                            onChange={value => onUpdateCycle(cycle.id, { billing_month: value })}
+                            className="min-w-0 w-full"
+                            buttonClassName="h-10 min-h-10 px-2.5 text-left text-[12px]"
+                            compact
+                            searchable={false}
+                            matchTriggerWidth
                             disabled={disabled}
-                          >
-                            {SCHEDULE_MONTHS.map(month => (
-                              <option key={month.value} value={month.value}>
-                                {month.label}
-                              </option>
-                            ))}
-                          </select>
-                          <select
-                            aria-label="Año del periodo"
+                            options={SCHEDULE_MONTHS}
+                          />
+                          <AppSelect
+                            ariaLabel="Año del periodo"
                             value={cycle.billing_year}
-                            onChange={event => onUpdateCycle(cycle.id, { billing_year: event.target.value })}
-                            className="field-base ft-form-input h-10 w-[84px] min-w-[84px] px-2.5 py-0 text-center text-[12px]"
-                            style={{ minWidth: `${CREDIT_CARD_YEAR_SELECT_MIN_WIDTH}px` }}
+                            onChange={value => onUpdateCycle(cycle.id, { billing_year: value })}
+                            className="w-[88px] min-w-[88px]"
+                            buttonClassName="h-10 min-h-10 px-2 text-center text-[12px]"
+                            compact
+                            searchable
+                            searchPlaceholder="Buscar año…"
+                            matchTriggerWidth
                             disabled={disabled}
-                          >
-                            {yearOptions.map(year => (
-                              <option key={year.value} value={year.value}>
-                                {year.label}
-                              </option>
-                            ))}
-                          </select>
+                            options={yearOptions}
+                          />
                         </div>
                         {isDuplicate ? (
                           <p className="mt-2 text-[11px] font-medium text-[var(--ft-form-error)]">
@@ -622,18 +620,20 @@ export function CreditCardScheduleEditor({
 export function CreditCardScheduleModal({
   open,
   onClose,
+  onExitComplete,
   ...editorProps
 }: CreditCardScheduleModalProps) {
   return (
     <RecordModal
       open={open}
       onClose={onClose}
+      onExitComplete={onExitComplete}
       eyebrow="Créditos"
       title="Cronograma completo de la tarjeta"
       subtitle="Edita ciclos de facturación, estados de cuenta y movimientos del periodo en una lectura estable."
       size="full-form"
       widthClassName="w-[calc(100vw-32px)] max-w-[1240px]"
-      overlayClassName="z-[132]"
+      overlayClassName={`z-[132] ${workbenchStyles.creditScheduleOverlay}`}
       bodyClassName="credits-modal-body !overflow-hidden py-4"
       presentation="workbench"
       workbenchKind="schedule"

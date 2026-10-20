@@ -15,6 +15,7 @@ import { CreditTypeSelector } from '@/components/credits/CreditTypeSelector'
 import { CreditCardForm } from '@/components/credits/CreditCardForm'
 import { BankLoanForm } from '@/components/credits/BankLoanForm'
 import { CreditsListPanel } from '@/components/credits/CreditsListPanel'
+import workbenchStyles from '@/components/credits/CreditsWorkbench.module.css'
 
 export type CreditMode = 'CARD' | 'BANK'
 type CreditModalSize = 'sm' | 'lg' | 'xl' | 'full-form'
@@ -123,8 +124,8 @@ export function CreditsWorkspace() {
 
   const modalSubtitle = modalStep === 'form'
     ? (selectedMode === 'CARD'
-      ? 'Completa los datos esenciales de la tarjeta y revisa el cronograma desde un resumen compacto dentro del mismo flujo.'
-      : 'Completa los datos base del préstamo y revisa el cronograma desde un resumen compacto dentro del mismo flujo.')
+      ? 'Registra la tarjeta, su línea y los ciclos de facturación.'
+      : 'Registra las condiciones y el cronograma del préstamo.')
     : 'Selecciona el tipo de crédito a registrar.'
 
   return (
@@ -142,6 +143,7 @@ export function CreditsWorkspace() {
         focusTrapActive={!isNestedModalOpen}
         bodyClassName={modalStep === 'form' ? 'credits-modal-body !overflow-hidden py-4' : ''}
         presentation="workbench"
+        overlayClassName={modalStep === 'form' ? workbenchStyles.creditFormOverlay : undefined}
         motionSource="pointer"
       >
         {modalStep === 'select_type' ? (

@@ -75,32 +75,41 @@
   min-width: 0;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   margin-bottom: 12px;
 }
-.search { min-width: min(100%, 220px); flex: 1 1 240px; }
-.filterSelect {
-  width: 164px;
+.search { min-width: 0; }
+.controlsMain :global(input[data-testid='credits-search-input']) {
+  width: 0;
   min-width: 0;
-  flex: 0 1 164px;
-}
-.entityFilter { width: 205px; flex-basis: 205px; }
-.filterSelect :global(.app-select-trigger-compact) {
-  height: 38px;
-  min-height: 38px;
-  border-color: var(--ft-r07-line);
-  border-radius: 10px;
-  background: var(--ft-r07-surface);
-  padding-inline: 10px;
-  color: var(--ft-r07-ink);
-  font-family: Manrope, system-ui, sans-serif;
+  max-width: none;
+  flex: 1 1 auto;
+  height: 20px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--ft-r07-muted);
   font-size: 12px;
+  line-height: 18px;
+  box-shadow: none;
 }
-.filterSelect :global(.app-select-trigger-compact:hover) { background: var(--ft-r07-hover); }
-.filterSelect :global(.app-select-trigger-compact:focus-visible) {
-  outline: 2px solid var(--ft-primary);
-  outline-offset: 3px;
+.controlsMain :global(input[data-testid='credits-search-input']:hover),
+.controlsMain :global(input[data-testid='credits-search-input']:focus) {
+  border: 0;
+  box-shadow: none;
+  outline: 0;
 }
+@media (max-width: 767px) {
+  .controlsMain :global(input[data-testid='credits-search-input']) { font-size: 16px; }
+}
+.filterBar .filterSelect:global(.filters-control) {
+  width: 150px;
+  min-width: 0;
+  flex: 0 0 auto;
+}
+.filterBar .currencyFilter:global(.filters-control) { width: 132px; }
+.filterBar .entityFilter:global(.filters-control) { width: 208px; }
 .toolbarActions {
   display: flex;
   flex: 0 0 auto;
@@ -120,25 +129,25 @@
 .tableHeader,
 .recordRow {
   display: grid;
-  grid-template-columns: minmax(200px, 1.35fr) minmax(150px, .95fr) minmax(230px, 1.25fr) minmax(130px, .72fr) minmax(112px, auto);
+  grid-template-columns: minmax(190px, 26fr) minmax(160px, 23fr) minmax(180px, 21fr) minmax(140px, 20fr) minmax(112px, 10fr);
   align-items: center;
-  gap: 16px;
+  gap: 12px;
 }
 .tableHeader {
-  min-height: 42px;
+  min-height: 36px;
   border-bottom: 1px solid var(--ft-border);
   background: var(--ft-surface-muted);
-  padding: 0 16px;
+  padding: 0 14px;
   color: var(--ft-text-muted);
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: .06em;
+  letter-spacing: .035em;
   text-transform: uppercase;
 }
 .records > :not(:last-child) { border-bottom: 1px solid var(--ft-border); }
 .recordRow {
-  min-height: 72px;
-  padding: 11px 16px;
+  min-height: 68px;
+  padding: 9px 14px;
   transition: background-color 140ms ease;
 }
 .recordRow:hover { background: var(--ft-surface-muted); }
@@ -151,12 +160,12 @@
 }
 .creditIcon {
   display: grid;
-  width: 38px;
-  height: 38px;
-  flex: 0 0 38px;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
   place-items: center;
   border: 1px solid var(--ft-border);
-  border-radius: 11px;
+  border-radius: 9px;
 }
 .cardIcon { background: var(--ft-info-soft); color: var(--ft-info); }
 .loanIcon { background: var(--ft-warning-soft); color: var(--ft-warning); }
@@ -191,6 +200,9 @@
 .dateCell { min-width: 0; color: var(--ft-text-muted); font-size: 11px; line-height: 16px; }
 .actionCell { display: flex; justify-content: flex-end; }
 .rowActions { display: flex; align-items: center; gap: 4px; }
+.desktopMoreAction { display: inline-flex; }
+.compactMoreAction { display: none; }
+.directEditAction { flex: 0 0 auto; }
 
 .cardGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .creditCard {
@@ -210,11 +222,11 @@
 .cardActions { display: flex; justify-content: flex-end; padding-top: 2px; }
 .skeletonRow {
   display: grid;
-  min-height: 72px;
-  grid-template-columns: minmax(200px, 1.35fr) minmax(150px, .95fr) minmax(230px, 1.25fr) minmax(130px, .72fr) minmax(112px, auto);
+  min-height: 68px;
+  grid-template-columns: minmax(190px, 26fr) minmax(160px, 23fr) minmax(180px, 21fr) minmax(140px, 20fr) minmax(112px, 10fr);
   align-items: center;
-  gap: 16px;
-  padding: 12px 16px;
+  gap: 12px;
+  padding: 10px 14px;
 }
 .skeletonRow span { height: 12px; border-radius: 999px; background: var(--ft-surface-muted); animation: pulse 1.4s ease-in-out infinite; }
 .skeletonRow span:first-child { width: 76%; height: 28px; }
@@ -228,25 +240,32 @@
   .tableHeader,
   .recordRow,
   .skeletonRow {
-    grid-template-columns: minmax(170px, 1.2fr) minmax(140px, .9fr) minmax(190px, 1.1fr) minmax(112px, .7fr) minmax(100px, auto);
-    gap: 10px;
+    grid-template-columns: minmax(160px, 26fr) minmax(132px, 23fr) minmax(155px, 21fr) minmax(124px, 20fr) minmax(96px, 10fr);
+    gap: 8px;
   }
-  .tableHeader,.recordRow,.skeletonRow { padding-inline: 12px; }
+  .tableHeader,.recordRow,.skeletonRow { padding-inline: 10px; }
 }
 
 @media (max-width: 980px) {
-  .tableHeader { display: none; }
-  .recordRow {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 9px 14px;
-    padding: 13px 14px;
+  .tableHeader,
+  .recordRow,
+  .skeletonRow {
+    grid-template-columns: minmax(0, 27fr) minmax(0, 23fr) minmax(0, 20fr) minmax(0, 17fr) minmax(94px, 13fr);
+    gap: 8px;
+    padding-inline: 10px;
   }
-  .productCell { grid-column: 1 / -1; }
-  .amountCell,.detailsCell,.dateCell { grid-column: 1; }
-  .actionCell { grid-column: 2; grid-row: 2 / span 3; align-self: center; }
-  .rowActions { flex-wrap: wrap; justify-content: flex-end; }
-  .skeletonRow { grid-template-columns: minmax(0, 1fr) 80px; gap: 12px; }
-  .skeletonRow span:nth-child(n+3) { display: none; }
+  .tableHeader { min-height: 36px; font-size: 9px; }
+  .recordRow { min-height: 80px; padding-block: 10px; }
+  .creditIcon { display: none; }
+  .productCell { gap: 0; }
+  .productMeta { white-space: normal; }
+  .detailsCell { gap: 3px; }
+  .kindLine { gap: 4px; }
+  .actionCell { min-width: 0; justify-content: flex-end; }
+  .rowActions { gap: 3px; }
+  .directEditAction,
+  .desktopMoreAction { display: none; }
+  .compactMoreAction { display: inline-flex; }
 }
 
 @media (max-width: 767px) {
@@ -255,16 +274,21 @@
   .summary { gap: 16px 24px; }
   .productSummary { min-width: min(100%, 145px); }
   .filterBar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .filterBar > .controlsMain,
+  .filterBar > .toolbarActions { grid-column: 1 / -1; }
+  .filterBar .entityFilter { grid-column: 1 / -1; }
   .search { grid-column: 1 / -1; min-width: 0; width: 100%; }
-  .filterSelect,.entityFilter { width: 100%; min-width: 0; flex: initial; }
-  .filterSelect :global(.app-select-trigger-compact) { height: 44px; min-height: 44px; }
+  .filterBar .filterSelect:global(.filters-control),
+  .filterBar .currencyFilter:global(.filters-control),
+  .filterBar .entityFilter:global(.filters-control) { width: 100%; min-width: 0; flex: initial; }
   .toolbarActions { grid-column: 1 / -1; justify-content: space-between; margin-left: 0; }
   .tableHeader { display: none; }
   .recordRow {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) minmax(94px, auto);
     gap: 9px 12px;
     padding: 13px;
   }
+  .creditIcon { display: grid; width: 32px; height: 32px; flex-basis: 32px; }
   .productCell { grid-column: 1 / -1; }
   .amountCell { grid-column: 1; }
   .detailsCell { grid-column: 1; }

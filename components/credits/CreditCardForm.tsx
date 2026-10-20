@@ -7,7 +7,7 @@ import { NumericInput } from '@/components/ui/NumericInput'
 import { FormActions, FormField, FormSection } from '@/components/forms/primitives'
 import { RecordModalFooter } from '@/components/ui/RecordModal'
 import { CreditInfoHint } from '@/components/credits/CreditInfoHint'
-import { CreditCardScheduleEditor, type BillingCycleRow } from '@/components/credits/CreditCardScheduleModal'
+import { CreditCardScheduleModal, type BillingCycleRow } from '@/components/credits/CreditCardScheduleModal'
 import {
   formatBillingCycleLabel,
 } from '@/components/credits/credits-schedule.constants'
@@ -126,6 +126,9 @@ export function CreditCardForm({
 
   const [cycles, setCycles] = useState<BillingCycleRow[]>([newCycleRow()])
   const [cyclesDirty, setCyclesDirty] = useState(false)
+  const [cyclesLoading, setCyclesLoading] = useState(mode === 'edit')
+  const [cyclesLoadError, setCyclesLoadError] = useState(false)
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
   const [statementUploadCycleId, setStatementUploadCycleId] = useState<string | null>(null)
 
   const selectedBankEntity = useMemo(
@@ -218,6 +221,8 @@ export function CreditCardForm({
     if (mode !== 'edit' || !credit?.id) return
 
     const loadCycles = async () => {
+      setCyclesLoading(true)
+      setCyclesLoadError(false)
       try {
         const res = await fetch(`/api/credits/${credit.id}/billing-cycles`, { cache: 'no-store' })
         const json = await res.json().catch(() => null)
@@ -256,7 +261,10 @@ export function CreditCardForm({
         setCycles(loaded.length > 0 ? loaded : [newCycleRow()])
         setCyclesDirty(false)
       } catch (caught) {
+        setCyclesLoadError(true)
         setError(caught instanceof Error ? caught.message : 'Error cargando ciclos de facturación')
+      } finally {
+        setCyclesLoading(false)
       }
     }
 
@@ -277,6 +285,19 @@ export function CreditCardForm({
     setCyclesDirty(true)
     setCycles(prev => prev.map(cycle => (cycle.id === id ? { ...cycle, ...patch } : cycle)))
   }, [])
+
+  const openScheduleModal = useCallback(() => {
+    onNestedModalOpenChange?.(true)
+    setIsScheduleModalOpen(true)
+  }, [onNestedModalOpenChange])
+
+  const closeScheduleModal = useCallback(() => {
+    setIsScheduleModalOpen(false)
+  }, [])
+  const finishScheduleClose = useCallback(() => {
+    onNestedModalOpenChange?.(false)
+    document.getElementById('credit-card-schedule-trigger')?.focus({ preventScroll: true })
+  }, [onNestedModalOpenChange])
 
   const uploadStatement = useCallback(async (cycleId: string, file: File) => {
     if (mode !== 'edit' || !credit?.id) {
@@ -473,7 +494,7 @@ export function CreditCardForm({
       <div className="grid min-h-0 flex-1 grid-cols-1 items-start gap-4 overflow-y-auto pr-1 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] xl:overflow-visible xl:pr-0">
         <FormSection
           title="Datos esenciales"
-          description="Identidad y línea de la tarjeta."
+          description="Identidad y línea aprobada."
           columns="2"
           className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
         >
@@ -641,24 +662,52 @@ export function CreditCardForm({
           </div>
         </section>
 
-        <div className="min-h-0 rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 xl:col-span-2">
-          <CreditCardScheduleEditor
-            cycles={cycles}
-            duplicateCycleKeys={duplicateCycleKeys}
-            duplicateCycleLabels={duplicateCycleLabels}
-            yearOptions={YEARS}
-            disabled={isDisabled}
-            compact
-            onAddCycle={addCycle}
-            onRemoveCycle={removeCycle}
-            onUpdateCycle={updateCycle}
-            onStatementUpload={mode === 'edit' ? uploadStatement : undefined}
-            onStatementOpen={mode === 'edit' ? openStatement : undefined}
-            statementUploadCycleId={statementUploadCycleId}
-            onMovementModalOpenChange={onNestedModalOpenChange}
-          />
-        </div>
+        <section className="min-w-0 rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 xl:col-span-2" aria-labelledby="credit-card-cycles-heading">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h3 id="credit-card-cycles-heading" className="text-[14px] font-semibold leading-5 text-[var(--ft-text-strong)]">Ciclos de facturación</h3>
+                <CreditInfoHint label="Ayuda sobre los ciclos de facturación">Define el período de consumo y la fecha de pago de cada ciclo. Los importes y documentos se mantienen por ciclo.</CreditInfoHint>
+              </div>
+              <p className="mt-1 text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
+                {cyclesLoading ? 'Cargando ciclos…' : cyclesLoadError ? 'Ciclos no disponibles' : `${cycles.length} ciclo${cycles.length === 1 ? '' : 's'} · ${cycles.slice(0, 2).map(cycle => formatBillingCycleLabel(cycle.billing_month, cycle.billing_year)).join(' · ')}${cycles.length > 2 ? ` · +${cycles.length - 2}` : ''}`}
+              </p>
+              {duplicateCycleLabels.length > 0 ? (
+                <p className="mt-1 text-[11px] font-medium text-[var(--ft-form-error)]">{duplicateCycleLabels.join(', ')}: revisa períodos duplicados.</p>
+              ) : null}
+            </div>
+            <Button
+              id="credit-card-schedule-trigger"
+              type="button"
+              variant="secondary"
+              size="md"
+              onClick={openScheduleModal}
+              disabled={isDisabled || cyclesLoading || cyclesLoadError}
+              className="shrink-0"
+            >
+              Revisar ciclos
+            </Button>
+          </div>
+        </section>
       </div>
+
+      <CreditCardScheduleModal
+        open={isScheduleModalOpen}
+        onClose={closeScheduleModal}
+        onExitComplete={finishScheduleClose}
+        cycles={cycles}
+        duplicateCycleKeys={duplicateCycleKeys}
+        duplicateCycleLabels={duplicateCycleLabels}
+        yearOptions={YEARS}
+        disabled={isDisabled || cyclesLoading || cyclesLoadError}
+        onAddCycle={addCycle}
+        onRemoveCycle={removeCycle}
+        onUpdateCycle={updateCycle}
+        onStatementUpload={mode === 'edit' ? uploadStatement : undefined}
+        onStatementOpen={mode === 'edit' ? openStatement : undefined}
+        statementUploadCycleId={statementUploadCycleId}
+        onMovementModalOpenChange={onNestedModalOpenChange}
+      />
 
       <RecordModalFooter>
         <FormActions
