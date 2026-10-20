@@ -232,8 +232,8 @@ function InnerShell({ user, navBadges = {}, children }: Omit<AppShellProps, 'exc
           <div
             key={pathname}
             ref={routeContentRef}
-            className={`ft-shell-content w-full ${pathname === '/dashboard' ? 'ft-shell-content-dashboard' : ''} ${pathname === '/transactions' || pathname === '/portfolio' || pathname === '/budgets' ? transactionStyles.v3ModuleContent : ''}`}
-            data-ft-v3={pathname === '/portfolio' ? '' : undefined}
+            className={`ft-shell-content w-full ${pathname === '/dashboard' ? 'ft-shell-content-dashboard' : ''} ${pathname === '/transactions' || pathname === '/portfolio' || pathname === '/budgets' || pathname === '/credits' || pathname.startsWith('/credits/') ? transactionStyles.v3ModuleContent : ''}`}
+            data-ft-v3={pathname === '/portfolio' || pathname === '/credits' || pathname.startsWith('/credits/') ? '' : undefined}
             style={{ paddingBottom: 'max(6rem, calc(var(--fab-safe-area, 0px) + 1.5rem))' }}
           >
             <ProductUpdatesBanner />

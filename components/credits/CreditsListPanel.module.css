@@ -1,0 +1,282 @@
+.page {
+  display: flex;
+  width: 100%;
+  max-width: none;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  padding-bottom: 40px;
+}
+
+.pageOverview {
+  margin-bottom: 20px;
+}
+
+.heroHeader {
+  display: flex;
+  min-height: 52px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.heroCopy { min-width: 0; }
+.heroCopy h1 {
+  margin: 0;
+  color: var(--ft-r07-ink);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 34px;
+  letter-spacing: -.8px;
+}
+.heroCopy p {
+  margin: 5px 0 0;
+  color: var(--ft-r07-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+.createAction { flex: 0 0 auto; }
+
+.summary { gap: 36px; }
+.summaryValue { font-family: Manrope, system-ui, sans-serif; }
+.summaryDetail {
+  display: block;
+  margin-top: 3px;
+  color: var(--ft-r07-muted);
+  font-size: 11px;
+  line-height: 18px;
+}
+.productSummary { min-width: 170px; }
+
+.controls { min-width: 0; }
+.tabs {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tabs button {
+  flex: 0 0 auto;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--ft-r07-muted);
+  white-space: nowrap;
+}
+.tabs button:hover { color: var(--ft-r07-ink); }
+.tabs button.activeTab,
+.tabs button[aria-selected='true'] {
+  border-bottom-color: var(--ft-primary);
+  color: var(--ft-primary);
+}
+.filterBar {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.search { min-width: min(100%, 220px); flex: 1 1 240px; }
+.filterSelect {
+  width: 164px;
+  min-width: 0;
+  flex: 0 1 164px;
+}
+.entityFilter { width: 205px; flex-basis: 205px; }
+.filterSelect :global(.app-select-trigger-compact) {
+  height: 38px;
+  min-height: 38px;
+  border-color: var(--ft-r07-line);
+  border-radius: 10px;
+  background: var(--ft-r07-surface);
+  padding-inline: 10px;
+  color: var(--ft-r07-ink);
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 12px;
+}
+.filterSelect :global(.app-select-trigger-compact:hover) { background: var(--ft-r07-hover); }
+.filterSelect :global(.app-select-trigger-compact:focus-visible) {
+  outline: 2px solid var(--ft-primary);
+  outline-offset: 3px;
+}
+.toolbarActions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-left: auto;
+}
+.resultCount {
+  color: var(--ft-r07-muted);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.table { min-width: 0; }
+.tableHeader,
+.recordRow {
+  display: grid;
+  grid-template-columns: minmax(200px, 1.35fr) minmax(150px, .95fr) minmax(230px, 1.25fr) minmax(130px, .72fr) minmax(112px, auto);
+  align-items: center;
+  gap: 16px;
+}
+.tableHeader {
+  min-height: 42px;
+  border-bottom: 1px solid var(--ft-border);
+  background: var(--ft-surface-muted);
+  padding: 0 16px;
+  color: var(--ft-text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.records > :not(:last-child) { border-bottom: 1px solid var(--ft-border); }
+.recordRow {
+  min-height: 72px;
+  padding: 11px 16px;
+  transition: background-color 140ms ease;
+}
+.recordRow:hover { background: var(--ft-surface-muted); }
+.productCell,
+.cardHeader {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 11px;
+}
+.creditIcon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  place-items: center;
+  border: 1px solid var(--ft-border);
+  border-radius: 11px;
+}
+.cardIcon { background: var(--ft-info-soft); color: var(--ft-info); }
+.loanIcon { background: var(--ft-warning-soft); color: var(--ft-warning); }
+.lineIcon { background: var(--ft-primary-soft); color: var(--ft-primary); }
+.productCopy { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.productName {
+  overflow: hidden;
+  color: var(--ft-text-strong);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.productMeta,
+.secondaryFacts {
+  color: var(--ft-text-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+.productMeta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.amountCell { min-width: 0; }
+.amountStack { display: grid; min-width: 0; gap: 2px; }
+.cellLabel { color: var(--ft-text-muted); font-size: 10px; line-height: 14px; }
+.amountLine { display: flex; min-width: 0; align-items: baseline; gap: 6px; color: var(--ft-text-strong); font-variant-numeric: tabular-nums; }
+.amountLine > :global(*) { min-width: 0; }
+.currencyCode { color: var(--ft-text-subtle); font-size: 10px; font-weight: 600; }
+.unavailableValue { color: var(--ft-text-muted); font-size: 12px; }
+.detailsCell { display: grid; min-width: 0; gap: 5px; }
+.kindLine { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.secondaryFacts { display: grid; gap: 1px; overflow-wrap: anywhere; }
+.dateCell { min-width: 0; color: var(--ft-text-muted); font-size: 11px; line-height: 16px; }
+.actionCell { display: flex; justify-content: flex-end; }
+.rowActions { display: flex; align-items: center; gap: 4px; }
+
+.cardGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.creditCard {
+  display: grid;
+  min-width: 0;
+  gap: 13px;
+  border: 1px solid var(--ft-border);
+  border-radius: 14px;
+  background: var(--ft-surface);
+  padding: 14px;
+  box-shadow: var(--shadow-elevation-sm, 0 1px 2px rgb(25 32 36 / 4%));
+}
+.cardHeader { align-items: flex-start; }
+.cardAmount { border-top: 1px solid var(--ft-border); border-bottom: 1px solid var(--ft-border); padding: 11px 0; }
+.cardFacts { display: flex; min-width: 0; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
+.cardFacts .secondaryFacts { flex-basis: 100%; }
+.cardActions { display: flex; justify-content: flex-end; padding-top: 2px; }
+.skeletonRow {
+  display: grid;
+  min-height: 72px;
+  grid-template-columns: minmax(200px, 1.35fr) minmax(150px, .95fr) minmax(230px, 1.25fr) minmax(130px, .72fr) minmax(112px, auto);
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+}
+.skeletonRow span { height: 12px; border-radius: 999px; background: var(--ft-surface-muted); animation: pulse 1.4s ease-in-out infinite; }
+.skeletonRow span:first-child { width: 76%; height: 28px; }
+.skeletonRow span:nth-child(2) { width: 65%; }
+.skeletonRow span:nth-child(3) { width: 82%; }
+.skeletonRow span:nth-child(4) { width: 60%; }
+.skeletonRow span:nth-child(5) { width: 75%; }
+@keyframes pulse { 50% { opacity: .55; } }
+
+@media (max-width: 1100px) {
+  .tableHeader,
+  .recordRow,
+  .skeletonRow {
+    grid-template-columns: minmax(170px, 1.2fr) minmax(140px, .9fr) minmax(190px, 1.1fr) minmax(112px, .7fr) minmax(100px, auto);
+    gap: 10px;
+  }
+  .tableHeader,.recordRow,.skeletonRow { padding-inline: 12px; }
+}
+
+@media (max-width: 980px) {
+  .tableHeader { display: none; }
+  .recordRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 9px 14px;
+    padding: 13px 14px;
+  }
+  .productCell { grid-column: 1 / -1; }
+  .amountCell,.detailsCell,.dateCell { grid-column: 1; }
+  .actionCell { grid-column: 2; grid-row: 2 / span 3; align-self: center; }
+  .rowActions { flex-wrap: wrap; justify-content: flex-end; }
+  .skeletonRow { grid-template-columns: minmax(0, 1fr) 80px; gap: 12px; }
+  .skeletonRow span:nth-child(n+3) { display: none; }
+}
+
+@media (max-width: 767px) {
+  .heroHeader { min-height: auto; align-items: flex-start; flex-direction: column; gap: 12px; margin-bottom: 20px; }
+  .createAction { width: 100%; }
+  .summary { gap: 16px 24px; }
+  .productSummary { min-width: min(100%, 145px); }
+  .filterBar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .search { grid-column: 1 / -1; min-width: 0; width: 100%; }
+  .filterSelect,.entityFilter { width: 100%; min-width: 0; flex: initial; }
+  .filterSelect :global(.app-select-trigger-compact) { height: 44px; min-height: 44px; }
+  .toolbarActions { grid-column: 1 / -1; justify-content: space-between; margin-left: 0; }
+  .tableHeader { display: none; }
+  .recordRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 9px 12px;
+    padding: 13px;
+  }
+  .productCell { grid-column: 1 / -1; }
+  .amountCell { grid-column: 1; }
+  .detailsCell { grid-column: 1; }
+  .dateCell { grid-column: 1; }
+  .actionCell { grid-column: 2; grid-row: 2 / span 3; align-self: center; }
+  .rowActions { flex-wrap: wrap; justify-content: flex-end; }
+  .cardGrid { grid-template-columns: minmax(0, 1fr); }
+  .skeletonRow { grid-template-columns: minmax(0, 1fr) 68px; gap: 10px; }
+  .skeletonRow span:nth-child(n+3) { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recordRow { transition: none; }
+  .skeletonRow span { animation: none; }
+}

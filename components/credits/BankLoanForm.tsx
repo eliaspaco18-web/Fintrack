@@ -7,6 +7,8 @@ import { NumericInput } from '@/components/ui/NumericInput'
 import { FormActions, FormField, FormSection } from '@/components/forms/primitives'
 import { RecordModalFooter } from '@/components/ui/RecordModal'
 import { BankLoanScheduleModal } from '@/components/credits/BankLoanScheduleModal'
+import { CreditInfoHint } from '@/components/credits/CreditInfoHint'
+import { IncomeDatePicker } from '@/components/forms/TransactionForm/IncomeDatePicker'
 import { formatScheduleDateLabel } from '@/components/credits/credits-schedule.constants'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { requestAttachmentUpload } from '@/modules/attachments/attachment-client'
@@ -164,6 +166,7 @@ export function BankLoanForm({
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [dateErrors, setDateErrors] = useState<{ disbursement: string | null; firstInstallment: string | null }>({ disbursement: null, firstInstallment: null })
 
   const [form, setForm] = useState<LoanFormState>({
     name: '',
@@ -514,7 +517,7 @@ export function BankLoanForm({
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto pr-1 xl:grid-cols-[minmax(0,0.98fr)_minmax(0,1.02fr)] xl:overflow-visible xl:pr-0">
         <FormSection
           title="Datos del préstamo"
-          description="Primero registra la entidad, el destino del desembolso y el nombre operativo del crédito."
+          description="Entidad, destino del desembolso y nombre del préstamo."
           columns="2"
           className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
         >
@@ -575,7 +578,7 @@ export function BankLoanForm({
 
           <FormField
             label="Tipo de préstamo"
-            description="Se usará para compararlo con la tasa de mercado correspondiente."
+            labelAdornment={<CreditInfoHint label="Ayuda sobre el tipo de préstamo">Esta clasificación se usa para comparar la tasa con referencias del mismo tipo.</CreditInfoHint>}
             className="md:col-span-2"
           >
             <AppSelect
@@ -596,7 +599,7 @@ export function BankLoanForm({
 
         <FormSection
           title="Condiciones iniciales"
-          description="Define las fechas y el número de cuotas; el capital se obtiene del cronograma registrado."
+          description="Fechas, cuotas y moneda del desembolso."
           columns="2"
           className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
         >
@@ -611,7 +614,7 @@ export function BankLoanForm({
           </div>
 
           {currency === 'USD' ? (
-            <FormField label="Tipo de cambio USD → PEN">
+            <FormField label="Tipo de cambio USD → PEN" labelAdornment={<CreditInfoHint label="Ayuda sobre el tipo de cambio">Se utiliza para registrar el desembolso en PEN equivalente, sin cambiar la moneda original del préstamo.</CreditInfoHint>}>
               <NumericInput
                 step="0.001"
                 decimals={3}
@@ -645,26 +648,32 @@ export function BankLoanForm({
             />
           </FormField>
 
-          <FormField label="Fecha de desembolso">
-            <input
-              type="date"
-              value={form.disbursement_date}
-              onChange={event => setForm(prev => ({ ...prev, disbursement_date: event.target.value }))}
-              required
-              disabled={isDisabled}
-              className="field-base ft-form-input w-full"
-            />
+          <FormField label="Fecha de desembolso" error={dateErrors.disbursement ?? undefined}>
+            {isDisabled ? (
+              <div className="field-base ft-form-input w-full" aria-label="Fecha de desembolso">{formatScheduleDateLabel(form.disbursement_date)}</div>
+            ) : (
+              <IncomeDatePicker
+                value={form.disbursement_date}
+                onChange={value => { setForm(prev => ({ ...prev, disbursement_date: value })); setDateErrors(prev => ({ ...prev, disbursement: null })) }}
+                onInvalidInput={message => setDateErrors(prev => ({ ...prev, disbursement: message }))}
+                inputLabel="Fecha de desembolso, día, mes y año"
+                inputTestId="bank-loan-disbursement-date-input"
+              />
+            )}
           </FormField>
 
-          <FormField label="Fecha de primera cuota">
-            <input
-              type="date"
-              value={form.start_date}
-              onChange={event => setForm(prev => ({ ...prev, start_date: event.target.value }))}
-              required
-              disabled={isDisabled}
-              className="field-base ft-form-input w-full"
-            />
+          <FormField label="Fecha de primera cuota" error={dateErrors.firstInstallment ?? undefined}>
+            {isDisabled ? (
+              <div className="field-base ft-form-input w-full" aria-label="Fecha de primera cuota">{formatScheduleDateLabel(form.start_date)}</div>
+            ) : (
+              <IncomeDatePicker
+                value={form.start_date}
+                onChange={value => { setForm(prev => ({ ...prev, start_date: value })); setDateErrors(prev => ({ ...prev, firstInstallment: null })) }}
+                onInvalidInput={message => setDateErrors(prev => ({ ...prev, firstInstallment: message }))}
+                inputLabel="Fecha de primera cuota, día, mes y año"
+                inputTestId="bank-loan-first-installment-date-input"
+              />
+            )}
           </FormField>
 
           <FormField label="Descripción" optional className="md:col-span-2">

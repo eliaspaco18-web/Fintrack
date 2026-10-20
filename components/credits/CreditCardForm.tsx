@@ -6,6 +6,7 @@ import { AppSelect } from '@/components/ui/AppSelect'
 import { NumericInput } from '@/components/ui/NumericInput'
 import { FormActions, FormField, FormSection } from '@/components/forms/primitives'
 import { RecordModalFooter } from '@/components/ui/RecordModal'
+import { CreditInfoHint } from '@/components/credits/CreditInfoHint'
 import { CreditCardScheduleEditor, type BillingCycleRow } from '@/components/credits/CreditCardScheduleModal'
 import {
   formatBillingCycleLabel,
@@ -472,13 +473,13 @@ export function CreditCardForm({
       <div className="grid min-h-0 flex-1 grid-cols-1 items-start gap-4 overflow-y-auto pr-1 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] xl:overflow-visible xl:pr-0">
         <FormSection
           title="Datos esenciales"
-          description="Define la tarjeta por su banco emisor. FinTrack creará internamente la cuenta técnica necesaria para registrar consumos."
+          description="Identidad y línea de la tarjeta."
           columns="2"
           className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
         >
           <FormField
             label="Entidad bancaria emisora"
-            description="Banco o entidad que emitió la tarjeta."
+            labelAdornment={<CreditInfoHint label="Ayuda sobre la entidad emisora">La entidad identifica quién emitió la tarjeta y permite asociar su ciclo de facturación.</CreditInfoHint>}
             className="md:col-span-2"
           >
             {loadingOptions ? (
@@ -555,12 +556,10 @@ export function CreditCardForm({
         <section className="space-y-3 rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h3 className="text-[15px] font-semibold tracking-[-0.02em] text-[var(--c-text)]">
-                Saldo inicial
-              </h3>
-              <p className="text-[12px] leading-5 text-[var(--ft-form-muted)]">
-                Línea aprobada y deuda pendiente al registrar la tarjeta.
-              </p>
+              <div className="flex items-center gap-2">
+                <h3 className="text-[15px] font-semibold tracking-[-0.02em] text-[var(--ft-text-strong)]">Saldo inicial</h3>
+                <CreditInfoHint label="Ayuda sobre el saldo inicial">Registra la línea aprobada y las deudas existentes por moneda. Los saldos se muestran en su moneda original.</CreditInfoHint>
+              </div>
             </div>
             <span className="mt-0.5 inline-flex h-7 items-center rounded-[var(--ft-radius-control)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-2.5 text-[11px] font-semibold text-[var(--ft-form-muted)]">
               {form.currency}
@@ -568,7 +567,7 @@ export function CreditCardForm({
           </div>
 
           <div className="grid gap-3 md:grid-cols-3">
-            <FormField label="Línea de crédito">
+            <FormField label="Línea de crédito" labelAdornment={<CreditInfoHint label="Ayuda sobre la línea de crédito">El límite aprobado de la tarjeta. No representa dinero propio ni saldo disponible en cuentas.</CreditInfoHint>}>
               <NumericInput
                 step="0.01"
                 decimals={2}

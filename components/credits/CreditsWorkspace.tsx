@@ -128,7 +128,7 @@ export function CreditsWorkspace() {
     : 'Selecciona el tipo de crédito a registrar.'
 
   return (
-    <div className="space-y-5">
+    <div className="w-full">
       <CreditsListPanel onCreate={openModal} />
 
       {/* ── MODAL CREAR ──────────────────────────────────────────────── */}
@@ -141,6 +141,8 @@ export function CreditsWorkspace() {
         size={modalSize}
         focusTrapActive={!isNestedModalOpen}
         bodyClassName={modalStep === 'form' ? 'credits-modal-body !overflow-hidden py-4' : ''}
+        presentation="workbench"
+        motionSource="pointer"
       >
         {modalStep === 'select_type' ? (
           <CreditTypeSelector onSelect={handleTypeSelected} />

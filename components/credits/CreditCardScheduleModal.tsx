@@ -506,6 +506,9 @@ export function CreditCardScheduleEditor({
         subtitle="Consumos y pagos vinculados a esta tarjeta dentro del rango de facturación."
         widthClassName="w-[calc(100vw-32px)] max-w-[1040px]"
         overlayClassName="z-[142]"
+        presentation="workbench"
+        workbenchKind="schedule"
+        motionSource="pointer"
         footer={(
           <FormActions
             primaryAction={null}
@@ -632,6 +635,9 @@ export function CreditCardScheduleModal({
       widthClassName="w-[calc(100vw-32px)] max-w-[1240px]"
       overlayClassName="z-[132]"
       bodyClassName="credits-modal-body !overflow-hidden py-4"
+      presentation="workbench"
+      workbenchKind="schedule"
+      motionSource="pointer"
       footer={(
         <FormActions
           secondaryAction={(

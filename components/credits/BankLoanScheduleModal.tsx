@@ -104,6 +104,9 @@ export function BankLoanScheduleModal({
       widthClassName="w-[calc(100vw-32px)] max-w-[1240px]"
       overlayClassName="z-[132]"
       bodyClassName="credits-modal-body !flex !flex-col !overflow-hidden py-4"
+      presentation="workbench"
+      workbenchKind="schedule"
+      motionSource="pointer"
       footer={(
         <FormActions
           secondaryAction={(

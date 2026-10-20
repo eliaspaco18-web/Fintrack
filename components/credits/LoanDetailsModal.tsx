@@ -115,6 +115,8 @@ export function LoanDetailsModal({
       subtitle="Consulta el desembolso, la tasa y las cuotas sin salir del módulo Créditos."
       size="xl"
       widthClassName="w-[calc(100vw-32px)] max-w-[1120px]"
+      presentation="workbench"
+      motionSource="pointer"
       footer={(
         <div className="flex flex-wrap justify-end gap-2">
           <Button type="button" variant="secondary" size="lg" onClick={onClose}>Cerrar</Button>
