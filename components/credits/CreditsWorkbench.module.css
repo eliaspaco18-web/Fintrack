@@ -10,7 +10,7 @@
 
 /* The card-cycle workbench follows its content for one or two cycles, then caps
    its height and scrolls the cycle list for larger schedules. */
-.creditCardScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
+.creditCardScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper:has([data-ft-workbench='schedule'])) {
   width: min(1240px, calc(100vw - 24px));
   height: auto;
   max-height: calc(100dvh - 24px);

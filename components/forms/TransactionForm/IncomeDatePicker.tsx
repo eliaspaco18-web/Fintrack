@@ -29,6 +29,7 @@ type Props = {
   inputLabel?: string
   inputTestId?: string
   disabled?: boolean
+  positioningBoundary?: 'modal' | 'viewport'
 }
 
 const WEEKDAYS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
@@ -59,6 +60,7 @@ export function IncomeDatePicker({
   inputLabel = 'Fecha del ingreso, día, mes y año',
   inputTestId = 'transaction-date-input',
   disabled = false,
+  positioningBoundary = 'modal',
 }: Props) {
   const id = useId()
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -159,7 +161,7 @@ export function IncomeDatePicker({
     const gap = 6
     const width = Math.min(CALENDAR_PANEL_WIDTH, window.innerWidth - inset * 2)
     const viewportMaxLeft = Math.max(inset, window.innerWidth - width - inset)
-    const modalBody = trigger.closest<HTMLElement>('[role="dialog"]')
+    const modalBody = positioningBoundary === 'viewport' ? null : trigger.closest<HTMLElement>('[role="dialog"]')
       ?.querySelector<HTMLElement>('[data-record-modal-body="true"]')
     const bodyRect = modalBody?.getBoundingClientRect()
     const bodyContentLeft = modalBody && bodyRect ? bodyRect.left + modalBody.clientLeft : inset
@@ -247,7 +249,7 @@ export function IncomeDatePicker({
     const preferredTop = placementRef.current === 'above' ? rect.top - panelHeight - gap : rect.bottom + gap
     const top = Math.max(safeModalTop, Math.min(preferredTop, safeModalBottom - panelHeight))
     setPosition({ top, left, width, height: panelHeight, maxHeight, constrained: panelHeight < desiredHeight })
-  }, [close])
+  }, [close, positioningBoundary])
 
   const show = useCallback(() => {
     const trigger = triggerRef.current

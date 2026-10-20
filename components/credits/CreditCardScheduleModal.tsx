@@ -158,7 +158,7 @@ function CyclePeriodFields({
           value={cycle.billing_month}
           onChange={value => onUpdateCycle(cycle.id, { billing_month: value })}
           className={styles.monthSelect}
-          buttonClassName="h-10 min-h-10 px-2.5 text-left text-[12px]"
+          buttonClassName="h-9 min-h-9 px-2 text-left text-[12px]"
           searchable={false}
           matchTriggerWidth
           disabled={disabled}
@@ -170,7 +170,7 @@ function CyclePeriodFields({
           value={cycle.billing_year}
           onChange={value => onUpdateCycle(cycle.id, { billing_year: value })}
           className={styles.yearSelect}
-          buttonClassName="h-10 min-h-10 px-2 text-center text-[12px]"
+          buttonClassName="h-9 min-h-9 px-1.5 text-center text-[12px]"
           searchable
           searchPlaceholder="Buscar año…"
           matchTriggerWidth
@@ -274,9 +274,10 @@ function BillingCycleStatementControl({
       <span
         aria-live="polite"
         className={styles.statementStatus}
+        aria-label={status}
         title={status}
       >
-        {uploading ? 'Cargando…' : status}
+        {uploading ? 'Cargando…' : cycle.statement_url ? 'Estado adjunto' : cycle.statement_file ? 'Pendiente' : onUpload ? 'Sin archivo' : 'No disponible'}
       </span>
     </div>
   )
@@ -422,51 +423,57 @@ export function CreditCardScheduleEditor({
         </dl>
       </header>
 
-      <div className={styles.cycleList} data-testid="credit-card-schedule-cycles">
+      <div className={styles.cycleList} data-testid="credit-card-schedule-table-scroll">
+        <div className={styles.cycleTable} role="table" aria-label="Ciclos de facturación" data-testid="credit-card-schedule-table">
+          <div className={styles.cycleHeader} role="rowgroup">
+            <div className={styles.cycleHeaderRow} role="row">
+              {['Periodo', 'Consumo desde', 'Consumo hasta', 'Fecha de pago', 'Total PEN', 'Total USD', 'Estado de cuenta', 'Acciones'].map(label => (
+                <div key={label} role="columnheader">{label}</div>
+              ))}
+            </div>
+          </div>
+          <div className={styles.cycleRows} role="rowgroup" data-testid="credit-card-schedule-cycles">
         {scheduleRows.map(({ cycle, cycleKey, periodLabel, dateIssue }) => {
           const isDuplicate = duplicateCycleKeys.has(cycleKey)
           return (
-            <article key={cycle.id} className={styles.cycleRow} data-testid={`credit-cycle-row-${cycle.id}`}>
-              <div className={styles.cycleTopline}>
-                <div className={styles.periodBlock}>
-                  <span className={styles.fieldLabel}>Periodo</span>
-                  <CyclePeriodFields cycle={cycle} yearOptions={yearOptions} duplicate={isDuplicate} dateIssue={dateIssue} disabled={disabled} onUpdateCycle={onUpdateCycle} />
-                </div>
-
-                <div className={styles.cycleTotals} aria-label={`Importes del ciclo ${periodLabel}`}>
-                  <div><span className={styles.fieldLabel}>Total PEN</span><strong title={`S/ ${formatNumber(cycleTotalPen(cycle))}`}>S/ {formatNumber(cycleTotalPen(cycle))}</strong></div>
-                  <div><span className={styles.fieldLabel}>Total USD</span><strong title={`USD ${formatNumber(cycleTotalUsd(cycle))}`}>USD {formatNumber(cycleTotalUsd(cycle))}</strong></div>
-                </div>
-
-                <div className={styles.cycleTools}>
-                  <div className={styles.statementBlock}>
-                    <span className={styles.fieldLabel}>Estado de cuenta</span>
-                    <BillingCycleStatementControl cycle={cycle} periodLabel={periodLabel} disabled={disabled} uploading={statementUploadCycleId === cycle.id} onUpload={onStatementUpload} onOpen={onStatementOpen} />
-                  </div>
-                  <div className={styles.actionBlock}>
-                    <span className={styles.fieldLabel}>Acciones</span>
-                    <CycleActions cycle={cycle} periodLabel={periodLabel} disabled={disabled} canDelete={cycles.length > 1 && Boolean(cycle.can_delete)} onView={openMovementModal} onDelete={onRemoveCycle} />
-                  </div>
-                </div>
+            <article key={cycle.id} className={styles.cycleRow} role="row" data-testid={`credit-cycle-row-${cycle.id}`}>
+              <div className={`${styles.cycleCell} ${styles.periodCell}`} role="cell">
+                <span className={styles.cellLabel}>Periodo</span>
+                <CyclePeriodFields cycle={cycle} yearOptions={yearOptions} duplicate={isDuplicate} dateIssue={dateIssue} disabled={disabled} onUpdateCycle={onUpdateCycle} />
               </div>
-
-              <div className={styles.cycleDates}>
-                <div className={styles.dateField}>
-                  <label>Consumo desde</label>
-                  <CreditScheduleDateField value={cycle.consumption_from} onChange={value => onUpdateCycle(cycle.id, { consumption_from: value })} label={`Inicio de consumo, ${periodLabel}`} testId={`credit-cycle-from-${cycle.id}`} disabled={disabled} />
-                </div>
-                <div className={styles.dateField}>
-                  <label>Consumo hasta</label>
-                  <CreditScheduleDateField value={cycle.consumption_to} onChange={value => onUpdateCycle(cycle.id, { consumption_to: value })} label={`Fin de consumo, ${periodLabel}`} testId={`credit-cycle-to-${cycle.id}`} disabled={disabled} />
-                </div>
-                <div className={styles.dateField}>
-                  <label>Fecha de pago</label>
-                  <CreditScheduleDateField value={cycle.payment_date} onChange={value => onUpdateCycle(cycle.id, { payment_date: value })} label={`Fecha de pago, ${periodLabel}`} testId={`credit-cycle-payment-${cycle.id}`} disabled={disabled} />
-                </div>
+              <div className={styles.cycleCell} role="cell">
+                <span className={styles.cellLabel}>Consumo desde</span>
+                <CreditScheduleDateField value={cycle.consumption_from} onChange={value => onUpdateCycle(cycle.id, { consumption_from: value })} label={`Consumo desde, ${periodLabel}`} testId={`credit-cycle-from-${cycle.id}`} disabled={disabled} />
+              </div>
+              <div className={styles.cycleCell} role="cell">
+                <span className={styles.cellLabel}>Consumo hasta</span>
+                <CreditScheduleDateField value={cycle.consumption_to} onChange={value => onUpdateCycle(cycle.id, { consumption_to: value })} label={`Consumo hasta, ${periodLabel}`} testId={`credit-cycle-to-${cycle.id}`} disabled={disabled} />
+              </div>
+              <div className={styles.cycleCell} role="cell">
+                <span className={styles.cellLabel}>Fecha de pago</span>
+                <CreditScheduleDateField value={cycle.payment_date} onChange={value => onUpdateCycle(cycle.id, { payment_date: value })} label={`Fecha de pago, ${periodLabel}`} testId={`credit-cycle-payment-${cycle.id}`} disabled={disabled} />
+              </div>
+              <div className={`${styles.cycleCell} ${styles.amountCell}`} role="cell">
+                <span className={styles.cellLabel}>Total PEN</span>
+                <strong title={`S/ ${formatNumber(cycleTotalPen(cycle))}`}>{formatNumber(cycleTotalPen(cycle))}</strong>
+              </div>
+              <div className={`${styles.cycleCell} ${styles.amountCell}`} role="cell">
+                <span className={styles.cellLabel}>Total USD</span>
+                <strong title={`USD ${formatNumber(cycleTotalUsd(cycle))}`}>{formatNumber(cycleTotalUsd(cycle))}</strong>
+              </div>
+              <div className={styles.cycleCell} role="cell">
+                <span className={styles.cellLabel}>Estado de cuenta</span>
+                <BillingCycleStatementControl cycle={cycle} periodLabel={periodLabel} disabled={disabled} uploading={statementUploadCycleId === cycle.id} onUpload={onStatementUpload} onOpen={onStatementOpen} />
+              </div>
+              <div className={styles.cycleCell} role="cell">
+                <span className={styles.cellLabel}>Acciones</span>
+                <CycleActions cycle={cycle} periodLabel={periodLabel} disabled={disabled} canDelete={cycles.length > 1 && Boolean(cycle.can_delete)} onView={openMovementModal} onDelete={onRemoveCycle} />
               </div>
             </article>
           )
         })}
+          </div>
+        </div>
       </div>
 
       <div className={styles.registeredTotals} data-testid="credit-card-schedule-grand-totals">

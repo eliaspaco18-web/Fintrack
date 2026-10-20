@@ -33,6 +33,7 @@ export function CreditScheduleDateField({
         inputLabel={label}
         inputTestId={testId}
         disabled={disabled}
+        positioningBoundary="viewport"
       />
     </div>
   )

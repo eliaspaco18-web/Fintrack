@@ -92,6 +92,7 @@ async function mountRealCreditModals(
   mode: 'create' | 'edit',
   viewport = { width: 1440, height: 900 },
   statementUrl: string | null = null,
+  longAmounts = false,
 ) {
   const runtimeErrors: string[] = []
   page.on('pageerror', error => runtimeErrors.push(error.message))
@@ -107,10 +108,10 @@ async function mountRealCreditModals(
   const creditCardScheduleOverlayClass = moduleClass('creditCardScheduleOverlay')
   const scheduleClasses = Object.fromEntries([
     'scheduleEditor', 'scheduleHeader', 'scheduleHeading', 'scheduleTitle', 'scheduleSubtitle', 'scheduleTotals',
-    'cycleList', 'cycleRow', 'cycleTopline', 'periodBlock', 'fieldLabel', 'periodFields', 'periodControls',
-    'monthSelect', 'yearSelect', 'cycleIssue', 'cycleTotals', 'cycleTools', 'statementBlock', 'actionBlock',
+    'cycleList', 'cycleTable', 'cycleHeader', 'cycleHeaderRow', 'cycleRows', 'cycleRow', 'cycleCell', 'cellLabel',
+    'periodCell', 'periodFields', 'periodControls', 'monthSelect', 'yearSelect', 'cycleIssue', 'amountCell',
     'statementControl', 'statementButtons', 'statementStatus', 'iconButton', 'disabledIconButton', 'deleteButton',
-    'cycleActions', 'cycleDates', 'dateField', 'registeredTotals', 'duplicateNotice',
+    'cycleActions', 'registeredTotals', 'duplicateNotice',
   ].map(name => [name, moduleClass(name)]))
   const datePickerClasses = Object.fromEntries([
     'picker', 'input', 'trigger', 'error', 'popover', 'header', 'selectors', 'arrow', 'weekdays', 'days', 'week', 'day', 'footer',
@@ -176,7 +177,7 @@ async function mountRealCreditModals(
       const path = String(input);
       window.__creditRequests.push({path,method:init.method || 'GET'});
       const bank = {id:'bank-1',name:'Banco de prueba',short_name:'Banco',is_active:true};
-      const cycle = {id:'cycle-1',billing_month:10,billing_year:2026,consumption_from:'2026-10-01',consumption_to:'2026-10-31',payment_date:'2026-11-10',total_to_pay:25,total_to_pay_pen:25,total_to_pay_usd:0,movement_summary:null,can_delete:true,statement_url:window.__creditCycleStatementUrl};
+      const cycle = {id:'cycle-1',billing_month:10,billing_year:2026,consumption_from:'2026-10-01',consumption_to:'2026-10-31',payment_date:'2026-11-10',total_to_pay:${longAmounts ? 1234567890.23 : 25},total_to_pay_pen:${longAmounts ? 1234567890.23 : 25},total_to_pay_usd:${longAmounts ? 987654321.09 : 0},movement_summary:null,can_delete:true,statement_url:window.__creditCycleStatementUrl};
       let data = [];
       if (path === '/api/bank-entities') data = [bank];
       else if (path === '/api/accounts') data = [{id:'account-1',name:'Cuenta de prueba',type:'CHECKING',currency:'PEN',is_active:true}];
@@ -292,7 +293,9 @@ test('new card can stage a statement and uploads it after the persisted billing 
     mimeType: 'application/pdf',
     buffer: Buffer.from('synthetic statement'),
   })
-  await expect(page.locator('[aria-live="polite"]:visible').filter({ hasText: /Listo al guardar: estado-cuenta\.pdf/ })).toBeVisible()
+  const stagedStatementStatus = page.locator('[aria-live="polite"]:visible').filter({ hasText: 'Pendiente' })
+  await expect(stagedStatementStatus).toBeVisible()
+  await expect(stagedStatementStatus).toHaveAttribute('title', 'Listo al guardar: estado-cuenta.pdf')
   await page.getByRole('button', { name: 'Listo' }).click()
   await expect(page.getByRole('dialog', { name: 'Cronograma completo de la tarjeta' })).toBeHidden()
   await page.getByRole('button', { name: 'Crear tarjeta' }).click()
@@ -332,27 +335,34 @@ test('edit card opens and replaces a saved billing-cycle statement through its r
 for (const width of [390, 834, 1440, 1710]) {
   for (const cycleCount of [1, 6, 12]) {
     test(`card schedule keeps every cycle readable without horizontal overflow at ${width}px (${cycleCount} cycles)`, async ({ page }) => {
-      await mountRealCreditModals(page, 'card', 'create', { width, height: width < 500 ? 850 : 900 })
+      await mountRealCreditModals(page, 'card', 'edit', { width, height: width < 500 ? 850 : 900 }, null, true)
       await page.getByRole('button', { name: 'Revisar ciclos' }).click()
       const schedule = page.getByRole('dialog', { name: 'Cronograma completo de la tarjeta' })
       await expect(schedule).toBeVisible()
+      await expect(page.getByTestId('credit-card-schedule-cycles').locator('[data-testid^="credit-cycle-row-"]')).toHaveCount(1)
       await page.waitForTimeout(300)
       for (let index = 1; index < cycleCount; index += 1) await schedule.getByRole('button', { name: 'Agregar ciclo' }).click()
 
       const cycles = page.getByTestId('credit-card-schedule-cycles')
+      const table = page.getByTestId('credit-card-schedule-table')
       const rows = page.locator('[data-testid^="credit-cycle-row-"]')
       await expect(rows).toHaveCount(cycleCount)
+      await expect(table.locator('[role="columnheader"]')).toHaveCount(8)
+      await expect(table).toContainText('Consumo desde')
+      await expect(table).toContainText('Consumo hasta')
+      await expect(table).toContainText('Fecha de pago')
+      await expect(rows.first().locator('[role="cell"]')).toHaveCount(8)
       await expect(rows.first().locator('label[aria-label^="Adjuntar estado de cuenta"]')).toBeVisible()
       const firstCycle = rows.first()
-      const monthTrigger = firstCycle.getByTestId('credit-cycle-month-credits-test-id')
-      const yearTrigger = firstCycle.getByTestId('credit-cycle-year-credits-test-id')
+      const monthTrigger = firstCycle.locator('[data-testid^="credit-cycle-month-"]')
+      const yearTrigger = firstCycle.locator('[data-testid^="credit-cycle-year-"]')
       await expect(monthTrigger).toBeVisible()
       await expect(yearTrigger).toBeVisible()
       await expect(monthTrigger).toContainText('Octubre')
       await expect(yearTrigger).toContainText('2026')
       await expect(firstCycle.locator('input[placeholder="DD/MM/AAAA"]').first()).toHaveValue(/^\d{2}\/10\/2026$/)
 
-      const measurement = await cycles.evaluate(element => {
+      const measurement = await table.evaluate(element => {
         const rect = element.getBoundingClientRect()
         const rows = Array.from(element.querySelectorAll<HTMLElement>('[data-testid^="credit-cycle-row-"]'))
         const rectOf = (item: Element) => {
@@ -360,15 +370,18 @@ for (const width of [390, 834, 1440, 1710]) {
           return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width, height: box.height }
         }
         const rowDetails = rows.map(row => {
-          const topline = row.querySelector<HTMLElement>('[class*="cycleTopline"]')!
-          const dates = row.querySelector<HTMLElement>('[class*="cycleDates"]')!
-          const controls = Array.from(row.querySelectorAll<HTMLElement>('select, input[type="date"], button'))
-          const labels = Array.from(row.querySelectorAll<HTMLElement>('label, [class*="fieldLabel"]')).map(label => ({
+          const cells = Array.from(row.querySelectorAll<HTMLElement>('[role="cell"]'))
+          const controls = Array.from(row.querySelectorAll<HTMLElement>('select, input:not([type="file"]), button'))
+          const labels = Array.from(row.querySelectorAll<HTMLElement>('[class*="cellLabel"]')).map(label => ({
             text: label.textContent?.trim(), client: label.clientWidth, scroll: label.scrollWidth,
           }))
+          const amounts = Array.from(row.querySelectorAll<HTMLElement>('[class*="amountCell"] strong')).map(amount => ({
+            text: amount.textContent?.trim(), client: amount.clientWidth, scroll: amount.scrollWidth,
+          }))
           return {
-            row: rectOf(row), topline: rectOf(topline), dates: rectOf(dates),
-            controls: controls.map(rectOf), labels,
+            row: rectOf(row), cells: cells.map(rectOf),
+            columns: getComputedStyle(row).gridTemplateColumns.split(' ').filter(Boolean),
+            controls: controls.map(rectOf), labels, amounts,
             text: row.innerText,
             badOverlap: controls.some((control, index) => controls.slice(index + 1).some(other => {
               const a = control.getBoundingClientRect(), b = other.getBoundingClientRect()
@@ -376,7 +389,14 @@ for (const width of [390, 834, 1440, 1710]) {
             })),
           }
         })
+        const header = element.querySelector<HTMLElement>('[role="row"]')
+        const headerCells = Array.from(header?.querySelectorAll<HTMLElement>('[role="columnheader"]') ?? [])
+        const periodText = Array.from(rows[0]?.querySelectorAll<HTMLElement>('.app-select-trigger-label') ?? []).map(label => ({ text: label.textContent?.trim(), client: label.clientWidth, scroll: label.scrollWidth }))
+        const registeredTotals = Array.from(element.closest<HTMLElement>('[data-testid="credit-card-schedule-table-scroll"]')
+          ?.parentElement?.querySelectorAll<HTMLElement>('[data-testid="credit-card-schedule-grand-totals"] strong') ?? [])
+          .map(amount => ({ client: amount.clientWidth, scroll: amount.scrollWidth, text: amount.textContent?.trim() }))
         const overlay = element.closest<HTMLElement>('.app-modal-overlay')
+        const scrollContainer = element.closest<HTMLElement>('[data-testid="credit-card-schedule-table-scroll"]')
         const workbench = overlay?.querySelector<HTMLElement>('.ft-v3-workbench-wrapper')
         const panel = overlay?.querySelector<HTMLElement>('[data-ft-workbench]')
         const body = panel?.querySelector<HTMLElement>('[data-record-modal-body]')
@@ -386,11 +406,17 @@ for (const width of [390, 834, 1440, 1710]) {
           return { left: box.left, right: box.right, width: box.width }
         }
         return {
-          viewport: window.innerWidth, clientWidth: element.clientWidth, scrollWidth: element.scrollWidth,
+          viewport: window.innerWidth,
+          clientWidth: scrollContainer?.clientWidth ?? element.clientWidth,
+          scrollWidth: scrollContainer?.scrollWidth ?? element.scrollWidth,
           right: rect.right, rows: rowDetails,
+          headerVisible: Boolean(header && getComputedStyle(header).display !== 'none'),
+          headers: headerCells.map(rectOf),
+          periodText,
+          registeredTotals,
           wrapper: measureRect(workbench), panel: measureRect(panel), body: measureRect(body),
           documentWidth: document.documentElement.scrollWidth,
-          listHeight: element.clientHeight, listScrollHeight: element.scrollHeight,
+          listHeight: scrollContainer?.clientHeight ?? 0, listScrollHeight: scrollContainer?.scrollHeight ?? 0,
         }
       })
       expect(measurement.viewport).toBe(width)
@@ -398,36 +424,71 @@ for (const width of [390, 834, 1440, 1710]) {
       expect(measurement.scrollWidth).toBeLessThanOrEqual(measurement.clientWidth + 1)
       expect(measurement.documentWidth).toBeLessThanOrEqual(width)
       expect(measurement.rows).toHaveLength(cycleCount)
-      for (const row of measurement.rows) {
+      measurement.rows.forEach((row, rowIndex) => {
         expect(row.row.width).toBeGreaterThan(width < 500 ? 300 : 500)
-        expect(row.topline.width).toBeGreaterThan(0)
-        expect(row.dates.width).toBeGreaterThan(0)
+        expect(row.cells).toHaveLength(8)
         expect(row.badOverlap).toBe(false)
         expect(row.controls.every(control => control.width > 0 && control.right <= measurement.right + 1)).toBe(true)
         expect(row.labels.every(label => label.client === 0 || label.scroll <= label.client + 1)).toBe(true)
+        expect(row.amounts.every(amount => amount.scroll <= amount.client + 1)).toBe(true)
+        if (rowIndex === 0) expect(measurement.periodText.every(label => label.scroll <= label.client + 1)).toBe(true)
+        expect(row.amounts.map(amount => amount.text)).toEqual(rowIndex === 0
+          ? ['1234567890.23', '987654321.09']
+          : ['0.00', '0.00'])
         expect(row.text).toContain('Octubre')
         expect(row.text).toContain('2026')
-        expect(row.text).toContain('Consumo desde')
-        expect(row.text).toContain('Fecha de pago')
-      }
+      })
       if (cycleCount === 1) {
         if ([390, 1440].includes(width)) {
           await page.screenshot({ path: `/tmp/fintrack-credits-r5-schedule-${width}.png`, fullPage: true })
         }
         const componentGeometry = await firstCycle.evaluate(element => {
-          const month = element.querySelector<HTMLElement>('[data-testid="credit-cycle-month-credits-test-id"]')!
-          const year = element.querySelector<HTMLElement>('[data-testid="credit-cycle-year-credits-test-id"]')!
+          const month = element.querySelector<HTMLElement>('[data-testid^="credit-cycle-month-"]')!
+          const year = element.querySelector<HTMLElement>('[data-testid^="credit-cycle-year-"]')!
           const date = element.querySelector<HTMLElement>('input[placeholder="DD/MM/AAAA"]')!
           const rect = (item: HTMLElement) => ({ width: item.getBoundingClientRect().width, left: item.getBoundingClientRect().left, right: item.getBoundingClientRect().right })
-          return { month: rect(month), year: rect(year), date: rect(date), rowHeight: element.getBoundingClientRect().height }
+          const table = element.closest('[role="table"]')!
+          const headerCells = Array.from(table.querySelectorAll<HTMLElement>('[role="columnheader"]'))
+          const cells = Array.from(element.querySelectorAll<HTMLElement>('[role="cell"]'))
+          return {
+            month: rect(month), year: rect(year), date: rect(date), rowHeight: element.getBoundingClientRect().height,
+            desktopSingleRow: getComputedStyle(element).gridTemplateColumns.split(' ').filter(Boolean).length === 8,
+            headerVisible: Boolean(headerCells.length && getComputedStyle(headerCells[0]!.parentElement!).display !== 'none'),
+            headerCellWidths: headerCells.map(header => header.getBoundingClientRect().width),
+            rowCellWidths: cells.map(cell => cell.getBoundingClientRect().width),
+            visibleCellLabels: Array.from(element.querySelectorAll<HTMLElement>('[class*="cellLabel"]')).map(label => getComputedStyle(label).display !== 'none'),
+          }
         })
         console.log(`Credit schedule ${width}px actual controls`, JSON.stringify(componentGeometry))
+        if (width >= 1440) {
+          expect(componentGeometry.desktopSingleRow).toBe(true)
+          expect(componentGeometry.headerVisible).toBe(true)
+          expect(componentGeometry.headerCellWidths).toHaveLength(8)
+          expect(componentGeometry.rowHeight).toBeLessThanOrEqual(56)
+          componentGeometry.rowCellWidths.forEach((cellWidth, index) => expect(Math.abs(cellWidth - componentGeometry.headerCellWidths[index]!)).toBeLessThanOrEqual(2))
+        } else if (width === 834) {
+          expect(componentGeometry.desktopSingleRow).toBe(false)
+          expect(componentGeometry.visibleCellLabels.every(Boolean)).toBe(true)
+        } else if (width === 390) {
+          expect(componentGeometry.visibleCellLabels.every(Boolean)).toBe(true)
+        }
+        const dateTrigger = firstCycle.getByRole('button', { name: 'Abrir calendario' }).first()
+        await dateTrigger.click()
+        const calendar = page.getByRole('dialog', { name: 'Seleccionar fecha' })
+        await expect(calendar).toBeVisible()
+        const calendarGeometry = await calendar.evaluate(element => ({ left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right, width: element.getBoundingClientRect().width, viewport: window.innerWidth }))
+        expect(calendarGeometry.left).toBeGreaterThanOrEqual(0)
+        expect(calendarGeometry.right).toBeLessThanOrEqual(width)
+        expect(calendarGeometry.width).toBeGreaterThan(250)
+        await page.keyboard.press('Escape')
+        await expect(calendar).toHaveCount(0)
+
         await monthTrigger.click()
         const monthMenu = page.getByRole('dialog', { name: 'Mes del periodo' })
         await expect(monthMenu).toBeVisible()
         const monthMenuGeometry = await monthMenu.evaluate(element => ({
           width: element.getBoundingClientRect().width,
-          triggerWidth: document.querySelector<HTMLElement>('[data-testid="credit-cycle-month-credits-test-id"]')!.getBoundingClientRect().width,
+          triggerWidth: document.querySelector<HTMLElement>('[data-testid^="credit-cycle-month-"]')!.getBoundingClientRect().width,
           right: element.getBoundingClientRect().right,
           viewport: window.innerWidth,
           scrollWidth: element.scrollWidth,
@@ -439,23 +500,26 @@ for (const width of [390, 834, 1440, 1710]) {
         await page.keyboard.press('Escape')
         await expect(monthMenu).toHaveCount(0)
         await expect(monthTrigger).toBeFocused()
-
-        const dateTrigger = firstCycle.getByRole('button', { name: 'Abrir calendario' }).first()
-        await dateTrigger.click()
-        const calendar = page.getByRole('dialog', { name: 'Seleccionar fecha' })
-        await expect(calendar).toBeVisible()
-        const calendarGeometry = await calendar.evaluate(element => ({ left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right, width: element.getBoundingClientRect().width, viewport: window.innerWidth }))
-        expect(calendarGeometry.left).toBeGreaterThanOrEqual(0)
-        expect(calendarGeometry.right).toBeLessThanOrEqual(width)
-        expect(calendarGeometry.width).toBeGreaterThan(250)
-        await page.keyboard.press('Escape')
-        await expect(calendar).toHaveCount(0)
       }
+      expect(measurement.registeredTotals.every(amount => amount.scroll <= amount.client + 1)).toBe(true)
       if (cycleCount > 6) expect(measurement.listScrollHeight).toBeGreaterThan(measurement.listHeight)
       await expect(rows.first().getByRole('button', { name: 'Ver movimientos de 10/2026' })).toBeVisible()
     })
   }
 }
+
+test('duplicate billing periods keep their inline warning when the tabular layout is used', async ({ page }) => {
+  await mountRealCreditModals(page, 'card', 'create', { width: 1440, height: 900 })
+  await page.getByRole('button', { name: 'Revisar ciclos' }).click()
+  const schedule = page.getByRole('dialog', { name: 'Cronograma completo de la tarjeta' })
+  await schedule.getByRole('button', { name: 'Agregar ciclo' }).click()
+  const monthTriggers = page.getByRole('button', { name: 'Mes del periodo' })
+  await expect(monthTriggers).toHaveCount(2)
+  await monthTriggers.nth(1).click()
+  await page.getByRole('option', { name: 'Octubre' }).click()
+  await expect(schedule.getByText('Periodo duplicado.').first()).toBeVisible()
+  await expect(schedule.locator('[role="row"]')).toHaveCount(3)
+})
 
 test('bank loan form keeps schedule content scrollable above the shared anchored action footer', async ({ page }) => {
   await mountRealCreditModals(page, 'loan', 'create', { width: 834, height: 700 })
