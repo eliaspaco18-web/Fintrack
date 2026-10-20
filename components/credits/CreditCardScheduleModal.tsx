@@ -5,8 +5,8 @@ import { Button } from '@/components/ui/Button'
 import { FormActions } from '@/components/forms/primitives'
 import { RecordModal } from '@/components/ui/RecordModal'
 import { AppSelect } from '@/components/ui/AppSelect'
+import { CreditScheduleDateField } from '@/components/credits/CreditScheduleDateField'
 import {
-  CREDIT_CARD_DATE_INPUT_MIN_WIDTH,
   SCHEDULE_MONTHS,
   formatBillingCycleLabel,
   formatDuplicateCycleMessage,
@@ -28,6 +28,8 @@ export type BillingCycleRow = {
   movement_summary?: BillingCycleMovementSummary | null
   can_delete?: boolean
   statement_url: string | null
+  /** Client-only file staged before the billing-cycle record exists. */
+  statement_file?: File | null
 }
 
 type BillingCycleMovement = {
@@ -86,14 +88,14 @@ interface CreditCardScheduleModalProps extends CreditCardScheduleEditorProps {
 }
 
 const CREDIT_CARD_SCHEDULE_COLUMN_SHARES = {
-  period: '22%',
-  consumptionFrom: '12%',
-  consumptionTo: '12%',
-  paymentDate: '12%',
+  period: '20%',
+  consumptionFrom: '14%',
+  consumptionTo: '14%',
+  paymentDate: '14%',
   totalPen: '9%',
   totalUsd: '9%',
-  statement: '14%',
-  actions: '10%',
+  statement: '11%',
+  actions: '9%',
 } as const
 
 function colWidth(value: string) {
@@ -208,26 +210,26 @@ export function CreditCardScheduleEditor({
     <div className="flex min-h-0 w-full flex-col gap-3">
       <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-1">
-          <p className="text-[13px] font-semibold tracking-[-0.01em] text-[var(--ft-text)]">
+          <p className="text-[14px] font-semibold tracking-[-0.01em] text-[var(--ft-text-strong)]">
             Ciclos de facturación
           </p>
           <p className="max-w-[68ch] text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-            Ajusta periodos y fechas, y revisa los movimientos del periodo desde esta misma vista.
+            Fechas, estados de cuenta e importes por periodo.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <div className="grid grid-cols-3 overflow-hidden rounded-[var(--ft-form-radius-sm)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] text-center">
             <div className="min-w-[74px] px-2.5 py-2">
-              <p className="text-[9px] font-medium uppercase tracking-[0.08em] text-[var(--ft-form-muted)]">Ciclos</p>
+              <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--ft-form-muted)]">Ciclos</p>
               <p className="mt-1 text-[13px] font-semibold text-[var(--ft-text)] tabular-nums">{cycles.length}</p>
             </div>
             <div className="min-w-[92px] border-l border-[var(--ft-form-border)] px-2.5 py-2">
-              <p className="text-[9px] font-medium uppercase tracking-[0.08em] text-[var(--ft-form-muted)]">PEN</p>
+              <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--ft-form-muted)]">PEN</p>
               <p className="mt-1 text-[13px] font-semibold text-[var(--ft-text)] tabular-nums">{formatNumber(totalPen)}</p>
             </div>
             <div className="min-w-[92px] border-l border-[var(--ft-form-border)] px-2.5 py-2">
-              <p className="text-[9px] font-medium uppercase tracking-[0.08em] text-[var(--ft-form-muted)]">USD</p>
+              <p className="text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--ft-form-muted)]">USD</p>
               <p className="mt-1 text-[13px] font-semibold text-[var(--ft-text)] tabular-nums">{formatNumber(totalUsd)}</p>
             </div>
           </div>
@@ -239,7 +241,7 @@ export function CreditCardScheduleEditor({
 
       <div className="flex min-h-0 w-full flex-col overflow-hidden rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)]">
         <div className={`min-h-0 w-full overflow-x-auto overflow-y-auto ${compact ? 'max-h-[330px]' : 'max-h-[52vh]'}`}>
-          <table className="w-full min-w-[1180px] table-fixed text-[12px]">
+          <table className="w-full min-w-[1240px] table-fixed text-[13px]">
             <colgroup>
               <col style={colWidth(CREDIT_CARD_SCHEDULE_COLUMN_SHARES.period)} />
               <col style={colWidth(CREDIT_CARD_SCHEDULE_COLUMN_SHARES.consumptionFrom)} />
@@ -251,7 +253,7 @@ export function CreditCardScheduleEditor({
               <col style={colWidth(CREDIT_CARD_SCHEDULE_COLUMN_SHARES.actions)} />
             </colgroup>
             <thead className="sticky top-0 z-[1] bg-[var(--ft-surface-muted)]">
-              <tr className="text-[var(--ft-form-muted)]">
+              <tr className="text-[12px] text-[var(--ft-form-muted)]">
                 <th rowSpan={2} className="px-3 py-2 text-center align-middle font-semibold">Periodo</th>
                 <th rowSpan={2} className="px-3 py-2 text-center align-middle font-semibold">Consumo desde</th>
                 <th rowSpan={2} className="px-3 py-2 text-center align-middle font-semibold">Consumo hasta</th>
@@ -260,7 +262,7 @@ export function CreditCardScheduleEditor({
                 <th rowSpan={2} className="px-3 py-2 text-center align-middle font-semibold">Estado de cuenta</th>
                 <th rowSpan={2} className="px-3 py-2 text-center align-middle font-semibold">Acciones</th>
               </tr>
-              <tr className="text-[10px] uppercase tracking-[0.08em] text-[var(--ft-form-muted)]">
+              <tr className="text-[11px] uppercase tracking-[0.04em] text-[var(--ft-form-muted)]">
                 <th className="px-3 py-1.5 text-right font-semibold">Soles</th>
                 <th className="px-3 py-1.5 text-right font-semibold">Dólares</th>
               </tr>
@@ -329,39 +331,31 @@ export function CreditCardScheduleEditor({
                     </td>
 
                     <td className="px-3 py-3 align-middle">
-                      <input
-                        type="date"
+                      <CreditScheduleDateField
                         value={cycle.consumption_from}
-                        onChange={event => onUpdateCycle(cycle.id, { consumption_from: event.target.value })}
-                        className="field-base ft-form-input credits-date-input h-10 w-full min-w-[136px] px-2 py-2 text-[12px]"
-                        style={{ minWidth: `${CREDIT_CARD_DATE_INPUT_MIN_WIDTH}px` }}
-                        required
+                        onChange={value => onUpdateCycle(cycle.id, { consumption_from: value })}
+                        label={`Inicio de consumo, ${periodLabel}`}
+                        testId={`credit-cycle-from-${cycle.id}`}
                         disabled={disabled}
                       />
                     </td>
 
                     <td className="px-3 py-3 align-middle">
-                      <input
-                        type="date"
+                      <CreditScheduleDateField
                         value={cycle.consumption_to}
-                        onChange={event => onUpdateCycle(cycle.id, { consumption_to: event.target.value })}
-                        min={cycle.consumption_from || undefined}
-                        className="field-base ft-form-input credits-date-input h-10 w-full min-w-[136px] px-2 py-2 text-[12px]"
-                        style={{ minWidth: `${CREDIT_CARD_DATE_INPUT_MIN_WIDTH}px` }}
-                        required
+                        onChange={value => onUpdateCycle(cycle.id, { consumption_to: value })}
+                        label={`Fin de consumo, ${periodLabel}`}
+                        testId={`credit-cycle-to-${cycle.id}`}
                         disabled={disabled}
                       />
                     </td>
 
                     <td className="px-3 py-3 align-middle">
-                      <input
-                        type="date"
+                      <CreditScheduleDateField
                         value={cycle.payment_date}
-                        onChange={event => onUpdateCycle(cycle.id, { payment_date: event.target.value })}
-                        min={cycle.consumption_to || undefined}
-                        className="field-base ft-form-input credits-date-input h-10 w-full min-w-[136px] px-2 py-2 text-[12px]"
-                        style={{ minWidth: `${CREDIT_CARD_DATE_INPUT_MIN_WIDTH}px` }}
-                        required
+                        onChange={value => onUpdateCycle(cycle.id, { payment_date: value })}
+                        label={`Fecha de pago, ${periodLabel}`}
+                        testId={`credit-cycle-payment-${cycle.id}`}
                         disabled={disabled}
                       />
                     </td>
@@ -403,6 +397,7 @@ export function CreditCardScheduleEditor({
                               type="file"
                               className="sr-only"
                               accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"
+                              data-testid={`billing-cycle-statement-upload-${cycle.id}`}
                               disabled={disabled || statementUploadCycleId === cycle.id}
                               onChange={event => {
                                 const file = event.target.files?.[0]
@@ -421,8 +416,11 @@ export function CreditCardScheduleEditor({
                             <UploadDocumentIcon className="h-4 w-4" />
                           </span>
                         )}
-                        <span className="min-w-0 text-[11px] font-medium leading-[1.35] text-[var(--ft-form-muted)]">
-                          {cycle.statement_url ? 'Estado adjunto' : onStatementUpload ? 'Un archivo por ciclo' : 'Guarda para adjuntar'}
+                        <span
+                          className="min-w-0 max-w-[150px] truncate text-[11px] font-medium leading-[1.35] text-[var(--ft-form-muted)]"
+                          title={cycle.statement_file?.name}
+                        >
+                          {cycle.statement_url ? 'Estado adjunto' : cycle.statement_file ? `Listo al guardar: ${cycle.statement_file.name}` : onStatementUpload ? 'Un archivo por ciclo' : 'Guarda para adjuntar'}
                         </span>
                       </div>
                     </td>

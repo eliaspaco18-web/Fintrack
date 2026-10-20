@@ -535,6 +535,7 @@ export function BankLoanForm({
                       label: entity.name,
                     }))}
                 searchPlaceholder="Buscar entidad..."
+                matchTriggerWidth
               />
             )}
           </FormField>
@@ -556,6 +557,7 @@ export function BankLoanForm({
                       label: `${account.name} · ${account.currency}`,
                     }))}
                 searchPlaceholder="Buscar cuenta..."
+                matchTriggerWidth
               />
             )}
           </FormField>
@@ -584,6 +586,7 @@ export function BankLoanForm({
               disabled={isDisabled}
               testId="bank-loan-type-select"
               searchable={false}
+              matchTriggerWidth
               options={LOAN_TYPE_VALUES.map(value => ({ value, label: getLoanTypeLabel(value) }))}
             />
           </FormField>
@@ -704,16 +707,21 @@ export function BankLoanForm({
 
         <FormSection
           title="Cronograma"
-          description="Capital, intereses, seguros y cargos por cuota."
+          description="Importes por cuota y fechas de pago."
           className="flex min-h-0 flex-col rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-section-gap:12px] xl:col-span-2"
         >
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-[1fr_0.7fr_1fr_1fr_1.1fr_1fr_auto]">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
             <SummaryStat label="Capital total" value={formatNumber(scheduleTotal.principal)} numeric />
             <SummaryStat label="Cuotas" value={installments.length} numeric />
             <SummaryStat label="Primera cuota" value={firstInstallmentDate} />
             <SummaryStat label="Última cuota" value={lastInstallmentDate} />
             <SummaryStat label="Total estimado" value={formatNumber(scheduleTotal.installmentTotal)} numeric emphasized />
             <SummaryStat label="Seguro + otros" value={formatNumber(scheduleTotal.insurance + scheduleTotal.others)} numeric />
+          </div>
+          <div className="flex flex-col gap-3 border-t border-[var(--ft-form-border)] pt-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="max-w-[60ch] text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
+              El capital se calcula desde las cuotas. Los comprobantes se adjuntan al registrar cada pago.
+            </p>
             <Button
               id="bank-loan-schedule-trigger"
               type="button"
@@ -721,15 +729,11 @@ export function BankLoanForm({
               size="md"
               onClick={openScheduleModal}
               disabled={isDisabled}
-              className="h-full min-h-[76px] w-full lg:w-auto"
+              className="shrink-0"
             >
-              Ver/editar →
+              Abrir cronograma completo
             </Button>
           </div>
-
-          <p className="text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-            El capital se calcula desde el cronograma. Los comprobantes de pago se adjuntan al registrar cada cuota.
-          </p>
         </FormSection>
       </div>
 

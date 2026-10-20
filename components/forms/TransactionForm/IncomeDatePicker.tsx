@@ -28,6 +28,7 @@ type Props = {
   error?: string
   inputLabel?: string
   inputTestId?: string
+  disabled?: boolean
 }
 
 const WEEKDAYS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
@@ -57,6 +58,7 @@ export function IncomeDatePicker({
   error,
   inputLabel = 'Fecha del ingreso, día, mes y año',
   inputTestId = 'transaction-date-input',
+  disabled = false,
 }: Props) {
   const id = useId()
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -378,6 +380,7 @@ export function IncomeDatePicker({
         value={inputValue}
         placeholder="DD/MM/AAAA"
         aria-label={inputLabel}
+        disabled={disabled}
         aria-invalid={Boolean(error) || undefined}
         aria-describedby={error ? `${id}-error` : undefined}
         autoComplete="off"
@@ -410,6 +413,7 @@ export function IncomeDatePicker({
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-controls={open ? `${id}-calendar` : undefined}
+        disabled={disabled}
         onClick={() => open ? close() : show()}
         onKeyDown={event => {
           if (event.key === 'Escape' && open) {

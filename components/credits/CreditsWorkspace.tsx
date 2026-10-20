@@ -90,7 +90,7 @@ export function CreditsWorkspace() {
   ) => {
     toast.success('Crédito registrado', creditName)
     if (attachmentIssue) {
-      toast.error('Crédito registrado sin documento', attachmentIssue)
+      toast.error('Crédito registrado con un paso pendiente', attachmentIssue)
     }
     setIsModalOpen(false)
     clearQuery()

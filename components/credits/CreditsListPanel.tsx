@@ -515,6 +515,7 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
               onChange={value => setStatusFilter(value as StatusFilter)}
               compact
               className={`${styles.filterSelect} ${styles.statusFilter} filters-control`}
+              matchTriggerWidth
               options={[
                 { value: 'all', label: 'Todos los estados' }, { value: 'ACTIVE', label: 'Activos' },
                 { value: 'CLOSED', label: 'Cerrados' }, { value: 'BLOCKED', label: 'Bloqueados' },
@@ -527,6 +528,7 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
               onChange={value => setCurrencyFilter(value as CurrencyFilter)}
               compact
               className={`${styles.filterSelect} ${styles.currencyFilter} filters-control`}
+              matchTriggerWidth
               options={[{ value: 'all', label: 'Todas las monedas' }, ...currencyOptions]}
               testId="credits-currency-filter"
             />
@@ -536,6 +538,7 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
               onChange={setBankFilter}
               compact
               className={`${styles.filterSelect} ${styles.entityFilter} filters-control`}
+              matchTriggerWidth
               options={bankOptions}
               loading={bankEntitiesLoading}
               error={bankEntitiesError}

@@ -1,7 +1,7 @@
 /* Credit-only workbench sizing. The application-wide 580px ordinary drawer
    remains unchanged for every approved module and every other modal. */
 .creditFormOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
-  width: min(1040px, calc(100vw - 24px));
+  width: min(1120px, calc(100vw - 24px));
 }
 
 .creditScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {

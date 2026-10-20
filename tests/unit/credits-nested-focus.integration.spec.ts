@@ -125,20 +125,32 @@ async function mountRealCreditModals(page: Page, type: 'card' | 'loan', mode: 'c
     window.__creditsModules['@/lib/utils/numeric-input'] = { parseNumericInput: value => Number.parseFloat(String(value ?? '')) || 0, roundToDecimals: (value, decimals=2) => Number(Number(value).toFixed(decimals)) };
     window.__creditsModules['@/lib/contracts/ui.contracts'] = { formatNumber: value => Number(value ?? 0).toFixed(2), formatCurrency: value => String(value) };
     window.__creditsModules['@/modules/attachments/attachment-integrity'] = { ATTACHMENT_UPDATE_BLOCKED_MESSAGE: 'blocked' };
-    window.__creditsModules['@/modules/attachments/attachment-client'] = { requestAttachmentUpload: async () => ({ok:true}) };
+    window.__attachmentCalls = [];
+    window.__creditsModules['@/modules/attachments/attachment-client'] = {
+      getAttachmentAvailabilityOutcome: result => ({kind:result.availability,message:null}),
+      requestAttachmentUpload: async (endpoint, file) => {
+        window.__attachmentCalls.push({endpoint,name:file.name,size:file.size});
+        return {path:'credits/cycles/statement.pdf',file_name:file.name,file_size:file.size,content_type:file.type || 'application/pdf',signed_url:'https://example.test/statement',availability:'AVAILABLE'};
+      },
+    };
     window.__creditsModules['@/modules/credits/billing-cycle-integrity'] = { getBillingCycleDateIssue: () => null, getBillingCyclesSubmissionIssue: () => null };
     window.__creditsModules['@/modules/credits/exchange-rate-integrity'] = { resolveCreditExchangeRateInput: () => ({ok:true, value:1}) };
     window.__creditsModules['@/modules/loans/loan-schedule-integrity'] = { resizeScheduleRows: (rows, count, buildRow) => Array.from({length:count}, (_, index) => rows[index] || buildRow(index)) };
     window.__creditsModules['@/modules/loans/loan-type'] = { LOAN_TYPE_VALUES: ['CONSUMPTION'], getLoanTypeLabel: value => value };
     window.__creditsModules['@/components/credits/CreditsWorkbench.module.css'] = { default: { creditFormOverlay:'credit-form-overlay', creditScheduleOverlay:'credit-schedule-overlay' } };
-    window.fetch = async (input) => {
+    window.__creditRequests = [];
+    window.__creditSaved = null;
+    window.fetch = async (input, init = {}) => {
       const path = String(input);
+      window.__creditRequests.push({path,method:init.method || 'GET'});
       const bank = {id:'bank-1',name:'Banco de prueba',short_name:'Banco',is_active:true};
       const cycle = {id:'cycle-1',billing_month:10,billing_year:2026,consumption_from:'2026-10-01',consumption_to:'2026-10-31',payment_date:'2026-11-10',total_to_pay:25,total_to_pay_pen:25,total_to_pay_usd:0,movement_summary:null,can_delete:true,statement_url:null};
       let data = [];
       if (path === '/api/bank-entities') data = [bank];
       else if (path === '/api/accounts') data = [{id:'account-1',name:'Cuenta de prueba',type:'CHECKING',currency:'PEN',is_active:true}];
       else if (path === '/api/credits/card-1/billing-cycles') data = [cycle];
+      else if (path === '/api/credits' && init.method === 'POST') data = {credit:{id:'created-card-1'}};
+      else if (path === '/api/credits/created-card-1/billing-cycles' && init.method === 'POST') data = {id:'created-cycle-1'};
       else if (path === '/api/credits/loan-1') data = {credit:{account_id:'account-1',name:'Préstamo de prueba'},loan:{bank_entity_id:'bank-1',loan_type:'CONSUMPTION',name:'Préstamo de prueba',start_date:'2026-01-01',total_installments:1},disbursement:{transaction_date:'2026-01-01',description:'',exchange_rate:null},installments:[{id:'installment-1',due_date:'2026-02-01',principal_amount:100,interest_amount:0,insurance_amount:0,other_charges:0}],permissions:{can_edit_loan_finances:true}};
       return {ok:true,status:200,json:async()=>({ok:true,data})};
     };
@@ -148,6 +160,7 @@ async function mountRealCreditModals(page: Page, type: 'card' | 'loan', mode: 'c
   await page.addScriptTag({ content: compilePresenceHook() })
   await page.addScriptTag({ content: compileBackgroundManager() })
   await page.addScriptTag({ content: compileComponent('components/ui/RecordModal.tsx', '@/components/ui/RecordModal', ['RecordModal', 'RecordModalFooter']) })
+  await page.addScriptTag({ content: compileComponent('components/credits/CreditScheduleDateField.tsx', '@/components/credits/CreditScheduleDateField', ['CreditScheduleDateField']) })
   await page.addScriptTag({ content: compileComponent('components/credits/CreditCardScheduleModal.tsx', '@/components/credits/CreditCardScheduleModal', ['CreditCardScheduleModal', 'CreditCardScheduleEditor']) })
   await page.addScriptTag({ content: compileComponent('components/credits/BankLoanScheduleModal.tsx', '@/components/credits/BankLoanScheduleModal', ['BankLoanScheduleModal']) })
   await page.addScriptTag({ content: compileComponent('components/credits/CreditCardForm.tsx', '@/components/credits/CreditCardForm', ['CreditCardForm']) })
@@ -160,7 +173,7 @@ async function mountRealCreditModals(page: Page, type: 'card' | 'loan', mode: 'c
       const mode = ${JSON.stringify(mode)};
       const card = {id:'card-1',name:'Tarjeta de prueba',currency:'PEN',credit_limit:1000,used_amount:50,used_amount_pen:50,used_amount_usd:0,initial_used_amount_pen:50,initial_used_amount_usd:0,bank_entity_id:'bank-1',credit_type:'CREDIT_CARD'};
       const body = type === 'card'
-        ? React.createElement(window.__creditsModules['@/components/credits/CreditCardForm'].CreditCardForm, {mode,credit:mode === 'edit' ? card : null,onSuccess:()=>{},onCancel:()=>setParentOpen(false),onNestedModalOpenChange:setNestedOpen})
+        ? React.createElement(window.__creditsModules['@/components/credits/CreditCardForm'].CreditCardForm, {mode,credit:mode === 'edit' ? card : null,onSuccess:(...args)=>{window.__creditSaved=args},onCancel:()=>setParentOpen(false),onNestedModalOpenChange:setNestedOpen})
         : React.createElement(window.__creditsModules['@/components/credits/BankLoanForm'].BankLoanForm, {mode,creditId:mode === 'edit' ? 'loan-1' : undefined,onSuccess:()=>{},onCancel:()=>setParentOpen(false),onNestedModalOpenChange:setNestedOpen});
       return React.createElement(React.Fragment, null,
         React.createElement('button',{id:'outside-focus'},'Outside'),
@@ -184,7 +197,8 @@ for (const type of ['card', 'loan'] as const) {
     test(`${mode} ${type} form suspends lower workbenches until nested close completes`, async ({ page }) => {
       await mountRealCreditModals(page, type, mode)
       const trigger = page.locator(type === 'card' ? '#credit-card-schedule-trigger' : '#bank-loan-schedule-trigger')
-      await trigger.click()
+      await trigger.focus()
+      await trigger.evaluate((element: HTMLButtonElement) => element.click())
       const schedule = page.getByRole('dialog', { name: type === 'card' ? 'Cronograma completo de la tarjeta' : 'Cronograma completo del préstamo' })
       await expect(schedule).toBeVisible()
       await expect(page.locator('#nested-state')).toHaveText('true')
@@ -212,7 +226,7 @@ for (const type of ['card', 'loan'] as const) {
       await expect.poll(() => activeTrapCount(page)).toBe(1)
       await expect(trigger).toBeFocused()
 
-      await trigger.click()
+      await trigger.evaluate((element: HTMLButtonElement) => element.click())
       await expect(schedule).toBeVisible()
       await expect.poll(() => activeTrapCount(page)).toBe(1)
       await page.mouse.click(8, 8)
@@ -228,6 +242,33 @@ for (const type of ['card', 'loan'] as const) {
     })
   }
 }
+
+test('new card can stage a statement and uploads it after the persisted billing cycle exists', async ({ page }) => {
+  await mountRealCreditModals(page, 'card', 'create')
+  await page.getByTestId('credit-card-name-input').fill('Tarjeta sintética')
+  await page.getByTestId('credit-card-limit-input').fill('5000')
+  await page.getByRole('button', { name: 'Revisar ciclos' }).click()
+
+  const uploadInput = page.getByTestId('billing-cycle-statement-upload-credits-test-id')
+  await uploadInput.setInputFiles({
+    name: 'estado-cuenta.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.from('synthetic statement'),
+  })
+  await expect(page.getByText(/Listo al guardar: estado-cuenta\.pdf/)).toBeVisible()
+  await page.getByRole('button', { name: 'Listo' }).click()
+  await expect(page.getByRole('dialog', { name: 'Cronograma completo de la tarjeta' })).toBeHidden()
+  await page.getByRole('button', { name: 'Crear tarjeta' }).click()
+
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __creditSaved: string[] | null }).__creditSaved)).toEqual([
+    'Tarjeta sintética', undefined, 'created-card-1',
+  ])
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __attachmentCalls: Array<{ endpoint: string; name: string; size: number }> }).__attachmentCalls)).toEqual([
+    { endpoint: '/api/credits/created-card-1/billing-cycles/created-cycle-1/statement', name: 'estado-cuenta.pdf', size: 19 },
+  ])
+  expect(await page.evaluate(() => (window as unknown as { __creditRequests: Array<{ path: string; method: string }> }).__creditRequests))
+    .toContainEqual({ path: '/api/credits/created-card-1/billing-cycles', method: 'POST' })
+})
 
 test('credits create and edit parents wire nested workbench state to the actual RecordModal focus trap', () => {
   const workspace = readFileSync(join(process.cwd(), 'components/credits/CreditsWorkspace.tsx'), 'utf8')
