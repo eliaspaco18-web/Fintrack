@@ -24,7 +24,7 @@ export function CreditScheduleDateField({
   }, [onChange])
 
   return (
-    <div className="min-w-[156px]">
+    <div className="w-full min-w-0">
       <IncomeDatePicker
         value={value}
         onChange={handleChange}

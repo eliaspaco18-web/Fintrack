@@ -8,6 +8,7 @@ import { FormActions, FormField, FormSection } from '@/components/forms/primitiv
 import { RecordModalFooter } from '@/components/ui/RecordModal'
 import { BankLoanScheduleModal } from '@/components/credits/BankLoanScheduleModal'
 import { CreditInfoHint } from '@/components/credits/CreditInfoHint'
+import incomeStyles from '@/components/forms/TransactionForm/IncomeTransactionForm.module.css'
 import { IncomeDatePicker } from '@/components/forms/TransactionForm/IncomeDatePicker'
 import { formatScheduleDateLabel } from '@/components/credits/credits-schedule.constants'
 import { getApiErrorMessage } from '@/lib/api/error-message'
@@ -511,7 +512,7 @@ export function BankLoanForm({
         </div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto pr-1 xl:grid-cols-[minmax(0,0.98fr)_minmax(0,1.02fr)] xl:overflow-visible xl:pr-0">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto pr-1 xl:grid-cols-[minmax(0,0.98fr)_minmax(0,1.02fr)] xl:pr-0" data-testid="bank-loan-form-content">
         <FormSection
           title="Datos del préstamo"
           description="Entidad, desembolso y nombre del préstamo."
@@ -750,6 +751,7 @@ export function BankLoanForm({
 
       <RecordModalFooter>
         <FormActions
+          className={incomeStyles.operationFormActions}
           secondaryAction={(
             <Button type="button" variant="secondary" size="lg" onClick={onCancel} disabled={saving}>
               Cancelar

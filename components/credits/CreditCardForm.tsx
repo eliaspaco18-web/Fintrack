@@ -7,6 +7,7 @@ import { NumericInput } from '@/components/ui/NumericInput'
 import { FormActions, FormField, FormSection } from '@/components/forms/primitives'
 import { RecordModalFooter } from '@/components/ui/RecordModal'
 import { CreditInfoHint } from '@/components/credits/CreditInfoHint'
+import incomeStyles from '@/components/forms/TransactionForm/IncomeTransactionForm.module.css'
 import { CreditCardScheduleModal, type BillingCycleRow } from '@/components/credits/CreditCardScheduleModal'
 import {
   formatBillingCycleLabel,
@@ -526,7 +527,7 @@ export function CreditCardForm({
         </div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 items-start gap-4 overflow-y-auto pr-1 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] xl:overflow-visible xl:pr-0">
+      <div className="grid min-h-0 flex-1 grid-cols-1 items-start gap-4 overflow-y-auto pr-1 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] xl:pr-0">
         <FormSection
           title="Datos esenciales"
           description="Identidad y línea aprobada."
@@ -744,6 +745,7 @@ export function CreditCardForm({
 
       <RecordModalFooter>
         <FormActions
+          className={incomeStyles.operationFormActions}
           secondaryAction={(
             <Button type="button" variant="secondary" size="lg" onClick={onCancel} disabled={saving}>
               Cancelar

@@ -77,14 +77,23 @@ function compileBackgroundManager() {
   return `(() => { ${compiled}\nwindow.__creditsModules['@/lib/ui/v3-modal-background'] = { acquireV3ModalBackground }; })();`
 }
 
-async function mountRealCreditModals(page: Page, type: 'card' | 'loan', mode: 'create' | 'edit') {
+async function mountRealCreditModals(
+  page: Page,
+  type: 'card' | 'loan',
+  mode: 'create' | 'edit',
+  viewport = { width: 1440, height: 900 },
+) {
   const runtimeErrors: string[] = []
   page.on('pageerror', error => runtimeErrors.push(error.message))
-  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.setViewportSize(viewport)
   await page.setContent('<div class="fin-shell" data-ft-v3-shell><div id="root"></div></div>')
   await page.addScriptTag({ content: "if (!crypto.randomUUID) Object.defineProperty(crypto, 'randomUUID', { value: () => 'credits-test-id' })" })
   const cssPath = join(process.cwd(), '.next/static/css')
   const css = readdirSync(cssPath).filter(file => file.endsWith('.css')).sort().map(file => readFileSync(join(cssPath, file), 'utf8')).join('\n')
+  const moduleClass = (localName: string) => css.match(new RegExp(`\\.([\\w-]*${localName}__[\\w-]+)`))?.[1] ?? localName
+  const footerClassName = moduleClass('operationFormActions')
+  const creditFormOverlayClass = moduleClass('creditFormOverlay')
+  const creditScheduleOverlayClass = moduleClass('creditScheduleOverlay')
   await page.addStyleTag({ content: `${css}\n.app-modal-overlay{position:fixed;inset:0;display:flex;justify-content:flex-end;align-items:center;background:rgba(0,0,0,.24)}.ft-v3-workbench-wrapper{position:relative;z-index:1;width:min(580px,calc(100vw - 24px));height:calc(100dvh - 24px);margin:12px}.ft-v3-workbench-veil{position:absolute;inset:0}.app-modal-overlay [role=dialog]{height:100%;background:white}.app-modal-overlay [data-record-modal-body]{overflow:auto;flex:1;min-height:0}` })
   await page.addScriptTag({ path: reactPath })
   await page.addScriptTag({ path: reactDomPath })
@@ -107,8 +116,9 @@ async function mountRealCreditModals(page: Page, type: 'card' | 'loan', mode: 'c
     window.__creditsModules['@/components/ui/Button'] = { Button: ({children, type='button', onClick, disabled, id, ariaLabel, className, title, ...props}) => React.createElement('button', { type, onClick, disabled, id, 'aria-label': ariaLabel, className, title, ...props }, children) };
     window.__creditsModules['@/components/ui/AppSelect'] = { AppSelect: ({options=[], value='', onChange, ariaLabel, disabled, className, ...props}) => React.createElement('select', { value, onChange: event => onChange?.(event.target.value), 'aria-label': ariaLabel, disabled, className, ...props }, options.map(option => React.createElement('option', { key: option.value, value: option.value }, option.label))) };
     window.__creditsModules['@/components/ui/NumericInput'] = { NumericInput: ({value='', onValueChange, disabled, ...props}) => React.createElement('input', { value: String(value ?? ''), onChange: event => onValueChange?.(event.target.value), disabled, ...props }) };
+    window.__creditsModules['@/components/forms/TransactionForm/IncomeTransactionForm.module.css'] = { default: { operationFormActions: ${JSON.stringify(footerClassName)} } };
     window.__creditsModules['@/components/forms/primitives'] = {
-      FormActions: ({primaryAction, secondaryAction}) => React.createElement('div', null, secondaryAction, primaryAction),
+      FormActions: ({primaryAction, secondaryAction, className}) => React.createElement('div', { className }, secondaryAction, primaryAction),
       FormField: ({label, labelAdornment, children, error}) => React.createElement('div', null, React.createElement('label', null, label, labelAdornment), children, error ? React.createElement('span', null, error) : null),
       FormSection: ({title, description, children}) => React.createElement('section', null, React.createElement('h3', null, title), description ? React.createElement('p', null, description) : null, children),
     };
@@ -137,7 +147,7 @@ async function mountRealCreditModals(page: Page, type: 'card' | 'loan', mode: 'c
     window.__creditsModules['@/modules/credits/exchange-rate-integrity'] = { resolveCreditExchangeRateInput: () => ({ok:true, value:1}) };
     window.__creditsModules['@/modules/loans/loan-schedule-integrity'] = { resizeScheduleRows: (rows, count, buildRow) => Array.from({length:count}, (_, index) => rows[index] || buildRow(index)) };
     window.__creditsModules['@/modules/loans/loan-type'] = { LOAN_TYPE_VALUES: ['CONSUMPTION'], getLoanTypeLabel: value => value };
-    window.__creditsModules['@/components/credits/CreditsWorkbench.module.css'] = { default: { creditFormOverlay:'credit-form-overlay', creditScheduleOverlay:'credit-schedule-overlay' } };
+    window.__creditsModules['@/components/credits/CreditsWorkbench.module.css'] = { default: { creditFormOverlay:${JSON.stringify(creditFormOverlayClass)}, creditScheduleOverlay:${JSON.stringify(creditScheduleOverlayClass)} } };
     window.__creditRequests = [];
     window.__creditSaved = null;
     window.fetch = async (input, init = {}) => {
@@ -177,7 +187,7 @@ async function mountRealCreditModals(page: Page, type: 'card' | 'loan', mode: 'c
         : React.createElement(window.__creditsModules['@/components/credits/BankLoanForm'].BankLoanForm, {mode,creditId:mode === 'edit' ? 'loan-1' : undefined,onSuccess:()=>{},onCancel:()=>setParentOpen(false),onNestedModalOpenChange:setNestedOpen});
       return React.createElement(React.Fragment, null,
         React.createElement('button',{id:'outside-focus'},'Outside'),
-        React.createElement(window.__creditsModules['@/components/ui/RecordModal'].RecordModal,{open:parentOpen,onClose:()=>{window.__modalCloseCounts.parent++;setParentOpen(false)},title:type === 'card'?'Parent card':'Parent loan',focusTrapActive:!nestedOpen,preserveFocusOnResume:true,presentation:'workbench',testId:'parent-workbench'},body),
+        React.createElement(window.__creditsModules['@/components/ui/RecordModal'].RecordModal,{open:parentOpen,onClose:()=>{window.__modalCloseCounts.parent++;setParentOpen(false)},title:type === 'card'?'Parent card':'Parent loan',focusTrapActive:!nestedOpen,preserveFocusOnResume:true,presentation:'workbench',overlayClassName:window.__creditsModules['@/components/credits/CreditsWorkbench.module.css'].default.creditFormOverlay,testId:'parent-workbench'},body),
         React.createElement('output',{id:'nested-state'},String(nestedOpen)));
     }
     ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Host));
@@ -255,7 +265,7 @@ test('new card can stage a statement and uploads it after the persisted billing 
     mimeType: 'application/pdf',
     buffer: Buffer.from('synthetic statement'),
   })
-  await expect(page.getByText(/Listo al guardar: estado-cuenta\.pdf/)).toBeVisible()
+  await expect(page.locator('[aria-live="polite"]:visible').filter({ hasText: /Listo al guardar: estado-cuenta\.pdf/ })).toBeVisible()
   await page.getByRole('button', { name: 'Listo' }).click()
   await expect(page.getByRole('dialog', { name: 'Cronograma completo de la tarjeta' })).toBeHidden()
   await page.getByRole('button', { name: 'Crear tarjeta' }).click()
@@ -268,6 +278,102 @@ test('new card can stage a statement and uploads it after the persisted billing 
   ])
   expect(await page.evaluate(() => (window as unknown as { __creditRequests: Array<{ path: string; method: string }> }).__creditRequests))
     .toContainEqual({ path: '/api/credits/created-card-1/billing-cycles', method: 'POST' })
+})
+
+for (const width of [1440, 1710]) {
+  test(`card schedule fits its desktop workbench without horizontal scrolling at ${width}px`, async ({ page }) => {
+    await mountRealCreditModals(page, 'card', 'create', { width, height: 900 })
+    await page.getByRole('button', { name: 'Revisar ciclos' }).click()
+    const schedule = page.getByRole('dialog', { name: 'Cronograma completo de la tarjeta' })
+    await expect(schedule).toBeVisible()
+    const measurements = await page.getByTestId('credit-card-schedule-table-scroll').evaluate(element => {
+      const table = element.querySelector('table')!
+      const headers = Array.from(table.querySelectorAll('thead tr:first-child th')).map(header => header.textContent?.trim())
+      return {
+        viewport: window.innerWidth,
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+        tableWidth: table.getBoundingClientRect().width,
+        tableScrollWidth: table.scrollWidth,
+        columnCount: table.querySelectorAll('colgroup col').length,
+        headers,
+        inputOverflow: Array.from(table.querySelectorAll('input')).map(input => {
+          const cell = input.closest('td')!
+          return input.getBoundingClientRect().right <= cell.getBoundingClientRect().right + 1
+        }),
+      }
+    })
+    expect(measurements.viewport).toBe(width)
+    expect(measurements.columnCount).toBe(8)
+    expect(measurements.headers).toEqual(['Periodo', 'Consumo desde', 'Consumo hasta', 'Fecha de pago', 'Total a pagar', 'Estado de cuenta', 'Acciones'])
+    expect(measurements.scrollWidth).toBeLessThanOrEqual(measurements.clientWidth + 1)
+    expect(measurements.tableScrollWidth).toBeLessThanOrEqual(measurements.clientWidth + 1)
+    expect(measurements.tableWidth).toBeLessThanOrEqual(measurements.clientWidth + 1)
+    expect(measurements.inputOverflow.every(Boolean)).toBe(true)
+    await expect(page.getByTestId('credit-card-schedule-compact-list')).toBeHidden()
+    await expect(page.getByTestId('billing-cycle-statement-upload-credits-test-id')).toBeVisible()
+  })
+}
+
+for (const width of [390, 834]) {
+  test(`card schedule exposes all cycle data and actions in the compact layout at ${width}px`, async ({ page }) => {
+    await mountRealCreditModals(page, 'card', 'create', { width, height: 850 })
+    await page.getByRole('button', { name: 'Revisar ciclos' }).click()
+    await expect(page.getByRole('dialog', { name: 'Cronograma completo de la tarjeta' })).toBeVisible()
+    const compact = page.getByTestId('credit-card-schedule-compact-list')
+    await expect(compact).toBeVisible()
+    await expect(page.getByTestId('credit-card-schedule-table-scroll')).toBeHidden()
+    await expect(compact.getByText('Consumo desde')).toBeVisible()
+    await expect(compact.getByText('Consumo hasta')).toBeVisible()
+    await expect(compact.getByText('Fecha de pago')).toBeVisible()
+    await expect(compact.getByText('Total PEN')).toBeVisible()
+    await expect(compact.getByText('Total USD')).toBeVisible()
+    await expect(compact.locator('label[role="button"][aria-label="Adjuntar estado de cuenta de 10/2026"]')).toBeVisible()
+    await expect(compact.getByRole('button', { name: 'Ver movimientos de 10/2026' })).toBeVisible()
+    await expect(compact.getByTestId('billing-cycle-statement-upload-credits-test-id-compact')).toBeAttached()
+    const geometry = await page.evaluate(() => ({
+      viewport: window.innerWidth,
+      documentWidth: document.documentElement.scrollWidth,
+    }))
+    expect(geometry.documentWidth).toBeLessThanOrEqual(width)
+    const listGeometry = await compact.evaluate(element => ({ clientWidth: element.clientWidth, scrollWidth: element.scrollWidth }))
+    expect(listGeometry.scrollWidth).toBeLessThanOrEqual(listGeometry.clientWidth + 1)
+  })
+}
+
+test('bank loan form keeps schedule content scrollable above the shared anchored action footer', async ({ page }) => {
+  await mountRealCreditModals(page, 'loan', 'create', { width: 834, height: 700 })
+  const form = page.getByTestId('bank-loan-form')
+  const content = page.getByTestId('bank-loan-form-content')
+  const footer = form.locator('[class*="operationFormActions"]')
+  await expect(form.locator('button[type="submit"]')).toBeVisible()
+  await expect(content).toBeVisible()
+  await expect(footer).toBeVisible()
+  const layout = await page.evaluate(() => {
+    const form = document.querySelector<HTMLElement>('[data-testid="bank-loan-form"]')!
+    const content = document.querySelector<HTMLElement>('[data-testid="bank-loan-form-content"]')!
+    const footer = form.querySelector<HTMLElement>('[class*="operationFormActions"]')!
+    const body = form.closest('[data-record-modal-body]')!
+    const formRect = form.getBoundingClientRect()
+    const contentRect = content.getBoundingClientRect()
+    const footerRect = footer.getBoundingClientRect()
+    const bodyRect = body.getBoundingClientRect()
+    return {
+      contentOverflowY: getComputedStyle(content).overflowY,
+      contentScrollHeight: content.scrollHeight,
+      contentClientHeight: content.clientHeight,
+      footerClass: footer.className,
+      footerBottom: footerRect.bottom,
+      bodyBottom: bodyRect.bottom,
+      formBottom: formRect.bottom,
+      contentBottom: contentRect.bottom,
+    }
+  })
+  expect(layout.contentOverflowY).toBe('auto')
+  expect(layout.contentScrollHeight).toBeGreaterThan(layout.contentClientHeight)
+  expect(layout.footerClass).toContain('operationFormActions')
+  expect(layout.footerBottom).toBeLessThanOrEqual(layout.bodyBottom + 3)
+  expect(layout.contentBottom).toBeLessThanOrEqual(layout.footerBottom + 1)
 })
 
 test('credits create and edit parents wire nested workbench state to the actual RecordModal focus trap', () => {
