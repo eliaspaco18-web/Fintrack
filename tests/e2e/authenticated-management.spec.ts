@@ -192,19 +192,19 @@ async function createPayable(page: Page, creditorName: string, accountName: stri
   await expect(page.getByTestId('payables-new-btn')).toBeVisible()
 
   await page.getByTestId('payables-new-btn').click()
-  await expect(page.getByTestId('payable-form')).toBeVisible()
+  await expect(page).toHaveURL('/transactions?new=transaction&module=payable&type=INCOME')
+  const dialog = page.getByRole('dialog', { name: 'Recibir préstamo' })
+  await expect(dialog).toBeVisible()
+  await expect(page.getByRole('menu', { name: 'Registrar una operación' })).toHaveCount(0)
 
-  await page.getByTestId('payable-creditor-select').click()
-  await page.getByRole('option', { name: creditorName }).click()
+  await dialog.getByTestId('transaction-payable-creditor-select').selectOption({ label: creditorName })
+  await dialog.getByTestId('transaction-source-account-select').selectOption({ label: accountName })
+  await dialog.getByTestId('transaction-amount-input').fill('210')
+  await dialog.getByTestId('transaction-description-input').fill(concept)
+  await dialog.getByTestId('transaction-submit-button').click()
 
-  await page.getByTestId('payable-account-select').click()
-  await page.getByRole('option', { name: accountName }).click()
-
-  await page.getByTestId('payable-amount-input').fill('210')
-  await page.getByTestId('payable-concept-input').fill(concept)
-  await page.getByTestId('payable-save-btn').click()
-
-  await expect(page.getByTestId('payable-form')).toHaveCount(0, { timeout: 20_000 })
+  await expect(page.getByTestId('transaction-success-summary')).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByTestId('transaction-success-summary')).toContainText(concept)
 }
 
 async function createManualAlert(page: Page, title: string) {

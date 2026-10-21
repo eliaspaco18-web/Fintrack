@@ -381,6 +381,29 @@ test('receivables issue deep link mounts the approved Prestar dinero form withou
   await expect(form.getByRole('button', { name: 'Cancelar' })).toBeVisible()
   expect(await page.evaluate(() => window.__unexpectedSupabaseCalls)).toBe(0)
 })
+
+test('payables issue deep link mounts the approved Recibir préstamo form without the operation selector', async ({ page }) => {
+  await mountIntegratedFlow(page)
+  const destination = '/transactions?new=transaction&module=payable&type=INCOME'
+  await page.evaluate(path => {
+    history.pushState({}, '', path)
+    window.__navigateMock?.(path)
+  }, destination)
+
+  await expect(page).toHaveURL(/\/transactions\?new=transaction&module=payable&type=INCOME/)
+  const dialog = page.getByRole('dialog', { name: 'Recibir préstamo' })
+  await expect(dialog).toBeVisible()
+  const form = dialog.getByTestId('transaction-form')
+  await expect(form).toHaveAttribute('data-operation-layout', 'payable_issue')
+  await expect(form.getByRole('region', { name: 'Cuenta por pagar' })).toBeVisible()
+  await expect(form.getByTestId('transaction-payable-creditor-select')).toBeVisible()
+  await expect(page.getByRole('menu', { name: 'Registrar una operación' })).toHaveCount(0)
+  await expect(form.getByRole('button', { name: 'Cancelar' })).toBeVisible()
+  await form.getByRole('button', { name: 'Cancelar' }).click()
+  await expect(dialog).toHaveCount(0)
+  expect(await page.evaluate(() => window.__unexpectedSupabaseCalls)).toBe(0)
+})
+
 test('delayed and failed option preload never silently mounts a different financial operation', async ({ page }) => {
   await mountIntegratedFlow(page)
   await page.evaluate(() => {

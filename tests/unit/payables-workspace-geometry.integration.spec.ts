@@ -74,7 +74,7 @@ test('real payables workspace mirrors the shared list geometry and opens its rea
     window.__payablesModules['@/lib/ui/v3-modal-background']={acquireV3ModalBackground:()=>()=>{}};
     window.__payablesModules['@/components/ui/AnchoredActionMenu']={AnchoredActionMenu:({label,triggerContent,className})=>React.createElement('button',{type:'button','aria-label':label,className},triggerContent)};
     window.__payablesModules['./CreditorForm']={CreditorForm:()=>React.createElement('form',{id:'creditor-form','data-testid':'creditor-form'})};
-    window.__payablesModules['./PayableForm']={PayableForm:()=>React.createElement('form',{id:'payable-form','data-testid':'payable-form'})};` })
+    ` })
   await page.addScriptTag({ content: compileModule('modules/obligations/obligation-currency-presentation.ts', '@/modules/obligations/obligation-currency-presentation', ['combineObligationCurrencyBreakdowns','formatObligationCurrencySummaries','getObligationSettlementState','resolveVerifiedObligationCurrency','summarizeObligationLedgerCurrencies','formatVerifiedObligationAmount','obligationProgress']) })
   await page.addScriptTag({ content: compileModule('modules/payables/payables-list-presentation.ts', '@/modules/payables/payables-list-presentation', ['getPayablePaymentProgress','countPayablesDueWithinDays','isValidIsoDate']) })
   await page.addScriptTag({ content: compileModule('modules/payables/payables-history-presentation.ts', '@/modules/payables/payables-history-presentation', ['buildPayableFinancialHistory']) })
@@ -112,15 +112,11 @@ test('real payables workspace mirrors the shared list geometry and opens its rea
   expect(desktop.elements[2]!.width).toBe(desktop.elements[3]!.width)
   expect(desktop.elements[3]!.width).toBe(desktop.elements[4]!.width)
 
-  await page.getByTestId('payables-new-btn').click()
-  const obligationModal = page.getByTestId('payables-new-obligation-modal')
-  await expect(obligationModal).toBeVisible()
-  const obligationBody = obligationModal.locator('[data-record-modal-body="true"]')
-  const obligationFooter = obligationBody.locator('xpath=following-sibling::div[1]')
-  await expect(obligationFooter.getByTestId('payable-save-btn')).toBeVisible()
-  await expect(obligationBody.getByTestId('payable-save-btn')).toHaveCount(0)
-  await obligationFooter.getByRole('button', { name: 'Cancelar' }).click()
-  await expect(obligationModal).toHaveCount(0)
+  const newObligationLink = page.getByTestId('payables-new-btn')
+  await expect(newObligationLink).toHaveAttribute('href', '/transactions?new=transaction&module=payable&type=INCOME')
+  await expect(newObligationLink).toHaveText('Nueva obligación')
+  await expect(page.getByTestId('payables-new-obligation-modal')).toHaveCount(0)
+  await expect(page.getByTestId('payable-form')).toHaveCount(0)
 
   await page.getByTestId('payables-new-creditor-btn').click()
   const creditorModal = page.getByTestId('payables-creditor-modal')

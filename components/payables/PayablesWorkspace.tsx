@@ -24,7 +24,7 @@ import receivableStyles from '@/components/receivables/ReceivablesManager.module
 import movementStyles from '@/components/tables/TransactionsRound07.module.css'
 import detailStyles from './CreditorDetail.module.css'
 import { CreditorForm, type CreditorRow } from './CreditorForm'
-import { PayableForm, type PayableRow } from './PayableForm'
+import type { PayableRow } from './PayableForm'
 import { CreditorDetail, type CreditorWithStats } from './CreditorDetail'
 import localStyles from './PayablesWorkspace.module.css'
 
@@ -32,6 +32,7 @@ type StatusFilter = 'all' | 'pending' | 'paid'
 type SortOrder = 'desc' | 'asc'
 type FormState = { disabled: boolean; saving: boolean; editing: boolean; dirty: boolean }
 const EMPTY_FORM_STATE: FormState = { disabled: false, saving: false, editing: false, dirty: false }
+const PAYABLE_ISSUE_URL = '/transactions?new=transaction&module=payable&type=INCOME'
 const PAYABLE_PAYMENT_URL = '/transactions?new=transaction&module=payable&type=EXPENSE'
 
 function settlementState(creditor: CreditorWithStats): ObligationSettlementState {
@@ -145,7 +146,7 @@ function CreditorActions({
   )
 }
 
-export function PayablesWorkspace({ exchangeRate = 3.7 }: { exchangeRate?: number }) {
+export function PayablesWorkspace() {
   const pathname = usePathname()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -164,15 +165,13 @@ export function PayablesWorkspace({ exchangeRate = 3.7 }: { exchangeRate?: numbe
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [query, setQuery] = useState('')
   const [creditorModalOpen, setCreditorModalOpen] = useState(false)
-  const [payableModalOpen, setPayableModalOpen] = useState(false)
   const [editingCreditor, setEditingCreditor] = useState<CreditorRow | null>(null)
   const [pendingDelete, setPendingDelete] = useState<CreditorWithStats | null>(null)
   const [selectedCreditorId, setSelectedCreditorId] = useState<string | null>(null)
   const [selectedCreditorSnapshot, setSelectedCreditorSnapshot] = useState<CreditorWithStats | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [creditorFormState, setCreditorFormState] = useState<FormState>(EMPTY_FORM_STATE)
-  const [payableFormState, setPayableFormState] = useState<FormState>(EMPTY_FORM_STATE)
-  const [discardTarget, setDiscardTarget] = useState<'creditor' | 'payable' | null>(null)
+  const [discardTarget, setDiscardTarget] = useState<'creditor' | null>(null)
   const queryCreditorId = searchParams.get('creditorId')
 
   const clearDetailQuery = useCallback(() => {
@@ -269,14 +268,11 @@ export function PayablesWorkspace({ exchangeRate = 3.7 }: { exchangeRate?: numbe
   const openCreateCreditor = useCallback(() => { setEditingCreditor(null); setCreditorFormState(EMPTY_FORM_STATE); setCreditorModalOpen(true) }, [])
   const openEditCreditor = useCallback((creditor: CreditorWithStats) => { setEditingCreditor(creditor); setCreditorFormState({ ...EMPTY_FORM_STATE, editing: true }); setCreditorModalOpen(true) }, [])
   const requestCloseCreditor = useCallback(() => { if (creditorFormState.dirty) setDiscardTarget('creditor'); else setCreditorModalOpen(false) }, [creditorFormState.dirty])
-  const requestClosePayable = useCallback(() => { if (payableFormState.dirty) setDiscardTarget('payable'); else setPayableModalOpen(false) }, [payableFormState.dirty])
   const confirmDiscard = useCallback(() => {
     if (discardTarget === 'creditor') setCreditorModalOpen(false)
-    if (discardTarget === 'payable') setPayableModalOpen(false)
     setDiscardTarget(null)
   }, [discardTarget])
   const onCreditorSuccess = useCallback(async () => { setCreditorModalOpen(false); await refreshModule() }, [refreshModule])
-  const onPayableSuccess = useCallback(async () => { setPayableModalOpen(false); await refreshModule() }, [refreshModule])
 
   const handleDelete = useCallback(async () => {
     if (!pendingDelete) return
@@ -325,7 +321,7 @@ export function PayablesWorkspace({ exchangeRate = 3.7 }: { exchangeRate?: numbe
             </div>
             <div className={`${receivableStyles.headerActions} ${localStyles.headerActions}`}>
               <Button type="button" variant="secondary" size="sm" onClick={openCreateCreditor} className={receivableStyles.secondaryHeaderAction} testId="payables-new-creditor-btn" leadingIcon={<PlusIcon />}>Añadir persona</Button>
-              <Button type="button" variant="secondary" size="sm" onClick={() => { setPayableFormState(EMPTY_FORM_STATE); setPayableModalOpen(true) }} className={receivableStyles.secondaryHeaderAction} testId="payables-new-btn" leadingIcon={<PlusIcon />}>Nueva obligación</Button>
+              <Button href={PAYABLE_ISSUE_URL} variant="secondary" size="sm" className={receivableStyles.secondaryHeaderAction} testId="payables-new-btn" leadingIcon={<PlusIcon />}>Nueva obligación</Button>
               <CreateModuleButton href={PAYABLE_PAYMENT_URL} label="Registrar pago" className={`${movementStyles.v3ModulePrimaryAction} ${receivableStyles.primaryAction}`} testId="payables-payment-btn" />
             </div>
           </header>
@@ -409,12 +405,8 @@ export function PayablesWorkspace({ exchangeRate = 3.7 }: { exchangeRate?: numbe
         <CreditorForm creditor={editingCreditor} onSuccess={onCreditorSuccess} onFormStateChange={setCreditorFormState} />
       </RecordModal>
 
-      <RecordModal open={payableModalOpen} onClose={requestClosePayable} onExitComplete={() => { if (!payableModalOpen) setPayableFormState(EMPTY_FORM_STATE) }} eyebrow="Cuentas por pagar" title="Nueva obligación" subtitle="Registra el compromiso documentado y su portafolio asociado." size="lg" presentation="workbench" focusTrapActive={!discardTarget} preserveFocusOnResume preserveFocusOnDeactivate testId="payables-new-obligation-modal" footer={<FormActions secondaryAction={<Button type="button" variant="secondary" size="lg" onClick={requestClosePayable} disabled={payableFormState.saving}>Cancelar</Button>} primaryAction={<Button type="submit" form="payable-form" variant="primary" size="lg" disabled={payableFormState.disabled} loading={payableFormState.saving} testId="payable-save-btn">{payableFormState.editing ? 'Actualizar obligación' : 'Crear obligación'}</Button>} />}>
-        <PayableForm creditors={creditors} exchangeRate={exchangeRate} onSuccess={onPayableSuccess} onFormStateChange={setPayableFormState} />
-      </RecordModal>
-
       <ConfirmDialog open={!!pendingDelete} title="Eliminar acreedor" message={`Esta acción eliminará a “${pendingDelete?.name}” y no se puede deshacer.`} onConfirm={() => void handleDelete()} onCancel={() => setPendingDelete(null)} loading={rowActionId !== null} danger confirmLabel="Eliminar" confirmTestId="confirm-delete-creditor" />
-      <ConfirmDialog open={discardTarget !== null} title="Descartar cambios" message="Hay cambios sin guardar. ¿Quieres descartarlos?" onConfirm={confirmDiscard} onCancel={() => setDiscardTarget(null)} confirmLabel="Descartar" danger confirmTestId="confirm-discard-payable-form" />
+      <ConfirmDialog open={discardTarget !== null} title="Descartar cambios" message="Hay cambios sin guardar. ¿Quieres descartarlos?" onConfirm={confirmDiscard} onCancel={() => setDiscardTarget(null)} confirmLabel="Descartar" danger confirmTestId="confirm-discard-creditor-form" />
     </>
   )
 }
