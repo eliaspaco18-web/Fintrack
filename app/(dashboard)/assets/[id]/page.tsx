@@ -26,9 +26,18 @@ export default async function AssetDetailPage({ params }: { params: { id: string
 
   const transaction = asset.transaction_id
     ? await withTimeout(
-        supabase.from('transactions').select('id,description').eq('id', asset.transaction_id).single(),
+        supabase.from('transactions').select('id,description,source_account_id').eq('id', asset.transaction_id).eq('user_id', user.id).maybeSingle(),
         SERVER_QUERY_TIMEOUT_MS,
-      ).then(result => (!result.error ? result.data : null)).catch(() => null)
+      ).then(async result => {
+        if (result.error || !result.data) return null
+        const account = result.data.source_account_id
+          ? await withTimeout(
+              supabase.from('accounts').select('id,name').eq('id', result.data.source_account_id).eq('user_id', user.id).maybeSingle(),
+              SERVER_QUERY_TIMEOUT_MS,
+            ).then(accountResult => accountResult.error ? null : accountResult.data).catch(() => null)
+          : null
+        return { id: result.data.id, description: result.data.description, source_account: account }
+      }).catch(() => null)
     : null
 
   return <AssetDetail asset={asset} transaction={transaction}/>

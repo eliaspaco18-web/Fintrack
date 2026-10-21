@@ -1,150 +1,110 @@
 'use client'
 
-// =============================================================================
-// components/assets/AssetsForm.tsx
-// PRD v3 — Módulo 5: Activos
-//
-// Campos PRD exactos:
-//   - Portafolio (desplegable, obligatorio)
-//   - Fecha (calendario, obligatorio)
-//   - Tipo de Activo (desplegable desde Administración, obligatorio)
-//   - Descripción (texto libre)
-//   - Moneda (automático desde portafolio, no editable)
-//   - Monto (numérico, obligatorio + equivalencia)
-//   - Destinatario (texto libre)
-//   - Notas (texto libre)
-//   - Adjuntar constancia o comprobante
-// =============================================================================
-
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { FormActions, FormField, FormSection } from '@/components/forms/primitives'
-import { Button } from '@/components/ui/Button'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { AppSelect } from '@/components/ui/AppSelect'
 import { NumericInput } from '@/components/ui/NumericInput'
-import { RecordModalFooter } from '@/components/ui/RecordModal'
+import { FormField, FormSection } from '@/components/forms/primitives'
+import { IncomeDatePicker } from '@/components/forms/TransactionForm/IncomeDatePicker'
 import { getApiErrorMessage } from '@/lib/api/error-message'
-import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 import { formatCurrency } from '@/lib/contracts/ui.contracts'
+import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 import { ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE } from '@/modules/attachments/attachment-integrity'
+import styles from './AssetsListPanel.module.css'
 
-// ─── TYPES ────────────────────────────────────────────────────────────────────
-
-type AccountOption = {
-  id: string
-  name: string
-  type: string
-  currency: string
-  is_active: boolean
-}
-
-type AssetTypeOption = {
-  id: string
-  name: string
-  color: string | null
-  icon: string | null
-}
+type AccountOption = { id: string; name: string; type: string; currency: string; is_active: boolean }
+type AssetTypeOption = { id: string; name: string; color: string | null; icon: string | null }
+type AssetFormState = { dirty: boolean; saving: boolean; ready: boolean }
+type FormValues = { name: string; account_id: string; asset_type_id: string; purchase_date: string; purchase_value: string; description: string; recipient: string; notes: string }
 
 interface AssetsFormProps {
   onSuccess: (assetName: string) => void
-  onCancel: () => void
+  onFormStateChange: (state: AssetFormState) => void
 }
 
-// ─── CONSTANTS ────────────────────────────────────────────────────────────────
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10)
-}
-
-// Tipos de portafolio válidos para compra de activo (excluir CREDIT_CARD)
 const VALID_ACCOUNT_TYPES = ['CHECKING', 'SAVINGS', 'CASH', 'INVESTMENT', 'STOCKS', 'ETF', 'CRYPTO', 'OTHER']
+const todayIso = () => {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
 
-// ─── COMPONENT ────────────────────────────────────────────────────────────────
-
-export function AssetsForm({ onSuccess, onCancel }: AssetsFormProps) {
+export function AssetsForm({ onSuccess, onFormStateChange }: AssetsFormProps) {
   const [accounts, setAccounts] = useState<AccountOption[]>([])
   const [assetTypes, setAssetTypes] = useState<AssetTypeOption[]>([])
   const [loadingData, setLoadingData] = useState(true)
+  const [referenceError, setReferenceError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [dateError, setDateError] = useState<string | null>(null)
+  const [dirty, setDirty] = useState(false)
+  const [form, setForm] = useState<FormValues>({ name: '', account_id: '', asset_type_id: '', purchase_date: todayIso(), purchase_value: '', description: '', recipient: '', notes: '' })
+  const formRef = useRef(form)
+  const dirtyRef = useRef(false)
+  const initialFormRef = useRef(form)
+  const validAccounts = useMemo(() => accounts.filter(account => account.is_active && VALID_ACCOUNT_TYPES.includes(account.type)), [accounts])
+  const selectedAccount = validAccounts.find(account => account.id === form.account_id) ?? null
+  const amount = parseNumericInput(form.purchase_value, 0)
+  const ready = !loadingData && !referenceError && Boolean(selectedAccount)
 
-  // ── Estado del formulario
-  const [form, setForm] = useState({
-    name: '',
-    account_id: '',
-    asset_type_id: '',
-    purchase_date: todayIso(),
-    purchase_value: '',
-    description: '',
-    recipient: '',
-    notes: '',
-  })
-
-  // Portafolios válidos (excluir CREDIT_CARD)
-  const validAccounts = useMemo(
-    () => accounts.filter(a => a.is_active && VALID_ACCOUNT_TYPES.includes(a.type)),
-    [accounts]
-  )
-
-  // Moneda automática desde portafolio seleccionado
-  const selectedAccount = useMemo(
-    () => validAccounts.find(a => a.id === form.account_id) ?? null,
-    [validAccounts, form.account_id]
-  )
-  const currency = selectedAccount?.currency ?? '—'
-
-  // Equivalencia en USD/PEN (si es USD muestra PEN, y viceversa)
-  const parsedAmount = parseNumericInput(form.purchase_value, 0)
-  // Carga inicial de portafolios y tipos de activo
-  useEffect(() => {
-    const load = async () => {
-      setLoadingData(true)
-      try {
-        const [accRes, atRes] = await Promise.all([
-          fetch('/api/accounts', { cache: 'no-store' }),
-          fetch('/api/asset-types', { cache: 'no-store' }),
-        ])
-        const [accJson, atJson] = await Promise.all([accRes.json(), atRes.json()])
-        if (accJson?.ok) {
-          const loaded = (accJson.data as AccountOption[]) ?? []
-          setAccounts(loaded)
-          const first = loaded.find(a => a.is_active && VALID_ACCOUNT_TYPES.includes(a.type))
-          if (first) setForm(prev => ({ ...prev, account_id: first.id }))
-        }
-        if (atJson?.ok) {
-          const types = (atJson.data as AssetTypeOption[]) ?? []
-          setAssetTypes(types)
-          const firstType = types[0]
-          if (firstType) setForm(prev => ({ ...prev, asset_type_id: firstType.id }))
-        }
-      } catch {
-        setError('No se pudieron cargar los datos del formulario.')
-      } finally {
-        setLoadingData(false)
-      }
-    }
-    void load()
+  const update = useCallback(<K extends keyof FormValues>(key: K, value: FormValues[K]) => {
+    const next = { ...formRef.current, [key]: value }
+    formRef.current = next
+    const changed = Object.keys(next).some(field => next[field as keyof FormValues] !== initialFormRef.current[field as keyof FormValues])
+    dirtyRef.current = changed
+    setDirty(changed)
+    setForm(next)
+    setError(null)
   }, [])
 
-  const handleSubmit = useCallback(async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    if (saving) return
+  const loadReferenceData = useCallback(async () => {
+    setLoadingData(true)
+    setReferenceError(null)
+    try {
+      const [accountResponse, typeResponse] = await Promise.all([
+        fetch('/api/accounts', { cache: 'no-store' }),
+        fetch('/api/asset-types', { cache: 'no-store' }),
+      ])
+      const [accountJson, typeJson] = await Promise.all([
+        accountResponse.json().catch(() => null),
+        typeResponse.json().catch(() => null),
+      ])
+      if (!accountResponse.ok || !accountJson?.ok) throw new Error(getApiErrorMessage(accountJson, 'No se pudieron cargar los portafolios.'))
+      if (!typeResponse.ok || !typeJson?.ok) throw new Error(getApiErrorMessage(typeJson, 'No se pudieron cargar los tipos de activo.'))
+      const nextAccounts = (accountJson.data as AccountOption[]) ?? []
+      const nextTypes = (typeJson.data as AssetTypeOption[]) ?? []
+      setAccounts(nextAccounts)
+      setAssetTypes(nextTypes)
+      const nextForm = {
+        ...formRef.current,
+        account_id: formRef.current.account_id || nextAccounts.find(account => account.is_active && VALID_ACCOUNT_TYPES.includes(account.type))?.id || '',
+        asset_type_id: formRef.current.asset_type_id || nextTypes[0]?.id || '',
+      }
+      formRef.current = nextForm
+      setForm(nextForm)
+      if (!dirtyRef.current) initialFormRef.current = nextForm
+    } catch (caught) {
+      setReferenceError(caught instanceof Error ? caught.message : 'No se pudieron cargar los datos del formulario.')
+    } finally {
+      setLoadingData(false)
+    }
+  }, [])
 
+  useEffect(() => { void loadReferenceData() }, [loadReferenceData])
+  useEffect(() => { onFormStateChange({ dirty, saving, ready }) }, [dirty, onFormStateChange, ready, saving])
+
+  const handleSubmit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (saving || !ready) return
     const name = form.name.trim()
     if (name.length < 2) { setError('El nombre debe tener al menos 2 caracteres.'); return }
     if (!form.account_id) { setError('Selecciona un portafolio.'); return }
-    if (!form.purchase_date) { setError('La fecha es obligatoria.'); return }
-
-    const amount = roundToDecimals(parseNumericInput(form.purchase_value, Number.NaN), 2)
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setError('El monto debe ser mayor a 0.')
-      return
-    }
+    if (!form.purchase_date || dateError) { setError(dateError ?? 'Selecciona una fecha de compra válida.'); return }
+    const purchaseValue = roundToDecimals(parseNumericInput(form.purchase_value, Number.NaN), 2)
+    if (!Number.isFinite(purchaseValue) || purchaseValue <= 0) { setError('El monto debe ser mayor a 0.'); return }
 
     setSaving(true)
     setError(null)
-
     try {
-      const res = await fetch('/api/assets', {
+      const response = await fetch('/api/assets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -152,250 +112,79 @@ export function AssetsForm({ onSuccess, onCancel }: AssetsFormProps) {
           account_id: form.account_id,
           asset_type_id: form.asset_type_id || null,
           purchase_date: form.purchase_date,
-          purchase_value: amount,
+          purchase_value: purchaseValue,
           currency: selectedAccount?.currency ?? 'PEN',
           description: form.description.trim() || null,
           recipient: form.recipient.trim() || null,
           notes: form.notes.trim() || null,
         }),
       })
-      const json = await res.json().catch(() => null)
-      if (!res.ok || !json?.ok) throw new Error(getApiErrorMessage(json, 'No se pudo registrar el activo'))
-
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.ok) throw new Error(getApiErrorMessage(json, 'No se pudo registrar el activo.'))
+      setDirty(false)
+      dirtyRef.current = false
       onSuccess(name)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo registrar el activo')
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'No se pudo registrar el activo.')
     } finally {
       setSaving(false)
     }
-  }, [form, saving, selectedAccount, onSuccess])
+  }, [dateError, form, onSuccess, ready, saving, selectedAccount])
 
   return (
-    <>
-      <form id="asset-form" data-testid="asset-form" onSubmit={handleSubmit} className="space-y-[var(--ft-form-section-gap)]">
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,0.98fr)_minmax(400px,1.02fr)]">
-          <FormSection
-            title="Activo"
-            description="Identifica el bien que vas a incorporar y deja una lectura compacta del registro antes de guardar."
-            columns="1"
-            className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
-          >
-            <FormField label="Nombre">
-              <input
-                value={form.name}
-                onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
-                data-testid="asset-name-input"
-                className="field-base ft-form-input w-full"
-                placeholder="Ej: Laptop operaciones"
-                required
-              />
-            </FormField>
-
-            <FormField label="Tipo de activo">
-              {loadingData ? (
-                <div className="field-base ft-form-input flex w-full items-center text-[var(--ft-form-muted)]">
-                  Cargando tipos...
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <AppSelect
-                    value={form.asset_type_id}
-                    onChange={v => setForm(prev => ({ ...prev, asset_type_id: v }))}
-                    testId="asset-type-select"
-                    options={assetTypes.length === 0
-                      ? [{ value: '', label: 'Sin tipos de activo configurados', disabled: true }]
-                      : assetTypes.map(t => ({ value: t.id, label: t.name }))
-                    }
-                    searchPlaceholder="Buscar tipo..."
-                  />
-                  {assetTypes.length === 0 ? (
-                    <p className="text-[12px] leading-[1.45] text-amber-500">
-                      Configura tipos de activo en Administración antes de registrar compras.
-                    </p>
-                  ) : null}
-                </div>
-              )}
-            </FormField>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
-                <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--ft-form-muted)]">Preview</p>
-                <p className="mt-1 text-[14px] font-semibold tracking-[-0.02em] text-[var(--c-text)]">
-                  {form.name.trim() || 'Activo sin nombre'}
-                </p>
-                <p className="mt-1 text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-                  {assetTypes.find(type => type.id === form.asset_type_id)?.name ?? 'Selecciona un tipo'}
-                </p>
-              </div>
-
-              <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
-                <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--ft-form-muted)]">Lectura</p>
-                <p className="mt-1 text-[14px] font-semibold tabular-nums tracking-[-0.02em] text-[var(--c-text)]">
-                  {parsedAmount > 0 && selectedAccount
-                    ? formatCurrency(parsedAmount, selectedAccount.currency as 'PEN' | 'USD')
-                    : 'Monto pendiente'}
-                </p>
-                <p className="mt-1 text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-                  {selectedAccount?.name ?? 'Sin portafolio seleccionado'}
-                </p>
-              </div>
-            </div>
-
-            <FormField label="Notas" optional>
-              <textarea
-                rows={3}
-                value={form.notes}
-                onChange={e => setForm(prev => ({ ...prev, notes: e.target.value }))}
-                className="field-base ft-form-textarea w-full resize-none"
-                placeholder="Detalle interno, referencia o contexto adicional"
-              />
-            </FormField>
-          </FormSection>
-
-          <FormSection
-            title="Compra"
-            description="Relaciona la compra con el portafolio de salida, el importe y la fecha del movimiento."
-            columns="1"
-            className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
-          >
-            <FormField label="Portafolio">
-              {loadingData ? (
-                <div className="field-base ft-form-input flex w-full items-center text-[var(--ft-form-muted)]">
-                  Cargando portafolios...
-                </div>
-              ) : (
-                <AppSelect
-                  value={form.account_id}
-                  onChange={v => setForm(prev => ({ ...prev, account_id: v }))}
-                  testId="asset-account-select"
-                  options={validAccounts.length === 0
-                    ? [{ value: '', label: 'Sin portafolios disponibles', disabled: true }]
-                    : validAccounts.map(a => ({ value: a.id, label: `${a.name} · ${a.currency}` }))
-                  }
-                  searchPlaceholder="Buscar portafolio..."
-                />
-              )}
-            </FormField>
-
-            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
-              <FormField label="Monto">
-                <NumericInput
-                  step="0.01"
-                  decimals={2}
-                  min={0}
-                  value={form.purchase_value}
-                  onValueChange={v => setForm(prev => ({ ...prev, purchase_value: v }))}
-                  data-testid="asset-amount-input"
-                  className="field-base ft-form-amount-input w-full px-3.5 py-3 text-base font-semibold"
-                  placeholder="0.00"
-                  required
-                />
-              </FormField>
-
-              <FormField
-                label="Moneda contextual"
-                description="Se hereda del portafolio."
-              >
-                <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
-                  <p className="text-sm font-semibold text-[var(--c-text)]">{currency}</p>
-                  <p className="mt-1 text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-                    {selectedAccount ? selectedAccount.name : 'Selecciona un portafolio'}
-                  </p>
-                </div>
-              </FormField>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <FormField label="Fecha">
-                <input
-                  type="date"
-                  value={form.purchase_date}
-                  onChange={e => setForm(prev => ({ ...prev, purchase_date: e.target.value }))}
-                  data-testid="asset-date-input"
-                  className="field-base ft-form-input w-full"
-                  required
-                />
-              </FormField>
-
-              <FormField label="Proveedor" optional>
-                <input
-                  value={form.recipient}
-                  onChange={e => setForm(prev => ({ ...prev, recipient: e.target.value }))}
-                  data-testid="asset-recipient-input"
-                  className="field-base ft-form-input w-full"
-                  placeholder="Ej: Memory Kings"
-                />
-              </FormField>
-            </div>
-
-            <FormField label="Descripcion">
-              <input
-                value={form.description}
-                onChange={e => setForm(prev => ({ ...prev, description: e.target.value }))}
-                data-testid="asset-description-input"
-                className="field-base ft-form-input w-full"
-                placeholder="Ej: Compra de equipo para soporte"
-              />
-            </FormField>
-          </FormSection>
+    <form id="asset-form" data-testid="asset-form" onSubmit={handleSubmit} className={styles.assetForm}>
+      {referenceError ? (
+        <div className={styles.referenceError} role="alert">
+          <p>{referenceError}</p>
+          <button type="button" onClick={() => void loadReferenceData()} disabled={loadingData}>Reintentar</button>
         </div>
+      ) : null}
 
-        <FormSection
-          title="Comprobante"
-          description="La carga permanecerá deshabilitada hasta que exista una asociación verificable con el activo."
-          columns="1"
-          className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
-        >
-          <div className="flex min-w-0 items-center gap-3 rounded-[var(--ft-form-radius)] border border-dashed border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-4 py-3 text-[12px] text-[var(--ft-form-muted)]" data-testid="asset-attachment-unavailable">
-            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--ft-surface)]" aria-hidden="true">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                <polyline points="17 8 12 3 7 8"/>
-                <line x1="12" y1="3" x2="12" y2="15"/>
-              </svg>
-            </span>
-            <div className="min-w-0">
-              <p className="font-semibold text-[var(--ft-text)]">Carga no disponible</p>
-              <p className="mt-0.5 leading-[1.45]">{ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE}</p>
-            </div>
+      <FormSection title="Identificación" columns="2" className={styles.formSection}>
+        <FormField label="Nombre del activo">
+          <input value={form.name} onChange={event => update('name', event.target.value)} data-testid="asset-name-input" className="field-base ft-form-input w-full" placeholder="Ej.: Laptop de operaciones" maxLength={150} required />
+        </FormField>
+        <FormField label="Tipo de activo" optional>
+          <AppSelect value={form.asset_type_id} onChange={value => update('asset_type_id', value)} testId="asset-type-select" options={assetTypes.length ? assetTypes.map(type => ({ value: type.id, label: type.name })) : [{ value: '', label: 'Sin tipos configurados', disabled: true }]} searchable searchPlaceholder="Buscar tipo..." />
+        </FormField>
+      </FormSection>
+
+      <FormSection title="Compra" columns="2" className={styles.formSection}>
+        <FormField label="Cuenta de origen">
+          <AppSelect value={form.account_id} onChange={value => update('account_id', value)} testId="asset-account-select" options={validAccounts.length ? validAccounts.map(account => ({ value: account.id, label: `${account.name} · ${account.currency}` })) : [{ value: '', label: loadingData ? 'Cargando cuentas…' : 'Sin cuentas disponibles', disabled: true }]} searchable searchPlaceholder="Buscar cuenta..." />
+        </FormField>
+        <div className={styles.amountRow}>
+          <FormField label="Importe de compra">
+            <NumericInput value={form.purchase_value} onValueChange={value => update('purchase_value', value)} step="0.01" decimals={2} min={0} data-testid="asset-amount-input" className="field-base ft-form-amount-input w-full px-3.5 py-3 text-base font-semibold" placeholder="0.00" required />
+          </FormField>
+          <div className={styles.currencyContext} aria-live="polite">
+            <span>Moneda de la cuenta</span>
+            <strong>{selectedAccount?.currency ?? '—'}</strong>
           </div>
-        </FormSection>
+        </div>
+        {amount > 0 && selectedAccount ? <p className={`${styles.amountPreview} md:col-span-2`}>Importe registrado: <strong>{formatCurrency(amount, selectedAccount.currency as 'PEN' | 'USD')}</strong></p> : null}
+        <FormField label="Fecha de compra">
+          <IncomeDatePicker value={form.purchase_date} onChange={value => { update('purchase_date', value); setDateError(null) }} onInvalidInput={setDateError} error={dateError ?? undefined} inputLabel="Fecha de compra" inputTestId="asset-date-input" disabled={saving} />
+        </FormField>
+        <FormField label="Proveedor o destinatario" optional>
+          <input value={form.recipient} onChange={event => update('recipient', event.target.value)} data-testid="asset-recipient-input" className="field-base ft-form-input w-full" placeholder="Nombre del proveedor" maxLength={160} />
+        </FormField>
+        <FormField label="Descripción" optional className="md:col-span-2">
+          <input value={form.description} onChange={event => update('description', event.target.value)} data-testid="asset-description-input" className="field-base ft-form-input w-full" placeholder="Motivo o referencia de compra" maxLength={300} />
+        </FormField>
+      </FormSection>
 
-        {error ? (
-          <div className="rounded-[var(--ft-form-radius)] border border-[color:var(--ft-form-error)]/20 bg-[var(--ft-danger-soft)] px-3.5 py-3">
-            <p className="text-[12px] font-medium text-[var(--ft-form-error)]">{error}</p>
-          </div>
-        ) : null}
-      </form>
+      <FormSection title="Información adicional" className={styles.formSection}>
+        <FormField label="Notas" optional>
+          <textarea rows={3} value={form.notes} onChange={event => update('notes', event.target.value)} className="field-base ft-form-textarea w-full resize-y" placeholder="Contexto interno del activo" maxLength={500} />
+        </FormField>
+        <div className={styles.attachmentNotice} data-testid="asset-attachment-unavailable">
+          <span className={styles.noticeIcon} aria-hidden="true">i</span>
+          <p><strong>Comprobantes no disponibles</strong><span>{ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE}</span></p>
+        </div>
+      </FormSection>
 
-      <RecordModalFooter>
-        <FormActions
-          secondaryAction={(
-            <Button
-              type="button"
-              onClick={onCancel}
-              disabled={saving}
-              variant="secondary"
-              size="lg"
-            >
-              Cancelar
-            </Button>
-          )}
-          primaryAction={(
-            <Button
-              type="submit"
-              form="asset-form"
-              disabled={saving || loadingData || !form.account_id}
-              loading={saving}
-              testId="asset-submit-button"
-              variant="primary"
-              size="lg"
-            >
-              Registrar activo
-            </Button>
-          )}
-        />
-      </RecordModalFooter>
-    </>
+      {error ? <p role="alert" className={styles.formError}>{error}</p> : null}
+    </form>
   )
 }

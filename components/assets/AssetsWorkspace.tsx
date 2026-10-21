@@ -11,8 +11,12 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { mutate } from 'swr'
 import { useToast } from '@/lib/toast/toast'
 import { RecordModal } from '@/components/ui/RecordModal'
+import { Button } from '@/components/ui/Button'
+import { ConfirmDialog } from '@/components/finance'
 import { AssetsForm } from '@/components/assets/AssetsForm'
 import { AssetsListPanel } from '@/components/assets/AssetsListPanel'
+import styles from './AssetsListPanel.module.css'
+import { FormActions } from '@/components/forms/primitives'
 
 function toNextUrl(pathname: string, params: URLSearchParams): string {
   const qs = params.toString()
@@ -27,6 +31,10 @@ export function AssetsWorkspace() {
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [formKey, setFormKey]         = useState(0)
+  const [isDirty, setIsDirty]         = useState(false)
+  const [isSaving, setIsSaving]       = useState(false)
+  const [formReady, setFormReady]     = useState(false)
+  const [discardOpen, setDiscardOpen] = useState(false)
   const handledRef                    = useRef(false)
 
   const openFromQuery = searchParams.get('new') === 'asset'
@@ -39,19 +47,41 @@ export function AssetsWorkspace() {
 
   const openModal = useCallback(() => {
     setFormKey(k => k + 1)
+    setIsDirty(false)
+    setIsSaving(false)
+    setFormReady(false)
     setIsModalOpen(true)
     const params = new URLSearchParams(searchParams.toString())
     params.set('new', 'asset')
     router.replace(toNextUrl(pathname, params), { scroll: false })
   }, [pathname, router, searchParams])
 
+  const handleFormStateChange = useCallback((state: { dirty: boolean; saving: boolean; ready: boolean }) => {
+    setIsDirty(state.dirty)
+    setIsSaving(state.saving)
+    setFormReady(state.ready)
+  }, [])
+
   const closeModal = useCallback(() => {
+    if (isSaving) return
+    if (isDirty) {
+      setDiscardOpen(true)
+      return
+    }
+    setIsModalOpen(false)
+    clearQuery()
+  }, [clearQuery, isDirty, isSaving])
+
+  const confirmClose = useCallback(() => {
+    setDiscardOpen(false)
+    setIsDirty(false)
     setIsModalOpen(false)
     clearQuery()
   }, [clearQuery])
 
   const handleSuccess = useCallback(async (assetName: string) => {
     toast.success('Activo registrado', assetName)
+    setIsDirty(false)
     setIsModalOpen(false)
     clearQuery()
     await mutate((key: unknown) => typeof key === 'string' && key.startsWith('/api/assets'))
@@ -63,6 +93,9 @@ export function AssetsWorkspace() {
       if (handledRef.current) return
       handledRef.current = true
       setFormKey(k => k + 1)
+      setIsDirty(false)
+      setIsSaving(false)
+      setFormReady(false)
       setIsModalOpen(true)
       return
     }
@@ -78,12 +111,37 @@ export function AssetsWorkspace() {
         open={isModalOpen}
         onClose={closeModal}
         eyebrow="Activos"
-        title="Nuevo activo"
-        subtitle="Registra un bien, equipo o inversión en tu patrimonio."
-        widthClassName="w-[calc(100vw-32px)] max-w-[960px]"
+        title="Registrar activo"
+        subtitle="Registra la compra y los datos del activo en una sola operación."
+        presentation="workbench"
+        size="xl"
+        overlayClassName={styles.createOverlay}
+        focusTrapActive={!discardOpen}
+        preserveFocusOnResume
+        testId="assets-create-modal"
+        footer={(
+          <FormActions
+            secondaryAction={<Button type="button" variant="secondary" onClick={closeModal} disabled={isSaving}>Cancelar</Button>}
+            primaryAction={<Button type="submit" form="asset-form" variant="primary" loading={isSaving} disabled={!formReady || isSaving} testId="asset-submit-button">Registrar activo</Button>}
+          />
+        )}
       >
-        <AssetsForm key={formKey} onSuccess={handleSuccess} onCancel={closeModal} />
+        <AssetsForm
+          key={formKey}
+          onSuccess={handleSuccess}
+          onFormStateChange={handleFormStateChange}
+        />
       </RecordModal>
+      <ConfirmDialog
+        open={discardOpen}
+        title="Descartar cambios"
+        message="Hay cambios sin guardar. ¿Quieres cerrar sin registrar el activo?"
+        onCancel={() => setDiscardOpen(false)}
+        onConfirm={confirmClose}
+        confirmLabel="Descartar cambios"
+        cancelLabel="Seguir editando"
+        testId="assets-create-discard-modal"
+      />
     </div>
   )
 }

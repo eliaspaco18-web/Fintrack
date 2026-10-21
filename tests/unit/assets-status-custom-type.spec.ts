@@ -2,8 +2,11 @@ import { expect, test } from '@playwright/test'
 import {
   ASSET_STATUS_FILTERS,
   getAssetStatusPresentation,
+  getAssetPurchaseValue,
   getAssetTypePresentation,
+  getRecordedAssetValue,
   matchesAssetStatusFilter,
+  summarizeActiveAssetValues,
   type AssetWithTypeInfo,
 } from '@/modules/assets/asset-presentation'
 
@@ -173,5 +176,32 @@ test.describe('Assets status filtering and custom type detail correctness', () =
     expect(asset.current_value).toBe(6_300)
     expect(asset.currency).toBe('USD')
     expect(asset.depreciation_rate).toBe(0.15)
+  })
+
+  test('summarizes active recorded values by original currency without converting them', () => {
+    const summary = summarizeActiveAssetValues([
+      assetFixture({ id: 'pen-1', current_value: 800, currency: 'PEN' }),
+      assetFixture({ id: 'pen-2', current_value: 200, currency: 'PEN' }),
+      assetFixture({ id: 'usd-1', current_value: 50, currency: 'USD' }),
+      assetFixture({ id: 'sold', current_value: 900, currency: 'PEN', status: 'SOLD' }),
+    ])
+
+    expect(summary).toEqual([
+      { currency: 'PEN', amount: 1000, count: 2, invalidCount: 0 },
+      { currency: 'USD', amount: 50, count: 1, invalidCount: 0 },
+    ])
+  })
+
+  test('keeps zero as a recorded zero and excludes invalid or unknown-currency values from numeric totals', () => {
+    const invalid = assetFixture({ id: 'invalid', current_value: Number.NaN, currency: 'PEN' })
+    const unknownCurrency = assetFixture({ id: 'unknown', current_value: 25, currency: '' })
+    expect(getRecordedAssetValue(assetFixture({ current_value: 0 }))).toBe(0)
+    expect(getAssetPurchaseValue(assetFixture({ purchase_value: 0 }))).toBe(0)
+    expect(getAssetPurchaseValue({ purchase_value: null } as unknown as Pick<AssetWithTypeInfo, 'purchase_value'>)).toBeNull()
+    expect(getRecordedAssetValue(invalid)).toBeNull()
+    expect(summarizeActiveAssetValues([invalid, unknownCurrency])).toEqual([
+      { currency: 'PEN', amount: 0, count: 0, invalidCount: 1 },
+      { currency: 'UNVERIFIED', amount: 0, count: 0, invalidCount: 1 },
+    ])
   })
 })
