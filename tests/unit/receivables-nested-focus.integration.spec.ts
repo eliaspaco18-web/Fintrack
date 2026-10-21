@@ -48,10 +48,25 @@ function compileFocusTrap() {
   return `(() => { const React = window.React; ${compiled}\nwindow.__receivablesModules['@/components/ui/accessibility'] = { FocusTrap }; })();`
 }
 
-test('real DetailDrawer suspends its focus trap for a nested window and restores focus on close', async ({ page }) => {
+function compilePresenceHook() {
+  const path = join(process.cwd(), 'lib/ui/use-v3-workbench-presence.ts')
+  const sourceFile = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true)
+  const importRanges = sourceFile.statements.filter(ts.isImportDeclaration).map(statement => ({ start: statement.getStart(sourceFile), end: statement.end }))
+  let source = sourceFile.text.replace(/^'use client'\s*/, '')
+  importRanges.sort((a, b) => b.start - a.start).forEach(range => { source = `${source.slice(0, range.start)}${source.slice(range.end)}` })
+  source = source.replace(/^export\s+(?=(?:async\s+)?(?:function|const|class|interface|type)\b)/gm, '')
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.ESNext },
+  }).outputText.replace(/^export\s*\{\s*\};?\s*$/gm, '')
+  return `(() => { const { useEffect, useLayoutEffect, useRef, useState } = window.React; ${compiled}\nwindow.__receivablesModules['@/lib/ui/use-v3-workbench-presence'] = { useV3WorkbenchPresence }; })();`
+}
+
+test('real RecordModal workbenches keep one active focus trap across nested create and restore the opener', async ({ page }) => {
+  page.on('pageerror', error => console.info('Nested RecordModal browser error:', error.stack ?? error.message))
   const cssPath = join(process.cwd(), '.next/static/css')
   const css = readdirSync(cssPath).filter(file => file.endsWith('.css')).sort().map(file => readFileSync(join(cssPath, file), 'utf8')).join('\n')
-  await page.setContent('<main data-ft-v3-shell><button id="launch">Abrir persona</button></main>')
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.setContent('<main data-ft-v3-shell><div id="root"><button id="launch">Abrir persona</button></div></main>')
   await page.addStyleTag({ content: css })
   await page.addScriptTag({ path: reactPath })
   await page.addScriptTag({ path: reactDomPath })
@@ -63,36 +78,39 @@ test('real DetailDrawer suspends its focus trap for a nested window and restores
     window.__receivablesModules['react-dom'] = { createPortal: ReactDOM.createPortal };
     window.__receivablesModules['next/link'] = { default: () => null };
     window.__receivablesModules['@/components/ui/Button'] = { Button: ({children, type='button', onClick, ariaLabel, ...props}) => React.createElement('button', {type, onClick, 'aria-label':ariaLabel, ...props}, children), buttonClassName: () => '' };
+    window.__receivablesModules['@/lib/ui/v3-modal-background'] = { acquireV3ModalBackground: () => () => {} };
     ` })
   await page.addScriptTag({ content: compileFocusTrap() })
-  await page.addScriptTag({ content: compileComponent('components/ui/ModalOverlayPortal.tsx', '@/components/ui/ModalOverlayPortal', 'ModalOverlayPortal') })
-  await page.addScriptTag({ content: compileComponent('components/finance/primitives.tsx', '@/components/finance/primitives', 'DetailDrawer') })
+  await page.addScriptTag({ content: compilePresenceHook() })
+  await page.addScriptTag({ content: compileComponent('components/ui/RecordModal.tsx', '@/components/ui/RecordModal', 'RecordModal') })
   await page.addScriptTag({ content: `function Harness() {
     const [open,setOpen]=React.useState(false); const [nested,setNested]=React.useState(false);
-    const returnRef=React.useRef(null);
-    const Drawer=window.__receivablesModules['@/components/finance/primitives'].DetailDrawer;
-    const Trap=window.__receivablesModules['@/components/ui/accessibility'].FocusTrap;
+    const Modal=window.__receivablesModules['@/components/ui/RecordModal'].RecordModal;
     return React.createElement(React.Fragment,null,
       React.createElement('button',{id:'launch',onClick:()=>setOpen(true)},'Abrir persona'),
-      React.createElement(Drawer,{open,title:'Detalle de persona',description:'Cuentas y movimientos',onClose:()=>setOpen(false),width:800,inset:true,focusTrapActive:!nested,preserveFocusOnResume:true,focusReturnTargetRef:returnRef,reliableExitLifecycle:true},
-        React.createElement('button',{id:'nested-trigger',onClick:event=>{returnRef.current=event.currentTarget;setNested(true)}},'Nueva cuenta'),
-        nested ? React.createElement(Trap,{active:true,onEscape:()=>setNested(false),preserveFocusIfAlreadyWithin:true},React.createElement('section',{role:'dialog','aria-label':'Nueva cuenta'},React.createElement('button',{id:'nested-close',onClick:()=>setNested(false)},'Cerrar formulario'))) : null,
-        React.createElement('output',{id:'nested-state'},String(nested))),
-      React.createElement('output',{id:'drawer-state'},String(open)));
+      React.createElement(Modal,{open,onClose:()=>setOpen(false),onExitComplete:()=>document.getElementById('launch')?.focus(),title:'Detalle de cuenta',eyebrow:'Detalle de cuenta por cobrar',subtitle:'Cuentas y movimientos',size:'xl',presentation:'workbench',focusTrapActive:!nested,preserveFocusOnResume:true,preserveFocusOnDeactivate:true,testId:'debtor-detail-modal'},
+        React.createElement('button',{id:'nested-trigger',onClick:()=>setNested(true)},'Nueva cuenta')),
+      React.createElement(Modal,{open:nested,onClose:()=>setNested(false),title:'Nueva cuenta por cobrar',size:'lg',presentation:'workbench',testId:'nested-receivable-modal'},
+        React.createElement('button',{id:'nested-close',onClick:()=>setNested(false)},'Cerrar formulario')),
+      React.createElement('output',{id:'nested-state'},String(nested)),
+      React.createElement('output',{id:'detail-state'},String(open)));
   }
-  ReactDOM.createRoot(document.querySelector('main')).render(React.createElement(Harness));` })
+  ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Harness));` })
 
   await page.locator('#launch').click()
   await expect.poll(() => page.evaluate(() => (window as unknown as { __activeFocusTrapKeys: Set<unknown> }).__activeFocusTrapKeys.size)).toBe(1)
   await page.locator('#nested-trigger').click()
   await expect.poll(() => page.evaluate(() => (window as unknown as { __activeFocusTrapKeys: Set<unknown> }).__activeFocusTrapKeys.size)).toBe(1)
-  await expect(page.locator('#nested-close')).toBeFocused()
+  await expect(page.getByRole('heading', { name: 'Nueva cuenta por cobrar' })).toBeFocused()
+  await expect(page.getByTestId('debtor-detail-modal')).toBeVisible()
+  await expect(page.getByTestId('nested-receivable-modal')).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(page.locator('#nested-state')).toHaveText('false')
+  await expect(page.getByTestId('nested-receivable-modal')).toHaveCount(0)
   await expect.poll(() => page.evaluate(() => (window as unknown as { __activeFocusTrapKeys: Set<unknown> }).__activeFocusTrapKeys.size)).toBe(1)
   await expect(page.locator('#nested-trigger')).toBeFocused()
   await page.keyboard.press('Escape')
-  await expect(page.locator('#drawer-state')).toHaveText('false')
-  await expect(page.getByRole('dialog', { name: 'Detalle de persona' })).toHaveCount(0)
+  await expect(page.locator('#detail-state')).toHaveText('false')
+  await expect(page.getByTestId('debtor-detail-modal')).toHaveCount(0)
   await expect(page.locator('#launch')).toBeFocused()
 })

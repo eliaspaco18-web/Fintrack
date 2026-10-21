@@ -65,11 +65,14 @@ interface FocusTrapProps {
   initialFocusRef?: RefObject<HTMLElement | null>
   deferRestoreFocus?: boolean
   preserveFocusIfAlreadyWithin?: boolean
+  preserveFocusOnDeactivate?: boolean
 }
 
-export function FocusTrap({ active, children, onEscape, className, selectPortalHost = false, initialFocusRef, deferRestoreFocus = false, preserveFocusIfAlreadyWithin = false }: FocusTrapProps) {
+export function FocusTrap({ active, children, onEscape, className, selectPortalHost = false, initialFocusRef, deferRestoreFocus = false, preserveFocusIfAlreadyWithin = false, preserveFocusOnDeactivate = false }: FocusTrapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const onEscapeRef = useRef(onEscape)
+  const preserveFocusOnDeactivateRef = useRef(preserveFocusOnDeactivate)
+  preserveFocusOnDeactivateRef.current = preserveFocusOnDeactivate
 
   useEffect(() => {
     onEscapeRef.current = onEscape
@@ -131,9 +134,10 @@ export function FocusTrap({ active, children, onEscape, className, selectPortalH
       // Restaurar foco al cerrar
       if (deferRestoreFocus) {
         queueMicrotask(() => {
+          if (preserveFocusOnDeactivateRef.current) return
           if (previouslyFocused?.isConnected && !previouslyFocused.closest('[inert]')) previouslyFocused.focus()
         })
-      } else {
+      } else if (!preserveFocusOnDeactivateRef.current) {
         previouslyFocused?.focus?.()
       }
     }

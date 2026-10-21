@@ -38,9 +38,11 @@ function cssModuleMap(css: string, sourcePath: string, prefix: string) {
 }
 
 test('real ReceivablesManager shares the V3 header, full-width dividers and external filter row at desktop and mobile', async ({ page }) => {
+  page.on('pageerror', error => console.info('Receivables manager browser error:', error.stack ?? error.message))
   const cssRoot = join(process.cwd(), '.next/static/css')
   const css = readdirSync(cssRoot).filter(file => file.endsWith('.css')).sort().map(file => readFileSync(join(cssRoot, file), 'utf8')).join('\n')
   const managerClasses = cssModuleMap(css, 'components/receivables/ReceivablesManager.module.css', 'ReceivablesManager')
+  const debtorDetailClasses = cssModuleMap(css, 'components/receivables/DebtorDetail.module.css', 'DebtorDetail')
   const movementClasses = cssModuleMap(css, 'components/tables/TransactionsRound07.module.css', 'TransactionsRound07')
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.setContent('<div id="root" data-ft-v3></div>')
@@ -50,12 +52,11 @@ test('real ReceivablesManager shares the V3 header, full-width dividers and exte
   await page.addScriptTag({ content: `window.__receivablesModules={}; window.React=React;
     window.__receivablesModules.react=React; window.__receivablesModules['react-dom']={createPortal:ReactDOM.createPortal};
     window.__receivablesModules['next/navigation']={usePathname:()=>'/receivables',useRouter:()=>({replace:()=>{}}),useSearchParams:()=>new URLSearchParams()};
-    window.__receivablesModules['@/components/ui/Button']={Button:({children,className,testId,ariaLabel,leadingIcon,href,onClick,type='button',...props})=>React.createElement(href?'a':'button',{...props,href,onClick,type,className,'data-testid':testId,'aria-label':ariaLabel},leadingIcon,children)};
+    window.__receivablesModules['next/link']={default:({href,children,...props})=>React.createElement('a',{...props,href},children)};
     window.__receivablesModules['@/components/ui/AnchoredActionMenu']={AnchoredActionMenu:()=>null};
     window.__receivablesModules['@/components/ui/RecordModal']={RecordModal:()=>null};
     window.__receivablesModules['@/components/finance']={ConfirmDialog:()=>null,DataErrorBanner:()=>null,DataSearchField:({value,onChange,className,...props})=>React.createElement('div',{className},React.createElement('input',{value,onChange:event=>onChange(event.target.value),...props,className:'h-9 w-full rounded-control border border-[var(--ft-border)] bg-[var(--ft-surface)] pl-3 pr-3 text-[13px]'})),EmptyState:({title})=>React.createElement('p',null,title),PageLayout:({children,className})=>React.createElement('main',{className:'ft-shell-content '+className},children)};
     window.__receivablesModules['@/components/finance']={ConfirmDialog:()=>null,DataErrorBanner:()=>null,DataSearchField:({value,onChange,className,...props})=>React.createElement('div',{className},React.createElement('input',{value,onChange:event=>onChange(event.target.value),...props,className:'h-9 w-full rounded-control border border-[var(--ft-border)] bg-[var(--ft-surface)] pl-3 pr-3 text-[13px]'})),EmptyState:({title})=>React.createElement('p',null,title),PageLayout:({children,className})=>React.createElement('main',{className:'ft-shell-content '+className},children)};
-    window.__receivablesModules['@/components/finance/primitives']={DetailDrawer:()=>null};
     window.__receivablesModules['@/lib/api/error-message']={getApiErrorMessage:(_json,fallback)=>fallback};
     window.__receivablesModules['@/lib/client/fetch-with-timeout']={fetchWithTimeout:async url=>({ok:true,json:async()=>({ok:true,data:[]})})};
     window.__receivablesModules['@/lib/toast/toast']={useToast:()=>({toast:{success:()=>{},error:()=>{}}})};
@@ -63,10 +64,12 @@ test('real ReceivablesManager shares the V3 header, full-width dividers and exte
     window.__receivablesModules['@/modules/obligations/obligation-currency-presentation']={combineObligationCurrencyBreakdowns:()=>({summaries:[{currency:'PEN',pending:0,openRecordCount:0}],unverifiedRecordCount:0,unverifiedOpenRecordCount:0})};
     window.__receivablesModules['@/modules/receivables/receivables-list-presentation']={countReceivablesDueWithinDays:()=>0,getDebtorDueSummary:()=>({date:null,overdue:false,openWithDateCount:0,openWithoutDateCount:0}),getReceivablePersonState:()=> 'EMPTY',hasVerifiedOpenReceivable:()=>false};
     window.__receivablesModules['./DebtorDetail']={DebtorDetail:()=>null};
+    window.__receivablesModules['./DebtorDetail.module.css']={default:${JSON.stringify(debtorDetailClasses)}};
     window.__receivablesModules['./DebtorForm']={DebtorForm:()=>null};
     window.__receivablesModules['./ReceivableForm']={ReceivableForm:()=>null};
     window.__receivablesModules['./ReceivablesManager.module.css']={default:${JSON.stringify(managerClasses)}};
     window.__receivablesModules['@/components/tables/TransactionsRound07.module.css']={default:${JSON.stringify(movementClasses)}};` })
+  await page.addScriptTag({ content: compileComponent('components/ui/Button.tsx', '@/components/ui/Button', 'Button') })
   await page.addScriptTag({ content: compileComponent('components/ui/AppSelect.tsx', '@/components/ui/AppSelect', 'AppSelect') })
   await page.addScriptTag({ content: compileComponent('components/finance/data-table.tsx', '@/components/finance/data-table', 'DataSearchField') })
   await page.evaluate(() => {
@@ -98,6 +101,16 @@ test('real ReceivablesManager shares the V3 header, full-width dividers and exte
       toolbar: box('[data-testid="receivables-filter-toolbar"]'),
       content: box('[data-testid="receivables-register"]'),
       cta: { x: Math.round(ctaRect.x), y: Math.round(ctaRect.y), width: Math.round(ctaRect.width), height: Math.round(ctaRect.height) },
+      secondaryCta: (() => {
+        const button = document.querySelector('[data-testid="receivables-new-debtor-btn"]')!
+        const rect = button.getBoundingClientRect()
+        const label = button.querySelector('span')!
+        return {
+          x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height),
+          iconBeforeLabel: button.children[0]?.tagName.toLowerCase() === 'svg' && button.children[1]?.tagName.toLowerCase() === 'span',
+          labelLines: Math.round(label.getBoundingClientRect().height / parseFloat(getComputedStyle(label).lineHeight)),
+        }
+      })(),
       toolbarControls: Array.from(document.querySelector('[data-testid="receivables-filter-toolbar"]')!.querySelectorAll(':scope > div > *')).map(element => {
         const rect = element.getBoundingClientRect()
         return { x: Math.round(rect.x), y: Math.round(rect.y), right: Math.round(rect.right), bottom: Math.round(rect.bottom) }
@@ -114,6 +127,10 @@ test('real ReceivablesManager shares the V3 header, full-width dividers and exte
   console.info('Receivables desktop geometry:', JSON.stringify(desktop))
   expect(desktop.cta.width).toBeLessThan(360)
   expect(desktop.cta.height).toBe(36)
+  expect(desktop.secondaryCta.height).toBe(desktop.cta.height)
+  expect(desktop.secondaryCta.y).toBe(desktop.cta.y)
+  expect(desktop.secondaryCta.iconBeforeLabel).toBe(true)
+  expect(desktop.secondaryCta.labelLines).toBe(1)
   expect(desktop.summary.width).toBe(desktop.tabs.width)
   expect(desktop.tabs.width).toBe(desktop.toolbar.width)
   expect(desktop.summary.borderBottom).toBe('1px')

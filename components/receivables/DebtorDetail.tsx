@@ -70,6 +70,7 @@ type Props = {
   exchangeRate: number
   onChanged?: () => void | Promise<void>
   onNestedModalOpenChange?: (open: boolean) => void
+  onRegisterCreateAction?: (action: (() => void) | null) => void
 }
 
 function formatDate(iso: string) {
@@ -118,7 +119,7 @@ function formatReceivableAmount(value: unknown, currency: string | null) {
   return currency && Number.isFinite(amount) ? formatCurrency(amount, currency) : 'Importe no verificable'
 }
 
-export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpenChange }: Props) {
+export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpenChange, onRegisterCreateAction }: Props) {
   const [rows, setRows] = useState<ReceivableRow[]>([])
   const [ledgerRows, setLedgerRows] = useState<LedgerRow[]>([])
   const [accounts, setAccounts] = useState<AccountOption[]>([])
@@ -213,6 +214,11 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpe
     onNestedModalOpenChange?.(true)
   }, [onNestedModalOpenChange])
 
+  useEffect(() => {
+    onRegisterCreateAction?.(openCreate)
+    return () => onRegisterCreateAction?.(null)
+  }, [onRegisterCreateAction, openCreate])
+
   const confirmDiscard = useCallback(() => {
     setCreateDirty(false)
     setDiscardOpen(false)
@@ -234,7 +240,7 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpe
         <div className={styles.panelHeading}>
           <div>
             <h3 id="debtor-recovery-title">Recuperación documentada</h3>
-            <p>Importes pendientes y cobrados por moneda original.</p>
+            <p>Resumen separado por moneda original</p>
           </div>
           <span className={`${styles.stateBadge} ${settlementState === 'SETTLED' ? styles.stateSuccess : settlementState === 'UNVERIFIED' ? styles.stateMuted : styles.stateWarning}`}>
             {summaryStateLabel(settlementState)}
@@ -261,12 +267,14 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpe
             {debtor.has_unverified_initial_debt ? 'Saldo inicial sin moneda verificable' : `${debtor.unverified_currency_records} registro${debtor.unverified_currency_records === 1 ? '' : 's'} sin moneda verificable`}. Excluido de los importes por moneda.
           </p>
         ) : null}
-        <div className={styles.recoveryProgress} aria-label="Porcentaje cobrado por moneda">
-          {debtor.currency_summaries.map(summary => {
-            const percent = summary.total > 0 ? Math.min(100, Math.max(0, summary.settled / summary.total * 100)) : 0
-            return <div key={summary.currency} className={styles.progressLine}><span>{summary.currency}</span><div role="progressbar" aria-label={`Cobrado ${summary.currency}`} aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${percent}%` }} /></div><strong>{Math.round(percent)}%</strong></div>
-          })}
-        </div>
+        {debtor.currency_summaries.length ? (
+          <div className={styles.recoveryProgress} aria-label="Porcentaje cobrado por moneda">
+            {debtor.currency_summaries.map(summary => {
+              const percent = summary.total > 0 ? Math.min(100, Math.max(0, summary.settled / summary.total * 100)) : 0
+              return <div key={summary.currency} className={styles.progressLine}><span>{summary.currency}</span><div role="progressbar" aria-label={`Cobrado ${summary.currency}`} aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${percent}%` }} /></div><strong>{Math.round(percent)}%</strong></div>
+            })}
+          </div>
+        ) : null}
       </section>
 
       <section className={styles.obligationsPanel} aria-labelledby="debtor-obligations-title" data-testid="debtor-obligations">
@@ -322,7 +330,6 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpe
             <h3 id="debtor-ledger-title">Movimientos vinculados</h3>
             <p>{filteredLedger.length} movimiento{filteredLedger.length === 1 ? '' : 's'} · {openAccountsCount} cuenta{openAccountsCount === 1 ? '' : 's'} pendiente{openAccountsCount === 1 ? '' : 's'}{overdueCount ? ` · ${overdueCount} vencida${overdueCount === 1 ? '' : 's'}` : ''}</p>
           </div>
-          <Button type="button" variant="secondary" size="sm" onClick={openCreate}>Nueva cuenta por cobrar</Button>
         </div>
 
         <div className={styles.detailToolbar}>
@@ -348,6 +355,7 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpe
         </div>
         {dateError ? <p className={styles.dateError} role="alert">{dateError}</p> : null}
 
+        <div className={styles.ledgerScroll}>
         {error ? <DataErrorBanner message={error} onRetry={() => void loadRows()} /> : null}
         {loading ? (
           <div className={styles.loadingList} aria-label="Cargando movimientos" aria-busy="true">
@@ -375,6 +383,7 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpe
             })}
           </div>
         ) : null}
+        </div>
       </section>
 
       <RecordModal

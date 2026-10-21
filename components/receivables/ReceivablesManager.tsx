@@ -9,7 +9,6 @@ import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
 import { RecordModal } from '@/components/ui/RecordModal'
 import { ConfirmDialog, DataErrorBanner, DataSearchField, EmptyState, PageLayout } from '@/components/finance'
 import { FormActions } from '@/components/forms/primitives'
-import { DetailDrawer } from '@/components/finance/primitives'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { fetchWithTimeout } from '@/lib/client/fetch-with-timeout'
 import { useToast } from '@/lib/toast/toast'
@@ -26,6 +25,7 @@ import {
   type ReceivableListRecord,
 } from '@/modules/receivables/receivables-list-presentation'
 import { DebtorDetail } from './DebtorDetail'
+import debtorDetailStyles from './DebtorDetail.module.css'
 import { DebtorForm, type DebtorRow } from './DebtorForm'
 import { ReceivableForm, type ReceivableRow } from './ReceivableForm'
 import styles from './ReceivablesManager.module.css'
@@ -178,7 +178,9 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
   const registerRef = useRef<HTMLElement>(null)
   const hasLoadedDebtorsRef = useRef(false)
   const hasLoadedReceivablesRef = useRef(false)
-  const nestedFocusReturnRef = useRef<HTMLElement | null>(null)
+  const detailFocusReturnRef = useRef<HTMLElement | null>(null)
+  const detailOpenRef = useRef(false)
+  const detailCreateActionRef = useRef<(() => void) | null>(null)
 
   const [debtors, setDebtors] = useState<DebtorWithStats[]>([])
   const [receivables, setReceivables] = useState<ReceivableRow[]>([])
@@ -200,6 +202,8 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
   const [editingDebtor, setEditingDebtor] = useState<DebtorRow | null>(null)
   const [pendingDelete, setPendingDelete] = useState<DebtorWithStats | null>(null)
   const [selectedDebtorId, setSelectedDebtorId] = useState<string | null>(null)
+  const [selectedDebtorSnapshot, setSelectedDebtorSnapshot] = useState<DebtorWithStats | null>(null)
+  const [debtorDetailOpen, setDebtorDetailOpen] = useState(false)
   const [nestedModalOpen, setNestedModalOpen] = useState(false)
   const drawerDebtorId = searchParams.get('debtorId')
 
@@ -254,20 +258,37 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
 
   useEffect(() => { void loadDebtors(); void loadReceivables() }, [loadDebtors, loadReceivables])
 
+  const openDebtorDetail = useCallback((debtorId: string) => {
+    const debtor = debtors.find(item => item.id === debtorId)
+    if (!debtor) return
+    if (document.activeElement instanceof HTMLElement) detailFocusReturnRef.current = document.activeElement
+    detailOpenRef.current = true
+    setSelectedDebtorSnapshot(debtor)
+    setSelectedDebtorId(debtorId)
+    setDebtorDetailOpen(true)
+  }, [debtors])
+
   useEffect(() => {
-    if (!drawerDebtorId || debtors.length === 0) return
-    if (selectedDebtorId === drawerDebtorId) return
-    if (debtors.some(debtor => debtor.id === drawerDebtorId)) setSelectedDebtorId(drawerDebtorId)
-  }, [debtors, drawerDebtorId, selectedDebtorId])
+    if (!drawerDebtorId || debtors.length === 0 || selectedDebtorId === drawerDebtorId) return
+    if (debtors.some(debtor => debtor.id === drawerDebtorId)) openDebtorDetail(drawerDebtorId)
+  }, [debtors, drawerDebtorId, openDebtorDetail, selectedDebtorId])
 
   const selectedDebtor = useMemo(
-    () => debtors.find(debtor => debtor.id === selectedDebtorId) ?? null,
-    [debtors, selectedDebtorId],
+    () => debtors.find(debtor => debtor.id === selectedDebtorId)
+      ?? (selectedDebtorSnapshot?.id === selectedDebtorId ? selectedDebtorSnapshot : null),
+    [debtors, selectedDebtorId, selectedDebtorSnapshot],
   )
   const onNestedModalOpenChange = useCallback((open: boolean) => {
-    if (open && document.activeElement instanceof HTMLElement) nestedFocusReturnRef.current = document.activeElement
     setNestedModalOpen(open)
   }, [])
+  const registerDetailCreateAction = useCallback((action: (() => void) | null) => {
+    detailCreateActionRef.current = action
+  }, [])
+  const closeDetail = useCallback(() => {
+    detailOpenRef.current = false
+    setDebtorDetailOpen(false)
+    clearDrawerQuery()
+  }, [clearDrawerQuery])
   const currencyBreakdown = useMemo(() => combineObligationCurrencyBreakdowns(debtors.map(debtor => ({
     summaries: debtor.currency_summaries ?? [],
     unverifiedRecordCount: debtor.unverified_currency_records ?? 0,
@@ -361,14 +382,14 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
       }
       toast.success('Persona eliminada', undefined, { persist: false })
       setPendingDelete(null)
-      if (selectedDebtorId === pendingDelete.id) setSelectedDebtorId(null)
+      if (selectedDebtorId === pendingDelete.id) closeDetail()
       await refreshModule()
     } catch (caught) {
       toast.error('No se pudo eliminar', caught instanceof Error ? caught.message : 'Inténtalo nuevamente.')
     } finally {
       setRowActionId(null)
     }
-  }, [pendingDelete, refreshModule, selectedDebtorId, toast])
+  }, [closeDetail, pendingDelete, refreshModule, selectedDebtorId, toast])
 
   const toggleActive = useCallback(async (debtor: DebtorWithStats) => {
     const next = !debtor.is_active
@@ -393,16 +414,21 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
     setQuery('')
     const unverifiedDebtors = debtors.filter(debtor => debtor.has_unverified_initial_debt)
     if (unverifiedDebtors.length === 1) {
-      setSelectedDebtorId(unverifiedDebtors[0]!.id)
+      openDebtorDetail(unverifiedDebtors[0]!.id)
       return
     }
     requestAnimationFrame(() => registerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
-  }, [debtors])
+  }, [debtors, openDebtorDetail])
 
-  const closeDetail = useCallback(() => {
+  const completeDetailExit = useCallback(() => {
+    if (detailOpenRef.current) return
     setSelectedDebtorId(null)
-    clearDrawerQuery()
-  }, [clearDrawerQuery])
+    setSelectedDebtorSnapshot(null)
+    setNestedModalOpen(false)
+    const returnTarget = detailFocusReturnRef.current
+    detailFocusReturnRef.current = null
+    if (returnTarget?.isConnected && !returnTarget.closest('[inert]')) returnTarget.focus()
+  }, [])
 
   const summaryReady = !loading && !error
 
@@ -420,8 +446,14 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
               </p>
             </div>
             <div className={styles.headerActions}>
-              <Button type="button" variant="secondary" size="md" onClick={openCreateDebtor} testId="receivables-new-debtor-btn">
-                <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+              <Button
+                type="button"
+                variant="secondary"
+                size="md"
+                onClick={openCreateDebtor}
+                testId="receivables-new-debtor-btn"
+                leadingIcon={<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>}
+              >
                 Añadir persona
               </Button>
               <CreateModuleButton
@@ -622,7 +654,7 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
                             debtor={debtor}
                             canCollect={canCollect}
                             busy={rowActionId !== null}
-                            onView={() => setSelectedDebtorId(debtor.id)}
+                            onView={() => openDebtorDetail(debtor.id)}
                             onEdit={() => openEditDebtor(debtor)}
                             onToggle={() => void toggleActive(debtor)}
                             onDelete={() => setPendingDelete(debtor)}
@@ -652,7 +684,7 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
                                     : <span className={styles.dueEmpty}>{openRecords.length > 0 ? 'Sin fecha registrada' : 'Sin vencimiento pendiente'}</span>}
                             </div>
                             <div className={styles.mobileActions}>
-                              <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedDebtorId(debtor.id)}>Ver cuenta</Button>
+                              <Button type="button" variant="ghost" size="sm" onClick={() => openDebtorDetail(debtor.id)}>Ver cuenta</Button>
                               {canCollect ? <Button href={RECEIVABLES_COLLECTION_URL} variant="secondary" size="sm">Registrar cobro</Button> : null}
                               <span className={styles.moreAction}>
                                 <AnchoredActionMenu
@@ -679,17 +711,42 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
         </section>
       </PageLayout>
 
-      <DetailDrawer
-        open={Boolean(selectedDebtor)}
-        title={selectedDebtor?.name ?? 'Detalle de persona'}
-        description={selectedDebtor?.relationship?.trim() || 'Cuentas documentadas y movimientos vinculados, separados por moneda.'}
+      <RecordModal
+        open={debtorDetailOpen}
         onClose={closeDetail}
-        width={1000}
-        inset
+        onExitComplete={completeDetailExit}
+        eyebrow="Detalle de cuenta por cobrar"
+        title={selectedDebtor?.name ?? 'Detalle de cuenta'}
+        subtitle={selectedDebtor?.relationship?.trim() || 'Cuentas documentadas y movimientos vinculados.'}
+        headerBadge={selectedDebtor ? (
+          <DebtorStatus
+            state={personState(selectedDebtor, receivables, Boolean(receivablesError) && receivables.length === 0)}
+            inactive={!selectedDebtor.is_active}
+          />
+        ) : null}
+        size="xl"
+        presentation="workbench"
+        overlayClassName={debtorDetailStyles.detailOverlay}
+        bodyClassName={debtorDetailStyles.detailModalBody}
+        footerClassName={debtorDetailStyles.detailModalFooter}
         focusTrapActive={!nestedModalOpen}
         preserveFocusOnResume
-        focusReturnTargetRef={nestedFocusReturnRef}
-        reliableExitLifecycle
+        preserveFocusOnDeactivate
+        testId="receivables-debtor-detail-modal"
+        footer={selectedDebtor ? (
+          <div className={debtorDetailStyles.detailFooterActions}>
+            <Button
+              type="button"
+              variant="primary"
+              size="md"
+              onClick={() => detailCreateActionRef.current?.()}
+              leadingIcon={<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>}
+              testId="debtor-detail-new-receivable"
+            >
+              Nueva cuenta por cobrar
+            </Button>
+          </div>
+        ) : undefined}
       >
         {selectedDebtor ? (
           <DebtorDetail
@@ -697,9 +754,10 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
             exchangeRate={exchangeRate}
             onChanged={refreshModule}
             onNestedModalOpenChange={onNestedModalOpenChange}
+            onRegisterCreateAction={registerDetailCreateAction}
           />
         ) : null}
-      </DetailDrawer>
+      </RecordModal>
 
       <RecordModal
         open={debtorModalOpen}

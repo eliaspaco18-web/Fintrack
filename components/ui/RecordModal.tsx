@@ -64,6 +64,7 @@ interface RecordModalProps {
   overlayClassName?: string
   focusTrapActive?: boolean
   preserveFocusOnResume?: boolean
+  preserveFocusOnDeactivate?: boolean
   presentation?: 'legacy' | 'workbench'
   workbenchKind?: 'ordinary' | 'schedule'
   motionSource?: V3WorkbenchMotionSource
@@ -96,6 +97,7 @@ export function RecordModal({
   overlayClassName = 'z-modal',
   focusTrapActive = true,
   preserveFocusOnResume = false,
+  preserveFocusOnDeactivate = false,
   presentation = 'legacy',
   workbenchKind = 'ordinary',
   motionSource = 'keyboard',
@@ -200,6 +202,7 @@ export function RecordModal({
         initialFocusRef={isWorkbench ? headingRef : undefined}
         deferRestoreFocus={isWorkbench}
         preserveFocusIfAlreadyWithin={preserveFocusOnResume}
+        preserveFocusOnDeactivate={isWorkbench && preserveFocusOnDeactivate && !focusTrapActive}
       >
         <div
           ref={isWorkbench ? presence.frameRef : undefined}
