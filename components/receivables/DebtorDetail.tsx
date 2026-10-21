@@ -3,9 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AppSelect } from '@/components/ui/AppSelect'
 import { Button } from '@/components/ui/Button'
-import { RecordModal } from '@/components/ui/RecordModal'
-import { FormActions } from '@/components/forms/primitives'
-import { ConfirmDialog, DataErrorBanner, DataSearchField, EmptyState } from '@/components/finance'
+import { DataErrorBanner, DataSearchField, EmptyState } from '@/components/finance'
 import { IncomeDatePicker } from '@/components/forms/TransactionForm/IncomeDatePicker'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { formatCurrency } from '@/lib/contracts/ui.contracts'
@@ -17,7 +15,7 @@ import {
 } from '@/modules/obligations/obligation-currency-presentation'
 import { buildDebtorFinancialHistory } from '@/modules/receivables/debtor-financial-history'
 import { getReceivableRecoveryProgress } from '@/modules/receivables/receivables-list-presentation'
-import { ReceivableForm } from './ReceivableForm'
+import movementStyles from '@/components/tables/TransactionsRound07.module.css'
 import type { DebtorRow } from './DebtorForm'
 import styles from './DebtorDetail.module.css'
 
@@ -69,10 +67,6 @@ type AccountOption = { id: string; name: string }
 
 type Props = {
   debtor: DebtorWithStats
-  exchangeRate: number
-  onChanged?: () => void | Promise<void>
-  onNestedModalOpenChange?: (open: boolean) => void
-  onRegisterCreateAction?: (action: (() => void) | null) => void
 }
 
 function formatDate(iso: string) {
@@ -121,7 +115,7 @@ function receivableStateLabel(status: string) {
   }
 }
 
-export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpenChange, onRegisterCreateAction }: Props) {
+export function DebtorDetail({ debtor }: Props) {
   const [rows, setRows] = useState<ReceivableRow[]>([])
   const [ledgerRows, setLedgerRows] = useState<LedgerRow[]>([])
   const [accounts, setAccounts] = useState<AccountOption[]>([])
@@ -133,10 +127,6 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpe
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [dateError, setDateError] = useState<string | null>(null)
-  const [createOpen, setCreateOpen] = useState(false)
-  const [createDirty, setCreateDirty] = useState(false)
-  const [createFormState, setCreateFormState] = useState({ disabled: true, saving: false, editing: false })
-  const [discardOpen, setDiscardOpen] = useState(false)
   const settlementState = getObligationSettlementState({
     summaries: debtor.currency_summaries,
     unverifiedRecordCount: debtor.unverified_currency_records,
@@ -196,36 +186,6 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpe
   }), [accountFilter, dateFrom, dateTo, financialHistory, movementFilter, normalizedQuery])
   const overdueCount = useMemo(() => rows.filter(isOverdue).length, [rows])
   const openAccountsCount = rows.filter(row => ['PENDING', 'PARTIAL'].includes(row.status)).length
-
-  const handleFormSuccess = useCallback(async () => {
-    setCreateDirty(false)
-    setCreateOpen(false)
-    await loadRows()
-    await onChanged?.()
-  }, [loadRows, onChanged])
-
-  const requestCloseCreate = useCallback(() => {
-    if (createDirty) setDiscardOpen(true)
-    else setCreateOpen(false)
-  }, [createDirty])
-
-  const openCreate = useCallback(() => {
-    setCreateDirty(false)
-    setCreateFormState({ disabled: true, saving: false, editing: false })
-    setCreateOpen(true)
-    onNestedModalOpenChange?.(true)
-  }, [onNestedModalOpenChange])
-
-  useEffect(() => {
-    onRegisterCreateAction?.(openCreate)
-    return () => onRegisterCreateAction?.(null)
-  }, [onRegisterCreateAction, openCreate])
-
-  const confirmDiscard = useCallback(() => {
-    setCreateDirty(false)
-    setDiscardOpen(false)
-    setCreateOpen(false)
-  }, [])
 
   const clearFilters = useCallback(() => {
     setQuery('')
@@ -288,23 +248,21 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpe
           </div>
         </div>
 
-        <div className={styles.detailToolbar}>
-          <div className={styles.detailSearch}>
-            <DataSearchField
-              value={query}
-              onChange={setQuery}
-              placeholder="Buscar historial financiero"
-              aria-label="Buscar historial financiero"
-              className={styles.detailSearchInput}
-              data-testid="debtor-detail-search"
-            />
-          </div>
-          <AppSelect value={accountFilter} onChange={setAccountFilter} options={accountOptions} compact searchable={false} matchTriggerWidth className={`${styles.detailFilter} ${styles.detailAccountFilter}`} ariaLabel="Filtrar por portafolio" />
+        <div className={`${movementStyles.controlsMain} ${movementStyles.portfolioFilterBar} ${styles.detailToolbar}`} data-testid="debtor-detail-filter-toolbar">
+          <DataSearchField
+            value={query}
+            onChange={setQuery}
+            placeholder="Buscar historial financiero"
+            aria-label="Buscar historial financiero"
+            className={`${styles.detailSearch} min-w-0`}
+            data-testid="debtor-detail-search"
+          />
+          <AppSelect value={accountFilter} onChange={setAccountFilter} options={accountOptions} compact searchable={false} matchTriggerWidth className={`${movementStyles.portfolioFilter} ${styles.detailFilter} filters-control ${styles.detailAccountFilter}`} ariaLabel="Filtrar por portafolio" testId="debtor-detail-account-filter" />
           <AppSelect value={movementFilter} onChange={value => setMovementFilter(value as 'all' | 'income' | 'expense')} options={[
             { value: 'all', label: 'Todos los movimientos' },
             { value: 'expense', label: 'Solo préstamos' },
             { value: 'income', label: 'Solo cobros' },
-          ]} compact searchable={false} matchTriggerWidth className={`${styles.detailFilter} ${styles.detailMovementFilter}`} ariaLabel="Filtrar por tipo de movimiento" />
+          ]} compact searchable={false} matchTriggerWidth className={`${movementStyles.portfolioFilter} ${styles.detailFilter} filters-control ${styles.detailMovementFilter}`} ariaLabel="Filtrar por tipo de movimiento" testId="debtor-detail-movement-filter" />
           <div className={styles.detailDateControl}><IncomeDatePicker value={dateFrom} onChange={setDateFrom} onInvalidInput={setDateError} error={dateError ?? undefined} inputLabel="Fecha desde" inputTestId="debtor-detail-date-from" positioningBoundary="viewport" /></div>
           <div className={styles.detailDateControl}><IncomeDatePicker value={dateTo} onChange={setDateTo} onInvalidInput={setDateError} error={dateError ?? undefined} inputLabel="Fecha hasta" inputTestId="debtor-detail-date-to" positioningBoundary="viewport" /></div>
           <Button className={styles.detailClear} type="button" variant="ghost" size="sm" onClick={clearFilters}>Limpiar</Button>
@@ -342,41 +300,6 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpe
         </div>
       </section>
 
-      <RecordModal
-        open={createOpen}
-        onClose={requestCloseCreate}
-        onExitComplete={() => onNestedModalOpenChange?.(false)}
-        eyebrow="Cuentas por cobrar"
-        title="Nueva cuenta por cobrar"
-        subtitle="Registra un nuevo compromiso dentro del mismo deudor."
-        size="lg"
-        presentation="workbench"
-        focusTrapActive={!discardOpen}
-        preserveFocusOnResume
-        footer={(
-          <FormActions
-            secondaryAction={<Button type="button" variant="secondary" size="lg" onClick={requestCloseCreate} disabled={createFormState.saving}>Cancelar</Button>}
-            primaryAction={<Button type="submit" form="receivable-form" variant="primary" size="lg" disabled={createFormState.disabled} loading={createFormState.saving} testId="debtor-detail-receivable-save-btn">Crear cuenta por cobrar</Button>}
-          />
-        )}
-      >
-        <ReceivableForm
-          debtors={[debtor]}
-          exchangeRate={exchangeRate}
-          defaultDebtorId={debtor.id}
-          onSuccess={handleFormSuccess}
-          onDirtyChange={setCreateDirty}
-          onFormStateChange={setCreateFormState}
-        />
-      </RecordModal>
-      <ConfirmDialog
-        open={discardOpen}
-        title="Descartar cambios sin guardar"
-        message="Los cambios realizados en esta cuenta por cobrar se perderán."
-        onConfirm={confirmDiscard}
-        onCancel={() => setDiscardOpen(false)}
-        confirmLabel="Descartar cambios"
-      />
     </div>
   )
 }

@@ -28,7 +28,7 @@ import {
 import { DebtorDetail } from './DebtorDetail'
 import debtorDetailStyles from './DebtorDetail.module.css'
 import { DebtorForm, type DebtorRow } from './DebtorForm'
-import { ReceivableForm, type ReceivableRow } from './ReceivableForm'
+import type { ReceivableRow } from './ReceivableForm'
 import styles from './ReceivablesManager.module.css'
 import movementStyles from '@/components/tables/TransactionsRound07.module.css'
 
@@ -48,12 +48,12 @@ type DebtorWithStats = DebtorRow & {
 
 type StatusFilter = 'all' | 'pending' | 'collected'
 type SortOrder = 'desc' | 'asc'
-type DiscardTarget = 'debtor' | 'receivable' | null
+type DiscardTarget = 'debtor' | null
 type ModalFormState = { disabled: boolean; saving: boolean; editing: boolean }
 const EMPTY_DEBTOR_FORM_STATE: ModalFormState = { disabled: false, saving: false, editing: false }
-const EMPTY_RECEIVABLE_FORM_STATE: ModalFormState = { disabled: true, saving: false, editing: false }
 
 const RECEIVABLES_COLLECTION_URL = '/transactions?new=transaction&module=receivable&type=INCOME'
+const RECEIVABLES_ISSUE_URL = '/transactions?new=transaction&module=receivable&type=EXPENSE'
 
 function formatDate(iso: string) {
   return new Date(`${iso}T12:00:00Z`).toLocaleDateString('es-PE', {
@@ -202,7 +202,6 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
   const hasLoadedReceivablesRef = useRef(false)
   const detailFocusReturnRef = useRef<HTMLElement | null>(null)
   const detailOpenRef = useRef(false)
-  const detailCreateActionRef = useRef<(() => void) | null>(null)
 
   const [debtors, setDebtors] = useState<DebtorWithStats[]>([])
   const [receivables, setReceivables] = useState<ReceivableRow[]>([])
@@ -215,18 +214,14 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [query, setQuery] = useState('')
   const [debtorModalOpen, setDebtorModalOpen] = useState(false)
-  const [receivableModalOpen, setReceivableModalOpen] = useState(false)
   const [debtorDirty, setDebtorDirty] = useState(false)
-  const [receivableDirty, setReceivableDirty] = useState(false)
   const [debtorFormState, setDebtorFormState] = useState(EMPTY_DEBTOR_FORM_STATE)
-  const [receivableFormState, setReceivableFormState] = useState(EMPTY_RECEIVABLE_FORM_STATE)
   const [discardTarget, setDiscardTarget] = useState<DiscardTarget>(null)
   const [editingDebtor, setEditingDebtor] = useState<DebtorRow | null>(null)
   const [pendingDelete, setPendingDelete] = useState<DebtorWithStats | null>(null)
   const [selectedDebtorId, setSelectedDebtorId] = useState<string | null>(null)
   const [selectedDebtorSnapshot, setSelectedDebtorSnapshot] = useState<DebtorWithStats | null>(null)
   const [debtorDetailOpen, setDebtorDetailOpen] = useState(false)
-  const [nestedModalOpen, setNestedModalOpen] = useState(false)
   const drawerDebtorId = searchParams.get('debtorId')
 
   const clearDrawerQuery = useCallback(() => {
@@ -300,12 +295,6 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
       ?? (selectedDebtorSnapshot?.id === selectedDebtorId ? selectedDebtorSnapshot : null),
     [debtors, selectedDebtorId, selectedDebtorSnapshot],
   )
-  const onNestedModalOpenChange = useCallback((open: boolean) => {
-    setNestedModalOpen(open)
-  }, [])
-  const registerDetailCreateAction = useCallback((action: (() => void) | null) => {
-    detailCreateActionRef.current = action
-  }, [])
   const closeDetail = useCallback(() => {
     detailOpenRef.current = false
     setDebtorDetailOpen(false)
@@ -367,17 +356,10 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
     if (debtorDirty) setDiscardTarget('debtor')
     else setDebtorModalOpen(false)
   }, [debtorDirty])
-  const requestCloseReceivable = useCallback(() => {
-    if (receivableDirty) setDiscardTarget('receivable')
-    else setReceivableModalOpen(false)
-  }, [receivableDirty])
   const confirmDiscard = useCallback(() => {
     if (discardTarget === 'debtor') {
       setDebtorDirty(false)
       setDebtorModalOpen(false)
-    } else if (discardTarget === 'receivable') {
-      setReceivableDirty(false)
-      setReceivableModalOpen(false)
     }
     setDiscardTarget(null)
   }, [discardTarget])
@@ -385,11 +367,6 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
   const onDebtorSuccess = useCallback(async () => {
     setDebtorDirty(false)
     setDebtorModalOpen(false)
-    await refreshModule()
-  }, [refreshModule])
-  const onReceivableSuccess = useCallback(async () => {
-    setReceivableDirty(false)
-    setReceivableModalOpen(false)
     await refreshModule()
   }, [refreshModule])
 
@@ -446,7 +423,6 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
     if (detailOpenRef.current) return
     setSelectedDebtorId(null)
     setSelectedDebtorSnapshot(null)
-    setNestedModalOpen(false)
     const returnTarget = detailFocusReturnRef.current
     detailFocusReturnRef.current = null
     if (returnTarget?.isConnected && !returnTarget.closest('[inert]')) returnTarget.focus()
@@ -480,7 +456,7 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
                 Añadir persona
               </Button>
               <CreateModuleButton
-                onClick={() => { setReceivableDirty(false); setReceivableFormState(EMPTY_RECEIVABLE_FORM_STATE); setReceivableModalOpen(true) }}
+                href={RECEIVABLES_ISSUE_URL}
                 label="Registrar cuenta por cobrar"
                 className={`${movementStyles.v3ModulePrimaryAction} ${styles.primaryAction} w-full sm:w-auto`}
                 testId="receivables-create-button"
@@ -754,17 +730,15 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
         overlayClassName={debtorDetailStyles.detailOverlay}
         bodyClassName={debtorDetailStyles.detailModalBody}
         footerClassName={debtorDetailStyles.detailModalFooter}
-        focusTrapActive={!nestedModalOpen}
         preserveFocusOnResume
         preserveFocusOnDeactivate
         testId="receivables-debtor-detail-modal"
         footer={selectedDebtor ? (
           <div className={debtorDetailStyles.detailFooterActions}>
             <Button
-              type="button"
+              href={RECEIVABLES_ISSUE_URL}
               variant="primary"
               size="md"
-              onClick={() => detailCreateActionRef.current?.()}
               leadingIcon={<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>}
               testId="debtor-detail-new-receivable"
             >
@@ -776,10 +750,6 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
         {selectedDebtor ? (
           <DebtorDetail
             debtor={selectedDebtor}
-            exchangeRate={exchangeRate}
-            onChanged={refreshModule}
-            onNestedModalOpenChange={onNestedModalOpenChange}
-            onRegisterCreateAction={registerDetailCreateAction}
           />
         ) : null}
       </RecordModal>
@@ -810,36 +780,6 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
           onSuccess={onDebtorSuccess}
           onDirtyChange={setDebtorDirty}
           onFormStateChange={setDebtorFormState}
-        />
-      </RecordModal>
-
-      <RecordModal
-        open={receivableModalOpen}
-        onClose={requestCloseReceivable}
-        onExitComplete={() => { if (!receivableModalOpen) setReceivableDirty(false) }}
-        eyebrow="Por cobrar"
-        title="Registrar cuenta por cobrar"
-        subtitle="Documenta el pendiente con su moneda y fechas registradas."
-        size="lg"
-        presentation="workbench"
-        testId="receivables-create-modal"
-        footer={(
-          <FormActions
-            secondaryAction={<Button type="button" variant="secondary" size="lg" onClick={requestCloseReceivable} disabled={receivableFormState.saving}>Cancelar</Button>}
-            primaryAction={(
-              <Button type="submit" form="receivable-form" variant="primary" size="lg" disabled={receivableFormState.disabled} loading={receivableFormState.saving} testId="receivable-save-btn">
-                Crear cuenta por cobrar
-              </Button>
-            )}
-          />
-        )}
-      >
-        <ReceivableForm
-          debtors={debtors}
-          exchangeRate={exchangeRate}
-          onSuccess={onReceivableSuccess}
-          onDirtyChange={setReceivableDirty}
-          onFormStateChange={setReceivableFormState}
         />
       </RecordModal>
 
