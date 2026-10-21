@@ -10,12 +10,11 @@
 // =============================================================================
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button }                           from '@/components/ui/Button'
 import { NumericInput }                     from '@/components/ui/NumericInput'
 import { AppSelect }                        from '@/components/ui/AppSelect'
+import { IncomeDatePicker }                from '@/components/forms/TransactionForm/IncomeDatePicker'
 import { CheckboxToggle }                   from '@/components/forms/TransactionForm/FormFields'
-import { FormActions, FormField, FormSection, OptionalSection } from '@/components/forms/primitives'
-import { RecordModalFooter }                from '@/components/ui/RecordModal'
+import { FormField, FormSection, OptionalSection } from '@/components/forms/primitives'
 import { getApiErrorMessage }               from '@/lib/api/error-message'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 import { formatCurrency }                   from '@/lib/contracts/ui.contracts'
@@ -38,6 +37,7 @@ type AccountOption = {
 
 export type PayableRow = {
   id:             string
+  transaction_id?: string | null
   creditor_id:    string | null
   creditor_name:  string
   concept:        string | null
@@ -70,9 +70,9 @@ type PayableFormProps = {
   creditors:    CreditorRow[]
   exchangeRate: number
   onSuccess:    () => void
-  onCancel:     () => void
   defaultCreditorId?: string
   disabled?:    boolean
+  onFormStateChange?: (state: { disabled: boolean; saving: boolean; editing: boolean; dirty: boolean }) => void
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -116,34 +116,36 @@ export function PayableForm({
   creditors,
   exchangeRate,
   onSuccess,
-  onCancel,
   defaultCreditorId,
   disabled = false,
+  onFormStateChange,
 }: PayableFormProps) {
   const { toast } = useToast()
   const isEdit    = !!payable
 
-  const [form, setForm]         = useState<FormState>(
-    payable
-      ? fromPayable(payable)
-      : { ...EMPTY_FORM, creditor_id: defaultCreditorId ?? EMPTY_FORM.creditor_id }
-  )
+  const initialForm = payable ? fromPayable(payable) : { ...EMPTY_FORM, creditor_id: defaultCreditorId ?? EMPTY_FORM.creditor_id }
+  const [form, setForm] = useState<FormState>(initialForm)
   const [accounts, setAccounts] = useState<AccountOption[]>([])
   const [saving, setSaving]     = useState(false)
   const [error, setError]       = useState<string | null>(null)
+  const [dateInputError, setDateInputError] = useState<string | null>(null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const dirty = JSON.stringify(form) !== JSON.stringify(initialForm)
+
+  useEffect(() => {
+    onFormStateChange?.({ disabled: disabled || saving, saving, editing: isEdit, dirty })
+  }, [disabled, dirty, isEdit, onFormStateChange, saving])
 
   const patch = useCallback((updates: Partial<FormState>) => {
     setForm(prev => ({ ...prev, ...updates }))
   }, [])
 
   useEffect(() => {
-    const nextForm = payable
-      ? fromPayable(payable)
-      : { ...EMPTY_FORM, creditor_id: defaultCreditorId ?? EMPTY_FORM.creditor_id }
+    const nextForm = payable ? fromPayable(payable) : { ...EMPTY_FORM, creditor_id: defaultCreditorId ?? EMPTY_FORM.creditor_id }
 
     setForm(nextForm)
     setError(null)
+    setDateInputError(null)
     setAdvancedOpen(Boolean(
       payable?.notes?.trim() ||
       payable?.attachment_url ||
@@ -190,6 +192,14 @@ export function PayableForm({
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+
+    if (!form.issue_date) {
+      const msg = 'Indica la fecha de emisión.'
+      setDateInputError(msg)
+      setError(msg)
+      toast.error('Error de validación', msg)
+      return
+    }
 
     // Validaciones
     const creditorRow = creditors.find(c => c.id === form.creditor_id)
@@ -341,7 +351,7 @@ export function PayableForm({
                 : 'El portafolio asociado se mantiene sin cambios durante la edición.'}
             >
               <div
-                className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--c-surface-2)] px-3.5 py-3 text-sm text-[var(--c-text)]"
+                className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3 text-sm text-[var(--ft-text-strong)]"
                 data-testid="payable-account-context"
               >
                 <span className="font-medium">{sourceAccountName ?? 'Portafolio original'}</span>
@@ -370,29 +380,21 @@ export function PayableForm({
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div
-              className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--c-surface-2)] px-3.5 py-3"
+              className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3"
               data-testid="payable-currency-display"
             >
               <p className="text-[11px] font-medium text-[var(--ft-form-muted)]">Moneda</p>
-              <p className="mt-1 text-sm font-semibold text-[var(--c-text)]">{form.currency || '—'}</p>
+              <p className="mt-1 text-sm font-semibold text-[var(--ft-text-strong)]">{form.currency || '—'}</p>
             </div>
-            <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--c-surface-2)] px-3.5 py-3">
+            <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
               <p className="text-[11px] font-medium text-[var(--ft-form-muted)]">Equivalencia</p>
-              <p className="mt-1 text-sm font-semibold text-[var(--c-text)]">{equivLabel}</p>
+              <p className="mt-1 text-sm font-semibold text-[var(--ft-text-strong)]">{equivLabel}</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-[var(--ft-form-field-gap)] sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-[var(--ft-form-field-gap)] sm:grid-cols-2">
             <FormField label="Fecha de emisión">
-              <input
-                type="date"
-                value={form.issue_date}
-                onChange={e => patch({ issue_date: e.target.value })}
-                required
-                disabled={isDisabled}
-                className="field-base ft-form-input w-full"
-                data-testid="payable-date-input"
-              />
+              <IncomeDatePicker value={form.issue_date} onChange={value => { patch({ issue_date: value }); setDateInputError(null) }} onInvalidInput={setDateInputError} error={dateInputError ?? undefined} disabled={isDisabled} inputLabel="Fecha de emisión" inputTestId="payable-date-input" positioningBoundary="viewport" />
             </FormField>
 
             <FormField
@@ -400,14 +402,7 @@ export function PayableForm({
               optional
               description="Visible por defecto para activar alertas y seguimiento operativo."
             >
-              <input
-                type="date"
-                value={form.due_date}
-                onChange={e => patch({ due_date: e.target.value })}
-                disabled={isDisabled}
-                className="field-base ft-form-input w-full"
-                data-testid="payable-due-date-input"
-              />
+              <IncomeDatePicker value={form.due_date} onChange={value => { patch({ due_date: value }); setDateInputError(null) }} onInvalidInput={setDateInputError} error={dateInputError ?? undefined} disabled={isDisabled} inputLabel="Fecha de vencimiento" inputTestId="payable-due-date-input" positioningBoundary="viewport" />
             </FormField>
           </div>
         </FormSection>
@@ -495,27 +490,6 @@ export function PayableForm({
         </div>
       ) : null}
 
-      <RecordModalFooter>
-        <FormActions
-          secondaryAction={(
-            <Button type="button" variant="secondary" size="lg" onClick={onCancel} disabled={saving}>
-              Cancelar
-            </Button>
-          )}
-          primaryAction={(
-            <Button
-              type="submit"
-              variant="primary"
-              size="lg"
-              disabled={isDisabled}
-              loading={saving}
-              testId="payable-save-btn"
-            >
-              {isEdit ? 'Actualizar cuenta por pagar' : 'Crear cuenta por pagar'}
-            </Button>
-          )}
-        />
-      </RecordModalFooter>
     </form>
   )
 }

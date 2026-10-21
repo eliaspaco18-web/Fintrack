@@ -1,0 +1,28 @@
+.page {
+  min-width: 0;
+  color: var(--ft-text-strong);
+  font-family: Manrope, system-ui, sans-serif;
+}
+
+.page :global(button),
+.page :global(input),
+.page :global(select),
+.page :global(textarea) { font-family: inherit; }
+
+.headerActions { flex: 0 1 auto; }
+.moduleSearch { flex: 1 1 360px; width: min(520px, 100%); max-width: 520px; min-width: min(100%, 280px); }
+.moduleSearchInput { display: flex; min-width: 0; flex: 1 1 auto; align-items: center; gap: 8px; }
+.moduleSearchInput > :global(svg) { position: static; width: 16px; height: 16px; flex: 0 0 16px; transform: none; color: var(--ft-text-muted); }
+.moduleSearchInput :global(input[data-testid='payables-search']) { display: block; width: 0; min-width: 0; max-width: none; height: 20px; flex: 1 1 auto; border: 0; border-radius: 0; background: transparent; padding: 0; color: var(--ft-text-strong); font-size: 12px; line-height: 18px; box-shadow: none; outline: 0; }
+.moduleSearchInput :global(input[data-testid='payables-search']:hover),
+.moduleSearchInput :global(input[data-testid='payables-search']:focus) { border: 0; box-shadow: none; outline: 0; }
+
+@media (max-width: 900px) {
+  .moduleSearch { max-width: none; }
+}
+
+@media (max-width: 700px) {
+  .headerActions { width: 100%; flex-direction: column-reverse; align-items: stretch; }
+  .headerActions > :global(button), .headerActions > :global(a) { width: 100%; justify-content: center; }
+  .moduleSearch { width: 100%; max-width: none; min-width: 0; }
+}

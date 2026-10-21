@@ -7,11 +7,9 @@
 // Espejo de components/receivables/DebtorForm.tsx
 // =============================================================================
 
-import { useCallback, useState } from 'react'
-import { Button }                from '@/components/ui/Button'
+import { useCallback, useEffect, useState } from 'react'
 import { NumericInput }          from '@/components/ui/NumericInput'
-import { FormActions, FormField } from '@/components/forms/primitives'
-import { RecordModalFooter }     from '@/components/ui/RecordModal'
+import { FormField } from '@/components/forms/primitives'
 import { getApiErrorMessage }    from '@/lib/api/error-message'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 import { useToast }              from '@/lib/toast/toast'
@@ -30,8 +28,8 @@ type CreditorFormProps = {
   /** Si se pasa, es modo edición */
   creditor?: CreditorRow | null
   onSuccess: (creditor: CreditorRow) => void
-  onCancel:  () => void
   disabled?: boolean
+  onFormStateChange?: (state: { disabled: boolean; saving: boolean; editing: boolean; dirty: boolean }) => void
 }
 
 type FormState = {
@@ -52,11 +50,18 @@ function fromCreditor(c: CreditorRow): FormState {
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
-export function CreditorForm({ creditor, onSuccess, onCancel, disabled = false }: CreditorFormProps) {
+export function CreditorForm({ creditor, onSuccess, disabled = false, onFormStateChange }: CreditorFormProps) {
   const { toast } = useToast()
   const [form, setForm]     = useState<FormState>(creditor ? fromCreditor(creditor) : EMPTY)
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState<string | null>(null)
+
+  const initialForm = creditor ? fromCreditor(creditor) : EMPTY
+  const dirty = JSON.stringify(form) !== JSON.stringify(initialForm)
+
+  useEffect(() => {
+    onFormStateChange?.({ disabled: disabled || saving, saving, editing: Boolean(creditor), dirty })
+  }, [creditor, dirty, disabled, onFormStateChange, saving])
 
   const patch = useCallback((updates: Partial<FormState>) => {
     setForm(prev => ({ ...prev, ...updates }))
@@ -172,27 +177,6 @@ export function CreditorForm({ creditor, onSuccess, onCancel, disabled = false }
         </div>
       )}
 
-      <RecordModalFooter>
-        <FormActions
-          secondaryAction={(
-            <Button type="button" variant="secondary" size="lg" onClick={onCancel} disabled={saving}>
-              Cancelar
-            </Button>
-          )}
-          primaryAction={(
-            <Button
-              type="submit"
-              variant="primary"
-              size="lg"
-              disabled={isDisabled}
-              loading={saving}
-              testId="creditor-save-btn"
-            >
-              {creditor ? 'Actualizar acreedor' : 'Crear acreedor'}
-            </Button>
-          )}
-        />
-      </RecordModalFooter>
     </form>
   )
 }
