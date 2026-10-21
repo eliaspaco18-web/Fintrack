@@ -6,7 +6,7 @@
 // Campos: Deudor (nombre), Deuda inicial (numérico), Relación (texto libre)
 // =============================================================================
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { NumericInput }          from '@/components/ui/NumericInput'
 import { FormField } from '@/components/forms/primitives'
 import { getApiErrorMessage }    from '@/lib/api/error-message'
@@ -49,22 +49,35 @@ function fromDebtor(d: DebtorRow): FormState {
   }
 }
 
+function sameFormValues(left: FormState, right: FormState) {
+  return left.name.trim() === right.name.trim()
+    && roundToDecimals(parseNumericInput(left.initial_debt, 0), 2) === roundToDecimals(parseNumericInput(right.initial_debt, 0), 2)
+    && left.relationship.trim() === right.relationship.trim()
+}
+
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 export function DebtorForm({ debtor, onSuccess, disabled = false, onDirtyChange, onFormStateChange }: DebtorFormProps) {
   const { toast } = useToast()
   const [form, setForm]   = useState<FormState>(debtor ? fromDebtor(debtor) : EMPTY)
+  const formRef = useRef(form)
+  const initialFormRef = useRef(form)
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState<string | null>(null)
 
   const patch = useCallback((updates: Partial<FormState>) => {
-    setForm(prev => ({ ...prev, ...updates }))
+    const nextForm = { ...formRef.current, ...updates }
+    formRef.current = nextForm
+    setForm(nextForm)
     setError(null)
-    onDirtyChange?.(true)
+    onDirtyChange?.(!sameFormValues(nextForm, initialFormRef.current))
   }, [onDirtyChange])
 
   useEffect(() => {
-    setForm(debtor ? fromDebtor(debtor) : EMPTY)
+    const initialForm = debtor ? fromDebtor(debtor) : EMPTY
+    formRef.current = initialForm
+    initialFormRef.current = initialForm
+    setForm(initialForm)
     setError(null)
     onDirtyChange?.(false)
   }, [debtor, onDirtyChange])

@@ -326,20 +326,22 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpe
         </div>
 
         <div className={styles.detailToolbar}>
-          <DataSearchField
-            value={query}
-            onChange={setQuery}
-            placeholder="Buscar movimientos vinculados"
-            aria-label="Buscar movimientos vinculados"
-            className={styles.detailSearch}
-            data-testid="debtor-detail-search"
-          />
-          <AppSelect value={accountFilter} onChange={setAccountFilter} options={accountOptions} compact searchable={false} className={`${styles.detailFilter} ${styles.detailAccountFilter}`} aria-label="Filtrar por portafolio" />
+          <div className={styles.detailSearch}>
+            <DataSearchField
+              value={query}
+              onChange={setQuery}
+              placeholder="Buscar movimientos vinculados"
+              aria-label="Buscar movimientos vinculados"
+              className={styles.detailSearchInput}
+              data-testid="debtor-detail-search"
+            />
+          </div>
+          <AppSelect value={accountFilter} onChange={setAccountFilter} options={accountOptions} compact searchable={false} matchTriggerWidth className={`${styles.detailFilter} ${styles.detailAccountFilter}`} ariaLabel="Filtrar por portafolio" />
           <AppSelect value={movementFilter} onChange={value => setMovementFilter(value as 'all' | 'income' | 'expense')} options={[
             { value: 'all', label: 'Todos los movimientos' },
             { value: 'expense', label: 'Solo préstamos' },
             { value: 'income', label: 'Solo cobros' },
-          ]} compact searchable={false} className={`${styles.detailFilter} ${styles.detailMovementFilter}`} aria-label="Filtrar por tipo de movimiento" />
+          ]} compact searchable={false} matchTriggerWidth className={`${styles.detailFilter} ${styles.detailMovementFilter}`} ariaLabel="Filtrar por tipo de movimiento" />
           <div className={styles.detailDateControl}><IncomeDatePicker value={dateFrom} onChange={setDateFrom} onInvalidInput={setDateError} error={dateError ?? undefined} inputLabel="Fecha desde" inputTestId="debtor-detail-date-from" positioningBoundary="viewport" /></div>
           <div className={styles.detailDateControl}><IncomeDatePicker value={dateTo} onChange={setDateTo} onInvalidInput={setDateError} error={dateError ?? undefined} inputLabel="Fecha hasta" inputTestId="debtor-detail-date-to" positioningBoundary="viewport" /></div>
           <Button className={styles.detailClear} type="button" variant="ghost" size="sm" onClick={clearFilters}>Limpiar</Button>
@@ -384,7 +386,6 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpe
         subtitle="Registra un nuevo compromiso dentro del mismo deudor."
         size="lg"
         presentation="workbench"
-        overlayClassName={`z-modal ${styles.receivableFormOverlay}`}
         focusTrapActive={!discardOpen}
         preserveFocusOnResume
         footer={(

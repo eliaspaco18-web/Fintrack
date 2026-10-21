@@ -7,17 +7,6 @@
   font-family: Manrope, system-ui, sans-serif;
 }
 
-.receivableFormOverlay[data-ft-v3][data-ft-workbench-overlay] :global(.ft-v3-workbench-wrapper) {
-  width: min(900px, calc(100vw - 32px));
-}
-
-@media (max-width: 767px) {
-  .receivableFormOverlay[data-ft-v3][data-ft-workbench-overlay] :global(.ft-v3-workbench-wrapper) {
-    width: calc(100vw - 16px);
-    margin: 8px;
-  }
-}
-
 .recoveryPanel,
 .obligationsPanel,
 .historyPanel {
@@ -27,17 +16,17 @@
   background: var(--ft-surface);
 }
 
-.recoveryPanel { padding: 13px 16px; }
+.recoveryPanel { padding: 14px 16px; }
 .obligationsPanel { min-width: 0; overflow: visible; }
 .obligationsHeading { padding: 13px 16px; }
 .obligationsHeading h3 { margin: 0; color: var(--ft-text-strong); font-size: 14px; font-weight: 650; line-height: 20px; letter-spacing: -0.015em; }
-.obligationsHeading p { margin: 3px 0 0; color: var(--ft-text-muted); font-size: 11px; line-height: 16px; }
+.obligationsHeading p { margin: 3px 0 0; color: var(--ft-text-muted); font-size: 12px; line-height: 18px; }
 .obligationList { min-width: 0; }
 .obligationRow { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(330px, 1.35fr) auto; align-items: center; gap: 14px; min-width: 0; border-top: 1px solid var(--ft-border); padding: 11px 16px; }
 .obligationCopy { display: grid; min-width: 0; gap: 3px; }
 .obligationCopy > strong { overflow-wrap: anywhere; color: var(--ft-text-strong); font-size: 12px; font-weight: 600; line-height: 17px; }
-.obligationCopy > span { color: var(--ft-text-muted); font-size: 11px; line-height: 16px; }
-.obligationCopy > a { width: fit-content; color: var(--ft-primary); font-size: 11px; font-weight: 600; line-height: 16px; text-decoration: underline; text-underline-offset: 2px; }
+.obligationCopy > span { color: var(--ft-text-muted); font-size: 12px; line-height: 18px; }
+.obligationCopy > a { width: fit-content; color: var(--ft-primary); font-size: 12px; font-weight: 600; line-height: 18px; text-decoration: underline; text-underline-offset: 2px; }
 .obligationAmounts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; min-width: 0; }
 .obligationAmounts > span { display: grid; gap: 2px; min-width: 0; color: var(--ft-text-muted); font-size: 11px; line-height: 16px; }
 .obligationAmounts strong { overflow-wrap: anywhere; color: var(--ft-text-strong); font-size: 12px; font-weight: 650; line-height: 17px; font-variant-numeric: tabular-nums; }
@@ -111,7 +100,7 @@
 .currencySummary > p {
   margin: 0 0 8px;
   color: var(--ft-text-subtle);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 650;
   letter-spacing: .06em;
 }
@@ -123,12 +112,12 @@
 }
 
 .currencyMetrics > div { min-width: 0; }
-.currencyMetrics span { display: block; color: var(--ft-text-muted); font-size: 11px; line-height: 16px; }
+.currencyMetrics span { display: block; color: var(--ft-text-muted); font-size: 12px; line-height: 18px; }
 .currencyMetrics strong { display: block; margin-top: 2px; overflow-wrap: anywhere; color: var(--ft-text-strong); font-size: 13px; font-weight: 650; line-height: 18px; font-variant-numeric: tabular-nums; }
 .currencyMetrics .settledAmount { color: var(--ft-success); }
 .currencyMetrics .pendingAmount { color: var(--ft-warning); }
 .noSummary,
-.unverifiedNote { margin: 10px 0 0; color: var(--ft-text-muted); font-size: 11px; line-height: 16px; }
+.unverifiedNote { margin: 10px 0 0; color: var(--ft-text-muted); font-size: 12px; line-height: 18px; }
 .unverifiedNote { color: var(--ft-warning); }
 
 .recoveryProgress { display: grid; gap: 7px; margin-top: 10px; }
@@ -150,7 +139,37 @@
   padding: 9px 14px;
 }
 
-.detailSearch { width: 100%; min-width: 0; grid-column: span 5; }
+.detailSearch {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  grid-column: span 5;
+  align-items: center;
+  border: 1px solid var(--ft-control-border);
+  border-radius: 10px;
+  background: var(--ft-surface);
+  padding: 0 10px;
+}
+.detailSearch:focus-within { border-color: var(--ft-primary); outline: 2px solid var(--ft-focus-ring-color); outline-offset: 2px; }
+.detailSearchInput { display: flex; min-width: 0; flex: 1 1 auto; align-items: center; gap: 8px; }
+.detailSearchInput > :global(svg) { position: static; inset: auto; width: 16px; height: 16px; flex: 0 0 16px; transform: none; color: var(--ft-text-muted); }
+.detailSearchInput :global(input[data-testid='debtor-detail-search']) {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  flex: 1 1 auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--ft-text-strong);
+  font-size: 12px;
+  box-shadow: none;
+  outline: 0;
+}
+.detailSearchInput :global(input[data-testid='debtor-detail-search']:hover),
+.detailSearchInput :global(input[data-testid='debtor-detail-search']:focus) { border: 0; box-shadow: none; outline: 0; }
 .detailFilter { width: 100%; min-width: 0; }
 .detailAccountFilter { grid-column: span 3; }
 .detailMovementFilter { grid-column: span 4; }
@@ -175,8 +194,8 @@
 .ledgerDescription { display: grid; min-width: 0; gap: 2px; }
 .ledgerDescription strong { overflow: hidden; color: var(--ft-text-strong); font-size: 12px; font-weight: 600; line-height: 17px; text-overflow: ellipsis; white-space: nowrap; }
 .ledgerDescription span,
-.ledgerCell { overflow: hidden; color: var(--ft-text-muted); font-size: 11px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
-.ledgerDate { color: var(--ft-text-muted); font-size: 11px; line-height: 16px; white-space: nowrap; }
+.ledgerCell { overflow: hidden; color: var(--ft-text-muted); font-size: 12px; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.ledgerDate { color: var(--ft-text-muted); font-size: 12px; line-height: 18px; white-space: nowrap; }
 .ledgerAmount { min-width: 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 650; line-height: 17px; font-variant-numeric: tabular-nums; text-align: right; }
 .incomeAmount { color: var(--ft-success); }
 .expenseAmount { color: var(--ft-warning); }
@@ -224,8 +243,8 @@
   .recoveryPanel { padding: 12px; }
   .panelHeading, .historyHeading { align-items: flex-start; flex-direction: column; }
   .currencyMetrics { gap: 5px; }
-  .currencyMetrics span { font-size: 10px; }
-  .currencyMetrics strong { font-size: 11px; line-height: 16px; }
+  .currencyMetrics span { font-size: 11px; line-height: 16px; }
+  .currencyMetrics strong { font-size: 12px; line-height: 18px; }
   .currencySummary { padding-right: 7px; padding-left: 7px; }
   .detailToolbar { grid-template-columns: minmax(0, 1fr); padding: 9px 10px; }
   .detailSearch,

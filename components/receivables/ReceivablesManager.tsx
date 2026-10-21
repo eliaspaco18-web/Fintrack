@@ -7,7 +7,6 @@ import { AppSelect } from '@/components/ui/AppSelect'
 import { Button } from '@/components/ui/Button'
 import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
 import { RecordModal } from '@/components/ui/RecordModal'
-import { ViewToggle } from '@/components/ui/ViewToggle'
 import { ConfirmDialog, DataErrorBanner, DataSearchField, EmptyState, PageLayout } from '@/components/finance'
 import { FormActions } from '@/components/forms/primitives'
 import { DetailDrawer } from '@/components/finance/primitives'
@@ -48,7 +47,6 @@ type DebtorWithStats = DebtorRow & {
 
 type StatusFilter = 'all' | 'pending' | 'collected'
 type SortOrder = 'desc' | 'asc'
-type ViewMode = 'list' | 'cards'
 type DiscardTarget = 'debtor' | 'receivable' | null
 type ModalFormState = { disabled: boolean; saving: boolean; editing: boolean }
 const EMPTY_DEBTOR_FORM_STATE: ModalFormState = { disabled: false, saving: false, editing: false }
@@ -191,7 +189,6 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
   const [rowActionId, setRowActionId] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
-  const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [query, setQuery] = useState('')
   const [debtorModalOpen, setDebtorModalOpen] = useState(false)
   const [receivableModalOpen, setReceivableModalOpen] = useState(false)
@@ -423,6 +420,10 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
               </p>
             </div>
             <div className={styles.headerActions}>
+              <Button type="button" variant="secondary" size="md" onClick={openCreateDebtor} testId="receivables-new-debtor-btn">
+                <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+                Añadir persona
+              </Button>
               <CreateModuleButton
                 onClick={() => { setReceivableDirty(false); setReceivableFormState(EMPTY_RECEIVABLE_FORM_STATE); setReceivableModalOpen(true) }}
                 label="Registrar cuenta por cobrar"
@@ -484,14 +485,16 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
 
         <div className={`${movementStyles.controls} ${movementStyles.portfolioFilterBar} ${styles.moduleToolbar}`} data-testid="receivables-filter-toolbar">
           <div className={`${movementStyles.controlsMain} ${styles.moduleToolbarMain}`}>
-            <DataSearchField
-              value={query}
-              onChange={setQuery}
-              placeholder="Buscar persona o relación"
-              className={`${movementStyles.searchControl} ${styles.moduleSearch}`}
-              aria-label="Buscar personas que te deben"
-              data-testid="receivables-search"
-            />
+            <div className={`${movementStyles.searchControl} ${styles.moduleSearch}`}>
+              <DataSearchField
+                value={query}
+                onChange={setQuery}
+                placeholder="Buscar persona o relación"
+                className={styles.moduleSearchInput}
+                aria-label="Buscar personas que te deben"
+                data-testid="receivables-search"
+              />
+            </div>
             {canSortByPendingAmount ? (
               <AppSelect
                 value={sortOrder}
@@ -502,16 +505,14 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
                 ]}
                 compact
                 searchable={false}
+                matchTriggerWidth
                 className={`filters-control ${styles.sortSelect}`}
-                aria-label="Ordenar por saldo pendiente"
-                data-testid="receivables-sort-filter"
+                ariaLabel="Ordenar por saldo pendiente"
+                testId="receivables-sort-filter"
               />
             ) : (
               <span className={styles.sortContext}>Orden alfabético · monedas separadas</span>
             )}
-          </div>
-          <div className={`${movementStyles.controlsActions} ${styles.toolbarActions}`}>
-            <ViewToggle value={viewMode} onChange={setViewMode} id="receivables-view-toggle" />
           </div>
         </div>
 
@@ -544,12 +545,6 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
             <div className="min-w-0">
               <h2 id="receivables-register-title" className={styles.registerTitle}>Personas que te deben</h2>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <Button type="button" variant="secondary" size="sm" onClick={openCreateDebtor} testId="receivables-new-debtor-btn">
-                <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
-                Añadir persona
-              </Button>
-            </div>
           </div>
 
           {error && debtors.length === 0 ? (
@@ -571,7 +566,7 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
                   : 'Añade a la persona y luego registra cada cuenta por cobrar con su moneda y fechas.'}
                 action={query || statusFilter !== 'pending'
                   ? { label: 'Limpiar filtros', onClick: () => { setQuery(''); setStatusFilter('pending') } }
-                  : { label: 'Añadir persona', onClick: openCreateDebtor }}
+                  : undefined}
               />
             </div>
           ) : (
@@ -579,8 +574,7 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
               <div className={styles.columnHeading} aria-hidden="true">
                 <span>Persona</span><span>Pendiente documentado</span><span>Vencimiento registrado</span><span className="text-right">Acciones</span>
               </div>
-              {viewMode === 'list' ? (
-                <div className={styles.rows}>
+              <div className={styles.rows}>
                   {filtered.map(debtor => {
                     const state = personState(debtor, receivables, Boolean(receivablesError) && receivables.length === 0)
                     const due = getDebtorDueSummary(receivables, debtor.id, currentDate)
@@ -679,28 +673,7 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
                       </Fragment>
                     )
                   })}
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-px bg-[var(--ft-border)] p-px xl:grid-cols-2">
-                  {filtered.map(debtor => {
-                    const state = personState(debtor, receivables, Boolean(receivablesError) && receivables.length === 0)
-                    const pending = (debtor.currency_summaries ?? []).filter(summary => summary.pending > 0)
-                    const canCollect = !receivablesLoading && hasVerifiedOpenReceivable(receivables, debtor.id)
-                    return (
-                      <article key={debtor.id} className="min-w-0 bg-[var(--ft-surface)] p-4" data-testid={`receivable-person-card-${debtor.id}`}>
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0"><div className={styles.personName}>{debtor.name}</div><p className={styles.personContext}>{debtor.relationship?.trim() || 'Sin relación registrada'}</p><div className="mt-2"><DebtorStatus state={state} inactive={!debtor.is_active} /></div></div>
-                          <span className={styles.moreAction}><AnchoredActionMenu label={`Más acciones de ${debtor.name}`} triggerContent={<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg>} className="h-9 w-9 rounded-control text-[var(--ft-text-muted)] hover:bg-[var(--ft-surface-hover)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]" disabled={rowActionId !== null} actions={[{ id: 'edit', label: 'Editar persona', onSelect: () => openEditDebtor(debtor) }, { id: 'state', label: debtor.is_active ? 'Desactivar persona' : 'Activar persona', onSelect: () => void toggleActive(debtor) }, { id: 'delete', label: 'Eliminar persona', destructive: true, onSelect: () => setPendingDelete(debtor) }]} /></span>
-                        </div>
-                        <div className="mt-3 grid gap-1 border-t border-[var(--ft-border)] pt-3">
-                          {pending.length > 0 ? pending.map(summary => <p key={summary.currency} className="text-[12px] font-semibold tabular-nums text-[var(--ft-text-strong)]">{formatCurrency(summary.pending, summary.currency)} · {summary.currency} pendiente</p>) : <p className="text-[12px] text-[var(--ft-text-muted)]">{debtor.has_unverified_initial_debt ? 'Saldo inicial sin moneda verificada' : 'Sin saldo documentado pendiente'}</p>}
-                        </div>
-                        <div className="mt-3 flex flex-wrap justify-end gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => setSelectedDebtorId(debtor.id)}>Ver cuenta</Button>{canCollect ? <Button href={RECEIVABLES_COLLECTION_URL} variant="secondary" size="sm">Registrar cobro</Button> : null}</div>
-                      </article>
-                    )
-                  })}
-                </div>
-              )}
+              </div>
             </>
           )}
         </section>
@@ -766,7 +739,6 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
         subtitle="Documenta el pendiente con su moneda y fechas registradas."
         size="lg"
         presentation="workbench"
-        overlayClassName={`z-modal ${styles.receivableFormOverlay}`}
         testId="receivables-create-modal"
         footer={(
           <FormActions

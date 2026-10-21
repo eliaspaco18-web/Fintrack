@@ -8,7 +8,7 @@
 //   Notas, Adjuntar, Botón "guardar como recurrente"
 // =============================================================================
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button }                           from '@/components/ui/Button'
 import { NumericInput }                     from '@/components/ui/NumericInput'
 import { AppSelect }                        from '@/components/ui/AppSelect'
@@ -113,6 +113,19 @@ function fromReceivable(r: ReceivableRow): FormState {
   }
 }
 
+function sameFormValues(left: FormState, right: FormState) {
+  return left.account_id === right.account_id
+    && left.issue_date === right.issue_date
+    && left.due_date === right.due_date
+    && left.debtor_id === right.debtor_id
+    && left.concept.trim() === right.concept.trim()
+    && left.currency === right.currency
+    && roundToDecimals(parseNumericInput(left.amount, 0), 2) === roundToDecimals(parseNumericInput(right.amount, 0), 2)
+    && left.notes.trim() === right.notes.trim()
+    && left.save_recurring === right.save_recurring
+    && left.recurring_name.trim() === right.recurring_name.trim()
+}
+
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 export function ReceivableForm({
@@ -128,11 +141,12 @@ export function ReceivableForm({
   const { toast } = useToast()
   const isEdit    = !!receivable
 
-  const [form, setForm]         = useState<FormState>(
-    receivable
-      ? fromReceivable(receivable)
-      : { ...EMPTY_FORM, debtor_id: defaultDebtorId ?? EMPTY_FORM.debtor_id }
-  )
+  const initialForm = useMemo(() => receivable
+    ? fromReceivable(receivable)
+    : { ...EMPTY_FORM, debtor_id: defaultDebtorId ?? EMPTY_FORM.debtor_id }, [defaultDebtorId, receivable])
+  const [form, setForm] = useState<FormState>(initialForm)
+  const formRef = useRef(form)
+  const initialFormRef = useRef(initialForm)
   const [accounts, setAccounts] = useState<AccountOption[]>([])
   const [accountsLoading, setAccountsLoading] = useState(!isEdit)
   const [accountsError, setAccountsError] = useState<string | null>(null)
@@ -142,27 +156,27 @@ export function ReceivableForm({
   const [dateError, setDateError] = useState<string | null>(null)
 
   const patch = useCallback((updates: Partial<FormState>) => {
-    setForm(prev => ({ ...prev, ...updates }))
+    const nextForm = { ...formRef.current, ...updates }
+    formRef.current = nextForm
+    setForm(nextForm)
     setError(null)
-    onDirtyChange?.(true)
+    onDirtyChange?.(!sameFormValues(nextForm, initialFormRef.current))
   }, [onDirtyChange])
 
   useEffect(() => {
-    const nextForm = receivable
-      ? fromReceivable(receivable)
-      : { ...EMPTY_FORM, debtor_id: defaultDebtorId ?? EMPTY_FORM.debtor_id }
-
-    setForm(nextForm)
+    formRef.current = initialForm
+    initialFormRef.current = initialForm
+    setForm(initialForm)
     setError(null)
     setDateError(null)
     onDirtyChange?.(false)
     setAdvancedOpen(Boolean(
       receivable?.notes?.trim() ||
       receivable?.attachment_url ||
-      nextForm.save_recurring ||
-      nextForm.recurring_name.trim(),
+      initialForm.save_recurring ||
+      initialForm.recurring_name.trim(),
     ))
-  }, [defaultDebtorId, onDirtyChange, receivable])
+  }, [initialForm, onDirtyChange, receivable?.attachment_url, receivable?.notes])
 
   // Cargar portafolios activos. Las tarjetas se permiten como origen:
   // el backend las registra como consumo de línea disponible.
@@ -326,9 +340,10 @@ export function ReceivableForm({
               options={debtorOptions}
               disabled={isDisabled}
               searchable
+              matchTriggerWidth
               searchPlaceholder="Buscar deudor..."
               className="w-full"
-              data-testid="receivable-debtor-select"
+              testId="receivable-debtor-select"
             />
           </FormField>
 
@@ -340,9 +355,10 @@ export function ReceivableForm({
                 options={accountOptions}
                 disabled={isDisabled}
                 searchable
+                matchTriggerWidth
                 searchPlaceholder="Buscar portafolio..."
                 className="w-full"
-                data-testid="receivable-account-select"
+                testId="receivable-account-select"
               />
                   {accountsError ? (
                     <p className="mt-2 flex items-center gap-2 text-[11px] text-[var(--ft-danger)]" role="alert">

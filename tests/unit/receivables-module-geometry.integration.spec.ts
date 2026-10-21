@@ -43,7 +43,7 @@ test('real ReceivablesManager shares the V3 header, full-width dividers and exte
   const managerClasses = cssModuleMap(css, 'components/receivables/ReceivablesManager.module.css', 'ReceivablesManager')
   const movementClasses = cssModuleMap(css, 'components/tables/TransactionsRound07.module.css', 'TransactionsRound07')
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.setContent('<div id="root" data-ft-v3-shell></div>')
+  await page.setContent('<div id="root" data-ft-v3></div>')
   await page.addStyleTag({ content: css })
   await page.addScriptTag({ path: reactPath })
   await page.addScriptTag({ path: reactDomPath })
@@ -53,7 +53,7 @@ test('real ReceivablesManager shares the V3 header, full-width dividers and exte
     window.__receivablesModules['@/components/ui/Button']={Button:({children,className,testId,ariaLabel,leadingIcon,href,onClick,type='button',...props})=>React.createElement(href?'a':'button',{...props,href,onClick,type,className,'data-testid':testId,'aria-label':ariaLabel},leadingIcon,children)};
     window.__receivablesModules['@/components/ui/AnchoredActionMenu']={AnchoredActionMenu:()=>null};
     window.__receivablesModules['@/components/ui/RecordModal']={RecordModal:()=>null};
-    window.__receivablesModules['@/components/ui/ViewToggle']={ViewToggle:()=>React.createElement('div',{ 'data-testid':'receivables-view-toggle' },'Vistas')};
+    window.__receivablesModules['@/components/finance']={ConfirmDialog:()=>null,DataErrorBanner:()=>null,DataSearchField:({value,onChange,className,...props})=>React.createElement('div',{className},React.createElement('input',{value,onChange:event=>onChange(event.target.value),...props,className:'h-9 w-full rounded-control border border-[var(--ft-border)] bg-[var(--ft-surface)] pl-3 pr-3 text-[13px]'})),EmptyState:({title})=>React.createElement('p',null,title),PageLayout:({children,className})=>React.createElement('main',{className:'ft-shell-content '+className},children)};
     window.__receivablesModules['@/components/finance']={ConfirmDialog:()=>null,DataErrorBanner:()=>null,DataSearchField:({value,onChange,className,...props})=>React.createElement('div',{className},React.createElement('input',{value,onChange:event=>onChange(event.target.value),...props,className:'h-9 w-full rounded-control border border-[var(--ft-border)] bg-[var(--ft-surface)] pl-3 pr-3 text-[13px]'})),EmptyState:({title})=>React.createElement('p',null,title),PageLayout:({children,className})=>React.createElement('main',{className:'ft-shell-content '+className},children)};
     window.__receivablesModules['@/components/finance/primitives']={DetailDrawer:()=>null};
     window.__receivablesModules['@/lib/api/error-message']={getApiErrorMessage:(_json,fallback)=>fallback};
@@ -68,6 +68,11 @@ test('real ReceivablesManager shares the V3 header, full-width dividers and exte
     window.__receivablesModules['./ReceivablesManager.module.css']={default:${JSON.stringify(managerClasses)}};
     window.__receivablesModules['@/components/tables/TransactionsRound07.module.css']={default:${JSON.stringify(movementClasses)}};` })
   await page.addScriptTag({ content: compileComponent('components/ui/AppSelect.tsx', '@/components/ui/AppSelect', 'AppSelect') })
+  await page.addScriptTag({ content: compileComponent('components/finance/data-table.tsx', '@/components/finance/data-table', 'DataSearchField') })
+  await page.evaluate(() => {
+    const finance = (window as any).__receivablesModules['@/components/finance']
+    finance.DataSearchField = (window as any).__receivablesModules['@/components/finance/data-table'].DataSearchField
+  })
   await page.addScriptTag({ content: compileComponent('components/ui/CreateModuleButton.tsx', '@/components/ui/CreateModuleButton', 'CreateModuleButton') })
   await page.addScriptTag({ content: compileComponent('components/receivables/ReceivablesManager.tsx', '@/components/receivables/ReceivablesManager', 'ReceivablesManager') })
   await page.addScriptTag({ content: `ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(window.__receivablesModules['@/components/receivables/ReceivablesManager'].ReceivablesManager));` })
@@ -75,6 +80,8 @@ test('real ReceivablesManager shares the V3 header, full-width dividers and exte
   await expect(page.getByRole('heading', { name: 'Por cobrar' })).toBeVisible()
   await expect(page.getByTestId('receivables-status-tabs')).toBeVisible()
   await expect(page.getByTestId('receivables-filter-toolbar')).toBeVisible()
+  await expect(page.getByTestId('receivables-new-debtor-btn')).toBeVisible()
+  await expect(page.getByTestId('receivables-view-toggle')).toHaveCount(0)
   const desktop = await page.evaluate(() => {
     const box = (selector: string) => {
       const element = document.querySelector(selector)!
@@ -91,6 +98,17 @@ test('real ReceivablesManager shares the V3 header, full-width dividers and exte
       toolbar: box('[data-testid="receivables-filter-toolbar"]'),
       content: box('[data-testid="receivables-register"]'),
       cta: { x: Math.round(ctaRect.x), y: Math.round(ctaRect.y), width: Math.round(ctaRect.width), height: Math.round(ctaRect.height) },
+      toolbarControls: Array.from(document.querySelector('[data-testid="receivables-filter-toolbar"]')!.querySelectorAll(':scope > div > *')).map(element => {
+        const rect = element.getBoundingClientRect()
+        return { x: Math.round(rect.x), y: Math.round(rect.y), right: Math.round(rect.right), bottom: Math.round(rect.bottom) }
+      }),
+      searchBorder: getComputedStyle(document.querySelector('[data-testid="receivables-search"]')!).borderWidth,
+      searchWrapperBorder: getComputedStyle(document.querySelector('[data-testid="receivables-search"]')!.parentElement!.parentElement!).borderWidth,
+      searchIconGap: (() => {
+        const input = document.querySelector('[data-testid="receivables-search"]')!.getBoundingClientRect()
+        const icon = document.querySelector('[data-testid="receivables-search"]')!.parentElement!.querySelector('svg')!.getBoundingClientRect()
+        return Math.round(input.left - icon.right)
+      })(),
     }
   })
   console.info('Receivables desktop geometry:', JSON.stringify(desktop))
@@ -104,6 +122,32 @@ test('real ReceivablesManager shares the V3 header, full-width dividers and exte
   expect(desktop.tabs.y).toBeGreaterThan(desktop.summary.y)
   expect(desktop.toolbar.y).toBeGreaterThan(desktop.tabs.y)
   expect(desktop.content.y).toBeGreaterThan(desktop.toolbar.y)
+  expect(desktop.searchBorder).toBe('0px')
+  expect(desktop.searchWrapperBorder).toBe('1px')
+  expect(desktop.searchIconGap).toBeGreaterThanOrEqual(6)
+  expect(desktop.toolbarControls[0]!.right).toBeLessThanOrEqual(desktop.toolbarControls[1]!.x + 1)
+
+  await page.getByTestId('receivables-sort-filter').click()
+  await expect(page.locator('.app-select-menu')).toBeVisible()
+  const menuGeometry = await page.evaluate(() => {
+    const trigger = document.querySelector('[data-testid="receivables-sort-filter"]')!.getBoundingClientRect()
+    const menu = document.querySelector('.app-select-menu')!.getBoundingClientRect()
+    return { trigger: trigger.width, menu: menu.width, leftDelta: Math.abs(trigger.left - menu.left) }
+  })
+  expect(Math.abs(menuGeometry.trigger - menuGeometry.menu)).toBeLessThanOrEqual(2)
+  expect(menuGeometry.leftDelta).toBeLessThanOrEqual(2)
+  await page.keyboard.press('Escape')
+
+  for (const width of [834, 1710]) {
+    await page.setViewportSize({ width, height: 900 })
+    const responsive = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      document: document.documentElement.scrollWidth,
+      toolbar: document.querySelector('[data-testid="receivables-filter-toolbar"]')!.getBoundingClientRect().width,
+    }))
+    expect(responsive.document).toBeLessThanOrEqual(responsive.viewport)
+    expect(responsive.toolbar).toBeGreaterThan(0)
+  }
 
   await page.setViewportSize({ width: 390, height: 844 })
   const mobile = await page.evaluate(() => ({
@@ -118,4 +162,9 @@ test('real ReceivablesManager shares the V3 header, full-width dividers and exte
   expect(mobile.document).toBeLessThanOrEqual(mobile.viewport)
   expect(mobile.tabsScroll).toBeGreaterThanOrEqual(mobile.tabsClient)
   expect(mobile.toolbarScroll).toBeLessThanOrEqual(mobile.toolbarClient)
+  const mobileControls = await page.evaluate(() => Array.from(document.querySelector('[data-testid="receivables-filter-toolbar"]')!.querySelectorAll(':scope > div > *')).map(element => {
+    const rect = element.getBoundingClientRect()
+    return { x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom }
+  }))
+  expect(mobileControls[0]!.bottom).toBeLessThanOrEqual(mobileControls[1]!.y)
 })

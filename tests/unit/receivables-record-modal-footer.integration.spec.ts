@@ -99,7 +99,7 @@ test('RecordModal places remote submit actions in its fixed footer and associate
   expect(geometry.bodyFooterOverlap).toBe(false)
   expect(geometry.footerHeight).toBeGreaterThan(50)
   expect(geometry.footerBorderTop).toBe('1px')
-  expect(geometry.workbenchWidth).toBe(900)
+  expect(geometry.workbenchWidth).toBe(580)
   await page.evaluate(classes => {
     const host = document.createElement('div')
     host.innerHTML = `<form class="${classes.formRoot}" style="width: 1000px"><div class="${classes.formGrid}"><section class="${classes.formSectionContainer}"></section><section class="${classes.formSectionContainer}"><div class="${classes.dateGrid}"><div></div><div></div></div></section></div></form>`
