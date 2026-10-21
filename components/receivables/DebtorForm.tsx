@@ -7,10 +7,8 @@
 // =============================================================================
 
 import { useCallback, useEffect, useState } from 'react'
-import { Button }                from '@/components/ui/Button'
 import { NumericInput }          from '@/components/ui/NumericInput'
-import { FormActions, FormField } from '@/components/forms/primitives'
-import { RecordModalFooter }     from '@/components/ui/RecordModal'
+import { FormField } from '@/components/forms/primitives'
 import { getApiErrorMessage }    from '@/lib/api/error-message'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 import { useToast }              from '@/lib/toast/toast'
@@ -30,9 +28,9 @@ type DebtorFormProps = {
   /** Si se pasa, es modo edición */
   debtor?:   DebtorRow | null
   onSuccess: (debtor: DebtorRow) => void
-  onCancel:  () => void
   disabled?: boolean
   onDirtyChange?: (dirty: boolean) => void
+  onFormStateChange?: (state: { disabled: boolean; saving: boolean; editing: boolean }) => void
 }
 
 type FormState = {
@@ -53,7 +51,7 @@ function fromDebtor(d: DebtorRow): FormState {
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
-export function DebtorForm({ debtor, onSuccess, onCancel, disabled = false, onDirtyChange }: DebtorFormProps) {
+export function DebtorForm({ debtor, onSuccess, disabled = false, onDirtyChange, onFormStateChange }: DebtorFormProps) {
   const { toast } = useToast()
   const [form, setForm]   = useState<FormState>(debtor ? fromDebtor(debtor) : EMPTY)
   const [saving, setSaving] = useState(false)
@@ -128,6 +126,10 @@ export function DebtorForm({ debtor, onSuccess, onCancel, disabled = false, onDi
 
   const isDisabled = disabled || saving
 
+  useEffect(() => {
+    onFormStateChange?.({ disabled: isDisabled, saving, editing: Boolean(debtor) })
+  }, [debtor, isDisabled, onFormStateChange, saving])
+
   return (
     <form
       id="debtor-form"
@@ -182,27 +184,6 @@ export function DebtorForm({ debtor, onSuccess, onCancel, disabled = false, onDi
         </div>
       )}
 
-      <RecordModalFooter>
-        <FormActions
-          secondaryAction={(
-            <Button type="button" variant="secondary" size="lg" onClick={onCancel} disabled={saving}>
-              Cancelar
-            </Button>
-          )}
-          primaryAction={(
-            <Button
-              type="submit"
-              variant="primary"
-              size="lg"
-              disabled={isDisabled}
-              loading={saving}
-              testId="debtor-save-btn"
-            >
-              {debtor ? 'Actualizar deudor' : 'Crear deudor'}
-            </Button>
-          )}
-        />
-      </RecordModalFooter>
     </form>
   )
 }

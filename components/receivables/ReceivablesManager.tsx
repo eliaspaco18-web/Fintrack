@@ -9,6 +9,7 @@ import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
 import { RecordModal } from '@/components/ui/RecordModal'
 import { ViewToggle } from '@/components/ui/ViewToggle'
 import { ConfirmDialog, DataErrorBanner, DataSearchField, EmptyState, PageLayout } from '@/components/finance'
+import { FormActions } from '@/components/forms/primitives'
 import { DetailDrawer } from '@/components/finance/primitives'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { fetchWithTimeout } from '@/lib/client/fetch-with-timeout'
@@ -49,6 +50,9 @@ type StatusFilter = 'all' | 'pending' | 'collected'
 type SortOrder = 'desc' | 'asc'
 type ViewMode = 'list' | 'cards'
 type DiscardTarget = 'debtor' | 'receivable' | null
+type ModalFormState = { disabled: boolean; saving: boolean; editing: boolean }
+const EMPTY_DEBTOR_FORM_STATE: ModalFormState = { disabled: false, saving: false, editing: false }
+const EMPTY_RECEIVABLE_FORM_STATE: ModalFormState = { disabled: true, saving: false, editing: false }
 
 const RECEIVABLES_COLLECTION_URL = '/transactions?new=transaction&module=receivable&type=INCOME'
 
@@ -193,6 +197,8 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
   const [receivableModalOpen, setReceivableModalOpen] = useState(false)
   const [debtorDirty, setDebtorDirty] = useState(false)
   const [receivableDirty, setReceivableDirty] = useState(false)
+  const [debtorFormState, setDebtorFormState] = useState(EMPTY_DEBTOR_FORM_STATE)
+  const [receivableFormState, setReceivableFormState] = useState(EMPTY_RECEIVABLE_FORM_STATE)
   const [discardTarget, setDiscardTarget] = useState<DiscardTarget>(null)
   const [editingDebtor, setEditingDebtor] = useState<DebtorRow | null>(null)
   const [pendingDelete, setPendingDelete] = useState<DebtorWithStats | null>(null)
@@ -308,11 +314,13 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
   const openCreateDebtor = useCallback(() => {
     setEditingDebtor(null)
     setDebtorDirty(false)
+    setDebtorFormState(EMPTY_DEBTOR_FORM_STATE)
     setDebtorModalOpen(true)
   }, [])
   const openEditDebtor = useCallback((debtor: DebtorRow) => {
     setEditingDebtor(debtor)
     setDebtorDirty(false)
+    setDebtorFormState({ ...EMPTY_DEBTOR_FORM_STATE, editing: true })
     setDebtorModalOpen(true)
   }, [])
   const requestCloseDebtor = useCallback(() => {
@@ -416,43 +424,95 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
             </div>
             <div className={styles.headerActions}>
               <CreateModuleButton
-                onClick={() => { setReceivableDirty(false); setReceivableModalOpen(true) }}
+                onClick={() => { setReceivableDirty(false); setReceivableFormState(EMPTY_RECEIVABLE_FORM_STATE); setReceivableModalOpen(true) }}
                 label="Registrar cuenta por cobrar"
-                className={`${movementStyles.v3ModulePrimaryAction} ${styles.primaryAction} sm:w-auto`}
+                className={`${movementStyles.v3ModulePrimaryAction} ${styles.primaryAction} w-full sm:w-auto`}
                 testId="receivables-create-button"
               />
             </div>
           </header>
 
-          <section className={styles.summary} aria-label="Resumen de cuentas por cobrar">
-            <div className={styles.summaryItem}>
+          <section className={movementStyles.summary} aria-label="Resumen de cuentas por cobrar">
+            <div className={movementStyles.summaryItem}>
               <p>Pendiente documentado · PEN</p>
-              <div className={`${styles.summaryValue} tabular-nums`}>
+              <div className={`${movementStyles.summaryValue} tabular-nums`}>
                 {!summaryReady ? '—' : formatCurrency(pendingByCurrency.get('PEN') ?? 0, 'PEN')}
               </div>
-              <span className={styles.summaryDetail}>
+              <span className={movementStyles.summaryDetail}>
                 {summaryReady ? `${pendingByCurrencyCount.get('PEN') ?? 0} cuentas abiertas` : error ? 'Resumen no disponible' : 'Cargando resumen'}
               </span>
             </div>
-            <div className={styles.summaryItem}>
+            <div className={movementStyles.summaryItem}>
               <p>Pendiente documentado · USD</p>
-              <div className={`${styles.summaryValue} tabular-nums`}>
+              <div className={`${movementStyles.summaryValue} tabular-nums`}>
                 {!summaryReady ? '—' : formatCurrency(pendingByCurrency.get('USD') ?? 0, 'USD')}
               </div>
-              <span className={styles.summaryDetail}>
+              <span className={movementStyles.summaryDetail}>
                 {summaryReady ? `${pendingByCurrencyCount.get('USD') ?? 0} cuentas abiertas` : error ? 'Resumen no disponible' : 'Cargando resumen'}
               </span>
             </div>
-            <div className={`${styles.summaryItem} ${styles.summaryQualitative}`}>
+            <div className={`${movementStyles.summaryItem} ${movementStyles.summaryQualitative}`}>
               <p>Vencimientos próximos · 7 días</p>
-              <div className={`${styles.summaryValue} tabular-nums`}>
+              <div className={`${movementStyles.summaryValue} tabular-nums`}>
                 {receivablesLoading ? '—' : receivablesError ? 'No disponible' : `${dueSoonCount} registro${dueSoonCount === 1 ? '' : 's'}`}
               </div>
-              <span className={styles.summaryDetail}>
+              <span className={movementStyles.summaryDetail}>
                 {receivablesError ? 'Fechas no disponibles' : 'Cuentas pendientes con fecha registrada'}
               </span>
             </div>
           </section>
+        </div>
+
+        <nav aria-label="Estado de cuentas por cobrar" className={`${movementStyles.tabs} ${styles.receivableTabs}`} data-testid="receivables-status-tabs">
+          {([
+            ['pending', 'Pendientes'],
+            ['collected', 'Cobrados'],
+            ['all', 'Todos'],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={statusFilter === value}
+              onClick={() => setStatusFilter(value)}
+              className={styles.receivableTab}
+              data-active={statusFilter === value}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+
+        <div className={`${movementStyles.controls} ${movementStyles.portfolioFilterBar} ${styles.moduleToolbar}`} data-testid="receivables-filter-toolbar">
+          <div className={`${movementStyles.controlsMain} ${styles.moduleToolbarMain}`}>
+            <DataSearchField
+              value={query}
+              onChange={setQuery}
+              placeholder="Buscar persona o relación"
+              className={`${movementStyles.searchControl} ${styles.moduleSearch}`}
+              aria-label="Buscar personas que te deben"
+              data-testid="receivables-search"
+            />
+            {canSortByPendingAmount ? (
+              <AppSelect
+                value={sortOrder}
+                onChange={value => setSortOrder(value as SortOrder)}
+                options={[
+                  { value: 'desc', label: 'Mayor saldo primero' },
+                  { value: 'asc', label: 'Menor saldo primero' },
+                ]}
+                compact
+                searchable={false}
+                className={`filters-control ${styles.sortSelect}`}
+                aria-label="Ordenar por saldo pendiente"
+                data-testid="receivables-sort-filter"
+              />
+            ) : (
+              <span className={styles.sortContext}>Orden alfabético · monedas separadas</span>
+            )}
+          </div>
+          <div className={`${movementStyles.controlsActions} ${styles.toolbarActions}`}>
+            <ViewToggle value={viewMode} onChange={setViewMode} id="receivables-view-toggle" />
+          </div>
         </div>
 
         {error ? <DataErrorBanner message={error} onRetry={loadDebtors} /> : null}
@@ -483,60 +543,12 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
           <div className={styles.registerHeader}>
             <div className="min-w-0">
               <h2 id="receivables-register-title" className={styles.registerTitle}>Personas que te deben</h2>
-              <p className={styles.registerMeta}>
-                {loading ? 'Cargando personas' : `${filtered.length} de ${debtors.length} persona${debtors.length === 1 ? '' : 's'}`}
-              </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <ViewToggle value={viewMode} onChange={setViewMode} id="receivables-view-toggle" />
               <Button type="button" variant="secondary" size="sm" onClick={openCreateDebtor} testId="receivables-new-debtor-btn">
                 <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
                 Añadir persona
               </Button>
-            </div>
-          </div>
-
-          <div className={styles.toolbar}>
-            <DataSearchField
-              value={query}
-              onChange={setQuery}
-              placeholder="Buscar persona o relación"
-              className={styles.toolbarSearch}
-              aria-label="Buscar personas que te deben"
-              data-testid="receivables-search"
-            />
-            <div className={styles.toolbarControls}>
-              <AppSelect
-                value={statusFilter}
-                onChange={value => setStatusFilter(value as StatusFilter)}
-                options={[
-                  { value: 'pending', label: 'Pendientes' },
-                  { value: 'collected', label: 'Cobrados' },
-                  { value: 'all', label: 'Todas las personas' },
-                ]}
-                compact
-                searchable={false}
-                className={`filters-control ${styles.filterSelect}`}
-                aria-label="Filtrar personas por estado de cobro"
-                data-testid="receivables-status-filter"
-              />
-              {canSortByPendingAmount ? (
-                <AppSelect
-                  value={sortOrder}
-                  onChange={value => setSortOrder(value as SortOrder)}
-                  options={[
-                    { value: 'desc', label: 'Mayor saldo primero' },
-                    { value: 'asc', label: 'Menor saldo primero' },
-                  ]}
-                  compact
-                  searchable={false}
-                  className={`filters-control ${styles.sortSelect}`}
-                  aria-label="Ordenar por saldo pendiente"
-                  data-testid="receivables-sort-filter"
-                />
-              ) : (
-                <span className="px-1 text-[11px] text-[var(--ft-text-subtle)]">Orden alfabético · monedas separadas</span>
-              )}
             </div>
           </div>
 
@@ -726,12 +738,22 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
         size="sm"
         presentation="workbench"
         testId="receivables-debtor-modal"
+        footer={(
+          <FormActions
+            secondaryAction={<Button type="button" variant="secondary" size="lg" onClick={requestCloseDebtor} disabled={debtorFormState.saving}>Cancelar</Button>}
+            primaryAction={(
+              <Button type="submit" form="debtor-form" variant="primary" size="lg" disabled={debtorFormState.disabled} loading={debtorFormState.saving} testId="debtor-save-btn">
+                {debtorFormState.editing ? 'Actualizar deudor' : 'Crear deudor'}
+              </Button>
+            )}
+          />
+        )}
       >
         <DebtorForm
           debtor={editingDebtor}
           onSuccess={onDebtorSuccess}
-          onCancel={requestCloseDebtor}
           onDirtyChange={setDebtorDirty}
+          onFormStateChange={setDebtorFormState}
         />
       </RecordModal>
 
@@ -744,14 +766,25 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
         subtitle="Documenta el pendiente con su moneda y fechas registradas."
         size="lg"
         presentation="workbench"
+        overlayClassName={`z-modal ${styles.receivableFormOverlay}`}
         testId="receivables-create-modal"
+        footer={(
+          <FormActions
+            secondaryAction={<Button type="button" variant="secondary" size="lg" onClick={requestCloseReceivable} disabled={receivableFormState.saving}>Cancelar</Button>}
+            primaryAction={(
+              <Button type="submit" form="receivable-form" variant="primary" size="lg" disabled={receivableFormState.disabled} loading={receivableFormState.saving} testId="receivable-save-btn">
+                Crear cuenta por cobrar
+              </Button>
+            )}
+          />
+        )}
       >
         <ReceivableForm
           debtors={debtors}
           exchangeRate={exchangeRate}
           onSuccess={onReceivableSuccess}
-          onCancel={requestCloseReceivable}
           onDirtyChange={setReceivableDirty}
+          onFormStateChange={setReceivableFormState}
         />
       </RecordModal>
 

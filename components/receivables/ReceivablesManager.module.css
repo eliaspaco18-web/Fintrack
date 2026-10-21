@@ -15,63 +15,26 @@
   font-family: inherit;
 }
 
+.receivableFormOverlay[data-ft-v3][data-ft-workbench-overlay] :global(.ft-v3-workbench-wrapper) {
+  width: min(900px, calc(100vw - 32px));
+}
+
+@media (max-width: 767px) {
+  .receivableFormOverlay[data-ft-v3][data-ft-workbench-overlay] :global(.ft-v3-workbench-wrapper) {
+    width: calc(100vw - 16px);
+    margin: 8px;
+  }
+}
+
 .headerActions {
   display: flex;
-  width: 100%;
+  flex: 0 0 auto;
   align-items: center;
   gap: 8px;
 }
 
 .primaryAction {
-  width: 100%;
-}
-
-.summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 36px;
-  margin: 0;
-  border: 0;
-  border-bottom: 1px solid var(--ft-r07-line);
-  padding: 0 0 18px;
-}
-
-.summaryItem {
-  min-width: 180px;
-  padding: 0 !important;
-  border: 0 !important;
-  margin: 0 !important;
-}
-
-.summaryItem > p {
-  display: block !important;
-  margin: 0 0 6px !important;
-  color: var(--ft-r07-muted);
-  font-size: 11px !important;
-  font-weight: 400 !important;
-}
-
-.summaryValue {
-  margin: 0 !important;
-  color: var(--ft-r07-ink);
-  font-size: 24px !important;
-  font-weight: 600 !important;
-  line-height: 32px !important;
-  letter-spacing: -0.7px !important;
-  font-variant-numeric: tabular-nums;
-}
-
-.summaryDetail {
-  display: block;
-  margin-top: 3px;
-  color: var(--ft-r07-muted);
-  font-size: 11px;
-  line-height: 18px;
-}
-
-.summaryQualitative .summaryValue {
-  font-size: 18px !important;
-  letter-spacing: -0.3px !important;
+  white-space: nowrap;
 }
 
 .currencyNotice {
@@ -145,6 +108,67 @@
   border-bottom: 1px solid var(--ft-border);
   background: var(--ft-surface-muted);
   padding: 10px 18px;
+}
+
+.receivableTabs {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: stretch;
+  gap: 24px;
+  margin: 0 0 12px;
+  border-bottom: 1px solid var(--ft-r07-line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.receivableTabs::-webkit-scrollbar { display: none; }
+
+.receivableTab {
+  flex: 0 0 auto;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--ft-text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  padding: 0 0 13px;
+  white-space: nowrap;
+}
+
+.receivableTab:hover { color: var(--ft-text-strong); }
+.receivableTab[data-active='true'] { border-bottom-color: var(--ft-primary); color: var(--ft-primary); }
+.receivableTab:focus-visible { outline: 2px solid var(--ft-primary); outline-offset: 3px; border-radius: 3px; }
+
+.moduleToolbar {
+  margin-bottom: 16px;
+}
+
+.moduleToolbarMain { align-items: center; }
+
+.moduleSearch {
+  flex: 1 1 250px;
+  min-width: min(100%, 230px);
+  max-width: 520px;
+}
+
+.sortSelect {
+  width: 190px;
+  flex: 0 1 190px;
+}
+
+.sortContext {
+  padding: 0 4px;
+  color: var(--ft-text-subtle);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.toolbarActions {
+  align-self: center;
 }
 
 .toolbarSearch {
@@ -333,12 +357,10 @@
 }
 
 @media (max-width: 900px) {
-  .toolbar {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .toolbarSearch { max-width: none; }
-  .toolbarControls { justify-content: space-between; }
+  .moduleToolbar { align-items: flex-start; }
+  .moduleToolbarMain { flex-wrap: wrap; }
+  .moduleSearch { max-width: none; }
+  .toolbarActions { margin-left: 0; }
   .columnHeading,
   .personRow,
   .loadingRow { display: none; }
@@ -347,16 +369,13 @@
 }
 
 @media (max-width: 700px) {
-  .headerActions { width: auto; }
-  .primaryAction { width: auto; }
-  .summary { gap: 18px 24px; padding-bottom: 16px; }
-  .summaryItem { min-width: min(100%, 145px); flex: 1 1 145px; }
-  .summaryValue { font-size: 21px !important; line-height: 28px !important; }
   .currencyNotice { align-items: flex-start; flex-direction: column; }
   .registerHeader { align-items: flex-start; flex-wrap: wrap; padding: 13px 14px; }
-  .toolbar { padding: 10px 14px; }
-  .toolbarControls { flex-wrap: wrap; }
-  .filterSelect, .sortSelect { min-width: 140px; flex: 1 1 140px; }
+  .moduleToolbar { flex-direction: column; gap: 10px; }
+  .moduleToolbarMain { width: 100%; }
+  .moduleSearch { flex-basis: 100%; min-width: 0; }
+  .sortSelect { min-width: min(100%, 170px); flex: 1 1 170px; }
+  .toolbarActions { width: 100%; justify-content: flex-end; }
   .columnHeading { display: none; }
   .personRow { display: none; }
   .mobileCardList { display: grid; }

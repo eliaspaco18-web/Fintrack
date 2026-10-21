@@ -15,8 +15,7 @@ import { AppSelect }                        from '@/components/ui/AppSelect'
 import { CheckboxToggle }                   from '@/components/forms/TransactionForm/FormFields'
 import { IncomeDatePicker } from '@/components/forms/TransactionForm/IncomeDatePicker'
 import { CreditInfoHint } from '@/components/credits/CreditInfoHint'
-import { FormActions, FormField, FormSection, OptionalSection } from '@/components/forms/primitives'
-import { RecordModalFooter }                from '@/components/ui/RecordModal'
+import { FormField, FormSection, OptionalSection } from '@/components/forms/primitives'
 import { getApiErrorMessage }               from '@/lib/api/error-message'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 import { formatCurrency }                   from '@/lib/contracts/ui.contracts'
@@ -26,6 +25,7 @@ import {
   ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE,
 } from '@/modules/attachments/attachment-integrity'
 import type { DebtorRow }                   from './DebtorForm'
+import styles from './ReceivableForm.module.css'
 
 // ─── Tipos locales ────────────────────────────────────────────────────────────
 
@@ -71,12 +71,12 @@ type ReceivableFormProps = {
   debtors:      DebtorRow[]
   exchangeRate: number
   onSuccess:    () => void
-  onCancel:     () => void
   defaultDebtorId?: string
   /** Llamado para refrescar lista de deudores tras crear uno nuevo */
   onAddDebtor?: () => void
   disabled?:    boolean
   onDirtyChange?: (dirty: boolean) => void
+  onFormStateChange?: (state: { disabled: boolean; saving: boolean; editing: boolean }) => void
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -120,10 +120,10 @@ export function ReceivableForm({
   debtors,
   exchangeRate,
   onSuccess,
-  onCancel,
   defaultDebtorId,
   disabled = false,
   onDirtyChange,
+  onFormStateChange,
 }: ReceivableFormProps) {
   const { toast } = useToast()
   const isEdit    = !!receivable
@@ -282,6 +282,10 @@ export function ReceivableForm({
 
   const isDisabled = disabled || saving || (!isEdit && (accountsLoading || Boolean(accountsError) || accounts.length === 0))
 
+  useEffect(() => {
+    onFormStateChange?.({ disabled: isDisabled, saving, editing: isEdit })
+  }, [isDisabled, isEdit, onFormStateChange, saving])
+
   // ── Opciones de select ───────────────────────────────────────────────────────
   const accountOptions = [
     { value: '', label: accountsLoading ? 'Cargando portafolios…' : accountsError ? 'Portafolios no disponibles' : accounts.length === 0 ? 'Sin portafolios activos' : 'Selecciona portafolio…' },
@@ -307,9 +311,10 @@ export function ReceivableForm({
       id="receivable-form"
       onSubmit={handleSubmit}
       data-testid="receivable-form"
-      className="space-y-5"
+      className={`${styles.formRoot} space-y-5`}
     >
-      <div className="grid grid-cols-1 gap-5 min-[860px]:grid-cols-[minmax(0,1.04fr)_minmax(300px,0.96fr)] min-[860px]:items-start">
+      <div className={styles.formGrid}>
+        <div className={styles.formSectionContainer}>
         <FormSection
           title="Contexto"
           className="space-y-4"
@@ -364,7 +369,9 @@ export function ReceivableForm({
             </FormField>
           )}
         </FormSection>
+        </div>
 
+        <div className={styles.formSectionContainer}>
         <FormSection
           title="Registro"
           className="space-y-4"
@@ -382,7 +389,7 @@ export function ReceivableForm({
             />
           </FormField>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className={styles.currencyGrid}>
             <div
               className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3"
               data-testid="receivable-currency-display"
@@ -396,7 +403,7 @@ export function ReceivableForm({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-[var(--ft-form-field-gap)] sm:grid-cols-2">
+          <div className={styles.dateGrid}>
             <FormField label="Fecha de emisión">
               <IncomeDatePicker
                 value={form.issue_date}
@@ -426,8 +433,9 @@ export function ReceivableForm({
             </FormField>
           </div>
         </FormSection>
+        </div>
 
-        <div className="min-[860px]:col-span-2">
+        <div className={styles.formWide}>
           <FormField label="Descripción" optional>
             <input
               value={form.concept}
@@ -441,7 +449,7 @@ export function ReceivableForm({
           </FormField>
         </div>
 
-        <div className="min-[860px]:col-span-2">
+        <div className={styles.formWide}>
           <OptionalSection
             title="Información adicional"
             summary={optionalSummary}
@@ -510,27 +518,6 @@ export function ReceivableForm({
         </div>
       ) : null}
 
-      <RecordModalFooter>
-        <FormActions
-          secondaryAction={(
-            <Button type="button" variant="secondary" size="lg" onClick={onCancel} disabled={saving}>
-              Cancelar
-            </Button>
-          )}
-          primaryAction={(
-            <Button
-              type="submit"
-              variant="primary"
-              size="lg"
-              disabled={isDisabled}
-              loading={saving}
-              testId="receivable-save-btn"
-            >
-              {isEdit ? 'Actualizar cuenta por cobrar' : 'Crear cuenta por cobrar'}
-            </Button>
-          )}
-        />
-      </RecordModalFooter>
     </form>
   )
 }

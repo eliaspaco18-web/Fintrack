@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AppSelect } from '@/components/ui/AppSelect'
 import { Button } from '@/components/ui/Button'
 import { RecordModal } from '@/components/ui/RecordModal'
+import { FormActions } from '@/components/forms/primitives'
 import { ConfirmDialog, DataErrorBanner, DataSearchField, EmptyState } from '@/components/finance'
 import { IncomeDatePicker } from '@/components/forms/TransactionForm/IncomeDatePicker'
 import { getApiErrorMessage } from '@/lib/api/error-message'
@@ -131,6 +132,7 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpe
   const [dateError, setDateError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [createDirty, setCreateDirty] = useState(false)
+  const [createFormState, setCreateFormState] = useState({ disabled: true, saving: false, editing: false })
   const [discardOpen, setDiscardOpen] = useState(false)
   const settlementState = getObligationSettlementState({
     summaries: debtor.currency_summaries,
@@ -206,6 +208,7 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpe
 
   const openCreate = useCallback(() => {
     setCreateDirty(false)
+    setCreateFormState({ disabled: true, saving: false, editing: false })
     setCreateOpen(true)
     onNestedModalOpenChange?.(true)
   }, [onNestedModalOpenChange])
@@ -331,15 +334,15 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpe
             className={styles.detailSearch}
             data-testid="debtor-detail-search"
           />
-          <AppSelect value={accountFilter} onChange={setAccountFilter} options={accountOptions} compact searchable={false} className={styles.detailFilter} aria-label="Filtrar por portafolio" />
+          <AppSelect value={accountFilter} onChange={setAccountFilter} options={accountOptions} compact searchable={false} className={`${styles.detailFilter} ${styles.detailAccountFilter}`} aria-label="Filtrar por portafolio" />
           <AppSelect value={movementFilter} onChange={value => setMovementFilter(value as 'all' | 'income' | 'expense')} options={[
             { value: 'all', label: 'Todos los movimientos' },
             { value: 'expense', label: 'Solo préstamos' },
             { value: 'income', label: 'Solo cobros' },
-          ]} compact searchable={false} className={styles.detailFilter} aria-label="Filtrar por tipo de movimiento" />
-          <IncomeDatePicker value={dateFrom} onChange={setDateFrom} onInvalidInput={setDateError} error={dateError ?? undefined} inputLabel="Fecha desde" inputTestId="debtor-detail-date-from" positioningBoundary="viewport" />
-          <IncomeDatePicker value={dateTo} onChange={setDateTo} onInvalidInput={setDateError} error={dateError ?? undefined} inputLabel="Fecha hasta" inputTestId="debtor-detail-date-to" positioningBoundary="viewport" />
-          <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>Limpiar</Button>
+          ]} compact searchable={false} className={`${styles.detailFilter} ${styles.detailMovementFilter}`} aria-label="Filtrar por tipo de movimiento" />
+          <div className={styles.detailDateControl}><IncomeDatePicker value={dateFrom} onChange={setDateFrom} onInvalidInput={setDateError} error={dateError ?? undefined} inputLabel="Fecha desde" inputTestId="debtor-detail-date-from" positioningBoundary="viewport" /></div>
+          <div className={styles.detailDateControl}><IncomeDatePicker value={dateTo} onChange={setDateTo} onInvalidInput={setDateError} error={dateError ?? undefined} inputLabel="Fecha hasta" inputTestId="debtor-detail-date-to" positioningBoundary="viewport" /></div>
+          <Button className={styles.detailClear} type="button" variant="ghost" size="sm" onClick={clearFilters}>Limpiar</Button>
         </div>
         {dateError ? <p className={styles.dateError} role="alert">{dateError}</p> : null}
 
@@ -381,16 +384,23 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpe
         subtitle="Registra un nuevo compromiso dentro del mismo deudor."
         size="lg"
         presentation="workbench"
+        overlayClassName={`z-modal ${styles.receivableFormOverlay}`}
         focusTrapActive={!discardOpen}
         preserveFocusOnResume
+        footer={(
+          <FormActions
+            secondaryAction={<Button type="button" variant="secondary" size="lg" onClick={requestCloseCreate} disabled={createFormState.saving}>Cancelar</Button>}
+            primaryAction={<Button type="submit" form="receivable-form" variant="primary" size="lg" disabled={createFormState.disabled} loading={createFormState.saving} testId="debtor-detail-receivable-save-btn">Crear cuenta por cobrar</Button>}
+          />
+        )}
       >
         <ReceivableForm
           debtors={[debtor]}
           exchangeRate={exchangeRate}
           defaultDebtorId={debtor.id}
           onSuccess={handleFormSuccess}
-          onCancel={requestCloseCreate}
           onDirtyChange={setCreateDirty}
+          onFormStateChange={setCreateFormState}
         />
       </RecordModal>
       <ConfirmDialog
