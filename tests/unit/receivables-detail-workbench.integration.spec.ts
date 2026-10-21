@@ -78,13 +78,14 @@ test('real debtor detail renders inside the wide RecordModal workbench with nati
     window.__receivablesModules['@/lib/api/error-message']={getApiErrorMessage:(_json,fallback)=>fallback};
     window.__receivablesModules['@/lib/contracts/ui.contracts']={formatCurrency:(amount,currency)=>currency==='USD'?'$'+Number(amount).toFixed(2):'S/ '+Number(amount).toFixed(2)};
     window.__receivablesModules['@/modules/obligations/obligation-currency-presentation']={formatVerifiedObligationAmount:(amount,currency)=>(currency==='USD'?'$':'S/ ')+Number(amount).toFixed(2),getObligationSettlementState:()=> 'OPEN',resolveVerifiedObligationCurrency:currency=>['PEN','USD'].includes(currency)?currency:null,summarizeObligationLedgerCurrencies:()=>({summaries:[]})};
+    window.__receivablesModules['@/modules/receivables/receivables-list-presentation']={getReceivableRecoveryProgress:summaries=>({available:true,items:summaries.map(summary=>({currency:summary.currency,percent:summary.total?Math.round(summary.settled/summary.total*1000)/10:null}))})};
     window.__receivablesModules['./ReceivableForm']={ReceivableForm:()=>React.createElement('form',{id:'receivable-form','data-testid':'receivable-form'},React.createElement('p',null,'Formulario sintético de prueba'))};
     window.__receivablesModules['./DebtorDetail.module.css']={default:${JSON.stringify(detailClasses)}};
     window.__fixtureDebtor={id:'debtor-1',name:'Lucía Andina',relationship:'Cliente recurrente',initial_debt:0,is_active:true,total_lent:1200,total_collected:450,pending_amount:750,progress_pct:37.5,all_collected:false,count_pending:2,receivables_count:2,currency_summaries:[{currency:'PEN',total:1000,settled:400,pending:600},{currency:'USD',total:200,settled:50,pending:150}],unverified_currency_records:0,unverified_open_currency_records:0,has_unverified_initial_debt:false};
     window.fetch=async url=>{
       const data=String(url).includes('/api/receivables?')?[
-        {id:'r-pen',debtor_id:'debtor-1',debtor_name:'Lucía Andina',concept:'Servicio de consultoría',amount:1000,collected_amount:400,currency:'PEN',issue_date:'2026-09-01',due_date:'2026-10-15',notes:null,attachment_url:null,status:'PARTIAL'},
-        {id:'r-usd',debtor_id:'debtor-1',debtor_name:'Lucía Andina',concept:'Licencia anual',amount:200,collected_amount:50,currency:'USD',issue_date:'2026-09-04',due_date:null,notes:null,attachment_url:null,status:'PENDING'}
+        {id:'r-pen',transaction_id:'t-2',debtor_id:'debtor-1',debtor_name:'Lucía Andina',concept:'Servicio de consultoría',amount:1000,collected_amount:400,currency:'PEN',issue_date:'2026-09-01',due_date:'2026-10-15',notes:null,attachment_url:null,status:'PARTIAL',source_account:{id:'a-1',name:'Cuenta principal'}},
+        {id:'r-usd',transaction_id:null,debtor_id:'debtor-1',debtor_name:'Lucía Andina',concept:'Licencia anual',amount:200,collected_amount:50,currency:'USD',issue_date:'2026-09-04',due_date:null,notes:null,attachment_url:null,status:'PENDING'}
       ]:String(url).includes('/ledger')?[
         {id:'t-1',type:'INCOME',amount:400,currency:'PEN',description:'Primer abono',notes:null,transaction_date:'2026-09-10',created_at:'2026-09-10T12:00:00Z',source_account:{id:'a-1',name:'Cuenta principal'},category:{id:'c-1',name:'Servicios'}},
         {id:'t-2',type:'EXPENSE',amount:200,currency:'USD',description:'Desembolso inicial',notes:null,transaction_date:'2026-09-04',created_at:'2026-09-04T12:00:00Z',source_account:{id:'a-1',name:'Cuenta principal'},category:{id:'c-2',name:'Préstamos'}}
@@ -93,6 +94,7 @@ test('real debtor detail renders inside the wide RecordModal workbench with nati
     };` })
   await page.addScriptTag({ content: compileFocusTrap() })
   await page.addScriptTag({ content: compilePresenceHook() })
+  await page.addScriptTag({ content: compileComponent('modules/receivables/debtor-financial-history.ts', '@/modules/receivables/debtor-financial-history', 'buildDebtorFinancialHistory') })
   await page.addScriptTag({ content: compileComponent('components/ui/RecordModal.tsx', '@/components/ui/RecordModal', 'RecordModal') })
   await page.addScriptTag({ content: compileComponent('components/receivables/DebtorDetail.tsx', '@/components/receivables/DebtorDetail', 'DebtorDetail') })
   await page.addScriptTag({ content: `function Harness(){
@@ -112,11 +114,15 @@ test('real debtor detail renders inside the wide RecordModal workbench with nati
   await expect(dialog).toBeVisible()
   await dialog.evaluate(element => Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => undefined))))
   await expect(page.getByText('Recuperación documentada')).toBeVisible()
+  await expect(page.getByText('Historial financiero')).toBeVisible()
   await expect(page.getByText('Servicio de consultoría')).toBeVisible()
   await expect(page.getByText('Licencia anual')).toBeVisible()
   await expect(page.getByLabel('Recuperación documentada').getByText('S/ 600.00')).toBeVisible()
   await expect(page.getByLabel('Recuperación documentada').getByText('$150.00')).toBeVisible()
-  await expect(page.getByTestId('debtor-ledger-row-t-1')).toBeVisible()
+  await expect(page.getByTestId('debtor-ledger-row-transaction:t-1')).toBeVisible()
+  await expect(page.getByTestId('debtor-ledger-row-obligation:r-pen')).toBeVisible()
+  await expect(page.getByTestId('debtor-ledger-row-transaction:t-2')).toHaveCount(0)
+  await expect(page.getByTestId('debtor-obligations')).toHaveCount(0)
 
   const desktop = await page.evaluate(() => {
     const modal = document.querySelector('[data-testid="debtor-detail-workbench"]')!
@@ -124,11 +130,10 @@ test('real debtor detail renders inside the wide RecordModal workbench with nati
     const body = modal.querySelector('[data-record-modal-body="true"]')!
     const footer = body.nextElementSibling!
     const recovery = modal.querySelector('[aria-labelledby="debtor-recovery-title"]')!
-    const obligations = modal.querySelector('[data-testid="debtor-obligations"]')!
     const history = modal.querySelector('[aria-labelledby="debtor-ledger-title"]')!
     const ledgerScroll = modal.querySelector('[class*="ledgerScroll"]')!
     const rect = (element: Element) => { const box = element.getBoundingClientRect(); return {x:Math.round(box.x),y:Math.round(box.y),width:Math.round(box.width),height:Math.round(box.height),right:Math.round(box.right),bottom:Math.round(box.bottom)} }
-    return {wrapper:rect(wrapper),modal:rect(modal),body:rect(body),footer:rect(footer),recovery:rect(recovery),obligations:rect(obligations),history:rect(history),ledger:rect(ledgerScroll),bodyOverflow:getComputedStyle(body).overflowY,bodyDisplay:getComputedStyle(body).display,scrollWidth:modal.scrollWidth,clientWidth:modal.clientWidth,footerOutsideBody:!body.contains(footer)}
+    return {wrapper:rect(wrapper),modal:rect(modal),body:rect(body),footer:rect(footer),recovery:rect(recovery),history:rect(history),ledger:rect(ledgerScroll),bodyOverflow:getComputedStyle(body).overflowY,bodyDisplay:getComputedStyle(body).display,scrollWidth:modal.scrollWidth,clientWidth:modal.clientWidth,footerOutsideBody:!body.contains(footer)}
   })
   console.info('Receivables workbench geometry 1440:', JSON.stringify(desktop))
   expect(desktop.wrapper.width).toBe(1220)
@@ -136,7 +141,8 @@ test('real debtor detail renders inside the wide RecordModal workbench with nati
   expect(desktop.bodyDisplay).toBe('flex')
   expect(desktop.bodyOverflow).toBe('hidden')
   expect(desktop.footerOutsideBody).toBe(true)
-  expect(desktop.history.height).toBeGreaterThan(200)
+  expect(desktop.recovery.height).toBeLessThan(150)
+  expect(desktop.history.height).toBeGreaterThan(400)
   expect(desktop.ledger.height).toBeGreaterThan(100)
   expect(desktop.scrollWidth).toBeLessThanOrEqual(desktop.clientWidth)
 

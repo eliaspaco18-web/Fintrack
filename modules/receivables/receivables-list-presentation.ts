@@ -9,6 +9,52 @@ export type ReceivableListRecord = {
 
 export type ReceivablePersonState = 'OPEN' | 'PARTIAL' | 'SETTLED' | 'WRITTEN_OFF' | 'UNVERIFIED' | 'EMPTY'
 
+export type ReceivableRecoverySummary = {
+  currency: string
+  total: number
+  settled: number
+  pending: number
+}
+
+export type ReceivableRecoveryProgress =
+  | { available: true; items: Array<{ currency: 'PEN' | 'USD'; percent: number }> }
+  | { available: false; reason: 'missing' | 'inconsistent' }
+
+/** Present only reconciled, verified native-currency recovery ratios. */
+export function getReceivableRecoveryProgress(
+  summaries: readonly ReceivableRecoverySummary[] | null | undefined,
+): ReceivableRecoveryProgress {
+  if (!summaries?.length) return { available: false, reason: 'missing' }
+
+  const items: Array<{ currency: 'PEN' | 'USD'; percent: number }> = []
+  for (const summary of summaries) {
+    const currency = typeof summary.currency === 'string' ? summary.currency.toUpperCase() : ''
+    const total = Number(summary.total)
+    const settled = Number(summary.settled)
+    const pending = Number(summary.pending)
+    if (
+      (currency !== 'PEN' && currency !== 'USD')
+      || !Number.isFinite(total)
+      || !Number.isFinite(settled)
+      || !Number.isFinite(pending)
+      || total <= 0
+      || settled < 0
+      || pending < 0
+      || Math.abs(total - settled - pending) > 0.010001
+      || settled > total + 0.010001
+    ) {
+      return { available: false, reason: total === 0 && settled === 0 && pending === 0 ? 'missing' : 'inconsistent' }
+    }
+
+    items.push({
+      currency,
+      percent: Math.round((settled / total) * 1000) / 10,
+    })
+  }
+
+  return items.length ? { available: true, items } : { available: false, reason: 'missing' }
+}
+
 function isIsoCalendarDate(value: string | null | undefined): value is string {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
   const date = new Date(`${value}T12:00:00Z`)

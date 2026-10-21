@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import {
   countReceivablesDueWithinDays,
+  getReceivableRecoveryProgress,
   getDebtorDueSummary,
   getReceivablePersonState,
   hasVerifiedOpenReceivable,
@@ -59,5 +60,23 @@ test.describe('Receivables list presentation', () => {
       openWithoutDateCount: 2,
     })
     expect(countReceivablesDueWithinDays(records, '2026-10-20', 7)).toBe(0)
+  })
+
+  test('presents repayment as settled over documented total and keeps currencies separate', () => {
+    expect(getReceivableRecoveryProgress([
+      { currency: 'PEN', total: 2000, settled: 800, pending: 1200 },
+      { currency: 'USD', total: 500, settled: 125, pending: 375 },
+    ])).toEqual({ available: true, items: [
+      { currency: 'PEN', percent: 40 },
+      { currency: 'USD', percent: 25 },
+    ] })
+  })
+
+  test('does not turn zero, unknown, or unreconciled amounts into a progress percentage', () => {
+    expect(getReceivableRecoveryProgress([])).toEqual({ available: false, reason: 'missing' })
+    expect(getReceivableRecoveryProgress([{ currency: 'PEN', total: 0, settled: 0, pending: 0 }])).toEqual({ available: false, reason: 'missing' })
+    expect(getReceivableRecoveryProgress([{ currency: 'EUR', total: 100, settled: 40, pending: 60 }])).toEqual({ available: false, reason: 'inconsistent' })
+    expect(getReceivableRecoveryProgress([{ currency: 'PEN', total: 100, settled: 60, pending: 30 }])).toEqual({ available: false, reason: 'inconsistent' })
+    expect(getReceivableRecoveryProgress([{ currency: 'PEN', total: 100, settled: 110, pending: -10 }])).toEqual({ available: false, reason: 'inconsistent' })
   })
 })

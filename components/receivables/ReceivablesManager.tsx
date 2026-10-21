@@ -19,6 +19,7 @@ import {
 } from '@/modules/obligations/obligation-currency-presentation'
 import {
   countReceivablesDueWithinDays,
+  getReceivableRecoveryProgress,
   getDebtorDueSummary,
   getReceivablePersonState,
   hasVerifiedOpenReceivable,
@@ -113,6 +114,27 @@ function DebtorStatus({ state, inactive = false }: { state: ReturnType<typeof ge
       ) : null}
     </span>
   )
+}
+
+function DebtorRecovery({ debtor, mobile = false }: { debtor: DebtorWithStats; mobile?: boolean }) {
+  const progress = getReceivableRecoveryProgress(debtor.currency_summaries)
+  if (!progress.available) {
+    return <span className={styles.recoveryUnavailable} data-testid={`receivables-recovery-${debtor.id}`}>
+      {progress.reason === 'inconsistent' ? 'Datos inconsistentes' : 'Sin datos suficientes'}
+    </span>
+  }
+
+  return <div className={`${styles.recoveryProgress} ${mobile ? styles.mobileRecoveryProgress : ''}`} aria-label={`Recuperación documentada de ${debtor.name}`} data-testid={`receivables-recovery-${debtor.id}`}>
+    {progress.items.map(item => (
+      <div className={styles.recoveryCurrency} key={item.currency}>
+        <div className={styles.recoveryLabel}><span>{item.currency}</span><strong>{item.percent.toFixed(1)}%</strong></div>
+        <div className={styles.recoveryTrack} role="progressbar" aria-label={`Recuperación ${item.currency}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={item.percent}>
+          <span style={{ width: `${item.percent}%` }} />
+        </div>
+      </div>
+    ))}
+    {debtor.unverified_currency_records > 0 || debtor.has_unverified_initial_debt ? <span className={styles.recoveryNote}>Importes no verificables excluidos</span> : null}
+  </div>
 }
 
 function DebtorActions({
@@ -449,8 +471,9 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
               <Button
                 type="button"
                 variant="secondary"
-                size="md"
+                size="sm"
                 onClick={openCreateDebtor}
+                className={styles.secondaryHeaderAction}
                 testId="receivables-new-debtor-btn"
                 leadingIcon={<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>}
               >
@@ -586,7 +609,7 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
           ) : listDataLoading ? (
             <div className={styles.loadingRows} aria-label="Cargando personas">
               {[0, 1, 2].map(item => <div key={item} className={styles.loadingRow} aria-hidden="true">
-                {[0, 1, 2, 3].map(cell => <span key={cell} className="h-3 animate-pulse rounded-full bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />)}
+                {[0, 1, 2, 3, 4].map(cell => <span key={cell} className="h-3 animate-pulse rounded-full bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />)}
               </div>)}
             </div>
           ) : filtered.length === 0 ? (
@@ -604,7 +627,7 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
           ) : (
             <>
               <div className={styles.columnHeading} aria-hidden="true">
-                <span>Persona</span><span>Pendiente documentado</span><span>Vencimiento registrado</span><span className="text-right">Acciones</span>
+                <span>Persona</span><span>Pendiente documentado</span><span>Recuperación</span><span>Vencimiento registrado</span><span className="text-right">Acciones</span>
               </div>
               <div className={styles.rows}>
                   {filtered.map(debtor => {
@@ -637,6 +660,7 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
                               </span>
                             )}
                           </div>
+                          <div className={styles.recoveryCell}><DebtorRecovery debtor={debtor} /></div>
                           <div className={styles.dueSummary}>
                             {receivablesLoading ? <span className={styles.dueEmpty}>Consultando fechas…</span>
                               : receivablesError ? <span className={styles.dueEmpty}>Fecha no disponible</span>
@@ -676,6 +700,7 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
                               )) : <span className={styles.currencyEmpty}>{debtor.has_unverified_initial_debt ? 'No verificable' : 'Sin saldo abierto'}</span>}
                             </div>
                           </div>
+                          <DebtorRecovery debtor={debtor} mobile />
                           <div className={styles.mobileBottom}>
                             <div className={styles.dueSummary}>
                               {receivablesLoading ? <span className={styles.dueEmpty}>Consultando fechas…</span>

@@ -13,9 +13,10 @@ import {
   formatVerifiedObligationAmount,
   getObligationSettlementState,
   resolveVerifiedObligationCurrency,
-  summarizeObligationLedgerCurrencies,
   type ObligationCurrencySummary,
 } from '@/modules/obligations/obligation-currency-presentation'
+import { buildDebtorFinancialHistory } from '@/modules/receivables/debtor-financial-history'
+import { getReceivableRecoveryProgress } from '@/modules/receivables/receivables-list-presentation'
 import { ReceivableForm } from './ReceivableForm'
 import type { DebtorRow } from './DebtorForm'
 import styles from './DebtorDetail.module.css'
@@ -36,6 +37,7 @@ export type DebtorWithStats = DebtorRow & {
 
 type ReceivableRow = {
   id: string
+  transaction_id?: string | null
   debtor_id: string | null
   debtor_name: string
   concept: string | null
@@ -86,14 +88,19 @@ function isOverdue(row: ReceivableRow) {
   return row.due_date < todayIso
 }
 
-function resolveLedgerMeta(row: LedgerRow) {
+function financialHistoryMeta(row: ReturnType<typeof buildDebtorFinancialHistory>[number]) {
   const currency = resolveVerifiedObligationCurrency(row.currency)
-  const verifiedAmount = currency ? formatCurrency(row.amount, currency) : 'Importe no verificable'
-
-  if (row.type === 'INCOME') {
-    return { label: 'Cobro', tone: styles.income, detail: 'Cobro registrado', signedAmount: currency ? `+${verifiedAmount}` : verifiedAmount }
+  const amount = currency ? formatCurrency(Number(row.amount), currency) : 'Importe no verificable'
+  const label = row.source === 'obligation'
+    ? 'Dinero prestado'
+    : row.type === 'INCOME' ? 'Pago recibido' : 'Dinero prestado'
+  const state = row.source === 'obligation' ? receivableStateLabel(row.status) : 'Registrado'
+  return {
+    label,
+    state,
+    tone: row.type === 'INCOME' ? styles.income : styles.expense,
+    signedAmount: currency ? `${row.type === 'INCOME' ? '+' : '−'}${amount}` : amount,
   }
-  return { label: 'Préstamo', tone: styles.expense, detail: 'Capital entregado', signedAmount: currency ? `−${verifiedAmount}` : verifiedAmount }
 }
 
 function summaryStateLabel(state: ReturnType<typeof getObligationSettlementState>) {
@@ -112,11 +119,6 @@ function receivableStateLabel(status: string) {
     case 'PENDING': return 'Pendiente'
     default: return 'Estado no verificable'
   }
-}
-
-function formatReceivableAmount(value: unknown, currency: string | null) {
-  const amount = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN
-  return currency && Number.isFinite(amount) ? formatCurrency(amount, currency) : 'Importe no verificable'
 }
 
 export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpenChange, onRegisterCreateAction }: Props) {
@@ -140,6 +142,7 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpe
     unverifiedRecordCount: debtor.unverified_currency_records,
     hasUnverifiedInitialBalance: debtor.has_unverified_initial_debt,
   })
+  const recoveryProgress = getReceivableRecoveryProgress(debtor.currency_summaries)
 
   const loadRows = useCallback(async () => {
     setLoading(true)
@@ -180,20 +183,19 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpe
     { value: 'all', label: 'Todos los portafolios' },
     ...accounts.map(account => ({ value: account.id, label: account.name })),
   ], [accounts])
-  const filteredLedger = useMemo(() => ledgerRows.filter(row => {
+  const financialHistory = useMemo(() => buildDebtorFinancialHistory(rows, ledgerRows), [ledgerRows, rows])
+  const filteredLedger = useMemo(() => financialHistory.filter(row => {
     if (movementFilter === 'income' && row.type !== 'INCOME') return false
     if (movementFilter === 'expense' && row.type !== 'EXPENSE') return false
-    if (accountFilter !== 'all' && row.source_account?.id !== accountFilter) return false
-    if (dateFrom && row.transaction_date < dateFrom) return false
-    if (dateTo && row.transaction_date > dateTo) return false
-    if (normalizedQuery && ![row.description, row.notes, row.category?.name, row.source_account?.name]
+    if (accountFilter !== 'all' && row.accountId !== accountFilter) return false
+    if (dateFrom && row.date < dateFrom) return false
+    if (dateTo && row.date > dateTo) return false
+    if (normalizedQuery && [row.description, row.notes, row.categoryName, row.accountName]
       .some(value => (value ?? '').toLocaleLowerCase('es-PE').includes(normalizedQuery))) return false
     return true
-  }), [accountFilter, dateFrom, dateTo, ledgerRows, movementFilter, normalizedQuery])
-  const filteredLedgerBreakdown = useMemo(() => summarizeObligationLedgerCurrencies(filteredLedger), [filteredLedger])
+  }), [accountFilter, dateFrom, dateTo, financialHistory, movementFilter, normalizedQuery])
   const overdueCount = useMemo(() => rows.filter(isOverdue).length, [rows])
   const openAccountsCount = rows.filter(row => ['PENDING', 'PARTIAL'].includes(row.status)).length
-  const hasPositiveLedgerBalance = filteredLedgerBreakdown.summaries.some(summary => summary.balance > 0)
 
   const handleFormSuccess = useCallback(async () => {
     setCreateDirty(false)
@@ -240,7 +242,6 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpe
         <div className={styles.panelHeading}>
           <div>
             <h3 id="debtor-recovery-title">Recuperación documentada</h3>
-            <p>Resumen separado por moneda original</p>
           </div>
           <span className={`${styles.stateBadge} ${settlementState === 'SETTLED' ? styles.stateSuccess : settlementState === 'UNVERIFIED' ? styles.stateMuted : styles.stateWarning}`}>
             {summaryStateLabel(settlementState)}
@@ -250,11 +251,21 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpe
           <div className={styles.currencySummaries}>
             {debtor.currency_summaries.map(summary => (
               <article key={summary.currency} className={styles.currencySummary}>
-                <p>{summary.currency}</p>
                 <div className={styles.currencyMetrics}>
-                  <div><span>Total</span><strong>{formatVerifiedObligationAmount(summary.total, summary.currency)}</strong></div>
-                  <div><span>Cobrado</span><strong className={styles.settledAmount}>{formatVerifiedObligationAmount(summary.settled, summary.currency)}</strong></div>
-                  <div><span>Pendiente</span><strong className={summary.pending > 0 ? styles.pendingAmount : ''}>{formatVerifiedObligationAmount(summary.pending, summary.currency)}</strong></div>
+                  <div className={styles.currencyLabel}>{summary.currency}</div>
+                  <div><span>Total documentado</span><strong>{formatVerifiedObligationAmount(summary.total, summary.currency)}</strong></div>
+                  <div><span>Total cobrado</span><strong className={styles.settledAmount}>{formatVerifiedObligationAmount(summary.settled, summary.currency)}</strong></div>
+                  <div><span>Saldo pendiente</span><strong className={summary.pending > 0 ? styles.pendingAmount : ''}>{formatVerifiedObligationAmount(summary.pending, summary.currency)}</strong></div>
+                  <div className={styles.recoveryMeter}>
+                    <div className={styles.recoveryMeterLabel}>
+                      <span>Recuperación</span>
+                      <strong>{recoveryProgress.available ? `${recoveryProgress.items.find(item => item.currency === summary.currency)?.percent.toFixed(1) ?? '—'}%` : 'Sin datos suficientes'}</strong>
+                    </div>
+                    {recoveryProgress.available ? (() => {
+                      const percent = recoveryProgress.items.find(item => item.currency === summary.currency)?.percent
+                      return percent === undefined ? null : <div className={styles.progressTrack} role="progressbar" aria-label={`Recuperación en ${summary.currency}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: `${percent}%` }} /></div>
+                    })() : null}
+                  </div>
                 </div>
               </article>
             ))}
@@ -267,68 +278,13 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpe
             {debtor.has_unverified_initial_debt ? 'Saldo inicial sin moneda verificable' : `${debtor.unverified_currency_records} registro${debtor.unverified_currency_records === 1 ? '' : 's'} sin moneda verificable`}. Excluido de los importes por moneda.
           </p>
         ) : null}
-        {debtor.currency_summaries.length ? (
-          <div className={styles.recoveryProgress} aria-label="Porcentaje cobrado por moneda">
-            {debtor.currency_summaries.map(summary => {
-              const percent = summary.total > 0 ? Math.min(100, Math.max(0, summary.settled / summary.total * 100)) : 0
-              return <div key={summary.currency} className={styles.progressLine}><span>{summary.currency}</span><div role="progressbar" aria-label={`Cobrado ${summary.currency}`} aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${percent}%` }} /></div><strong>{Math.round(percent)}%</strong></div>
-            })}
-          </div>
-        ) : null}
-      </section>
-
-      <section className={styles.obligationsPanel} aria-labelledby="debtor-obligations-title" data-testid="debtor-obligations">
-        <div className={styles.obligationsHeading}>
-          <div>
-            <h3 id="debtor-obligations-title">Cuentas por cobrar</h3>
-            <p>{rows.length} registro{rows.length === 1 ? '' : 's'} documentado{rows.length === 1 ? '' : 's'} · importes en su moneda original</p>
-          </div>
-        </div>
-        {loading && rows.length === 0 ? (
-          <div className={styles.obligationLoading} aria-busy="true" aria-label="Cargando cuentas por cobrar">
-            {[0, 1].map(item => <span key={item} />)}
-          </div>
-        ) : rows.length === 0 ? (
-          <p className={styles.noObligations}>Todavía no hay cuentas por cobrar documentadas para esta persona.</p>
-        ) : (
-          <div className={styles.obligationList}>
-            {rows.map(row => {
-              const currency = resolveVerifiedObligationCurrency(row.currency)
-              const amount = typeof row.amount === 'number' ? row.amount : typeof row.amount === 'string' ? Number(row.amount) : NaN
-              const collected = typeof row.collected_amount === 'number' ? row.collected_amount : typeof row.collected_amount === 'string' ? Number(row.collected_amount) : NaN
-              const canShowPending = Boolean(currency) && Number.isFinite(amount) && Number.isFinite(collected)
-              const pendingAmount = canShowPending ? amount - collected : null
-              const normalizedStatus = row.status.toUpperCase()
-              const stateClass = normalizedStatus === 'COLLECTED' ? styles.stateSuccess : normalizedStatus === 'PENDING' || normalizedStatus === 'PARTIAL' ? styles.stateWarning : styles.stateMuted
-
-              return (
-                <article className={styles.obligationRow} key={row.id} data-testid={`debtor-obligation-${row.id}`}>
-                  <div className={styles.obligationCopy}>
-                    <strong>{row.concept?.trim() || 'Cuenta por cobrar'}</strong>
-                    <span>
-                      Emitida {formatDate(row.issue_date)}
-                      {row.due_date ? ` · Vence ${formatDate(row.due_date)}` : ' · Sin vencimiento registrado'}
-                    </span>
-                    {row.attachment_url ? <a href={row.attachment_url} target="_blank" rel="noreferrer">Ver documento asociado</a> : null}
-                  </div>
-                  <div className={styles.obligationAmounts}>
-                    <span>Total <strong>{formatReceivableAmount(row.amount, currency)}</strong></span>
-                    <span>Cobrado <strong>{formatReceivableAmount(row.collected_amount, currency)}</strong></span>
-                    <span>Pendiente <strong className={pendingAmount !== null && pendingAmount > 0 ? styles.pendingAmount : ''}>{pendingAmount !== null && currency ? formatCurrency(pendingAmount, currency) : 'Importe no verificable'}</strong></span>
-                  </div>
-                  <span className={`${styles.stateBadge} ${stateClass}`}>{receivableStateLabel(row.status)}</span>
-                </article>
-              )
-            })}
-          </div>
-        )}
       </section>
 
       <section className={styles.historyPanel} aria-labelledby="debtor-ledger-title">
         <div className={styles.historyHeading}>
           <div>
-            <h3 id="debtor-ledger-title">Movimientos vinculados</h3>
-            <p>{filteredLedger.length} movimiento{filteredLedger.length === 1 ? '' : 's'} · {openAccountsCount} cuenta{openAccountsCount === 1 ? '' : 's'} pendiente{openAccountsCount === 1 ? '' : 's'}{overdueCount ? ` · ${overdueCount} vencida${overdueCount === 1 ? '' : 's'}` : ''}</p>
+            <h3 id="debtor-ledger-title">Historial financiero</h3>
+            <p>{filteredLedger.length} registro{filteredLedger.length === 1 ? '' : 's'} · {openAccountsCount} cuenta{openAccountsCount === 1 ? '' : 's'} pendiente{openAccountsCount === 1 ? '' : 's'}{overdueCount ? ` · ${overdueCount} vencida${overdueCount === 1 ? '' : 's'}` : ''}</p>
           </div>
         </div>
 
@@ -337,8 +293,8 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpe
             <DataSearchField
               value={query}
               onChange={setQuery}
-              placeholder="Buscar movimientos vinculados"
-              aria-label="Buscar movimientos vinculados"
+              placeholder="Buscar historial financiero"
+              aria-label="Buscar historial financiero"
               className={styles.detailSearchInput}
               data-testid="debtor-detail-search"
             />
@@ -369,16 +325,16 @@ export function DebtorDetail({ debtor, exchangeRate, onChanged, onNestedModalOpe
           />
         ) : !error ? (
           <div className={styles.ledgerList}>
-            <div className={styles.ledgerHead} aria-hidden="true"><span>Tipo</span><span>Descripción</span><span>Portafolio</span><span>Categoría</span><span>Fecha</span><span className="text-right">Importe</span></div>
+            <div className={styles.ledgerHead} aria-hidden="true"><span>Tipo</span><span>Descripción</span><span>Cuenta asociada</span><span>Fecha</span><span className="text-right">Importe</span><span>Estado</span></div>
             {filteredLedger.map(row => {
-              const meta = resolveLedgerMeta(row)
-              return <article key={row.id} className={styles.ledgerRow} data-testid={`debtor-ledger-row-${row.id}`}>
+              const meta = financialHistoryMeta(row)
+              return <article key={row.id} className={styles.ledgerRow} data-testid={`debtor-ledger-row-${row.id}`} data-history-source={row.source}>
                 <div><span className={`${styles.typeBadge} ${meta.tone}`}>{meta.label}</span></div>
-                <div className={styles.ledgerDescription}><strong>{row.description?.trim() || 'Movimiento sin descripción'}</strong><span>{row.notes?.trim() || meta.detail}</span></div>
-                <div className={styles.ledgerCell}>{row.source_account?.name || 'Sin portafolio'}</div>
-                <div className={styles.ledgerCell}>{row.category?.name || 'Sin categoría'}</div>
-                <time className={styles.ledgerDate} dateTime={row.transaction_date}>{formatDate(row.transaction_date)}</time>
+                <div className={styles.ledgerDescription}><strong>{row.description?.trim() || (row.source === 'obligation' ? 'Cuenta por cobrar' : 'Movimiento sin descripción')}</strong><span>{row.notes?.trim() || row.categoryName || (row.source === 'obligation' && row.date ? `Registrado ${formatDate(row.date)}` : meta.state)}</span>{row.attachmentUrl ? <a href={row.attachmentUrl} target="_blank" rel="noreferrer">Ver documento asociado</a> : null}</div>
+                <div className={styles.ledgerCell}>{row.accountName || 'Sin cuenta asociada'}</div>
+                <time className={styles.ledgerDate} dateTime={row.date}>{formatDate(row.date)}</time>
                 <strong className={`${styles.ledgerAmount} ${row.type === 'INCOME' ? styles.incomeAmount : styles.expenseAmount}`}>{meta.signedAmount}</strong>
+                <span className={`${styles.stateBadge} ${row.type === 'INCOME' ? styles.stateSuccess : styles.stateMuted}`}>{meta.state}</span>
               </article>
             })}
           </div>

@@ -58,11 +58,13 @@ test('real ReceivablesManager shares the V3 header, full-width dividers and exte
     window.__receivablesModules['@/components/finance']={ConfirmDialog:()=>null,DataErrorBanner:()=>null,DataSearchField:({value,onChange,className,...props})=>React.createElement('div',{className},React.createElement('input',{value,onChange:event=>onChange(event.target.value),...props,className:'h-9 w-full rounded-control border border-[var(--ft-border)] bg-[var(--ft-surface)] pl-3 pr-3 text-[13px]'})),EmptyState:({title})=>React.createElement('p',null,title),PageLayout:({children,className})=>React.createElement('main',{className:'ft-shell-content '+className},children)};
     window.__receivablesModules['@/components/finance']={ConfirmDialog:()=>null,DataErrorBanner:()=>null,DataSearchField:({value,onChange,className,...props})=>React.createElement('div',{className},React.createElement('input',{value,onChange:event=>onChange(event.target.value),...props,className:'h-9 w-full rounded-control border border-[var(--ft-border)] bg-[var(--ft-surface)] pl-3 pr-3 text-[13px]'})),EmptyState:({title})=>React.createElement('p',null,title),PageLayout:({children,className})=>React.createElement('main',{className:'ft-shell-content '+className},children)};
     window.__receivablesModules['@/lib/api/error-message']={getApiErrorMessage:(_json,fallback)=>fallback};
-    window.__receivablesModules['@/lib/client/fetch-with-timeout']={fetchWithTimeout:async url=>({ok:true,json:async()=>({ok:true,data:[]})})};
+    const debtorFixture={id:'debtor-1',name:'Lucía Andina',relationship:'Cliente',initial_debt:0,is_active:true,total_lent:2000,total_collected:800,pending_amount:1200,progress_pct:40,all_collected:false,count_pending:1,receivables_count:1,currency_summaries:[{currency:'PEN',total:2000,settled:800,pending:1200,recordCount:1,openRecordCount:1}],unverified_currency_records:0,unverified_open_currency_records:0,has_unverified_initial_debt:false};
+    const receivableFixture={id:'r-1',debtor_id:'debtor-1',amount:2000,collected_amount:800,status:'PARTIAL',due_date:'2026-11-02'};
+    window.__receivablesModules['@/lib/client/fetch-with-timeout']={fetchWithTimeout:async url=>({ok:true,json:async()=>({ok:true,data:String(url).includes('/api/debtors')?[debtorFixture]:String(url).includes('/api/receivables')?[receivableFixture]:[]})})};
     window.__receivablesModules['@/lib/toast/toast']={useToast:()=>({toast:{success:()=>{},error:()=>{}}})};
     window.__receivablesModules['@/lib/contracts/ui.contracts']={formatCurrency:(value,currency)=>currency==='USD'?'$'+Number(value).toFixed(2):'S/ '+Number(value).toFixed(2)};
     window.__receivablesModules['@/modules/obligations/obligation-currency-presentation']={combineObligationCurrencyBreakdowns:()=>({summaries:[{currency:'PEN',pending:0,openRecordCount:0}],unverifiedRecordCount:0,unverifiedOpenRecordCount:0})};
-    window.__receivablesModules['@/modules/receivables/receivables-list-presentation']={countReceivablesDueWithinDays:()=>0,getDebtorDueSummary:()=>({date:null,overdue:false,openWithDateCount:0,openWithoutDateCount:0}),getReceivablePersonState:()=> 'EMPTY',hasVerifiedOpenReceivable:()=>false};
+    window.__receivablesModules['@/modules/receivables/receivables-list-presentation']={countReceivablesDueWithinDays:()=>0,getDebtorDueSummary:()=>({date:null,overdue:false,openWithDateCount:0,openWithoutDateCount:0}),getReceivablePersonState:()=> 'OPEN',hasVerifiedOpenReceivable:()=>false,getReceivableRecoveryProgress:summaries=>({available:true,items:summaries.map(summary=>({currency:summary.currency,percent:Math.round(summary.settled/summary.total*1000)/10}))})};
     window.__receivablesModules['./DebtorDetail']={DebtorDetail:()=>null};
     window.__receivablesModules['./DebtorDetail.module.css']={default:${JSON.stringify(debtorDetailClasses)}};
     window.__receivablesModules['./DebtorForm']={DebtorForm:()=>null};
@@ -84,6 +86,8 @@ test('real ReceivablesManager shares the V3 header, full-width dividers and exte
   await expect(page.getByTestId('receivables-status-tabs')).toBeVisible()
   await expect(page.getByTestId('receivables-filter-toolbar')).toBeVisible()
   await expect(page.getByTestId('receivables-new-debtor-btn')).toBeVisible()
+  await expect(page.getByText('RECUPERACIÓN')).toBeVisible()
+  await expect(page.getByTestId('receivables-recovery-debtor-1').first()).toContainText('40.0%')
   await expect(page.getByTestId('receivables-view-toggle')).toHaveCount(0)
   const desktop = await page.evaluate(() => {
     const box = (selector: string) => {
@@ -100,7 +104,7 @@ test('real ReceivablesManager shares the V3 header, full-width dividers and exte
       tabs: box('[data-testid="receivables-status-tabs"]'),
       toolbar: box('[data-testid="receivables-filter-toolbar"]'),
       content: box('[data-testid="receivables-register"]'),
-      cta: { x: Math.round(ctaRect.x), y: Math.round(ctaRect.y), width: Math.round(ctaRect.width), height: Math.round(ctaRect.height) },
+      cta: { x: Math.round(ctaRect.x), y: Math.round(ctaRect.y), width: Math.round(ctaRect.width), height: Math.round(ctaRect.height), fontFamily: getComputedStyle(cta).fontFamily, fontSize: getComputedStyle(cta).fontSize, fontWeight: getComputedStyle(cta).fontWeight, lineHeight: getComputedStyle(cta).lineHeight, letterSpacing: getComputedStyle(cta).letterSpacing, gap: getComputedStyle(cta).columnGap, paddingLeft: getComputedStyle(cta).paddingLeft },
       secondaryCta: (() => {
         const button = document.querySelector('[data-testid="receivables-new-debtor-btn"]')!
         const rect = button.getBoundingClientRect()
@@ -109,6 +113,13 @@ test('real ReceivablesManager shares the V3 header, full-width dividers and exte
           x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height),
           iconBeforeLabel: button.children[0]?.tagName.toLowerCase() === 'svg' && button.children[1]?.tagName.toLowerCase() === 'span',
           labelLines: Math.round(label.getBoundingClientRect().height / parseFloat(getComputedStyle(label).lineHeight)),
+          fontFamily: getComputedStyle(label).fontFamily,
+          fontSize: getComputedStyle(label).fontSize,
+          fontWeight: getComputedStyle(label).fontWeight,
+          lineHeight: getComputedStyle(label).lineHeight,
+          letterSpacing: getComputedStyle(button).letterSpacing,
+          gap: getComputedStyle(button).columnGap,
+          paddingLeft: getComputedStyle(button).paddingLeft,
         }
       })(),
       toolbarControls: Array.from(document.querySelector('[data-testid="receivables-filter-toolbar"]')!.querySelectorAll(':scope > div > *')).map(element => {
@@ -131,6 +142,13 @@ test('real ReceivablesManager shares the V3 header, full-width dividers and exte
   expect(desktop.secondaryCta.y).toBe(desktop.cta.y)
   expect(desktop.secondaryCta.iconBeforeLabel).toBe(true)
   expect(desktop.secondaryCta.labelLines).toBe(1)
+  expect(desktop.secondaryCta.fontFamily).toBe(desktop.cta.fontFamily)
+  expect(desktop.secondaryCta.fontSize).toBe(desktop.cta.fontSize)
+  expect(desktop.secondaryCta.fontWeight).toBe(desktop.cta.fontWeight)
+  expect(desktop.secondaryCta.lineHeight).toBe(desktop.cta.lineHeight)
+  expect(desktop.secondaryCta.letterSpacing).toBe(desktop.cta.letterSpacing)
+  expect(desktop.secondaryCta.gap).toBe(desktop.cta.gap)
+  expect(desktop.secondaryCta.paddingLeft).toBe(desktop.cta.paddingLeft)
   expect(desktop.summary.width).toBe(desktop.tabs.width)
   expect(desktop.tabs.width).toBe(desktop.toolbar.width)
   expect(desktop.summary.borderBottom).toBe('1px')
@@ -164,6 +182,9 @@ test('real ReceivablesManager shares the V3 header, full-width dividers and exte
     }))
     expect(responsive.document).toBeLessThanOrEqual(responsive.viewport)
     expect(responsive.toolbar).toBeGreaterThan(0)
+    if (width === 834) {
+      await expect(page.locator('[data-testid="receivable-person-mobile-debtor-1"] [data-testid="receivables-recovery-debtor-1"]')).toBeVisible()
+    }
   }
 
   await page.setViewportSize({ width: 390, height: 844 })
@@ -179,6 +200,7 @@ test('real ReceivablesManager shares the V3 header, full-width dividers and exte
   expect(mobile.document).toBeLessThanOrEqual(mobile.viewport)
   expect(mobile.tabsScroll).toBeGreaterThanOrEqual(mobile.tabsClient)
   expect(mobile.toolbarScroll).toBeLessThanOrEqual(mobile.toolbarClient)
+  await expect(page.locator('[data-testid="receivable-person-mobile-debtor-1"] [data-testid="receivables-recovery-debtor-1"]')).toBeVisible()
   const mobileControls = await page.evaluate(() => Array.from(document.querySelector('[data-testid="receivables-filter-toolbar"]')!.querySelectorAll(':scope > div > *')).map(element => {
     const rect = element.getBoundingClientRect()
     return { x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom }
