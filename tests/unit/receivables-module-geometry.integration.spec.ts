@@ -96,6 +96,7 @@ test('real ReceivablesManager shares the V3 header, full-width dividers and exte
   await expect(debtorWorkbench).toBeVisible()
   await expect(debtorWorkbench).toHaveAttribute('data-has-footer', 'false')
   await expect(debtorWorkbench).toHaveAttribute('data-has-footer-class', 'false')
+  await expect(page.getByTestId('debtor-detail-new-receivable')).toHaveCount(0)
   await expect(debtorWorkbench.getByRole('link', { name: 'Nueva cuenta por cobrar' })).toHaveCount(0)
   const desktop = await page.evaluate(() => {
     const box = (selector: string) => {

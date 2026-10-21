@@ -256,8 +256,8 @@ test('real debtor detail renders its history as the final workbench section with
     expect(geometry.filterChildren.every(item => item.left >= 0 && item.right <= geometry.viewport)).toBe(true)
   }
 
-  const managerSource = readFileSync(join(process.cwd(), 'components/receivables/ReceivablesManager.tsx'), 'utf8')
-  expect(managerSource).not.toContain('<DetailDrawer')
-  expect(managerSource).toContain('presentation="workbench"')
-  expect(managerSource).toContain('overlayClassName={debtorDetailStyles.detailOverlay}')
+  const managerFileSource = readFileSync(join(process.cwd(), 'components/receivables/ReceivablesManager.tsx'), 'utf8')
+  expect(managerFileSource).not.toContain('<DetailDrawer')
+  expect(managerFileSource).toContain('presentation="workbench"')
+  expect(managerFileSource).toContain('overlayClassName={debtorDetailStyles.detailOverlay}')
 })
