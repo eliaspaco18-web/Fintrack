@@ -56,7 +56,7 @@ function compilePresenceHook() {
   return `(() => { const { useEffect, useLayoutEffect, useRef, useState } = window.React; ${compiled}\nwindow.__receivablesModules['@/lib/ui/use-v3-workbench-presence'] = { useV3WorkbenchPresence }; })();`
 }
 
-test('real debtor detail renders a currency-separated history and routes new borrowing to the shared transaction flow', async ({ page }) => {
+test('real debtor detail renders its history as the final workbench section without an action footer', async ({ page }) => {
   page.on('pageerror', error => console.info('Receivables detail browser error:', error.stack ?? error.message))
   const cssRoot = join(process.cwd(), '.next/static/css')
   const css = readdirSync(cssRoot).filter(file => file.endsWith('.css')).sort().map(file => readFileSync(join(cssRoot, file), 'utf8')).join('\n')
@@ -123,7 +123,7 @@ test('real debtor detail renders a currency-separated history and routes new bor
     const debtor=window.__fixtureDebtor;
     return React.createElement(React.Fragment,null,
       React.createElement('button',{id:'launch',onClick:()=>setOpen(true)},'Ver cuenta'),
-      React.createElement(Modal,{open,onClose:()=>setOpen(false),title:debtor.name,subtitle:debtor.relationship,eyebrow:'Detalle de cuenta por cobrar',headerBadge:React.createElement('span',null,'Cobranza abierta'),size:'xl',presentation:'workbench',overlayClassName:${JSON.stringify(detailClasses.detailOverlay||'')},bodyClassName:${JSON.stringify(detailClasses.detailModalBody||'')},footerClassName:${JSON.stringify(detailClasses.detailModalFooter||'')},focusTrapActive:!nested,preserveFocusOnResume:true,preserveFocusOnDeactivate:true,testId:'debtor-detail-workbench',footer:React.createElement('div',{className:${JSON.stringify(detailClasses.detailFooterActions||'')}},React.createElement('a',{href:'/transactions?new=transaction&module=receivable&type=EXPENSE','data-testid':'new-obligation',onClick:event=>event.preventDefault()},'Nueva cuenta por cobrar'))},
+      React.createElement(Modal,{open,onClose:()=>setOpen(false),title:debtor.name,subtitle:debtor.relationship,eyebrow:'Detalle de cuenta por cobrar',headerBadge:React.createElement('span',null,'Cobranza abierta'),size:'xl',presentation:'workbench',overlayClassName:${JSON.stringify(detailClasses.detailOverlay||'')},bodyClassName:${JSON.stringify(detailClasses.detailModalBody||'')},focusTrapActive:!nested,preserveFocusOnResume:true,preserveFocusOnDeactivate:true,testId:'debtor-detail-workbench'},
         React.createElement(Detail,{debtor})));
     }
     ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Harness));` })
@@ -162,7 +162,6 @@ test('real debtor detail renders a currency-separated history and routes new bor
     const modal = document.querySelector('[data-testid="debtor-detail-workbench"]')!
     const wrapper = modal.parentElement!
     const body = modal.querySelector('[data-record-modal-body="true"]')!
-    const footer = body.nextElementSibling!
     const recovery = modal.querySelector('[aria-labelledby="debtor-recovery-title"]')!
     const history = modal.querySelector('[aria-labelledby="debtor-ledger-title"]')!
     const ledgerScroll = modal.querySelector('[class*="ledgerScroll"]')!
@@ -179,41 +178,24 @@ test('real debtor detail renders a currency-separated history and routes new bor
     const style = (element: Element) => { const value = getComputedStyle(element); return { height: value.height, fontFamily: value.fontFamily, fontSize: value.fontSize, fontWeight: value.fontWeight, color: value.color, borderRadius: value.borderRadius, borderWidth: value.borderWidth, paddingLeft: value.paddingLeft, lineHeight: value.lineHeight } }
     const rect = (element: Element) => { const box = element.getBoundingClientRect(); return {x:Math.round(box.x),y:Math.round(box.y),width:Math.round(box.width),height:Math.round(box.height),right:Math.round(box.right),bottom:Math.round(box.bottom)} }
     const toolbarCss=getComputedStyle(filterToolbar)
-    return {viewportWidth:window.innerWidth,media767:matchMedia('(max-width:767px)').matches,media1100:matchMedia('(max-width:1100px)').matches,historyContainer:getComputedStyle(history).containerName,historyContainerType:getComputedStyle(history).containerType,toolbarDisplay:toolbarCss.display,toolbarGrid:toolbarCss.gridTemplateColumns,toolbarRows:toolbarCss.gridTemplateRows,toolbarPadding:toolbarCss.padding,toolbarGap:toolbarCss.gap,toolbarMinHeight:toolbarCss.minHeight,toolbarHeight:toolbarCss.height,toolbarMargin:toolbarCss.margin,toolbarAlignContent:toolbarCss.alignContent,filterClasses:filterChildren.map(element=>element.className),wrapper:rect(wrapper),modal:rect(modal),body:rect(body),footer:rect(footer),recovery:rect(recovery),history:rect(history),ledger:rect(ledgerScroll),toolbar:rect(filterToolbar),filterRects,searchStyle:style(detailSearchWrapper),searchInputStyle:style(detailSearchInput),referenceSearchStyle:style(referenceSearchWrapper),referenceSearchInputStyle:style(referenceSearch),selectStyle:style(detailTrigger),referenceSelectStyle:style(referenceTrigger),bodyOverflow:getComputedStyle(body).overflowY,bodyDisplay:getComputedStyle(body).display,scrollWidth:modal.scrollWidth,clientWidth:modal.clientWidth,footerOutsideBody:!body.contains(footer)}
+    return {viewportWidth:window.innerWidth,media767:matchMedia('(max-width:767px)').matches,media1100:matchMedia('(max-width:1100px)').matches,historyContainer:getComputedStyle(history).containerName,historyContainerType:getComputedStyle(history).containerType,toolbarDisplay:toolbarCss.display,toolbarGrid:toolbarCss.gridTemplateColumns,toolbarRows:toolbarCss.gridTemplateRows,toolbarPadding:toolbarCss.padding,toolbarGap:toolbarCss.gap,toolbarMinHeight:toolbarCss.minHeight,toolbarHeight:toolbarCss.height,toolbarMargin:toolbarCss.margin,toolbarAlignContent:toolbarCss.alignContent,filterClasses:filterChildren.map(element=>element.className),wrapper:rect(wrapper),modal:rect(modal),body:rect(body),footer:body.nextElementSibling ? rect(body.nextElementSibling) : null,recovery:rect(recovery),history:rect(history),ledger:rect(ledgerScroll),toolbar:rect(filterToolbar),filterRects,searchStyle:style(detailSearchWrapper),searchInputStyle:style(detailSearchInput),referenceSearchStyle:style(referenceSearchWrapper),referenceSearchInputStyle:style(referenceSearch),selectStyle:style(detailTrigger),referenceSelectStyle:style(referenceTrigger),bodyOverflow:getComputedStyle(body).overflowY,bodyDisplay:getComputedStyle(body).display,scrollWidth:modal.scrollWidth,clientWidth:modal.clientWidth,footerOutsideBody:false,historyBottomGap:Math.round(body.getBoundingClientRect().bottom-history.getBoundingClientRect().bottom),hasFooter:body.nextElementSibling !== null}
   })
-  const beforeToolbarHeight = await page.evaluate(() => {
-    const toolbar = document.querySelector('[data-testid="debtor-detail-filter-toolbar"]') as HTMLElement
-    const children = Array.from(toolbar.children) as HTMLElement[]
-    const saved = { display: toolbar.style.display, gridTemplateColumns: toolbar.style.gridTemplateColumns, alignItems: toolbar.style.alignItems, padding: toolbar.style.padding }
-    const columns = children.map(child => child.style.gridColumn)
-    toolbar.style.display = 'grid'
-    toolbar.style.gridTemplateColumns = 'repeat(12, minmax(0, 1fr))'
-    toolbar.style.alignItems = 'end'
-    toolbar.style.padding = '9px 14px'
-    ;[5, 3, 4, 4, 4, 4].forEach((span, index) => { children[index]!.style.gridColumn = `span ${span}` })
-    const height = Math.round(toolbar.getBoundingClientRect().height)
-    toolbar.style.display = saved.display
-    toolbar.style.gridTemplateColumns = saved.gridTemplateColumns
-    toolbar.style.alignItems = saved.alignItems
-    toolbar.style.padding = saved.padding
-    children.forEach((child, index) => { child.style.gridColumn = columns[index]! })
-    return height
-  })
-  console.info('Receivables detail filter height comparison:', JSON.stringify({ previous12ColumnHeight: beforeToolbarHeight, compactHeight: desktop.toolbar.height, savedPixels: beforeToolbarHeight - desktop.toolbar.height }))
   console.info('Receivables workbench geometry 1440:', JSON.stringify(desktop))
   expect(desktop.wrapper.width).toBe(1220)
   expect(desktop.wrapper.right).toBe(1428)
   expect(desktop.bodyDisplay).toBe('flex')
   expect(desktop.bodyOverflow).toBe('hidden')
-  expect(desktop.footerOutsideBody).toBe(true)
+  expect(desktop.footer).toBeNull()
+  expect(desktop.hasFooter).toBe(false)
+  expect(desktop.historyBottomGap).toBeLessThanOrEqual(18)
+  await expect(page.getByRole('button', { name: /Nueva cuenta por cobrar/i })).toHaveCount(0)
+  await expect(page.getByText('Nueva cuenta por cobrar', { exact: true })).toHaveCount(0)
   expect(desktop.recovery.height).toBeLessThan(150)
   expect(desktop.history.height).toBeGreaterThan(400)
   expect(desktop.ledger.height).toBeGreaterThan(100)
   expect(desktop.scrollWidth).toBeLessThanOrEqual(desktop.clientWidth)
   const filterCenters = desktop.filterRects.map(item => item.y + item.height / 2)
   expect(Math.max(...filterCenters) - Math.min(...filterCenters)).toBeLessThanOrEqual(2)
-  expect(desktop.toolbar.height).toBeLessThan(70)
-  expect(beforeToolbarHeight - desktop.toolbar.height).toBeGreaterThanOrEqual(30)
   expect(desktop.searchStyle.height).toBe(desktop.referenceSearchStyle.height)
   expect(desktop.searchStyle.borderWidth).toBe(desktop.referenceSearchStyle.borderWidth)
   expect(desktop.searchStyle.borderRadius).toBe(desktop.referenceSearchStyle.borderRadius)
@@ -245,8 +227,14 @@ test('real debtor detail renders a currency-separated history and routes new bor
   await page.keyboard.press('Escape')
   await expect(calendar).toHaveCount(0)
 
-  await expect(page.getByTestId('new-obligation')).toHaveAttribute('href', '/transactions?new=transaction&module=receivable&type=EXPENSE')
-  await expect(dialog.getByRole('dialog')).toHaveCount(0)
+  const managerSource = readFileSync(join(process.cwd(), 'components/receivables/ReceivablesManager.tsx'), 'utf8')
+  expect(managerSource).not.toContain('detailModalFooter')
+  expect(managerSource).not.toContain('detailFooterActions')
+  expect(managerSource).not.toContain('debtor-detail-new-receivable')
+  const detailModalOpening = managerSource.slice(managerSource.indexOf('open={debtorDetailOpen}'), managerSource.indexOf('>\n        {selectedDebtor ?'))
+  expect(detailModalOpening).toContain('testId="receivables-debtor-detail-modal"')
+  expect(detailModalOpening).not.toMatch(/\bfooter(?:ClassName)?\s*=/)
+  expect(detailModalOpening).not.toContain('Nueva cuenta por cobrar')
 
   for (const width of [834, 1710, 390]) {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
@@ -255,15 +243,17 @@ test('real debtor detail renders a currency-separated history and routes new bor
       const wrapper = modal.parentElement!.getBoundingClientRect()
       const toolbar = modal.querySelector('[data-testid="debtor-detail-filter-toolbar"]')!
       const children = Array.from(toolbar.children).map(element => { const rect = element.getBoundingClientRect(); return { y: Math.round(rect.y), height: Math.round(rect.height), right: Math.round(rect.right), left: Math.round(rect.left) } })
-      return {viewport:document.documentElement.clientWidth,documentWidth:document.documentElement.scrollWidth,wrapperWidth:Math.round(wrapper.width),wrapperLeft:Math.round(wrapper.left),wrapperRight:Math.round(wrapper.right),contentWidth:modal.clientWidth,contentScrollWidth:modal.scrollWidth,toolbarHeight:Math.round(toolbar.getBoundingClientRect().height),filterChildren:children}
+      const body = modal.querySelector('[data-record-modal-body="true"]')!
+      const history = modal.querySelector('[aria-labelledby="debtor-ledger-title"]')!
+      return {viewport:document.documentElement.clientWidth,documentWidth:document.documentElement.scrollWidth,wrapperWidth:Math.round(wrapper.width),wrapperLeft:Math.round(wrapper.left),wrapperRight:Math.round(wrapper.right),contentWidth:modal.clientWidth,contentScrollWidth:modal.scrollWidth,toolbarHeight:Math.round(toolbar.getBoundingClientRect().height),hasFooter:body.nextElementSibling !== null,historyBottomGap:Math.round(body.getBoundingClientRect().bottom-history.getBoundingClientRect().bottom),filterChildren:children}
     })
     console.info(`Receivables workbench geometry ${width}:`, JSON.stringify(geometry))
     expect(geometry.documentWidth).toBeLessThanOrEqual(geometry.viewport)
     expect(geometry.wrapperRight).toBeLessThanOrEqual(geometry.viewport)
     expect(geometry.contentScrollWidth).toBeLessThanOrEqual(geometry.contentWidth)
+    expect(geometry.hasFooter).toBe(false)
+    expect(geometry.historyBottomGap).toBeLessThanOrEqual(18)
     expect(geometry.filterChildren.every(item => item.left >= 0 && item.right <= geometry.viewport)).toBe(true)
-    if (width === 834) expect(geometry.toolbarHeight).toBeLessThan(150)
-    if (width === 390) expect(geometry.toolbarHeight).toBeGreaterThan(150)
   }
 
   const managerSource = readFileSync(join(process.cwd(), 'components/receivables/ReceivablesManager.tsx'), 'utf8')

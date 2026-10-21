@@ -54,7 +54,7 @@ test('real ReceivablesManager shares the V3 header, full-width dividers and exte
     window.__receivablesModules['next/navigation']={usePathname:()=>'/receivables',useRouter:()=>({replace:()=>{}}),useSearchParams:()=>new URLSearchParams()};
     window.__receivablesModules['next/link']={default:({href,children,...props})=>React.createElement('a',{...props,href},children)};
     window.__receivablesModules['@/components/ui/AnchoredActionMenu']={AnchoredActionMenu:()=>null};
-    window.__receivablesModules['@/components/ui/RecordModal']={RecordModal:()=>null};
+    window.__receivablesModules['@/components/ui/RecordModal']={RecordModal:({open,testId,footer,footerClassName,children,title})=>open?React.createElement('div',{'data-testid':testId,'data-has-footer':String(Boolean(footer)),'data-has-footer-class':String(Boolean(footerClassName))},React.createElement('h2',null,title),footer,children):null};
     window.__receivablesModules['@/components/finance']={ConfirmDialog:()=>null,DataErrorBanner:()=>null,DataSearchField:({value,onChange,className,...props})=>React.createElement('div',{className},React.createElement('input',{value,onChange:event=>onChange(event.target.value),...props,className:'h-9 w-full rounded-control border border-[var(--ft-border)] bg-[var(--ft-surface)] pl-3 pr-3 text-[13px]'})),EmptyState:({title})=>React.createElement('p',null,title),PageLayout:({children,className})=>React.createElement('main',{className:'ft-shell-content '+className},children)};
     window.__receivablesModules['@/components/finance']={ConfirmDialog:()=>null,DataErrorBanner:()=>null,DataSearchField:({value,onChange,className,...props})=>React.createElement('div',{className},React.createElement('input',{value,onChange:event=>onChange(event.target.value),...props,className:'h-9 w-full rounded-control border border-[var(--ft-border)] bg-[var(--ft-surface)] pl-3 pr-3 text-[13px]'})),EmptyState:({title})=>React.createElement('p',null,title),PageLayout:({children,className})=>React.createElement('main',{className:'ft-shell-content '+className},children)};
     window.__receivablesModules['@/lib/api/error-message']={getApiErrorMessage:(_json,fallback)=>fallback};
@@ -91,6 +91,12 @@ test('real ReceivablesManager shares the V3 header, full-width dividers and exte
   await expect(page.getByText('RECUPERACIÓN')).toBeVisible()
   await expect(page.getByTestId('receivables-recovery-debtor-1').first()).toContainText('40.0%')
   await expect(page.getByTestId('receivables-view-toggle')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Ver cuenta' }).first().click()
+  const debtorWorkbench = page.getByTestId('receivables-debtor-detail-modal')
+  await expect(debtorWorkbench).toBeVisible()
+  await expect(debtorWorkbench).toHaveAttribute('data-has-footer', 'false')
+  await expect(debtorWorkbench).toHaveAttribute('data-has-footer-class', 'false')
+  await expect(debtorWorkbench.getByRole('link', { name: 'Nueva cuenta por cobrar' })).toHaveCount(0)
   const desktop = await page.evaluate(() => {
     const box = (selector: string) => {
       const element = document.querySelector(selector)!

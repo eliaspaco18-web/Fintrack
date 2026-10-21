@@ -729,23 +729,9 @@ export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: numb
         presentation="workbench"
         overlayClassName={debtorDetailStyles.detailOverlay}
         bodyClassName={debtorDetailStyles.detailModalBody}
-        footerClassName={debtorDetailStyles.detailModalFooter}
         preserveFocusOnResume
         preserveFocusOnDeactivate
         testId="receivables-debtor-detail-modal"
-        footer={selectedDebtor ? (
-          <div className={debtorDetailStyles.detailFooterActions}>
-            <Button
-              href={RECEIVABLES_ISSUE_URL}
-              variant="primary"
-              size="md"
-              leadingIcon={<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>}
-              testId="debtor-detail-new-receivable"
-            >
-              Nueva cuenta por cobrar
-            </Button>
-          </div>
-        ) : undefined}
       >
         {selectedDebtor ? (
           <DebtorDetail
