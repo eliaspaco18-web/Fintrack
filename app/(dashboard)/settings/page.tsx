@@ -12,10 +12,8 @@ import { ProfileSettingsForm } from '@/components/settings/ProfileSettingsForm'
 import { SecuritySettingsPanel } from '@/components/settings/SecuritySettingsPanel'
 import { SettingsSidebar } from '@/components/settings/SettingsSidebar'
 import { SupportPanel } from '@/components/settings/SupportPanel'
-import {
-  ModuleHeader,
-  PageLayout,
-} from '@/components/finance/primitives'
+import { PageLayout } from '@/components/finance/primitives'
+import styles from '@/components/settings/SettingsWorkspace.module.css'
 import { createClient } from '@/lib/supabase.server'
 import { withTimeout } from '@/lib/server/promise-timeout'
 
@@ -28,12 +26,12 @@ type SettingsPreloadWarning = {
 
 const PROFILE_PRELOAD_WARNING: SettingsPreloadWarning = {
   title: 'No pudimos confirmar tu perfil',
-  message: 'Mostramos datos temporales para que Configuracion siga disponible. Actualiza la pagina antes de guardar cambios.',
+  message: 'Actualiza la página antes de guardar cambios para evitar sobrescribir información no confirmada.',
 }
 
 const ACCOUNTS_PRELOAD_WARNING: SettingsPreloadWarning = {
   title: 'No pudimos confirmar tus cuentas',
-  message: 'La lista de cuentas y balances puede estar incompleta. Actualiza la pagina antes de tomar decisiones con esta informacion.',
+  message: 'La lista de cuentas y sus saldos no están disponibles. Actualiza la página antes de tomar decisiones.',
 }
 
 export const metadata: Metadata = {
@@ -179,60 +177,22 @@ export default async function SettingsPage({
   }
 
   const currentTheme = (profile as { theme?: string } | null)?.theme === 'light' ? 'light' : 'dark'
-  const profileState = profilePreloadWarning
-    ? 'Carga parcial'
-    : profilePayload.full_name && profilePayload.avatar_url
-      ? 'Completo'
-      : 'En revisión'
-
   return (
     <PageLayout
-      className="max-w-[1440px] gap-5 pb-12"
+      className={`max-w-none !gap-0 pb-10 ${styles.workspace}`}
       header={(
-        <ModuleHeader
-          eyebrow="Cuenta y acceso"
-          title="Configuración"
-          description="Perfil, seguridad, preferencias y datos de FinTrack en un solo flujo operativo."
-          mode="content"
-          actions={(
-            <div className="min-w-0 text-left md:text-right">
-              <p className="text-[11px] font-medium text-[var(--c-text-faint)]">
-                Cuenta activa
-              </p>
-              <p
-                className="mt-1 truncate text-sm font-medium text-[var(--c-text)]"
-                title={email}
-              >
-                {email}
-              </p>
-              <p className="mt-2 inline-flex items-center gap-2 text-[12px] text-[var(--c-text-muted)] md:justify-end">
-                <span
-                  aria-hidden="true"
-                  className={`h-2 w-2 rounded-full ${
-                    profileState === 'Completo'
-                      ? 'bg-[var(--c-success)]'
-                      : 'bg-[var(--c-warning)]'
-                  }`}
-                />
-                Perfil {profileState.toLowerCase()}
-              </p>
-            </div>
-          )}
-        />
+        <header className="pb-4">
+          <h1 className="font-display text-[26px] font-semibold leading-8 tracking-[-0.035em] text-[var(--ft-text-strong)]">Configuración</h1>
+          <p className="mt-0.5 max-w-2xl text-[12px] leading-5 text-[var(--ft-text-muted)]">Preferencias claras, bajo tu control.</p>
+        </header>
       )}
     >
-      <div className="border-b border-[var(--c-border)] pb-4 lg:hidden">
-        <SettingsSidebar activeTab={activeTab} mode="mobile" />
-      </div>
-
-      <div className="lg:grid lg:grid-cols-[248px_minmax(0,1fr)] lg:items-start lg:gap-6">
-        <aside className="hidden lg:block">
-          <div className="sticky top-[calc(var(--topbar-height)+24px)]">
-            <SettingsSidebar activeTab={activeTab} mode="desktop" />
-          </div>
+      <div className="mt-2 grid min-w-0 gap-4 lg:grid-cols-[190px_minmax(0,900px)] lg:justify-center lg:items-start lg:gap-6">
+        <aside className="min-w-0 lg:sticky lg:top-[calc(var(--topbar-height)+24px)]">
+          <SettingsSidebar activeTab={activeTab} />
         </aside>
 
-        <main id="settings-content" className="min-w-0">
+        <main id="settings-content" className="min-w-0 w-full max-w-[900px]">
           {renderPanel({
             activeTab,
             profilePayload,

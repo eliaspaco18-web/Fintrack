@@ -132,9 +132,9 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
   },
   {
     key: 'notifications',
-    label: 'Alertas',
-    shortLabel: 'Alertas',
-    description: 'Reglas críticas, seguimiento y avisos por correo.',
+    label: 'Notificaciones',
+    shortLabel: 'Notificaciones',
+    description: 'Preferencias de avisos guardadas en tu cuenta.',
     group: 'Preferencias',
     eyebrow: 'Preferencias',
     icon: SettingsBellIcon,
