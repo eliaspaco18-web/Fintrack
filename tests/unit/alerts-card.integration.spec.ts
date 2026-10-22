@@ -39,7 +39,7 @@ function cssModuleMap(css: string, sourcePath: string, prefix: string) {
   return Object.fromEntries(Array.from(names, name => [name, css.match(new RegExp(`\.(${prefix}_${name}__[\\w-]+)`))?.[1] ?? name]))
 }
 
-test('real alert rows stay readable and actionable across mobile, tablet and desktop widths', async ({ page }) => {
+test('real alert rows stay readable and actionable across mobile, tablet and desktop widths', async ({ page }, testInfo) => {
   page.on('pageerror', error => console.info('Alerts row browser error:', error.stack ?? error.message))
   const cssRoot = join(process.cwd(), '.next/static/css')
   const css = readdirSync(cssRoot).filter(file => file.endsWith('.css')).sort().map(file => readFileSync(join(cssRoot, file), 'utf8')).join('\n')
@@ -52,7 +52,7 @@ test('real alert rows stay readable and actionable across mobile, tablet and des
     window.__alertsModules['@/components/finance']={StatusBadge:({children,dot})=>React.createElement('span',{className:'shared-status-badge'},dot?React.createElement('span',{'aria-hidden':true},'•'):null,children)};
     window.__alertsModules['@/components/ui/Button']={Button:({href,children,testId,ariaLabel,onClick,disabled,className})=>href?React.createElement('a',{href,'data-testid':testId,'aria-label':ariaLabel,className},children):React.createElement('button',{type:'button','data-testid':testId,'aria-label':ariaLabel,onClick,disabled,className},children)};` })
   await page.addScriptTag({ content: compileComponent('components/ui/AnchoredActionMenu.tsx', '@/components/ui/AnchoredActionMenu', ['AnchoredActionMenu']) })
-  await page.addScriptTag({ content: compileComponent('components/alerts/AlertBadge.tsx', './AlertBadge', ['AlertBadge', 'moduleLabel']) })
+  await page.addScriptTag({ content: compileComponent('components/alerts/AlertBadge.tsx', './AlertBadge', ['AlertBadge', 'alertLabel', 'moduleLabel']) })
   await page.addScriptTag({ content: compileComponent('components/alerts/AlertCard.tsx', '@/components/alerts/AlertCard', ['AlertCard']) })
   await page.addScriptTag({ content: `function Harness(){
     const React=window.React; const [read,setRead]=React.useState(false); const [deleted,setDeleted]=React.useState(false);
@@ -63,8 +63,11 @@ test('real alert rows stay readable and actionable across mobile, tablet and des
 
   const row = page.getByTestId('alert-row-fixture-1')
   await expect(row).toBeVisible()
-  await expect(row.getByText('No leído')).toBeVisible()
-  await expect(row.getByRole('link', { name: 'Abrir origen del aviso: Aviso de prueba con una descripción suficientemente extensa para comprobar su ajuste responsivo' })).toHaveAttribute('href', '/budgets?period=2026-10')
+  await expect(row.getByText('Presupuestos', { exact: true })).toBeVisible()
+  await expect(row.getByText('Crítica')).toBeVisible()
+  await expect(row.getByRole('link', { name: 'Revisar en Presupuestos' })).toHaveAttribute('href', '/budgets?period=2026-10')
+  await expect(row.getByRole('button', { name: 'Marcar leído' })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('alerts-row.png'), fullPage: true })
 
   for (const width of [390, 834, 1440, 1710]) {
     await page.setViewportSize({ width, height: 900 })
@@ -74,17 +77,22 @@ test('real alert rows stay readable and actionable across mobile, tablet and des
       clientWidth: element.clientWidth,
       height: Math.round(element.getBoundingClientRect().height),
       contentHeight: Math.round(element.querySelector('h3')!.getBoundingClientRect().height),
+      display: getComputedStyle(element).display,
+      columns: getComputedStyle(element).gridTemplateColumns,
+      fontFamily: getComputedStyle(element).fontFamily,
     }))
     console.info(`Alerts row geometry ${width}px:`, JSON.stringify(geometry))
     expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth)
     expect(geometry.width).toBeGreaterThan(0)
     expect(geometry.contentHeight).toBeGreaterThan(0)
+    expect(geometry.display).toBe('grid')
+    expect(geometry.fontFamily.toLowerCase()).toContain('manrope')
   }
 
   await page.getByTestId('alert-toggle-fixture-1').click()
-  await expect(row.locator('.shared-status-badge')).toContainText('Leído')
+  await expect(row.getByRole('button', { name: 'Marcar no leído' })).toBeVisible()
   await page.getByTestId('alert-toggle-fixture-1').click()
-  await expect(row.locator('.shared-status-badge')).toContainText('No leído')
+  await expect(row.getByRole('button', { name: 'Marcar leído' })).toBeVisible()
 
   const menuButton = page.getByRole('button', { name: 'Más acciones del aviso: Aviso de prueba con una descripción suficientemente extensa para comprobar su ajuste responsivo' })
   await menuButton.focus()

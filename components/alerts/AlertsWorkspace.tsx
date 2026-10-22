@@ -30,7 +30,7 @@ export interface AlertRow {
   created_at: string
 }
 
-type ReadFilter = 'unread' | 'read' | 'all'
+type ReadFilter = 'unread' | 'read'
 type ManualSeverity = AlertSeverity
 type DiscardTarget = 'create' | null
 
@@ -60,10 +60,11 @@ export function AlertsWorkspace() {
   const [bulkBusy, setBulkBusy] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
-  const [readFilter, setReadFilter] = useState<ReadFilter>('all')
+  const [readFilter, setReadFilter] = useState<ReadFilter>('unread')
   const [moduleFilter, setModuleFilter] = useState<ModuleFilter>('all')
   const [query, setQuery] = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [savingManualAlert, setSavingManualAlert] = useState(false)
   const [discardTarget, setDiscardTarget] = useState<DiscardTarget>(null)
   const [deleteReadConfirmOpen, setDeleteReadConfirmOpen] = useState(false)
@@ -93,7 +94,6 @@ export function AlertsWorkspace() {
 
   const unreadCount = alerts.filter(alert => !alert.is_read).length
   const readCount = alerts.length - unreadCount
-  const criticalUnreadCount = alerts.filter(alert => !alert.is_read && alert.alert_type === 'CRITICAL').length
   const filtered = useMemo(() => {
     return filterAlertRows(alerts, { type: typeFilter, read: readFilter, module: moduleFilter, query })
   }, [alerts, moduleFilter, query, readFilter, typeFilter])
@@ -102,10 +102,10 @@ export function AlertsWorkspace() {
     setQuery('')
     setTypeFilter('all')
     setModuleFilter('all')
-    setReadFilter('all')
   }, [])
 
-  const hasActiveFilters = typeFilter !== 'all' || moduleFilter !== 'all' || readFilter !== 'all' || query.trim().length > 0
+  const hasActiveFilters = typeFilter !== 'all' || moduleFilter !== 'all' || query.trim().length > 0
+  const activeFilterCount = Number(typeFilter !== 'all') + Number(moduleFilter !== 'all') + Number(query.trim().length > 0)
 
   const handleToggleRead = useCallback(async (id: string, next: boolean) => {
     setBusyId(id)
@@ -266,7 +266,6 @@ export function AlertsWorkspace() {
     }
   }, [loadAlerts, manualChannel, manualModule, manualSeverity, manualThreshold, manualTitle, resetManualAlertForm, savingManualAlert, toast])
 
-  const rowsGridClass = styles.alertGrid
   const originModuleOptions = [
     { value: 'all', label: 'Todos los módulos' },
     { value: 'credits', label: moduleLabel('credits') },
@@ -299,91 +298,70 @@ export function AlertsWorkspace() {
           <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <h1 data-ft-route-heading="" tabIndex={-1} className="font-display text-[26px] font-semibold leading-8 tracking-[-0.035em] text-[var(--ft-text-strong)]">Avisos</h1>
-              <p className="mt-0.5 max-w-2xl text-[12px] leading-5 text-[var(--ft-text-muted)]">Revisa vencimientos, recordatorios y avisos relacionados con tus finanzas.</p>
+              <p className="mt-0.5 max-w-2xl text-[12px] leading-5 text-[var(--ft-text-muted)]">Lo que cambió y lo que merece una revisión.</p>
             </div>
             <div className={styles.headerActions}>
-              <Button type="button" onClick={() => void handleRefresh()} variant="secondary" size="sm" loading={refreshing} className={styles.headerSecondaryAction} testId="alerts-refresh-button">
-                Actualizar
-              </Button>
               <CreateModuleButton onClick={() => { resetManualAlertForm(); setShowCreateModal(true) }} label="Nuevo aviso" className={movementStyles.v3ModulePrimaryAction} testId="alerts-create-button" />
             </div>
           </header>
-          <section className={movementStyles.summary} aria-label="Resumen de avisos">
-            <div className={movementStyles.summaryItem}>
-              <p>No leídos</p>
-              <div className={`${movementStyles.summaryValue} tabular-nums`}>{loading && alerts.length === 0 ? '—' : unreadCount}</div>
-              <span className={movementStyles.summaryDetail}>Pendientes de revisión</span>
-            </div>
-            <div className={movementStyles.summaryItem}>
-              <p>Críticos no leídos</p>
-              <div className={`${movementStyles.summaryValue} tabular-nums`}>{loading && alerts.length === 0 ? '—' : criticalUnreadCount}</div>
-              <span className={movementStyles.summaryDetail}>Según severidad registrada</span>
-            </div>
-            <div className={`${movementStyles.summaryItem} ${movementStyles.summaryQualitative}`}>
-              <p>Leídos</p>
-              <div className={`${movementStyles.summaryValue} tabular-nums`}>{loading && alerts.length === 0 ? '—' : readCount}</div>
-              <span className={movementStyles.summaryDetail}>Leer un aviso no cambia el estado financiero relacionado</span>
-            </div>
-          </section>
         </div>
 
-        <nav className={`${movementStyles.tabs} ${styles.statusTabs}`} aria-label="Estado de avisos" data-testid="alerts-status-tabs">
+        <nav className={movementStyles.tabs + ' ' + styles.statusTabs} aria-label="Estado de avisos" data-testid="alerts-status-tabs">
           {([
-            ['unread', 'No leídos', unreadCount],
-            ['read', 'Leídos', readCount],
-            ['all', 'Todos', alerts.length],
-          ] as const).map(([value, label, count]) => (
+            ['unread', 'Sin leer'],
+            ['read', 'Leídos'],
+          ] as const).map(([value, label]) => (
             <button key={value} type="button" aria-pressed={readFilter === value} onClick={() => setReadFilter(value)} className={styles.statusTab} data-active={readFilter === value}>
-              {label}<span className={styles.tabCount}>{count}</span>
+              {label}{value === 'unread' ? <span className={styles.tabCount}>{loading && alerts.length === 0 ? '—' : unreadCount}</span> : null}
             </button>
           ))}
         </nav>
 
-        <div className={`${movementStyles.controls} ${movementStyles.portfolioFilterBar} ${styles.filterToolbar}`} data-testid="alerts-filter-toolbar">
-          <div className={`${movementStyles.controlsMain} ${styles.filterToolbarMain}`}>
-            <div className={`${movementStyles.searchControl} ${styles.searchControl}`}>
-              <DataSearchField value={query} onChange={setQuery} placeholder="Buscar por título, detalle o módulo" aria-label="Buscar avisos" data-testid="alerts-search" className={styles.searchInput} />
-            </div>
-            <AlertFilters typeFilter={typeFilter} moduleFilter={moduleFilter} onTypeChange={setTypeFilter} onModuleChange={setModuleFilter} originModuleOptions={originModuleOptions} />
-          </div>
-          <div className={`${movementStyles.controlsActions} ${styles.bulkActions}`}>
-            <Button type="button" variant="secondary" size="sm" disabled={bulkBusy || unreadCount === 0} onClick={() => void handleMarkAllRead()} testId="alerts-mark-all-read-button">Marcar todos como leídos</Button>
-            <Button type="button" variant="danger" size="sm" disabled={bulkBusy || readCount === 0} onClick={() => setDeleteReadConfirmOpen(true)} testId="alerts-delete-read-button">Eliminar leídos</Button>
+        <div className={styles.actionToolbar} data-testid="alerts-secondary-actions">
+          <Button type="button" variant={filtersOpen ? 'secondary' : 'ghost'} size="sm" aria-expanded={filtersOpen} aria-controls="alerts-filters-panel" onClick={() => setFiltersOpen(open => !open)} testId="alerts-filter-toggle">
+            <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16M7 12h10m-7 6h4" /></svg>
+            Filtros{activeFilterCount > 0 ? <span className={styles.filterCount}>{activeFilterCount}</span> : null}
+          </Button>
+          <div className={styles.bulkActions}>
+            <Button type="button" variant="ghost" size="sm" loading={refreshing} onClick={() => void handleRefresh()} testId="alerts-refresh-button">Actualizar avisos</Button>
+            <Button type="button" variant="ghost" size="sm" disabled={bulkBusy || unreadCount === 0} onClick={() => void handleMarkAllRead()} testId="alerts-mark-all-read-button">Marcar todos como leídos</Button>
+            <Button type="button" variant="ghost" size="sm" disabled={bulkBusy || readCount === 0} onClick={() => setDeleteReadConfirmOpen(true)} testId="alerts-delete-read-button">Eliminar leídos</Button>
           </div>
         </div>
 
+        {filtersOpen ? (
+          <div className={styles.filterPanel} id="alerts-filters-panel" data-testid="alerts-filter-toolbar">
+            <div className={movementStyles.controlsMain + ' ' + styles.filterToolbarMain}>
+              <div className={movementStyles.searchControl + ' ' + styles.searchControl}>
+                <DataSearchField value={query} onChange={setQuery} placeholder="Buscar un aviso" aria-label="Buscar avisos" data-testid="alerts-search" className={styles.searchInput} />
+              </div>
+              <AlertFilters typeFilter={typeFilter} moduleFilter={moduleFilter} onTypeChange={setTypeFilter} onModuleChange={setModuleFilter} originModuleOptions={originModuleOptions} />
+            </div>
+            {hasActiveFilters ? <Button type="button" onClick={resetFilters} variant="ghost" size="sm" className={styles.clearFilters}>Limpiar filtros</Button> : null}
+          </div>
+        ) : null}
+
         {error ? <DataErrorBanner message={error} onRetry={() => void loadAlerts()} /> : null}
 
-        {error && alerts.length === 0 ? null : <section className={styles.register} aria-labelledby="alerts-register-title" data-testid="alerts-register">
-          <div className={styles.registerHeader}>
-            <div className="min-w-0">
-              <h2 id="alerts-register-title">Avisos financieros</h2>
-              <p>{loading && alerts.length === 0 ? 'Cargando avisos…' : `${filtered.length} de ${alerts.length} aviso(s)`}</p>
-            </div>
-            {hasActiveFilters ? <Button type="button" onClick={resetFilters} variant="ghost" size="sm">Limpiar filtros</Button> : null}
-          </div>
-
+        {error && alerts.length === 0 ? null : <section className={styles.register} aria-label="Bandeja de avisos" data-testid="alerts-register">
           {loading && alerts.length === 0 ? (
             <div className={styles.loadingRows} aria-label="Cargando avisos" aria-busy="true">
-              {[0, 1, 2, 3].map(index => <div className={styles.loadingRow} key={index} aria-hidden="true"><span /><span /><span /></div>)}
+              {[0, 1, 2].map(index => <div className={styles.loadingRow} key={index} aria-hidden="true"><span /><span /><span /></div>)}
             </div>
           ) : error && alerts.length === 0 ? null : filtered.length === 0 ? (
-            <EmptyState compact title={hasActiveFilters ? 'No hay avisos con estos filtros.' : 'No hay avisos en esta vista.'} description={hasActiveFilters ? 'Prueba otra búsqueda, severidad o módulo de origen.' : 'Los avisos generados o guardados manualmente aparecerán aquí.'} action={hasActiveFilters ? <Button type="button" onClick={resetFilters} variant="secondary" size="md">Limpiar filtros</Button> : null} />
+            <div className={styles.emptyState}>
+              <EmptyState compact title={hasActiveFilters ? 'No hay avisos con estos filtros.' : readFilter === 'unread' ? 'No hay avisos sin leer.' : 'No hay avisos leídos.'} description={hasActiveFilters ? 'Prueba otra búsqueda, severidad o módulo de origen.' : 'Los avisos que requieren revisión aparecerán aquí.'} action={hasActiveFilters ? <Button type="button" onClick={resetFilters} variant="secondary" size="md">Limpiar filtros</Button> : null} />
+            </div>
           ) : (
-            <>
-              <div className={`${styles.tableHeading} ${rowsGridClass}`} aria-hidden="true">
-                <span>Severidad</span><span>Aviso</span><span>Origen</span><span>Fecha</span><span>Estado</span><span className="text-right">Acciones</span>
-              </div>
-              <div className={styles.rows}>
-                {filtered.map(alert => {
-                  const actions: AnchoredAction[] = [{
-                    id: 'delete', label: 'Eliminar aviso', destructive: true, disabled: busyId === alert.id || bulkBusy,
-                    onSelect: () => void handleDelete(alert.id),
-                  }]
-                  return <AlertCard key={alert.id} {...alert} dateLabel={formatAlertDate(alert.created_at)} href={isValidAlertHref(alert.href) ? alert.href : null} busy={busyId === alert.id || bulkBusy} actions={actions} onToggleRead={(id, next) => void handleToggleRead(id, next)} />
-                })}
-              </div>
-            </>
+            <div className={styles.rows}>
+              {filtered.map(alert => {
+                const actions: AnchoredAction[] = [{
+                  id: 'delete', label: 'Eliminar aviso', destructive: true, disabled: busyId === alert.id || bulkBusy,
+                  onSelect: () => void handleDelete(alert.id),
+                }]
+                return <AlertCard key={alert.id} {...alert} dateLabel={formatAlertDate(alert.created_at)} href={isValidAlertHref(alert.href) ? alert.href : null} busy={busyId === alert.id || bulkBusy} actions={actions} onToggleRead={(id, next) => void handleToggleRead(id, next)} />
+              })}
+            </div>
           )}
         </section>}
       </PageLayout>
@@ -409,7 +387,7 @@ export function AlertsWorkspace() {
         )}
       >
         <div className={styles.manualNotice} role="note">
-          El aviso se guarda manualmente. El canal y el umbral, si se completan, quedan como metadatos de referencia; no activan reglas ni envíos automáticos.
+          Se guarda manualmente. Los datos opcionales son referencias y no activan reglas ni envíos automáticos.
         </div>
         <FormSection title="Contenido del aviso" columns="1" className="gap-y-4">
           <FormField label="Título" htmlFor="alerts-rule-title" hint={`${manualTitle.trim().length}/140`}>
