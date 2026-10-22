@@ -1,147 +1,64 @@
 'use client'
 
-// =============================================================================
-// components/assets/AssetsWorkspace.tsx
-// PRD v3 — Módulo 5: Activos
-// Orquestador principal: resumen superior + botón crear + modal + listado
-// =============================================================================
-
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { mutate } from 'swr'
-import { useToast } from '@/lib/toast/toast'
-import { RecordModal } from '@/components/ui/RecordModal'
-import { Button } from '@/components/ui/Button'
-import { ConfirmDialog } from '@/components/finance'
-import { AssetsForm } from '@/components/assets/AssetsForm'
 import { AssetsListPanel } from '@/components/assets/AssetsListPanel'
-import styles from './AssetsListPanel.module.css'
-import { FormActions } from '@/components/forms/primitives'
+import type { AssetWithTypeInfo } from '@/modules/assets/asset-presentation'
 
-function toNextUrl(pathname: string, params: URLSearchParams): string {
-  const qs = params.toString()
-  return qs.length > 0 ? `${pathname}?${qs}` : pathname
-}
+type AssetTypeOption = { id: string; name: string }
 
-export function AssetsWorkspace() {
-  const pathname     = usePathname()
-  const router       = useRouter()
+const ASSET_PURCHASE_URL = '/transactions?new=transaction&module=asset&type=EXPENSE'
+
+export function AssetsWorkspace({
+  demoAllowed,
+  demoAssets,
+  demoTypes,
+}: {
+  demoAllowed: boolean
+  demoAssets?: AssetWithTypeInfo[]
+  demoTypes?: AssetTypeOption[]
+}) {
+  const pathname = usePathname()
+  const router = useRouter()
   const searchParams = useSearchParams()
-  const { toast }    = useToast()
-
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [formKey, setFormKey]         = useState(0)
-  const [isDirty, setIsDirty]         = useState(false)
-  const [isSaving, setIsSaving]       = useState(false)
-  const [formReady, setFormReady]     = useState(false)
-  const [discardOpen, setDiscardOpen] = useState(false)
-  const handledRef                    = useRef(false)
-
-  const openFromQuery = searchParams.get('new') === 'asset'
-
-  const clearQuery = useCallback(() => {
-    const params = new URLSearchParams(searchParams.toString())
-    params.delete('new')
-    router.replace(toNextUrl(pathname, params), { scroll: false })
-  }, [pathname, router, searchParams])
-
-  const openModal = useCallback(() => {
-    setFormKey(k => k + 1)
-    setIsDirty(false)
-    setIsSaving(false)
-    setFormReady(false)
-    setIsModalOpen(true)
-    const params = new URLSearchParams(searchParams.toString())
-    params.set('new', 'asset')
-    router.replace(toNextUrl(pathname, params), { scroll: false })
-  }, [pathname, router, searchParams])
-
-  const handleFormStateChange = useCallback((state: { dirty: boolean; saving: boolean; ready: boolean }) => {
-    setIsDirty(state.dirty)
-    setIsSaving(state.saving)
-    setFormReady(state.ready)
-  }, [])
-
-  const closeModal = useCallback(() => {
-    if (isSaving) return
-    if (isDirty) {
-      setDiscardOpen(true)
-      return
-    }
-    setIsModalOpen(false)
-    clearQuery()
-  }, [clearQuery, isDirty, isSaving])
-
-  const confirmClose = useCallback(() => {
-    setDiscardOpen(false)
-    setIsDirty(false)
-    setIsModalOpen(false)
-    clearQuery()
-  }, [clearQuery])
-
-  const handleSuccess = useCallback(async (assetName: string) => {
-    toast.success('Activo registrado', assetName)
-    setIsDirty(false)
-    setIsModalOpen(false)
-    clearQuery()
-    await mutate((key: unknown) => typeof key === 'string' && key.startsWith('/api/assets'))
-    router.refresh()
-  }, [clearQuery, router, toast])
+  const demoMode = demoAllowed && searchParams.get('demo-assets') === '1'
+  const openFromLegacyQuery = searchParams.get('new') === 'asset'
+  const handledLegacyQuery = useRef(false)
 
   useEffect(() => {
-    if (openFromQuery) {
-      if (handledRef.current) return
-      handledRef.current = true
-      setFormKey(k => k + 1)
-      setIsDirty(false)
-      setIsSaving(false)
-      setFormReady(false)
-      setIsModalOpen(true)
+    if (!openFromLegacyQuery) {
+      handledLegacyQuery.current = false
       return
     }
-    handledRef.current = false
-  }, [openFromQuery])
+    if (handledLegacyQuery.current) return
+    handledLegacyQuery.current = true
+
+    if (!demoMode) {
+      router.replace(ASSET_PURCHASE_URL)
+      return
+    }
+
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete('new')
+    const query = params.toString()
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false })
+  }, [demoMode, openFromLegacyQuery, pathname, router, searchParams])
 
   return (
-    <div className="space-y-5">
-      <AssetsListPanel onCreate={openModal} />
-
-      {/* ── MODAL CREAR ──────────────────────────────────────────────────── */}
-      <RecordModal
-        open={isModalOpen}
-        onClose={closeModal}
-        eyebrow="Activos"
-        title="Registrar activo"
-        subtitle="Registra la compra y los datos del activo en una sola operación."
-        presentation="workbench"
-        size="xl"
-        overlayClassName={styles.createOverlay}
-        focusTrapActive={!discardOpen}
-        preserveFocusOnResume
-        testId="assets-create-modal"
-        footer={(
-          <FormActions
-            secondaryAction={<Button type="button" variant="secondary" onClick={closeModal} disabled={isSaving}>Cancelar</Button>}
-            primaryAction={<Button type="submit" form="asset-form" variant="primary" loading={isSaving} disabled={!formReady || isSaving} testId="asset-submit-button">Registrar activo</Button>}
-          />
-        )}
-      >
-        <AssetsForm
-          key={formKey}
-          onSuccess={handleSuccess}
-          onFormStateChange={handleFormStateChange}
-        />
-      </RecordModal>
-      <ConfirmDialog
-        open={discardOpen}
-        title="Descartar cambios"
-        message="Hay cambios sin guardar. ¿Quieres cerrar sin registrar el activo?"
-        onCancel={() => setDiscardOpen(false)}
-        onConfirm={confirmClose}
-        confirmLabel="Descartar cambios"
-        cancelLabel="Seguir editando"
-        testId="assets-create-discard-modal"
-      />
-    </div>
+    <AssetsListPanel
+      onCreate={() => {
+        if (!demoMode) router.push(ASSET_PURCHASE_URL)
+      }}
+      demoMode={demoMode}
+      demoAssets={demoAssets}
+      demoTypes={demoTypes}
+      onExitDemo={() => {
+        const params = new URLSearchParams(searchParams.toString())
+        params.delete('demo-assets')
+        params.delete('new')
+        const query = params.toString()
+        router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false })
+      }}
+    />
   )
 }

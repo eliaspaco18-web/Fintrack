@@ -6,7 +6,7 @@ import { mutate } from 'swr'
 import { useToast } from '@/lib/toast/toast'
 import { useAssets } from '@/lib/hooks/useModules'
 import { formatCurrency, formatDateLabel } from '@/lib/contracts/ui.contracts'
-import { ActionIconButton } from '@/components/ui/ActionIconButton'
+import { AnchoredActionMenu } from '@/components/ui/AnchoredActionMenu'
 import { AppSelect } from '@/components/ui/AppSelect'
 import { Button } from '@/components/ui/Button'
 import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
@@ -31,8 +31,11 @@ import {
 import styles from './AssetsListPanel.module.css'
 
 type AssetTypeOption = { id: string; name: string }
+const EMPTY_ASSET_TYPES: AssetTypeOption[] = []
 type EditForm = { name: string; current_value: string; recipient: string; notes: string }
 type CurrencySummary = { currency: string; amount: number; count: number; invalidCount: number }
+type AssetTransaction = { id: string; description: string | null; source_account?: { id: string; name: string } | null } | null
+type TransactionLoadState = { assetId: string; status: 'loading' | 'loaded' | 'unavailable' | 'absent'; transaction: AssetTransaction }
 
 function currencyLabel(currency: string) {
   if (currency === 'PEN' || currency === 'USD') return currency
@@ -65,9 +68,22 @@ function statusTab(status: AssetStatusFilter, label: string, selected: AssetStat
   )
 }
 
-export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
+export function AssetsListPanel({
+  onCreate,
+  demoMode = false,
+  demoAssets = [],
+  demoTypes,
+  onExitDemo,
+}: {
+  onCreate: () => void
+  demoMode?: boolean
+  demoAssets?: AssetWithTypeInfo[]
+  demoTypes?: AssetTypeOption[]
+  onExitDemo?: () => void
+}) {
   const router = useRouter()
   const { toast } = useToast()
+  const resolvedDemoTypes = demoTypes ?? EMPTY_ASSET_TYPES
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [currencyFilter, setCurrencyFilter] = useState('')
@@ -79,24 +95,79 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
   const [editDiscardOpen, setEditDiscardOpen] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<AssetWithTypeInfo | null>(null)
   const [selectedAsset, setSelectedAsset] = useState<AssetWithTypeInfo | null>(null)
+  const [transactionState, setTransactionState] = useState<TransactionLoadState | null>(null)
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
-  const { assets, isLoading, error: hookError, refetch } = useAssets({ status: '' })
-  const rows = assets as AssetWithTypeInfo[]
+  const { assets, isLoading: assetsLoading, error: hookError, refetch } = useAssets({ status: '' }, !demoMode)
+  const rows = demoMode ? demoAssets : assets as AssetWithTypeInfo[]
+  const isLoading = demoMode ? false : assetsLoading
 
-  const loadTypes = useCallback(async () => {
+  const loadTypes = useCallback(async (signal?: AbortSignal) => {
     setAssetTypesError(null)
     try {
-      const response = await fetch('/api/asset-types', { cache: 'no-store' })
+      const response = await fetch('/api/asset-types', { cache: 'no-store', signal })
       const json = await response.json().catch(() => null)
       if (!response.ok || !json?.ok) throw new Error(getApiErrorMessage(json, 'No se pudieron cargar los tipos de activo.'))
-      setAssetTypes((json.data as AssetTypeOption[]) ?? [])
+      if (!signal?.aborted) setAssetTypes((json.data as AssetTypeOption[]) ?? [])
     } catch (error) {
-      setAssetTypesError(getErrorMessage(error))
+      if (!signal?.aborted) setAssetTypesError(getErrorMessage(error))
     }
   }, [])
 
-  useEffect(() => { void loadTypes() }, [loadTypes])
+  useEffect(() => {
+    if (demoMode) return
+    const controller = new AbortController()
+    void loadTypes(controller.signal)
+    return () => controller.abort()
+  }, [demoMode, loadTypes])
+
+  useEffect(() => {
+    if (demoMode) {
+      setAssetTypesError(null)
+      setAssetTypes(resolvedDemoTypes)
+      return
+    }
+    setAssetTypes([])
+  }, [demoMode, resolvedDemoTypes])
+
+  useEffect(() => {
+    if (!selectedAsset) {
+      setTransactionState(null)
+      return
+    }
+    const asset = selectedAsset
+    if (demoMode) {
+      setTransactionState({ assetId: asset.id, status: 'absent', transaction: null })
+      return
+    }
+    if (!asset.transaction_id) {
+      setTransactionState({ assetId: asset.id, status: 'absent', transaction: null })
+      return
+    }
+
+    const controller = new AbortController()
+    setTransactionState({ assetId: asset.id, status: 'loading', transaction: null })
+    void fetch(`/api/transactions/${encodeURIComponent(asset.transaction_id)}`, { cache: 'no-store', signal: controller.signal })
+      .then(async response => {
+        const json = await response.json().catch(() => null)
+        if (!response.ok || !json?.ok || json.data?.id !== asset.transaction_id) {
+          throw new Error('No se pudo verificar el movimiento vinculado.')
+        }
+        const sourceAccount = json.data.source_account
+        const transaction: AssetTransaction = {
+          id: json.data.id,
+          description: typeof json.data.description === 'string' ? json.data.description : null,
+          source_account: sourceAccount && typeof sourceAccount.id === 'string' && typeof sourceAccount.name === 'string'
+            ? { id: sourceAccount.id, name: sourceAccount.name }
+            : null,
+        }
+        setTransactionState({ assetId: asset.id, status: 'loaded', transaction })
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setTransactionState({ assetId: asset.id, status: 'unavailable', transaction: null })
+      })
+    return () => controller.abort()
+  }, [demoMode, selectedAsset])
 
   const statusCounts = useMemo(() => ({
     active: rows.filter(asset => asset.status === 'ACTIVE').length,
@@ -117,14 +188,15 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
     const query = search.trim().toLocaleLowerCase('es-PE')
     return rows.filter(asset => {
       if (!matchesAssetStatusFilter(asset.status, statusFilter)) return false
-      if (typeFilter && asset.asset_type_id !== typeFilter) return false
+      if (typeFilter && (demoMode ? asset.asset_type !== typeFilter : asset.asset_type_id !== typeFilter)) return false
       if (currencyFilter && asset.currency !== currencyFilter) return false
       return !query || [asset.name, asset.recipient, asset.location, asset.serial_number]
         .some(value => value?.toLocaleLowerCase('es-PE').includes(query))
     })
-  }, [currencyFilter, rows, search, statusFilter, typeFilter])
+  }, [currencyFilter, demoMode, rows, search, statusFilter, typeFilter])
 
-  const surfaceError = actionError ?? (hookError ? getErrorMessage(hookError) : null)
+  const dataError = demoMode ? null : hookError
+  const surfaceError = actionError ?? (dataError ? getErrorMessage(dataError) : null)
   const hasFilters = Boolean(search || typeFilter || currencyFilter || statusFilter !== 'ACTIVE')
 
   const openEdit = useCallback((asset: AssetWithTypeInfo) => {
@@ -156,7 +228,7 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
   }, [actionLoadingId, editIsDirty])
 
   const handleStatus = useCallback(async (asset: AssetWithTypeInfo, nextStatus: 'ACTIVE' | 'SOLD') => {
-    if (actionLoadingId) return
+    if (demoMode || actionLoadingId) return
     setActionLoadingId(asset.id)
     setActionError(null)
     try {
@@ -176,10 +248,10 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
     } finally {
       setActionLoadingId(null)
     }
-  }, [actionLoadingId, refetch, router, toast])
+  }, [actionLoadingId, demoMode, refetch, router, toast])
 
   const handleDelete = useCallback(async () => {
-    if (!pendingDelete || actionLoadingId) return
+    if (demoMode || !pendingDelete || actionLoadingId) return
     setActionLoadingId(pendingDelete.id)
     setActionError(null)
     try {
@@ -200,10 +272,10 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
     } finally {
       setActionLoadingId(null)
     }
-  }, [actionLoadingId, pendingDelete, refetch, router, toast])
+  }, [actionLoadingId, demoMode, pendingDelete, refetch, router, toast])
 
   const saveEdit = useCallback(async () => {
-    if (!editingAsset || actionLoadingId) return
+    if (demoMode || !editingAsset || actionLoadingId) return
     const name = editForm.name.trim()
     const currentValue = roundToDecimals(parseNumericInput(editForm.current_value, Number.NaN), 2)
     if (name.length < 2) { setActionError('El nombre debe tener al menos 2 caracteres.'); return }
@@ -230,7 +302,7 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
     } finally {
       setActionLoadingId(null)
     }
-  }, [actionLoadingId, editForm, editingAsset, refetch, router, toast])
+  }, [actionLoadingId, demoMode, editForm, editingAsset, refetch, router, toast])
 
   return (
     <PageLayout className={`max-w-none !gap-0 ${movementStyles.v3ModuleContent} ${styles.page}`}>
@@ -240,24 +312,24 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
             <h1 data-ft-route-heading="" tabIndex={-1} className="font-display text-[26px] font-semibold leading-8 tracking-[-0.035em] text-[var(--ft-text-strong)]">Activos</h1>
             <p className="mt-0.5 max-w-2xl text-[12px] leading-5 text-[var(--ft-text-muted)]">Bienes registrados, organizados por tipo y estado.</p>
           </div>
-          <CreateModuleButton onClick={onCreate} label="Registrar activo" className={`${movementStyles.v3ModulePrimaryAction} ${styles.createButton}`} testId="assets-create-button" />
+          {demoMode ? <span className={styles.readOnlyBadge}>Solo lectura</span> : <CreateModuleButton onClick={onCreate} label="Registrar activo" className={`${movementStyles.v3ModulePrimaryAction} ${styles.createButton}`} testId="assets-create-button" />}
         </header>
         <section className={movementStyles.summary} aria-label="Resumen de activos registrados" data-testid="assets-summary">
           {displayedSummaries.map(summary => (
             <div key={summary.currency} className={movementStyles.summaryItem}>
               <p>Valor registrado · {currencyLabel(summary.currency)}</p>
               <div className={`${movementStyles.summaryValue} tabular-nums`}>
-                {isLoading || (hookError && rows.length === 0) ? '—' : summary.invalidCount && !summary.count ? 'No verificable' : amountLabel(summary.amount, summary.currency)}
+                {isLoading || (dataError && rows.length === 0) ? '—' : summary.invalidCount && !summary.count ? 'No verificable' : amountLabel(summary.amount, summary.currency)}
               </div>
               <span className={movementStyles.summaryDetail}>
-                {isLoading ? 'Cargando resumen' : hookError && rows.length === 0 ? 'Resumen no disponible' : `${summary.count} activo${summary.count === 1 ? '' : 's'} vigente${summary.count === 1 ? '' : 's'}${summary.invalidCount ? ` · ${summary.invalidCount} sin valor verificable` : ''}`}
+                {isLoading ? 'Cargando resumen' : dataError && rows.length === 0 ? 'Resumen no disponible' : `${summary.count} activo${summary.count === 1 ? '' : 's'} vigente${summary.count === 1 ? '' : 's'}${summary.invalidCount ? ` · ${summary.invalidCount} sin valor verificable` : ''}`}
               </span>
             </div>
           ))}
           <div className={`${movementStyles.summaryItem} ${movementStyles.summaryQualitative}`}>
             <p>Activos vigentes</p>
-            <div className={`${movementStyles.summaryValue} tabular-nums`}>{isLoading || (hookError && rows.length === 0) ? '—' : String(statusCounts.active)}</div>
-            <span className={movementStyles.summaryDetail}>{isLoading ? 'Cargando resumen' : hookError && rows.length === 0 ? 'Resumen no disponible' : `${statusCounts.sold} vendidos · ${statusCounts.depreciated} depreciados${statusCounts.unknown ? ` · ${statusCounts.unknown} sin verificar` : ''}`}</span>
+            <div className={`${movementStyles.summaryValue} tabular-nums`}>{isLoading || (dataError && rows.length === 0) ? '—' : String(statusCounts.active)}</div>
+            <span className={movementStyles.summaryDetail}>{isLoading ? 'Cargando resumen' : dataError && rows.length === 0 ? 'Resumen no disponible' : `${statusCounts.sold} vendidos · ${statusCounts.depreciated} depreciados${statusCounts.unknown ? ` · ${statusCounts.unknown} sin verificar` : ''}`}</span>
           </div>
         </section>
         {summaries.some(summary => summary.currency === 'UNVERIFIED' || summary.invalidCount > 0) ? (
@@ -265,7 +337,14 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
         ) : null}
       </div>
 
-      <nav aria-label="Filtrar activos por estado" className={movementStyles.tabs} data-testid="assets-status-tabs">
+      {demoMode ? (
+        <div className={styles.demoBanner} role="note" data-testid="assets-demo-banner">
+          <span><strong>Datos de demostración</strong><span>Seis registros ficticios · solo lectura · no se consultan ni modifican datos financieros.</span></span>
+          <Button type="button" variant="secondary" size="sm" onClick={onExitDemo} testId="assets-exit-demo">Salir de demostración</Button>
+        </div>
+      ) : null}
+
+      <nav aria-label="Filtrar activos por estado" className={`${movementStyles.tabs} ${styles.tabs}`} data-testid="assets-status-tabs">
         {statusTab('ACTIVE', 'Activos', statusFilter, setStatusFilter)}
         {statusTab('SOLD', 'Vendidos', statusFilter, setStatusFilter)}
         {statusTab('DEPRECIATED', 'Depreciados', statusFilter, setStatusFilter)}
@@ -304,8 +383,8 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
         </div>
       </div>
 
-      {assetTypesError ? <DataErrorBanner message={assetTypesError} onRetry={() => void loadTypes()} /> : null}
-      {surfaceError ? <DataErrorBanner message={surfaceError} onRetry={() => { void refetch() }} /> : null}
+      {!demoMode && assetTypesError ? <DataErrorBanner message={assetTypesError} onRetry={() => void loadTypes()} /> : null}
+      {!demoMode && surfaceError ? <DataErrorBanner message={surfaceError} onRetry={() => { void refetch() }} /> : null}
 
       <section className={styles.register} aria-labelledby="assets-register-title" data-testid="assets-register">
         <div className={styles.registerHeader}>
@@ -319,7 +398,7 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
         {isLoading ? (
           <div className={styles.loadingRows} aria-label="Cargando activos">{[0, 1, 2].map(index => <div className={styles.loadingRow} key={index} aria-hidden="true"><span /><span /><span /></div>)}</div>
         ) : filtered.length === 0 ? (
-          <div className={styles.empty}><EmptyState title={hasFilters ? 'No encontramos activos para esos filtros.' : 'Todavía no tienes activos registrados.'} description={hasFilters ? 'Ajusta la búsqueda o los filtros para ver otros registros.' : 'Registra un activo para mantener su compra y valor actual en un solo lugar.'} action={hasFilters ? { label: 'Limpiar filtros', onClick: () => { setSearch(''); setTypeFilter(''); setCurrencyFilter(''); setStatusFilter('ACTIVE') } } : { label: 'Registrar activo', onClick: onCreate }} /></div>
+          <div className={styles.empty}><EmptyState title={hasFilters ? 'No encontramos activos para esos filtros.' : demoMode ? 'No hay registros para mostrar.' : 'Todavía no tienes activos registrados.'} description={hasFilters ? 'Ajusta la búsqueda o los filtros para ver otros registros.' : demoMode ? 'La demostración no contiene activos en este estado.' : 'Registra un activo para mantener su compra y valor actual en un solo lugar.'} action={hasFilters ? { label: 'Limpiar filtros', onClick: () => { setSearch(''); setTypeFilter(''); setCurrencyFilter(''); setStatusFilter('ACTIVE') } } : !demoMode ? { label: 'Registrar activo', onClick: onCreate } : undefined} /></div>
         ) : (
           <div className={styles.table} data-testid="assets-table">
             <div className={`${styles.tableRow} ${styles.tableHead}`} aria-hidden="true">
@@ -353,10 +432,19 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
                     <span>{asset.currency || 'Moneda no verificable'}</span>
                   </div>
                   <div className={styles.actions}>
-                    <ActionIconButton icon="view" label="Ver activo" testId={`asset-view-action-${asset.id}`} onClick={() => setSelectedAsset(asset)} />
-                    <ActionIconButton icon="edit" label="Editar" disabled={Boolean(actionLoadingId)} testId={`asset-edit-${asset.id}`} onClick={() => openEdit(asset)} />
-                    <ActionIconButton icon={active ? 'deactivate' : 'reactivate'} label={active ? 'Marcar como vendido' : 'Reactivar'} variant={active ? 'danger' : 'success'} disabled={Boolean(actionLoadingId) || !status.isVerified || status.status === 'DEPRECIATED'} testId={active ? `asset-deactivate-${asset.id}` : `asset-reactivate-${asset.id}`} onClick={() => void handleStatus(asset, active ? 'SOLD' : 'ACTIVE')} />
-                    <ActionIconButton icon="delete" label="Eliminar" variant="danger" disabled={Boolean(actionLoadingId)} testId={`asset-delete-${asset.id}`} onClick={() => { setActionError(null); setPendingDelete(asset) }} />
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedAsset(asset)} testId={`asset-view-action-${asset.id}`}>Ver activo</Button>
+                    {!demoMode ? <AnchoredActionMenu
+                      label={`Más acciones de ${asset.name}`}
+                      triggerContent={<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg>}
+                      className="h-8 w-8 rounded-control text-[var(--ft-text-muted)] hover:bg-[var(--ft-surface-hover)] hover:text-[var(--ft-text-strong)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]"
+                      disabled={Boolean(actionLoadingId)}
+                      align="end"
+                      actions={[
+                        { id: 'edit', label: 'Editar activo', onSelect: () => openEdit(asset) },
+                        { id: 'status', label: active ? 'Marcar como vendido' : 'Reactivar activo', disabled: !status.isVerified || status.status === 'DEPRECIATED', onSelect: () => void handleStatus(asset, active ? 'SOLD' : 'ACTIVE') },
+                        { id: 'delete', label: 'Eliminar activo', destructive: true, onSelect: () => { setActionError(null); setPendingDelete(asset) } },
+                      ]}
+                    /> : null}
                   </div>
                 </article>
               )
@@ -366,7 +454,11 @@ export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
       </section>
 
       <RecordModal open={Boolean(selectedAsset)} onClose={() => setSelectedAsset(null)} presentation="workbench" size="xl" overlayClassName={styles.detailOverlay} bodyClassName={styles.detailBody} eyebrow="Detalle del activo" title={selectedAsset?.name ?? 'Activo'} subtitle="Registro original, estado y valores guardados." headerBadge={selectedAsset ? <span className={styles.headerBadge}>{getAssetStatusPresentation(selectedAsset.status).label}</span> : undefined} testId="assets-detail-modal">
-        {selectedAsset ? <AssetRecordContent asset={selectedAsset} transaction={selectedAsset.transaction_id ? { id: selectedAsset.transaction_id, description: null } : null} /> : null}
+        {selectedAsset ? <AssetRecordContent
+          asset={selectedAsset}
+          demoMode={demoMode}
+          transactionState={transactionState?.assetId === selectedAsset.id ? transactionState : { assetId: selectedAsset.id, status: selectedAsset.transaction_id ? 'loading' : 'absent', transaction: null }}
+        /> : null}
       </RecordModal>
 
       <RecordModal open={Boolean(editingAsset)} onClose={closeEdit} presentation="workbench" size="lg" overlayClassName={styles.editOverlay} eyebrow="Activos" title="Editar activo" subtitle="Actualiza los campos permitidos sin crear otro movimiento de compra." testId="assets-edit-modal" focusTrapActive={!editDiscardOpen} preserveFocusOnResume footer={(

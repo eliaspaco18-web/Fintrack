@@ -7,6 +7,7 @@
 import type { Metadata } from 'next'
 import { Suspense }      from 'react'
 import { AssetsWorkspace } from '@/components/assets/AssetsWorkspace'
+import { ASSETS_DEMO_FIXTURES, ASSETS_DEMO_TYPES, isAssetsDemoAllowed } from '@/modules/assets/demo-assets'
 
 export const metadata: Metadata = {
   title: 'Activos | FinTrack',
@@ -14,9 +15,19 @@ export const metadata: Metadata = {
 }
 
 export default function AssetsPage() {
+  const demoAllowed = isAssetsDemoAllowed({
+    vercelEnv: process.env.VERCEL_ENV,
+    nodeEnv: process.env.NODE_ENV,
+    localOptIn: process.env.FINTRACK_ASSETS_DEMO,
+  })
+
   return (
     <Suspense>
-      <AssetsWorkspace />
+      <AssetsWorkspace
+        demoAllowed={demoAllowed}
+        demoAssets={demoAllowed ? ASSETS_DEMO_FIXTURES : undefined}
+        demoTypes={demoAllowed ? ASSETS_DEMO_TYPES : undefined}
+      />
     </Suspense>
   )
 }

@@ -14,6 +14,7 @@ declare global {
     __unexpectedSupabaseCalls: number
     __serverOptionLoad: { delayMs: number; fail: boolean }
     __navigateMock?: (path: string) => void
+    __mountAssetsWorkspace?: () => void
     __routeDebug?: { path: string; search: string }
   }
 }
@@ -130,6 +131,9 @@ function browserMocks(): string {
     window.__fintrackModules['@/components/tables/TransactionTable'] = {
       TransactionTable: ({ workspaceHeader, toolbarActions }) => React.createElement('div', { 'data-testid': 'transaction-table-stub' }, workspaceHeader, toolbarActions),
     };
+    window.__fintrackModules['@/components/assets/AssetsListPanel'] = {
+      AssetsListPanel: ({ onCreate }) => React.createElement('button', { type: 'button', 'data-testid': 'assets-create-button', onClick: onCreate }, 'Registrar activo'),
+    };
     window.__fintrackModules['@/lib/constants/quick-operations'] = window.__fintrackQuickOperations;
     window.__fintrackModules['@/lib/dashboard/round07'] = {
       currentLimaPeriod: () => ({ iso: '2026-10-18', month: '2026-10', day: '18' }),
@@ -203,6 +207,7 @@ function browserMocks(): string {
     window.__fintrackModules['@/modules/attachments/attachment-integrity'] = { MAX_FINANCIAL_ATTACHMENT_BYTES: 5_000_000 };
     window.__fintrackModules['@/lib/supabase.server'] = { createClient: () => { window.__unexpectedSupabaseCalls += 1; throw new Error('Unexpected server client access in isolated harness'); } };
     window.__fintrackModules['@/lib/catalog/catalog-normalization'] = { dedupeAssetTypes: items => items };
+    window.__fintrackModules['@/modules/assets/asset-purchase-payload'] = {};
     window.__fintrackModules['@/lib/server/observability'] = { measureServerOperation: (_name, fn) => fn() };
     window.__unexpectedSupabaseCalls = 0;
     window.__serverOptionLoad = { delayMs: 0, fail: false };
@@ -260,6 +265,8 @@ async function mountIntegratedFlow(page: Page) {
   await page.addScriptTag({ content: compileComponent('components/ui/RecordModal.tsx', 'RecordModal', 'RecordModal') })
   await page.addScriptTag({ content: `window.__fintrackModules['@/components/ui/RecordModal'] = { ...window.__fintrackModules['@/components/ui/RecordModal'], RecordModal: window.__fintrackExports.RecordModal };` })
 
+  await page.addScriptTag({ content: compileComponent('modules/assets/asset-purchase-payload.ts', 'buildAssetPurchaseModulePayload', 'buildAssetPurchaseModulePayload') })
+  await page.addScriptTag({ content: `window.__fintrackModules['@/modules/assets/asset-purchase-payload'] = { buildAssetPurchaseModulePayload: window.__fintrackExports.buildAssetPurchaseModulePayload };` })
   await page.addScriptTag({ content: compileComponent('components/forms/TransactionForm/form.orchestrator.ts', 'useFormOrchestrator', 'useFormOrchestrator') })
   await page.addScriptTag({ content: `window.__fintrackFormOrchestrator = { useFormOrchestrator: window.__fintrackExports.useFormOrchestrator }; window.__fintrackModules['./form.orchestrator'] = window.__fintrackFormOrchestrator;` })
   await page.addScriptTag({ content: compileComponent('components/forms/TransactionForm/index.tsx', 'TransactionForm', 'TransactionForm') })
@@ -278,11 +285,14 @@ async function mountIntegratedFlow(page: Page) {
   await page.addScriptTag({ content: `window.__fintrackModules['@/components/dashboard/DashboardRound07'] = { DashboardRound07: window.__fintrackExports.DashboardRound07 };` })
   await page.addScriptTag({ content: compileComponent('components/transactions/TransactionsWorkspace.tsx', 'TransactionsWorkspace', 'TransactionsWorkspace') })
   await page.addScriptTag({ content: `window.__fintrackModules['@/components/transactions/TransactionsWorkspace'] = { TransactionsWorkspace: window.__fintrackExports.TransactionsWorkspace };` })
+  await page.addScriptTag({ content: compileComponent('components/assets/AssetsWorkspace.tsx', 'AssetsWorkspace', 'AssetsWorkspace') })
+  await page.addScriptTag({ content: `window.__fintrackModules['@/components/assets/AssetsWorkspace'] = { AssetsWorkspace: window.__fintrackExports.AssetsWorkspace };` })
 
   await page.addScriptTag({ content: `(() => {
     const React = window.React;
     const root = window.ReactDOM.createRoot(document.getElementById('root'));
     root.render(React.createElement(window.__fintrackExports.DashboardRound07));
+    window.__mountAssetsWorkspace = () => root.render(React.createElement(window.__fintrackExports.AssetsWorkspace, { demoAllowed: false }));
     window.__navigateMock = path => {
       window.__routeDebug = { path: location.pathname, search: location.search };
       if (new URL(path, location.href).pathname === '/dashboard') {
@@ -400,6 +410,25 @@ test('payables issue deep link mounts the approved Recibir préstamo form withou
   await expect(page.getByRole('menu', { name: 'Registrar una operación' })).toHaveCount(0)
   await expect(form.getByRole('button', { name: 'Cancelar' })).toBeVisible()
   await form.getByRole('button', { name: 'Cancelar' }).click()
+  await expect(dialog).toHaveCount(0)
+  expect(await page.evaluate(() => window.__unexpectedSupabaseCalls)).toBe(0)
+})
+
+test('Assets Registrar activo opens the approved Comprar activo form directly', async ({ page }) => {
+  await mountIntegratedFlow(page)
+  await page.evaluate(() => window.__mountAssetsWorkspace?.())
+  await page.getByTestId('assets-create-button').click()
+
+  await expect(page).toHaveURL(/\/transactions\?new=transaction&module=asset&type=EXPENSE$/)
+  const dialog = page.getByRole('dialog', { name: 'Comprar activo' })
+  await expect(dialog).toBeVisible()
+  const form = dialog.getByTestId('transaction-form')
+  await expect(form).toHaveAttribute('data-operation-layout', 'asset_purchase')
+  await expect(form.getByRole('region', { name: 'Activo' })).toBeVisible()
+  await expect(form.getByTestId('transaction-asset-name-input')).toBeVisible()
+  await expect(page.getByRole('menu', { name: 'Registrar una operación' })).toHaveCount(0)
+  await expect(dialog.getByRole('button', { name: 'Cancelar' })).toBeVisible()
+  await dialog.getByRole('button', { name: 'Cancelar' }).click()
   await expect(dialog).toHaveCount(0)
   expect(await page.evaluate(() => window.__unexpectedSupabaseCalls)).toBe(0)
 })

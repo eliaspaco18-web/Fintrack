@@ -19,6 +19,7 @@ import type {
 }                                   from '@/lib/contracts/ui.contracts'
 import type { OperationType }       from '@/components/transactions/OperationTypeSelector'
 import { getModuleTrigger }         from '@/lib/constants/category-keys'
+import { buildAssetPurchaseModulePayload } from '@/modules/assets/asset-purchase-payload'
 import { zCreateTransactionSchema } from '@/lib/schemas/transaction.schemas'
 import type { CreateTransactionResult }
   from '@/modules/transactions/transaction.service.types'
@@ -157,14 +158,7 @@ export function buildPayload(
     ...base,
     type: 'EXPENSE',
     budget_id: values.budget_id || undefined,
-    asset: sections.assetModule ? {
-      name: values.asset_name!,
-      asset_type: values.asset_type ?? 'OTHER',
-      asset_type_id: values.asset_type_id || undefined,
-      purchase_value: Number(values.amount),
-      serial_number: values.asset_serial || undefined,
-      location: values.asset_location || undefined,
-    } : undefined,
+    asset: sections.assetModule ? buildAssetPurchaseModulePayload(values) : undefined,
     credit: sections.creditModule ? {
       credit_type: values.credit_type ?? 'CREDIT_CARD',
       name: values.credit_name!,

@@ -14,6 +14,11 @@ type AssetTransaction = {
   description: string | null
   source_account?: { id: string; name: string } | null
 } | null
+type TransactionLoadState = {
+  assetId: string
+  status: 'loading' | 'loaded' | 'unavailable' | 'absent'
+  transaction: AssetTransaction
+}
 
 function displayAmount(value: number | null, currency: string) {
   if (value === null) return 'No verificable'
@@ -30,7 +35,15 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-export function AssetRecordContent({ asset, transaction }: { asset: AssetWithTypeInfo; transaction?: AssetTransaction }) {
+export function AssetRecordContent({
+  asset,
+  transactionState,
+  demoMode = false,
+}: {
+  asset: AssetWithTypeInfo
+  transactionState?: TransactionLoadState
+  demoMode?: boolean
+}) {
   const status = getAssetStatusPresentation(asset.status)
   const type = getAssetTypePresentation(asset)
   const currentValue = getRecordedAssetValue(asset)
@@ -71,16 +84,22 @@ export function AssetRecordContent({ asset, transaction }: { asset: AssetWithTyp
 
       <section aria-labelledby="asset-record-origin-heading" className="rounded-panel border border-[var(--ft-border)] bg-[var(--ft-surface)] px-4 sm:px-5">
         <h3 id="asset-record-origin-heading" className="border-b border-[var(--ft-border)] py-3 text-[13px] font-semibold text-[var(--ft-text-strong)]">Origen de compra</h3>
-        {transaction ? (
+        {demoMode ? (
+          <p className="py-3 text-[12px] leading-5 text-[var(--ft-text-muted)]" data-testid="asset-demo-origin-note">Registro ficticio de demostración. No tiene una transacción financiera ni una cuenta de origen real.</p>
+        ) : transactionState?.status === 'loading' ? (
+          <p className="py-3 text-[12px] leading-5 text-[var(--ft-text-muted)]" role="status">Cargando el movimiento y la cuenta de origen…</p>
+        ) : transactionState?.status === 'unavailable' ? (
+          <p className="py-3 text-[12px] leading-5 text-[var(--ft-text-muted)]" role="status">No se pudo consultar el movimiento vinculado. Inténtalo de nuevo más tarde.</p>
+        ) : transactionState?.transaction ? (
           <div className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
-              <p className="truncate text-[13px] font-medium text-[var(--ft-text-strong)]">{transaction.description || 'Compra de activo'}</p>
-              <p className="mt-1 text-[12px] text-[var(--ft-text-muted)]">{transaction.source_account?.name ?? 'Cuenta de origen no disponible'}</p>
+              <p className="truncate text-[13px] font-medium text-[var(--ft-text-strong)]">{transactionState.transaction.description || 'Compra de activo'}</p>
+              <p className="mt-1 text-[12px] text-[var(--ft-text-muted)]">{transactionState.transaction.source_account?.name ?? 'No se registró una cuenta de origen verificable.'}</p>
             </div>
-            <Link className="shrink-0 text-[12px] font-semibold text-[var(--ft-primary)] underline-offset-2 hover:underline" href={`/transactions/${transaction.id}`}>Ver movimiento</Link>
+            <Link className="shrink-0 text-[12px] font-semibold text-[var(--ft-primary)] underline-offset-2 hover:underline" href={`/transactions/${transactionState.transaction.id}`}>Ver movimiento</Link>
           </div>
         ) : (
-          <p className="py-3 text-[12px] leading-5 text-[var(--ft-text-muted)]">No hay una transacción de compra vinculada verificable.</p>
+          <p className="py-3 text-[12px] leading-5 text-[var(--ft-text-muted)]">{asset.transaction_id ? 'El movimiento vinculado no está disponible.' : 'No hay una transacción de compra vinculada.'}</p>
         )}
       </section>
 
