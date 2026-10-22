@@ -6,56 +6,52 @@ import { formatCurrency } from '@/lib/contracts/ui.contracts'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { fetchWithTimeout } from '@/lib/client/fetch-with-timeout'
 import { useToast } from '@/lib/toast/toast'
-import { ActionIconButton } from '@/components/ui/ActionIconButton'
+import { AnchoredActionMenu } from '@/components/ui/AnchoredActionMenu'
 import { AppSelect } from '@/components/ui/AppSelect'
 import { Button } from '@/components/ui/Button'
 import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
 import { RecordModal } from '@/components/ui/RecordModal'
-import { ViewToggle, type ViewMode } from '@/components/ui/ViewToggle'
 import {
-  AmountCell,
   ConfirmDialog,
-  ControlsBar,
   DataErrorBanner,
   DataSearchField,
   DataTable,
   EmptyState,
-  FilterBar,
-  RegisterModule,
-  StatCard,
-  StatGrid,
   StatusBadge,
+  PageLayout,
 } from '@/components/finance'
+import movementStyles from '@/components/tables/TransactionsRound07.module.css'
 import {
   RecurringCreateForm,
   RecurringForm,
   type RecurringRow,
-  recurringTypeIcon,
   recurringTypeTone,
   TYPE_LABELS,
 } from './RecurringForm'
+import styles from './RecurringWorkspace.module.css'
+import { getRecurringOperation, matchesRecurringTab, recurringUseHref, summarizeRecurringRows } from '@/modules/recurring/recurring-presentation'
 
-type TypeFilter = 'all' | 'INCOME' | 'EXPENSE' | 'TRANSFER' | 'RECEIVABLE' | 'PAYABLE'
+type TypeFilter = 'all' | 'INCOME' | 'EXPENSE' | 'TRANSFER' | 'RECEIVABLE' | 'PAYABLE' | 'UNKNOWN'
+type TabFilter = 'all' | 'incoming' | 'outgoing' | 'transfer' | 'other'
+type StatusFilter = 'all' | 'active' | 'inactive'
 
 const TYPE_FILTER_OPTIONS: Array<{ value: TypeFilter; label: string }> = [
-  { value: 'all', label: 'Todos los flujos' },
+  { value: 'all', label: 'Todos los tipos' },
   { value: 'INCOME', label: 'Ingresos' },
   { value: 'EXPENSE', label: 'Egresos' },
   { value: 'TRANSFER', label: 'Transferencias' },
-  { value: 'RECEIVABLE', label: 'Por cobrar' },
-  { value: 'PAYABLE', label: 'Por pagar' },
+  { value: 'RECEIVABLE', label: 'Prestar dinero' },
+  { value: 'PAYABLE', label: 'Recibir préstamo' },
+  { value: 'UNKNOWN', label: 'Otro tipo no clasificado' },
 ]
 
-function normalizeCurrency(currency: string): 'PEN' | 'USD' {
-  return currency === 'USD' ? 'USD' : 'PEN'
-}
-
 function formatRecurringAmount(amount: number, currency: string) {
-  return formatCurrency(amount, normalizeCurrency(currency))
+  if (currency === 'PEN' || currency === 'USD') return formatCurrency(amount, currency)
+  return `${currency || 'Moneda no verificable'} ${new Intl.NumberFormat('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)}`
 }
 
 function recurringAccountLabel(row: RecurringRow) {
-  if (row.type === 'TRANSFER') {
+  if (getRecurringOperation(row) === 'TRANSFER') {
     if (row.source_account?.name && row.destination_account?.name) {
       return `${row.source_account.name} -> ${row.destination_account.name}`
     }
@@ -67,7 +63,7 @@ function recurringAccountLabel(row: RecurringRow) {
 }
 
 function recurringAccountMeta(row: RecurringRow) {
-  if (row.type === 'TRANSFER') {
+  if (getRecurringOperation(row) === 'TRANSFER') {
     if (row.destination_account?.currency && row.destination_account.currency !== row.currency) {
       return `${row.currency} -> ${row.destination_account.currency}`
     }
@@ -80,15 +76,7 @@ function recurringAccountMeta(row: RecurringRow) {
 }
 
 function recurringDescription(row: RecurringRow) {
-  return row.description?.trim() || row.notes?.trim() || 'Plantilla lista para reutilizar en el registro de movimientos.'
-}
-
-function recurringCreatedAt(row: RecurringRow) {
-  return new Intl.DateTimeFormat('es-PE', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  }).format(new Date(row.created_at))
+  return row.description?.trim() || row.notes?.trim() || 'Sin descripción'
 }
 
 function useIcon() {
@@ -109,6 +97,11 @@ function useIcon() {
   )
 }
 
+function typeToneFor(row: RecurringRow) {
+  const operation = getRecurringOperation(row)
+  return operation === 'UNKNOWN' ? 'muted' : recurringTypeTone(operation)
+}
+
 function toNextUrl(pathname: string, params: URLSearchParams): string {
   const qs = params.toString()
   return qs.length > 0 ? `${pathname}?${qs}` : pathname
@@ -125,14 +118,21 @@ export function RecurringWorkspace() {
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
 
-  const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [portfolioId, setPortfolioId] = useState('')
+  const [tabFilter, setTabFilter] = useState<TabFilter>('all')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
 
   const [editTarget, setEditTarget] = useState<RecurringRow | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<RecurringRow | null>(null)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [createDirty, setCreateDirty] = useState(false)
+  const [editDirty, setEditDirty] = useState(false)
+  const [discardTarget, setDiscardTarget] = useState<'create' | 'edit' | null>(null)
+  const [createBusy, setCreateBusy] = useState(false)
+  const [editBusy, setEditBusy] = useState(false)
+  const [formReady, setFormReady] = useState(false)
   const handledCreateRef = useRef(false)
 
   const openFromQuery = searchParams.get('new') === 'template'
@@ -176,8 +176,39 @@ export function RecurringWorkspace() {
 
   const closeCreateModal = useCallback(() => {
     setIsCreateOpen(false)
+    setCreateDirty(false)
+    setDiscardTarget(null)
     clearQuery()
   }, [clearQuery])
+
+  const requestCloseCreate = useCallback(() => {
+    if (createBusy) return
+    if (createDirty) setDiscardTarget('create')
+    else closeCreateModal()
+  }, [closeCreateModal, createBusy, createDirty])
+
+  const requestCloseEdit = useCallback(() => {
+    if (editBusy) return
+    if (editDirty) setDiscardTarget('edit')
+    else {
+      setEditTarget(null)
+      setEditDirty(false)
+    }
+  }, [editBusy, editDirty])
+
+  const openEdit = useCallback((row: RecurringRow) => {
+    setEditDirty(false)
+    setEditTarget(row)
+  }, [])
+
+  const confirmDiscard = useCallback(() => {
+    if (discardTarget === 'create') closeCreateModal()
+    if (discardTarget === 'edit') {
+      setEditTarget(null)
+      setEditDirty(false)
+    }
+    setDiscardTarget(null)
+  }, [closeCreateModal, discardTarget])
 
   useEffect(() => {
     if (openFromQuery) {
@@ -194,9 +225,8 @@ export function RecurringWorkspace() {
     const seen = new Map<string, string>()
 
     rows.forEach(row => {
-      if (row.source_account?.id) {
-        seen.set(row.source_account.id, row.source_account.name)
-      }
+      if (row.source_account?.id) seen.set(row.source_account.id, row.source_account.name)
+      if (row.destination_account?.id) seen.set(row.destination_account.id, row.destination_account.name)
     })
 
     return Array.from(seen.entries()).map(([id, name]) => ({ value: id, label: name }))
@@ -206,8 +236,12 @@ export function RecurringWorkspace() {
     const query = search.trim().toLowerCase()
 
     return rows.filter(row => {
-      if (typeFilter !== 'all' && row.type !== typeFilter) return false
-      if (portfolioId && row.source_account_id !== portfolioId) return false
+      const operation = getRecurringOperation(row)
+      if (!matchesRecurringTab(operation, tabFilter)) return false
+      if (typeFilter !== 'all' && operation !== typeFilter) return false
+      if (statusFilter === 'active' && !row.is_active) return false
+      if (statusFilter === 'inactive' && row.is_active) return false
+      if (portfolioId && row.source_account_id !== portfolioId && row.destination_account_id !== portfolioId) return false
       if (!query) return true
 
       const haystack = [
@@ -226,41 +260,14 @@ export function RecurringWorkspace() {
 
       return haystack.includes(query)
     })
-  }, [portfolioId, rows, search, typeFilter])
+  }, [portfolioId, rows, search, statusFilter, tabFilter, typeFilter])
 
-  const incomingCount = useMemo(
-    () => rows.filter(row => row.type === 'INCOME' || row.type === 'RECEIVABLE').length,
-    [rows],
-  )
-
-  const outgoingCount = useMemo(
-    () => rows.filter(row => row.type === 'EXPENSE' || row.type === 'PAYABLE').length,
-    [rows],
-  )
-
-  const transferCount = useMemo(
-    () => rows.filter(row => row.type === 'TRANSFER').length,
-    [rows],
-  )
-
-  const connectedAccounts = useMemo(() => {
-    const accountIds = new Set<string>()
-
-    rows.forEach(row => {
-      if (row.source_account?.id) accountIds.add(row.source_account.id)
-      if (row.destination_account?.id) accountIds.add(row.destination_account.id)
-    })
-
-    return accountIds.size
-  }, [rows])
+  const counts = useMemo(() => summarizeRecurringRows(rows), [rows])
+  const unknownCount = counts.other
 
   const handleUse = useCallback((row: RecurringRow) => {
-    const params = new URLSearchParams({
-      from_recurring: row.id,
-      type: row.type,
-    })
-
-    router.push(`/transactions/new?${params.toString()}`)
+    const href = recurringUseHref(row)
+    if (href) router.push(href)
   }, [router])
 
   const handleEditSuccess = useCallback((updated: RecurringRow) => {
@@ -268,11 +275,13 @@ export function RecurringWorkspace() {
       previous.map(row => (row.id === updated.id ? { ...row, ...updated } : row)),
     )
     setEditTarget(null)
+    setEditDirty(false)
   }, [])
 
   const handleCreateSuccess = useCallback(async (createdName: string) => {
     toast.success('Plantilla creada', createdName, { persist: false })
     setIsCreateOpen(false)
+    setCreateDirty(false)
     clearQuery()
     await loadRows()
   }, [clearQuery, loadRows, toast])
@@ -311,197 +320,200 @@ export function RecurringWorkspace() {
     setSearch('')
     setTypeFilter('all')
     setPortfolioId('')
+    setStatusFilter('all')
+    setTabFilter('all')
   }, [])
 
-  const hasFilters = search.length > 0 || typeFilter !== 'all' || portfolioId.length > 0
+  const hasFilters = search.length > 0 || typeFilter !== 'all' || portfolioId.length > 0 || statusFilter !== 'all' || tabFilter !== 'all'
+  const summaryReady = !loading && !error
 
   return (
     <>
-      <RegisterModule
-        eyebrow="Plantillas operativas"
-        title="Recurrentes"
-        description="Centraliza las plantillas guardadas para volver a registrar movimientos frecuentes sin romper el contexto financiero del libro."
-        headerMode="content"
-        actions={(
-          <CreateModuleButton
-            href="/recurring?new=template"
-            label="Nuevo recurrente"
-          />
-        )}
-        stats={(
-          <StatGrid>
-            <StatCard
-              label="Plantillas activas"
-              value={String(rows.length)}
-              detail={connectedAccounts > 0 ? `${connectedAccounts} cuentas` : 'Sin cuentas'}
-              caption="Base reusable para pagos, cobros y movimientos internos."
+      <PageLayout className={`max-w-none !gap-0 ${movementStyles.v3ModuleContent}`}>
+        <div className={movementStyles.pageOverview} data-testid="recurring-page-overview">
+          <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <h1 data-ft-route-heading="" tabIndex={-1} className="font-display text-[26px] font-semibold leading-8 tracking-[-0.035em] text-[var(--ft-text-strong)]">Plantillas</h1>
+              <p className="mt-0.5 max-w-2xl text-[12px] leading-5 text-[var(--ft-text-muted)]">Reutiliza un movimiento y revisa los datos antes de registrarlo.</p>
+            </div>
+            <CreateModuleButton
+              onClick={openCreateModal}
+              label="Crear plantilla"
+              className={movementStyles.v3ModulePrimaryAction}
+              testId="recurring-create-button"
             />
-            <StatCard
-              label="Entradas esperadas"
-              value={String(incomingCount)}
-              detail={incomingCount === 0 ? 'Sin ingresos' : 'Ingresos y cobros'}
-              caption="Plantillas destinadas a entradas de efectivo o recuperaciones pendientes."
+          </header>
+
+          <section className={movementStyles.summary} aria-label="Resumen de plantillas" data-testid="recurring-summary">
+            <div className={movementStyles.summaryItem}>
+              <p>Plantillas disponibles</p>
+              <div className={`${movementStyles.summaryValue} tabular-nums`}>{summaryReady ? counts.active : '—'}</div>
+              <span className={movementStyles.summaryDetail}>{summaryReady ? `${counts.inactive} inactivas` : error ? 'Resumen no disponible' : 'Cargando resumen'}</span>
+            </div>
+            <div className={movementStyles.summaryItem}>
+              <p>Entradas y salidas</p>
+              <div className={`${movementStyles.summaryValue} tabular-nums`}>{summaryReady ? `${counts.incoming} / ${counts.outgoing}` : '—'}</div>
+              <span className={movementStyles.summaryDetail}>Ingresos · préstamos recibidos / egresos · dinero prestado</span>
+            </div>
+            <div className={movementStyles.summaryItem}>
+              <p>Transferencias y otros</p>
+              <div className={`${movementStyles.summaryValue} tabular-nums`}>{summaryReady ? `${counts.transfers + counts.other}` : '—'}</div>
+              <span className={movementStyles.summaryDetail}>{summaryReady ? `${counts.transfers} transferencias · ${counts.other} sin clasificar` : error ? 'Resumen no disponible' : 'Cargando resumen'}</span>
+            </div>
+          </section>
+        </div>
+
+        <nav aria-label="Filtrar plantillas por operación" className={styles.tabs} data-testid="recurring-operation-tabs">
+          <button type="button" className={styles.tab} data-active={tabFilter === 'all'} aria-pressed={tabFilter === 'all'} onClick={() => setTabFilter('all')}>Todas</button>
+          <button type="button" className={styles.tab} data-active={tabFilter === 'incoming'} aria-pressed={tabFilter === 'incoming'} onClick={() => setTabFilter('incoming')}>Ingresos y préstamos recibidos</button>
+          <button type="button" className={styles.tab} data-active={tabFilter === 'outgoing'} aria-pressed={tabFilter === 'outgoing'} onClick={() => setTabFilter('outgoing')}>Egresos y dinero prestado</button>
+          <button type="button" className={styles.tab} data-active={tabFilter === 'transfer'} aria-pressed={tabFilter === 'transfer'} onClick={() => setTabFilter('transfer')}>Transferencias</button>
+          {unknownCount > 0 ? <button type="button" className={styles.tab} data-active={tabFilter === 'other'} aria-pressed={tabFilter === 'other'} onClick={() => setTabFilter('other')}>Otras operaciones</button> : null}
+        </nav>
+
+        <div className={`${styles.toolbar} ${movementStyles.controls} ${movementStyles.portfolioFilterBar}`} data-testid="recurring-filter-toolbar">
+          <div className={styles.toolbarMain}>
+            <div className={styles.search}>
+              <DataSearchField value={search} onChange={setSearch} placeholder="Buscar plantilla, descripción o cuenta" aria-label="Buscar plantillas" data-testid="recurring-search" />
+            </div>
+            <AppSelect
+              value={typeFilter}
+              onChange={value => setTypeFilter(value as TypeFilter)}
+              compact
+              matchTriggerWidth
+              searchable={false}
+              className={`filters-control ${styles.typeFilter}`}
+              ariaLabel="Filtrar por tipo de operación"
+              options={TYPE_FILTER_OPTIONS}
             />
-            <StatCard
-              label="Salidas programadas"
-              value={String(outgoingCount)}
-              detail={outgoingCount === 0 ? 'Sin egresos' : 'Pagos y obligaciones'}
-              caption="Compromisos operativos listos para reutilizar cuando toque ejecutarlos."
+            <AppSelect
+              value={portfolioId}
+              onChange={setPortfolioId}
+              compact
+              matchTriggerWidth
+              searchable
+              className={`filters-control ${styles.accountFilter}`}
+              ariaLabel="Filtrar por cuenta"
+              options={[{ value: '', label: 'Todas las cuentas' }, ...portfolioOptions]}
+              searchPlaceholder="Buscar cuenta..."
             />
-            <StatCard
-              label="Transferencias internas"
-              value={String(transferCount)}
-              detail={transferCount === 0 ? 'Sin traslados' : 'Fondos entre cuentas'}
-              caption="Plantillas para mover liquidez entre portafolios o monedas."
+            <AppSelect
+              value={statusFilter}
+              onChange={value => setStatusFilter(value as StatusFilter)}
+              compact
+              matchTriggerWidth
+              searchable={false}
+              className={`filters-control ${styles.statusFilter}`}
+              ariaLabel="Filtrar por estado"
+              options={[{ value: 'all', label: 'Todos los estados' }, { value: 'active', label: 'Disponibles' }, { value: 'inactive', label: 'Inactivas' }]}
             />
-          </StatGrid>
-        )}
-        controls={(
-          <ControlsBar
-            search={(
-              <DataSearchField
-                value={search}
-                onChange={setSearch}
-                placeholder="Buscar plantilla, cuenta o categoria"
-              />
-            )}
-            filters={(
-              <FilterBar>
-                <AppSelect
-                  value={typeFilter}
-                  onChange={value => setTypeFilter(value as TypeFilter)}
-                  compact
-                  searchable={false}
-                  className="w-[210px]"
-                  options={TYPE_FILTER_OPTIONS}
-                />
-                <AppSelect
-                  value={portfolioId}
-                  onChange={setPortfolioId}
-                  compact
-                  className="w-[220px]"
-                  options={[
-                    { value: '', label: 'Todas las cuentas' },
-                    ...portfolioOptions,
-                  ]}
-                  searchPlaceholder="Buscar cuenta..."
-                />
-              </FilterBar>
-            )}
-            viewToggle={<ViewToggle value={viewMode} onChange={setViewMode} id="recurring-view-toggle" />}
-            actions={(
-              <StatusBadge tone="muted" dot={false}>
-                {filtered.length} plantilla{filtered.length === 1 ? '' : 's'}
-              </StatusBadge>
-            )}
-          />
-        )}
-      >
+          </div>
+        </div>
+
         {error ? <DataErrorBanner message={error} onRetry={loadRows} /> : null}
 
         {loading ? (
-          <div className="grid gap-3">
-            {[0, 1, 2].map(item => (
-              <div
-                key={item}
-                className="rounded-[14px] border border-[var(--c-border)] bg-[var(--c-surface)] px-4 py-4"
-              >
-                <div className="flex animate-pulse items-center justify-between gap-4">
-                  <div className="space-y-2">
-                    <div className="h-3 w-24 rounded-full bg-[var(--c-surface-2)]" />
-                    <div className="h-5 w-56 rounded-full bg-[var(--c-surface-2)]" />
-                  </div>
-                  <div className="h-10 w-32 rounded-full bg-[var(--c-surface-2)]" />
-                </div>
-              </div>
-            ))}
+          <div className={styles.table} aria-label="Cargando plantillas" data-testid="recurring-loading">
+            {[0, 1, 2].map(item => <div className={styles.skeletonRow} key={item} aria-hidden="true">{[0, 1, 2, 3, 4].map(cell => <span key={cell} />)}</div>)}
           </div>
         ) : filtered.length === 0 ? (
           <EmptyState
-            title={hasFilters
-              ? 'No encontramos plantillas para esos filtros.'
-              : 'Todavia no tienes recurrentes guardadas.'}
+            title={hasFilters ? 'No encontramos plantillas para esos filtros.' : 'Todavía no tienes plantillas guardadas.'}
             description={hasFilters
-              ? 'Ajusta el tipo, la cuenta o la busqueda para volver a ver las plantillas disponibles.'
-              : 'Crea una transaccion nueva y marca la opcion de guardarla como recurrente para construir tu biblioteca operativa.'}
+              ? 'Ajusta la búsqueda o los filtros para volver a ver las plantillas.'
+              : 'Guarda una operación frecuente como plantilla y revísala cada vez antes de registrarla. No se ejecutan movimientos automáticamente.'}
             action={hasFilters
-              ? {
-                  label: 'Limpiar filtros',
-                  onClick: clearFilters,
-                }
-              : {
-                  label: 'Nueva transacción',
-                  href: '/transactions/new',
-                }}
+              ? { label: 'Limpiar filtros', onClick: clearFilters }
+              : { label: 'Crear plantilla', onClick: openCreateModal }}
           />
-        ) : viewMode === 'list' ? (
-          <DataTable className="overflow-hidden">
-            <div className="hidden border-b border-[var(--c-border)] bg-[var(--c-surface-2)] px-4 py-3 md:grid md:grid-cols-[minmax(0,1.45fr)_minmax(0,1.1fr)_minmax(180px,0.8fr)_auto] md:items-center md:gap-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Plantilla</p>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Flujo y cuenta</p>
-              <p className="text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Monto</p>
-              <p className="text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Acciones</p>
-            </div>
-
-            <div className="divide-y divide-[var(--c-border)]">
-              {filtered.map(row => (
-                <RecurringListRow
-                  key={row.id}
-                  row={row}
-                  busy={busyId === row.id}
-                  onUse={handleUse}
-                  onEdit={setEditTarget}
-                  onDelete={setDeleteTarget}
-                />
-              ))}
+        ) : (
+          <DataTable className={styles.table}>
+            <div role="table" aria-label="Plantillas guardadas">
+              <div className={styles.tableHeader} role="row">
+                <span role="columnheader">Plantilla</span><span role="columnheader">Tipo / cuenta</span><span role="columnheader" className="text-right">Importe</span><span role="columnheader">Estado</span><span role="columnheader" className="text-right">Acciones</span>
+              </div>
+              <div role="rowgroup">
+                {filtered.map(row => (
+                  <RecurringListRow
+                    key={row.id}
+                    row={row}
+                    busy={busyId === row.id}
+                    onUse={handleUse}
+                    onEdit={openEdit}
+                    onDelete={setDeleteTarget}
+                  />
+                ))}
+              </div>
             </div>
           </DataTable>
-        ) : (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {filtered.map(row => (
-              <RecurringCard
-                key={row.id}
-                row={row}
-                busy={busyId === row.id}
-                onUse={handleUse}
-                onEdit={setEditTarget}
-                onDelete={setDeleteTarget}
-              />
-            ))}
-          </div>
         )}
-      </RegisterModule>
+      </PageLayout>
 
       <RecordModal
         open={isCreateOpen}
-        onClose={closeCreateModal}
-        eyebrow="Recurrentes"
-        title="Nueva recurrencia"
-        subtitle="Crea una plantilla operativa standalone manteniendo el cuerpo P5 en zonas paralelas y sin alterar la logica actual."
-        widthClassName="w-[calc(100vw-32px)] max-w-[1080px]"
+        testId="recurring-create-modal"
+        onClose={requestCloseCreate}
+        eyebrow="Plantillas"
+        title="Crear plantilla"
+        subtitle="Guarda los datos de referencia; revisarás y confirmarás cada movimiento al usarla."
+        presentation="workbench"
+        size="lg"
+        overlayClassName={`z-modal ${styles.formWorkbenchOverlay}`}
+        focusTrapActive={discardTarget !== 'create'}
+        preserveFocusOnResume
+        footer={(
+          <div className="flex w-full justify-end gap-3">
+            <Button type="button" variant="secondary" onClick={requestCloseCreate} disabled={createBusy}>Cancelar</Button>
+            <Button type="submit" form="recurring-create-form" variant="primary" loading={createBusy} disabled={createBusy || !formReady}>Crear plantilla</Button>
+          </div>
+        )}
       >
         <RecurringCreateForm
           onSuccess={handleCreateSuccess}
-          onCancel={closeCreateModal}
+          onDirtyChange={setCreateDirty}
+          onBusyChange={setCreateBusy}
+          onReadyChange={setFormReady}
         />
       </RecordModal>
 
       <RecordModal
         open={Boolean(editTarget)}
-        onClose={() => setEditTarget(null)}
-        eyebrow="Recurrentes"
-        title="Editar plantilla recurrente"
-        subtitle="Ajusta el nombre operativo, la descripcion o las notas sin tocar la estructura original del movimiento."
-        widthClassName="w-[calc(100vw-32px)] max-w-[860px]"
+        testId="recurring-edit-modal"
+        onClose={requestCloseEdit}
+        eyebrow="Plantillas"
+        title="Editar plantilla"
+        subtitle="Actualiza el nombre y el contexto; los datos financieros originales permanecen protegidos."
+        presentation="workbench"
+        size="lg"
+        overlayClassName={`z-modal ${styles.formWorkbenchOverlay}`}
+        focusTrapActive={discardTarget !== 'edit'}
+        preserveFocusOnResume
+        footer={(
+          <div className="flex w-full justify-end gap-3">
+            <Button type="button" variant="secondary" onClick={requestCloseEdit} disabled={editBusy}>Cancelar</Button>
+            <Button type="submit" form="recurring-edit-form" variant="primary" loading={editBusy} disabled={editBusy}>Guardar cambios</Button>
+          </div>
+        )}
       >
         {editTarget ? (
           <RecurringForm
             recurring={editTarget}
             onSuccess={handleEditSuccess}
-            onCancel={() => setEditTarget(null)}
+            onDirtyChange={setEditDirty}
+            onBusyChange={setEditBusy}
           />
         ) : null}
       </RecordModal>
+
+      <ConfirmDialog
+        open={Boolean(discardTarget)}
+        title="Descartar cambios"
+        message="Hay cambios sin guardar en esta plantilla. ¿Quieres cerrar sin conservarlos?"
+        onCancel={() => setDiscardTarget(null)}
+        onConfirm={confirmDiscard}
+        confirmLabel="Descartar cambios"
+        cancelLabel="Seguir editando"
+      />
 
       <ConfirmDialog
         open={Boolean(deleteTarget)}
@@ -537,205 +549,70 @@ function RecurringListRow({
   onEdit: (row: RecurringRow) => void
   onDelete: (row: RecurringRow) => void
 }) {
-  const tone = recurringTypeTone(row.type)
+  const operation = getRecurringOperation(row)
+  const tone = typeToneFor(row)
+  const knownOperation = operation !== 'UNKNOWN'
+  const label = knownOperation ? TYPE_LABELS[operation] : 'Tipo no clasificado'
 
   return (
     <article
-      className={`px-4 py-4 transition-[background-color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--c-surface-2)] ${
-        busy ? 'pointer-events-none opacity-50' : ''
-      }`.trim()}
+      className={styles.row}
+      role="row"
+      data-busy={busy ? 'true' : undefined}
+      data-testid={`recurring-row-${row.id}`}
     >
-      <div className="grid gap-4 md:grid-cols-[minmax(0,1.45fr)_minmax(0,1.1fr)_minmax(180px,0.8fr)_auto] md:items-center">
-        <div className="min-w-0">
-          <div className="flex items-start gap-3">
-            <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border ${
-              tone === 'success'
-                ? 'border-[var(--c-success)]/15 bg-[var(--c-success-soft)] text-[var(--c-success)]'
-                : tone === 'danger'
-                  ? 'border-[var(--c-danger)]/15 bg-[var(--c-danger-soft)] text-[var(--c-danger)]'
-                  : tone === 'warning'
-                    ? 'border-[var(--c-warning)]/15 bg-[var(--c-warning-soft)] text-[var(--c-warning)]'
-                    : 'border-[var(--c-info)]/15 bg-[var(--c-info-soft)] text-[var(--c-info)]'
-            }`}>
-              {recurringTypeIcon(row.type)}
-            </div>
-            <div className="min-w-0">
-              <p className="truncate text-[15px] font-semibold tracking-[-0.02em] text-[var(--c-text)]">
-                {row.name}
-              </p>
-              <p className="mt-1 line-clamp-2 text-[12px] leading-5 text-[var(--c-text-muted)]">
-                {recurringDescription(row)}
-              </p>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <StatusBadge tone={row.is_active ? 'success' : 'muted'}>
-                  {row.is_active ? 'Activa' : 'Inactiva'}
-                </StatusBadge>
-                <StatusBadge tone={tone} dot={false}>
-                  {TYPE_LABELS[row.type] ?? row.type}
-                </StatusBadge>
-                {row.category?.name ? (
-                  <StatusBadge tone="muted" dot={false}>
-                    {row.category.name}
-                  </StatusBadge>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="min-w-0">
-          <p className="truncate text-[13px] font-medium text-[var(--c-text)]">
-            {recurringAccountLabel(row)}
-          </p>
-          <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">
-            {recurringAccountMeta(row)}
-          </p>
-          <p className="mt-1 text-[11px] text-[var(--c-text-faint)]">
-            Creada el {recurringCreatedAt(row)}
-          </p>
-        </div>
-
-        <AmountCell
-          label="Monto"
-          value={formatRecurringAmount(row.amount, row.currency)}
-          meta={normalizeCurrency(row.currency)}
-          tone={tone === 'warning' ? 'warning' : tone === 'danger' ? 'danger' : tone === 'success' ? 'success' : 'info'}
-          className="md:justify-self-end"
-        />
-
-        <div className="flex shrink-0 items-center gap-2 md:justify-self-end">
-          <Button
-            type="button"
-            onClick={() => onUse(row)}
-            variant="success"
-            size="sm"
-            leadingIcon={useIcon()}
-            className="shrink-0"
-          >
-            Usar
-          </Button>
-          <ActionIconButton
-            icon="edit"
-            label="Editar plantilla"
-            disabled={busy}
-            onClick={() => onEdit(row)}
-          />
-          <ActionIconButton
-            icon="delete"
-            label="Eliminar plantilla"
-            variant="danger"
-            disabled={busy}
-            onClick={() => onDelete(row)}
-          />
-        </div>
+      <div className={styles.identity} role="cell">
+        <span className={styles.mobileLabel}>Plantilla</span>
+        <p className={styles.identityName}>{row.name}</p>
+        <p className={styles.identityDescription}>{recurringDescription(row)}</p>
       </div>
-    </article>
-  )
-}
 
-function RecurringCard({
-  row,
-  busy,
-  onUse,
-  onEdit,
-  onDelete,
-}: {
-  row: RecurringRow
-  busy: boolean
-  onUse: (row: RecurringRow) => void
-  onEdit: (row: RecurringRow) => void
-  onDelete: (row: RecurringRow) => void
-}) {
-  const tone = recurringTypeTone(row.type)
-
-  return (
-    <article className={busy ? 'pointer-events-none opacity-50' : ''}>
-      <div className="rounded-[16px] border border-[var(--c-border)] bg-[var(--c-surface-2)] p-1">
-        <div className="rounded-[12px] bg-[var(--c-surface)] p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border ${
-                tone === 'success'
-                  ? 'border-[var(--c-success)]/15 bg-[var(--c-success-soft)] text-[var(--c-success)]'
-                  : tone === 'danger'
-                    ? 'border-[var(--c-danger)]/15 bg-[var(--c-danger-soft)] text-[var(--c-danger)]'
-                    : tone === 'warning'
-                      ? 'border-[var(--c-warning)]/15 bg-[var(--c-warning-soft)] text-[var(--c-warning)]'
-                      : 'border-[var(--c-info)]/15 bg-[var(--c-info-soft)] text-[var(--c-info)]'
-              }`}>
-                {recurringTypeIcon(row.type)}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-[15px] font-semibold tracking-[-0.02em] text-[var(--c-text)]">
-                  {row.name}
-                </p>
-                <p className="mt-1 truncate text-[12px] text-[var(--c-text-muted)]">
-                  {recurringAccountLabel(row)}
-                </p>
-              </div>
-            </div>
-            <StatusBadge tone={row.is_active ? 'success' : 'muted'}>
-              {row.is_active ? 'Activa' : 'Inactiva'}
-            </StatusBadge>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <StatusBadge tone={tone} dot={false}>
-              {TYPE_LABELS[row.type] ?? row.type}
-            </StatusBadge>
-            {row.category?.name ? (
-              <StatusBadge tone="muted" dot={false}>
-                {row.category.name}
-              </StatusBadge>
-            ) : null}
-          </div>
-
-          <div className="mt-5">
-            <AmountCell
-              label="Monto listo para usar"
-              value={formatRecurringAmount(row.amount, row.currency)}
-              meta={recurringAccountMeta(row)}
-              align="left"
-              tone={tone === 'warning' ? 'warning' : tone === 'danger' ? 'danger' : tone === 'success' ? 'success' : 'info'}
-            />
-          </div>
-
-          <p className="mt-4 text-[12px] leading-6 text-[var(--c-text-muted)]">
-            {recurringDescription(row)}
-          </p>
-
-          <div className="mt-4 border-t border-[var(--c-border)] pt-4">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-[11px] text-[var(--c-text-faint)]">
-                Creada el {recurringCreatedAt(row)}
-              </p>
-              <div className="flex items-center gap-1.5">
-                <Button
-                  type="button"
-                  onClick={() => onUse(row)}
-                  variant="success"
-                  size="sm"
-                  leadingIcon={useIcon()}
-                >
-                  Usar
-                </Button>
-                <ActionIconButton
-                  icon="edit"
-                  label="Editar plantilla"
-                  disabled={busy}
-                  onClick={() => onEdit(row)}
-                />
-                <ActionIconButton
-                  icon="delete"
-                  label="Eliminar plantilla"
-                  variant="danger"
-                  disabled={busy}
-                  onClick={() => onDelete(row)}
-                />
-              </div>
-            </div>
-          </div>
+      <div className={styles.operation} role="cell">
+        <span className={styles.mobileLabel}>Tipo / cuenta</span>
+        <div className="flex min-w-0 items-center gap-2">
+          <StatusBadge tone={tone} dot={false}>{label}</StatusBadge>
+          {row.category?.name ? <span className="truncate text-[11px] text-[var(--ft-text-muted)]">{row.category.name}</span> : null}
         </div>
+        <p className={styles.operationPrimary}>{recurringAccountLabel(row)}</p>
+        <p className={styles.operationMeta}>{recurringAccountMeta(row)}</p>
+      </div>
+
+      <div className={styles.amount} role="cell">
+        <span className={styles.mobileLabel}>Importe</span>
+        <p className={styles.amountValue}>{formatRecurringAmount(row.amount, row.currency)}</p>
+        <p className={styles.amountMeta}>{row.currency || 'Moneda no verificable'}</p>
+      </div>
+
+      <div className={styles.status} role="cell">
+        <span className={styles.mobileLabel}>Estado</span>
+        <StatusBadge tone={row.is_active ? 'success' : 'muted'}>{row.is_active ? 'Disponible' : 'Inactiva'}</StatusBadge>
+      </div>
+
+      <div className={styles.actions} role="cell">
+        <Button
+          type="button"
+          onClick={() => onUse(row)}
+          variant="primary"
+          size="sm"
+          leadingIcon={useIcon()}
+          className={styles.useAction}
+          disabled={busy || !row.is_active || !knownOperation}
+          title={!knownOperation ? 'No se puede reutilizar un tipo de operación no reconocido' : !row.is_active ? 'Activa la plantilla para poder usarla' : undefined}
+          testId={`recurring-use-${row.id}`}
+        >
+          Usar plantilla
+        </Button>
+        <AnchoredActionMenu
+          label={`Más acciones de ${row.name}`}
+          triggerContent={<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg>}
+          className="h-8 w-8 rounded-control text-[var(--ft-text-muted)] hover:bg-[var(--ft-surface-hover)] hover:text-[var(--ft-text-strong)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]"
+          disabled={busy}
+          align="end"
+          actions={[
+            { id: 'edit', label: 'Editar plantilla', onSelect: () => onEdit(row) },
+            { id: 'delete', label: 'Eliminar plantilla', destructive: true, onSelect: () => onDelete(row) },
+          ]}
+        />
       </div>
     </article>
   )
