@@ -34,6 +34,7 @@ export function AlertCard({
   onToggleRead,
   busy,
 }: AlertCardProps) {
+  const sourceLabel = moduleLabel(source_module)
   const trigger = (
     <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
       <circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" />
@@ -41,9 +42,9 @@ export function AlertCard({
   )
 
   return (
-    <article data-testid={'alert-row-' + id} className={styles.row} data-read={is_read}>
+    <article data-testid={'alert-row-' + id} className={styles.row} data-read={is_read} data-has-context={Boolean(sourceLabel)}>
       <div className={styles.content}>
-        <span className={styles.contextLabel}>{moduleLabel(source_module)}</span>
+        {sourceLabel ? <span data-testid="alert-context-label" className={styles.contextLabel}>{sourceLabel}</span> : null}
         <h3>{title}</h3>
         {message ? <p>{message}</p> : null}
         <div className={styles.metaLine}>
@@ -56,7 +57,7 @@ export function AlertCard({
         </div>
         {href ? (
           <a className={styles.originLink} href={href}>
-            Revisar en {moduleLabel(source_module)}
+            {sourceLabel ? 'Revisar ' + sourceLabel : 'Abrir registro'}
             <span aria-hidden="true">→</span>
           </a>
         ) : null}

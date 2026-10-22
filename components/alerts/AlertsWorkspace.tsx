@@ -268,12 +268,12 @@ export function AlertsWorkspace() {
 
   const originModuleOptions = [
     { value: 'all', label: 'Todos los módulos' },
-    { value: 'credits', label: moduleLabel('credits') },
-    { value: 'budgets', label: moduleLabel('budgets') },
-    { value: 'receivables', label: moduleLabel('receivables') },
-    { value: 'payables', label: moduleLabel('payables') },
-    { value: 'recurring', label: moduleLabel('recurring') },
-    { value: 'alerts', label: moduleLabel('alerts') },
+    { value: 'credits', label: moduleLabel('credits') ?? 'Créditos' },
+    { value: 'budgets', label: moduleLabel('budgets') ?? 'Presupuestos' },
+    { value: 'receivables', label: moduleLabel('receivables') ?? 'Por cobrar' },
+    { value: 'payables', label: moduleLabel('payables') ?? 'Por pagar' },
+    { value: 'recurring', label: moduleLabel('recurring') ?? 'Plantillas' },
+    { value: 'alerts', label: moduleLabel('alerts') ?? 'Avisos' },
   ]
   const manualModuleOptions = originModuleOptions.filter(option => option.value !== 'all')
   const manualSeverityOptions = [
@@ -318,8 +318,16 @@ export function AlertsWorkspace() {
         </nav>
 
         <div className={styles.actionToolbar} data-testid="alerts-secondary-actions">
-          <Button type="button" variant={filtersOpen ? 'secondary' : 'ghost'} size="sm" aria-expanded={filtersOpen} aria-controls="alerts-filters-panel" onClick={() => setFiltersOpen(open => !open)} testId="alerts-filter-toggle">
-            <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16M7 12h10m-7 6h4" /></svg>
+          <Button
+            type="button"
+            variant={filtersOpen ? 'secondary' : 'ghost'}
+            size="sm"
+            leadingIcon={<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16M7 12h10m-7 6h4" /></svg>}
+            aria-expanded={filtersOpen}
+            aria-controls="alerts-filters-panel"
+            onClick={() => setFiltersOpen(open => !open)}
+            testId="alerts-filter-toggle"
+          >
             Filtros{activeFilterCount > 0 ? <span className={styles.filterCount}>{activeFilterCount}</span> : null}
           </Button>
           <div className={styles.bulkActions}>

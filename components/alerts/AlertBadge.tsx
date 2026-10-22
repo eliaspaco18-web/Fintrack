@@ -85,17 +85,18 @@ export function AlertBadge({ type, dotOnly = false, className = '' }: AlertBadge
 }
 
 /** Convierte el nombre del módulo de BD a etiqueta legible */
-export function moduleLabel(module: string): string {
+export function moduleLabel(module: string | null | undefined): string | null {
   const map: Record<string, string> = {
     credits:     'Créditos',
     budgets:     'Presupuestos',
     receivables: 'Por Cobrar',
     payables:    'Por Pagar',
-    recurring:   'Recurrentes',
+    recurring:   'Plantillas',
     alerts:      'Avisos',
     assets:      'Activos',
     transactions:'Movimientos',
     portfolio:   'Cuentas',
   }
-  return map[module] ?? module
+  const normalizedModule = module?.trim().toLowerCase() ?? ''
+  return map[normalizedModule] ?? null
 }

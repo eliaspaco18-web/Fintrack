@@ -58,14 +58,21 @@ test('real alert rows stay readable and actionable across mobile, tablet and des
     const React=window.React; const [read,setRead]=React.useState(false); const [deleted,setDeleted]=React.useState(false);
     const Card=window.__alertsModules['@/components/alerts/AlertCard'].AlertCard;
     if(deleted)return React.createElement('p',null,'Deleted');
-    return React.createElement(Card,{id:'fixture-1',alert_type:'CRITICAL',source_module:'budgets',title:'Aviso de prueba con una descripción suficientemente extensa para comprobar su ajuste responsivo',message:'Este aviso sintético no corresponde a datos personales ni financieros reales.',href:'/budgets?period=2026-10',is_read:read,created_at:'2026-10-20T13:25:00.000Z',dateLabel:'20 oct 2026, 08:25',busy:false,onToggleRead:(_id,next)=>setRead(next),actions:[{id:'delete',label:'Eliminar aviso',destructive:true,onSelect:()=>setDeleted(true)}]});
+    const alertProps={alert_type:'CRITICAL',title:'Aviso de prueba con una descripción suficientemente extensa para comprobar su ajuste responsivo',message:'Este aviso sintético no corresponde a datos personales ni financieros reales.',is_read:read,created_at:'2026-10-20T13:25:00.000Z',dateLabel:'20 oct 2026, 08:25',busy:false,onToggleRead:(_id,next)=>setRead(next),actions:[{id:'delete',label:'Eliminar aviso',destructive:true,onSelect:()=>setDeleted(true)}]};
+    return React.createElement(React.Fragment,null,
+      React.createElement(Card,{...alertProps,id:'fixture-1',source_module:'budgets',href:'/budgets?period=2026-10'}),
+      React.createElement(Card,{...alertProps,id:'fixture-unknown',source_module:'legacy-mystery-module',href:'/budgets?period=2026-10',title:'Aviso sin origen reconocido',message:null})
+    );
   } ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Harness));` })
 
   const row = page.getByTestId('alert-row-fixture-1')
   await expect(row).toBeVisible()
   await expect(row.getByText('Presupuestos', { exact: true })).toBeVisible()
   await expect(row.getByText('Crítica')).toBeVisible()
-  await expect(row.getByRole('link', { name: 'Revisar en Presupuestos' })).toHaveAttribute('href', '/budgets?period=2026-10')
+  await expect(row.getByRole('link', { name: 'Revisar Presupuestos' })).toHaveAttribute('href', '/budgets?period=2026-10')
+  const unknownRow = page.getByTestId('alert-row-fixture-unknown')
+  await expect(unknownRow.getByTestId('alert-context-label')).toHaveCount(0)
+  await expect(unknownRow.getByRole('link', { name: 'Abrir registro' })).toHaveAttribute('href', '/budgets?period=2026-10')
   await expect(row.getByRole('button', { name: 'Marcar leído' })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('alerts-row.png'), fullPage: true })
 

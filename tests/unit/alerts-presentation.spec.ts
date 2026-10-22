@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { filterAlertRows, isValidAlertHref, markAlertsReadIndividually } from '@/components/alerts/alerts-presentation'
+import { moduleLabel } from '@/components/alerts/AlertBadge'
 import { formatManualAlertMessage } from '@/modules/alerts/manual-alert-message'
 
 test.describe('Alerts R1 presentation and bulk reconciliation', () => {
@@ -49,6 +50,13 @@ test.describe('Alerts R1 presentation and bulk reconciliation', () => {
     expect(isValidAlertHref('//outside.example/record')).toBe(false)
     expect(isValidAlertHref('/unknown-module/record')).toBe(false)
     expect(isValidAlertHref(null)).toBe(false)
+  })
+
+  test('uses the approved Plantillas label and does not invent an unknown source label', () => {
+    expect(moduleLabel('recurring')).toBe('Plantillas')
+    expect(moduleLabel('UNKNOWN')).toBeNull()
+    expect(moduleLabel('')).toBeNull()
+    expect(moduleLabel(null)).toBeNull()
   })
 
   test('describes channel and threshold as stored metadata, never as scheduled delivery', () => {
