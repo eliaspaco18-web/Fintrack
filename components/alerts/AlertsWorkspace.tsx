@@ -1,98 +1,89 @@
 'use client'
 
-// =============================================================================
-// components/alerts/AlertsWorkspace.tsx
-// PRD v3 — Módulo 9: Risk Inbox
-// Consolida alertas en una bandeja operativa sobria y priorizable.
-// =============================================================================
-
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import {
-  ControlsBar,
-  DataErrorBanner,
-  DataFilterPreset,
-  DataSearchField,
-  EmptyState,
-  ModuleHeader,
-  PageLayout,
-  StatCard,
-  StatGrid,
-  StatusBadge,
-} from '@/components/finance'
-import {
-  SettingsBadge,
-  SettingsMetric,
-  settingsInputClassName,
-} from '@/components/settings/primitives'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AppSelect } from '@/components/ui/AppSelect'
+import type { AnchoredAction } from '@/components/ui/AnchoredActionMenu'
 import { Button } from '@/components/ui/Button'
+import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
 import { RecordModal } from '@/components/ui/RecordModal'
+import { ConfirmDialog, DataErrorBanner, DataSearchField, EmptyState, PageLayout } from '@/components/finance'
+import { FormActions, FormField, FormSection } from '@/components/forms/primitives'
+import movementStyles from '@/components/tables/TransactionsRound07.module.css'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { fetchWithTimeout } from '@/lib/client/fetch-with-timeout'
 import { useToast } from '@/lib/toast/toast'
-import { AlertFilters, type TypeFilter, type ReadFilter, type ModuleFilter } from './AlertFilters'
+import { AlertFilters, type TypeFilter, type ModuleFilter } from './AlertFilters'
 import { AlertCard } from './AlertCard'
 import { moduleLabel, type AlertSeverity } from './AlertBadge'
+import styles from './AlertsWorkspace.module.css'
+import { filterAlertRows, isValidAlertHref, markAlertsReadIndividually } from './alerts-presentation'
 
-// ─── Tipo público compartido con AlertSummaryBar ──────────────────────────────
 export interface AlertRow {
-  id:               string
-  alert_type:       AlertSeverity
-  source_module:    string
+  id: string
+  alert_type: AlertSeverity
+  source_module: string
   source_record_id: string | null
-  title:            string
-  message:          string | null
-  href:             string | null
-  is_read:          boolean
-  created_at:       string
+  title: string
+  message: string | null
+  href: string | null
+  is_read: boolean
+  created_at: string
 }
 
-function normalizeSearch(text: string) {
-  return text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+type ReadFilter = 'unread' | 'read' | 'all'
+type ManualSeverity = AlertSeverity
+type DiscardTarget = 'create' | null
+
+const MANUAL_ALERT_DEFAULTS = {
+  title: '',
+  module: 'budgets',
+  severity: 'OPERATIONAL' as ManualSeverity,
+  channel: 'inbox_email',
+  threshold: '',
 }
 
-const LIST_GRID_CLASS =
-  'md:grid-cols-[minmax(0,1.6fr)_140px_110px_120px_auto]'
-
-// ─── Componente ───────────────────────────────────────────────────────────────
+function formatAlertDate(value: string) {
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return 'Fecha no disponible'
+  return new Intl.DateTimeFormat('es-PE', {
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  }).format(date)
+}
 
 export function AlertsWorkspace() {
   const { toast } = useToast()
-
-  // ── Datos ───────────────────────────────────────────────────────────────────
-  const [alerts,    setAlerts]    = useState<AlertRow[]>([])
-  const [loading,   setLoading]   = useState(true)
-  const [error,     setError]     = useState<string | null>(null)
-  const [busyId,    setBusyId]    = useState<string | null>(null)
-  const [bulkBusy,  setBulkBusy]  = useState(false)
+  const hasLoadedOnce = useRef(false)
+  const [alerts, setAlerts] = useState<AlertRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [bulkBusy, setBulkBusy] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
-
-  // ── Filtros ─────────────────────────────────────────────────────────────────
-  const [typeFilter,   setTypeFilter]   = useState<TypeFilter>('all')
-  const [readFilter,   setReadFilter]   = useState<ReadFilter>('all')
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
+  const [readFilter, setReadFilter] = useState<ReadFilter>('all')
   const [moduleFilter, setModuleFilter] = useState<ModuleFilter>('all')
   const [query, setQuery] = useState('')
-  const [showManualAlertModal, setShowManualAlertModal] = useState(false)
+  const [showCreateModal, setShowCreateModal] = useState(false)
   const [savingManualAlert, setSavingManualAlert] = useState(false)
-  const [manualRuleTitle, setManualRuleTitle] = useState('Desvío de presupuesto mensual')
-  const [manualModule, setManualModule] = useState('budgets')
-  const [manualSeverity, setManualSeverity] = useState<'CRITICAL' | 'OPERATIONAL'>('OPERATIONAL')
-  const [manualChannel, setManualChannel] = useState('inbox_email')
-  const [manualThreshold, setManualThreshold] = useState('80')
+  const [discardTarget, setDiscardTarget] = useState<DiscardTarget>(null)
+  const [deleteReadConfirmOpen, setDeleteReadConfirmOpen] = useState(false)
+  const [manualTitle, setManualTitle] = useState(MANUAL_ALERT_DEFAULTS.title)
+  const [manualModule, setManualModule] = useState(MANUAL_ALERT_DEFAULTS.module)
+  const [manualSeverity, setManualSeverity] = useState<ManualSeverity>(MANUAL_ALERT_DEFAULTS.severity)
+  const [manualChannel, setManualChannel] = useState(MANUAL_ALERT_DEFAULTS.channel)
+  const [manualThreshold, setManualThreshold] = useState(MANUAL_ALERT_DEFAULTS.threshold)
 
-  // ── Cargar alertas ───────────────────────────────────────────────────────────
   const loadAlerts = useCallback(async () => {
-    setLoading(true)
+    setLoading(!hasLoadedOnce.current)
     setError(null)
     try {
-      const res  = await fetchWithTimeout('/api/alerts', { cache: 'no-store' })
-      const json = await res.json().catch(() => null)
-      if (!res.ok || !json?.ok) throw new Error(getApiErrorMessage(json, 'No se pudieron cargar las alertas'))
+      const response = await fetchWithTimeout('/api/alerts', { cache: 'no-store' })
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.ok) throw new Error(getApiErrorMessage(json, 'No se pudieron cargar los avisos.'))
       setAlerts((json.data as AlertRow[]) ?? [])
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al cargar alertas')
+      hasLoadedOnce.current = true
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Error al cargar los avisos.')
     } finally {
       setLoading(false)
     }
@@ -100,43 +91,33 @@ export function AlertsWorkspace() {
 
   useEffect(() => { void loadAlerts() }, [loadAlerts])
 
-  // ── Filtrado en cliente ──────────────────────────────────────────────────────
+  const unreadCount = alerts.filter(alert => !alert.is_read).length
+  const readCount = alerts.length - unreadCount
+  const criticalUnreadCount = alerts.filter(alert => !alert.is_read && alert.alert_type === 'CRITICAL').length
   const filtered = useMemo(() => {
-    const normalizedQuery = normalizeSearch(query.trim())
-
-    return alerts.filter(a => {
-      if (typeFilter !== 'all' && a.alert_type !== typeFilter) return false
-      if (moduleFilter !== 'all' && a.source_module !== moduleFilter) return false
-
-      if (readFilter === 'read' && !a.is_read) return false
-      if (readFilter === 'unread' && a.is_read) return false
-
-      if (!normalizedQuery) return true
-
-      const haystack = normalizeSearch([
-        a.title,
-        a.message ?? '',
-        moduleLabel(a.source_module),
-      ].join(' '))
-
-      return haystack.includes(normalizedQuery)
-    })
+    return filterAlertRows(alerts, { type: typeFilter, read: readFilter, module: moduleFilter, query })
   }, [alerts, moduleFilter, query, readFilter, typeFilter])
 
-  // ── Acciones individuales ────────────────────────────────────────────────────
+  const resetFilters = useCallback(() => {
+    setQuery('')
+    setTypeFilter('all')
+    setModuleFilter('all')
+    setReadFilter('all')
+  }, [])
+
+  const hasActiveFilters = typeFilter !== 'all' || moduleFilter !== 'all' || readFilter !== 'all' || query.trim().length > 0
+
   const handleToggleRead = useCallback(async (id: string, next: boolean) => {
     setBusyId(id)
     try {
-      const res  = await fetch(`/api/alerts/${id}`, {
-        method:  'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ is_read: next }),
+      const response = await fetch(`/api/alerts/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_read: next }),
       })
-      const json = await res.json().catch(() => null)
-      if (!res.ok || !json?.ok) throw new Error(getApiErrorMessage(json, 'No se pudo actualizar la alerta'))
-      setAlerts(prev => prev.map(a => a.id === id ? { ...a, is_read: next } : a))
-    } catch (e) {
-      toast.error('Error', e instanceof Error ? e.message : 'No se pudo actualizar la alerta')
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.ok) throw new Error(getApiErrorMessage(json, 'No se pudo actualizar el aviso.'))
+      setAlerts(previous => previous.map(alert => alert.id === id ? { ...alert, is_read: next } : alert))
+    } catch (caught) {
+      toast.error('No se pudo actualizar el aviso', caught instanceof Error ? caught.message : 'Inténtalo nuevamente.')
     } finally {
       setBusyId(null)
     }
@@ -145,596 +126,318 @@ export function AlertsWorkspace() {
   const handleDelete = useCallback(async (id: string) => {
     setBusyId(id)
     try {
-      const res = await fetch(`/api/alerts/${id}`, { method: 'DELETE' })
-      if (!res.ok && res.status !== 204) {
-        const json = await res.json().catch(() => null)
-        throw new Error(getApiErrorMessage(json, 'No se pudo eliminar la alerta'))
+      const response = await fetch(`/api/alerts/${id}`, { method: 'DELETE' })
+      if (!response.ok && response.status !== 204) {
+        const json = await response.json().catch(() => null)
+        throw new Error(getApiErrorMessage(json, 'No se pudo eliminar el aviso.'))
       }
-      setAlerts(prev => prev.filter(a => a.id !== id))
-      toast.success('Alerta eliminada', undefined, { persist: false })
-    } catch (e) {
-      toast.error('Error', e instanceof Error ? e.message : 'No se pudo eliminar la alerta')
+      setAlerts(previous => previous.filter(alert => alert.id !== id))
+      toast.success('Aviso eliminado', undefined, { persist: false })
+    } catch (caught) {
+      toast.error('No se pudo eliminar el aviso', caught instanceof Error ? caught.message : 'Inténtalo nuevamente.')
     } finally {
       setBusyId(null)
     }
   }, [toast])
 
-  // ── Acciones bulk ────────────────────────────────────────────────────────────
   const handleMarkAllRead = useCallback(async () => {
-    const unread = alerts.filter(a => !a.is_read)
-    if (unread.length === 0) return
+    const unread = alerts.filter(alert => !alert.is_read)
+    if (!unread.length) return
     setBulkBusy(true)
-    let ok = 0
-    for (const a of unread) {
+    const result = await markAlertsReadIndividually(unread, async id => {
       try {
-        const res = await fetch(`/api/alerts/${a.id}`, {
-          method:  'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ is_read: true }),
+        const response = await fetch(`/api/alerts/${id}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_read: true }),
         })
-        if (res.ok) ok++
-      } catch {/* continue */}
+        const json = await response.json().catch(() => null)
+        return response.ok && json?.ok === true
+      } catch {
+        return false
+      }
+    })
+    if (result.confirmedIds.length) {
+      const confirmed = new Set(result.confirmedIds)
+      setAlerts(previous => previous.map(alert => confirmed.has(alert.id) ? { ...alert, is_read: true } : alert))
     }
-    setAlerts(prev => prev.map(a => !a.is_read ? { ...a, is_read: true } : a))
-    toast.success(`${ok} alerta(s) marcadas como leídas`, undefined, { persist: false })
+    if (result.failedIds.length) {
+      toast.error('Lectura parcial', `${result.confirmedIds.length} confirmado(s) · ${result.failedIds.length} pendiente(s). Puedes reintentar los que siguen sin leerse.`)
+    } else {
+      toast.success(`${result.confirmedIds.length} aviso(s) marcado(s) como leídos`, undefined, { persist: false })
+    }
     setBulkBusy(false)
   }, [alerts, toast])
 
   const handleDeleteRead = useCallback(async () => {
     setBulkBusy(true)
     try {
-      const res = await fetch('/api/alerts', { method: 'DELETE' })
-      if (!res.ok && res.status !== 204) {
-        const json = await res.json().catch(() => null)
-        throw new Error(getApiErrorMessage(json, 'No se pudo eliminar las alertas'))
+      const response = await fetch('/api/alerts', { method: 'DELETE' })
+      if (!response.ok && response.status !== 204) {
+        const json = await response.json().catch(() => null)
+        throw new Error(getApiErrorMessage(json, 'No se pudieron eliminar los avisos leídos.'))
       }
-      setAlerts(prev => prev.filter(a => !a.is_read))
-      toast.success('Alertas leídas eliminadas', undefined, { persist: false })
-    } catch (e) {
-      toast.error('Error', e instanceof Error ? e.message : 'No se pudieron eliminar las alertas')
+      setAlerts(previous => previous.filter(alert => !alert.is_read))
+      setDeleteReadConfirmOpen(false)
+      toast.success(`${readCount} aviso(s) leído(s) eliminado(s)`, undefined, { persist: false })
+    } catch (caught) {
+      toast.error('No se pudieron eliminar los avisos', caught instanceof Error ? caught.message : 'Inténtalo nuevamente.')
     } finally {
       setBulkBusy(false)
     }
-  }, [toast])
+  }, [readCount, toast])
 
-  // ── Generar alertas (on-demand) ──────────────────────────────────────────────
   const handleRefresh = useCallback(async () => {
     setRefreshing(true)
     try {
-      const res  = await fetch('/api/alerts/generate', { method: 'POST' })
-      const json = await res.json().catch(() => null)
-      if (!res.ok || !json?.ok) throw new Error(getApiErrorMessage(json, 'Error al generar alertas'))
+      const response = await fetch('/api/alerts/generate', { method: 'POST' })
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.ok) throw new Error(getApiErrorMessage(json, 'No se pudieron actualizar los avisos.'))
       const { created, skipped } = json.data as { created: number; skipped: number }
-      toast.success(
-        `Alertas actualizadas`,
-        `${created} nueva(s) · ${skipped} ya existente(s)`,
-        { persist: false }
-      )
+      toast.success('Avisos actualizados', `${created} nuevo(s) · ${skipped} ya existente(s)`, { persist: false })
       await loadAlerts()
-    } catch (e) {
-      toast.error('Error', e instanceof Error ? e.message : 'No se pudo generar alertas')
+    } catch (caught) {
+      toast.error('No se pudieron actualizar los avisos', caught instanceof Error ? caught.message : 'Inténtalo nuevamente.')
     } finally {
       setRefreshing(false)
     }
   }, [loadAlerts, toast])
 
   const resetManualAlertForm = useCallback(() => {
-    setManualRuleTitle('Desvío de presupuesto mensual')
-    setManualModule('budgets')
-    setManualSeverity('OPERATIONAL')
-    setManualChannel('inbox_email')
-    setManualThreshold('80')
+    setManualTitle(MANUAL_ALERT_DEFAULTS.title)
+    setManualModule(MANUAL_ALERT_DEFAULTS.module)
+    setManualSeverity(MANUAL_ALERT_DEFAULTS.severity)
+    setManualChannel(MANUAL_ALERT_DEFAULTS.channel)
+    setManualThreshold(MANUAL_ALERT_DEFAULTS.threshold)
   }, [])
+
+  const manualFormDirty = manualTitle !== MANUAL_ALERT_DEFAULTS.title
+    || manualModule !== MANUAL_ALERT_DEFAULTS.module
+    || manualSeverity !== MANUAL_ALERT_DEFAULTS.severity
+    || manualChannel !== MANUAL_ALERT_DEFAULTS.channel
+    || manualThreshold !== MANUAL_ALERT_DEFAULTS.threshold
+
+  const requestCreateClose = useCallback(() => {
+    if (savingManualAlert) return
+    if (manualFormDirty) setDiscardTarget('create')
+    else setShowCreateModal(false)
+  }, [manualFormDirty, savingManualAlert])
+
+  const confirmDiscardCreate = useCallback(() => {
+    resetManualAlertForm()
+    setDiscardTarget(null)
+    setShowCreateModal(false)
+  }, [resetManualAlertForm])
 
   const handleSaveManualAlert = useCallback(async () => {
     if (savingManualAlert) return
-
-    const trimmedTitle = manualRuleTitle.trim()
-    if (trimmedTitle.length < 3) {
-      toast.error('No se pudo guardar la regla', 'El nombre debe tener al menos 3 caracteres.')
+    const trimmedTitle = manualTitle.trim()
+    if (trimmedTitle.length < 3 || trimmedTitle.length > 140) {
+      toast.error('Revisa el título', 'Debe contener entre 3 y 140 caracteres.')
       return
     }
-
+    if (manualThreshold.trim().length > 20) {
+      toast.error('Revisa el umbral de referencia', 'El valor admite hasta 20 caracteres.')
+      return
+    }
     setSavingManualAlert(true)
     try {
-      const res = await fetch('/api/alerts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch('/api/alerts', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: trimmedTitle,
           source_module: manualModule,
           alert_type: manualSeverity,
           channel: manualChannel,
-          threshold: manualThreshold,
+          threshold: manualThreshold.trim() || undefined,
         }),
       })
-      const json = await res.json().catch(() => null)
-
-      if (!res.ok || !json?.ok) {
-        throw new Error(getApiErrorMessage(json, 'No se pudo guardar la regla'))
-      }
-
-      await loadAlerts()
-      setShowManualAlertModal(false)
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.ok) throw new Error(getApiErrorMessage(json, 'No se pudo guardar el aviso.'))
+      const created = json.data as AlertRow | undefined
+      if (created?.id) setAlerts(previous => previous.some(alert => alert.id === created.id) ? previous : [created, ...previous])
+      setShowCreateModal(false)
+      setDiscardTarget(null)
       resetManualAlertForm()
-      toast.success('Regla guardada', 'La alerta manual ya aparece en tu inbox.', { persist: false })
+      toast.success('Aviso guardado', 'Se guardó en la bandeja. Los metadatos no activan reglas ni envíos automáticos.', { persist: false })
+      void loadAlerts()
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : 'No se pudo guardar la regla'
-      toast.error('No se pudo guardar la regla', message)
+      toast.error('No se pudo guardar el aviso', caught instanceof Error ? caught.message : 'Inténtalo nuevamente.')
     } finally {
       setSavingManualAlert(false)
     }
-  }, [loadAlerts, manualChannel, manualModule, manualRuleTitle, manualSeverity, manualThreshold, resetManualAlertForm, savingManualAlert, toast])
+  }, [loadAlerts, manualChannel, manualModule, manualSeverity, manualThreshold, manualTitle, resetManualAlertForm, savingManualAlert, toast])
 
-  // ── Estado vacío ─────────────────────────────────────────────────────────────
-  const hasActiveFilters =
-    typeFilter !== 'all' ||
-    readFilter !== 'all' ||
-    moduleFilter !== 'all' ||
-    query.trim().length > 0
+  const rowsGridClass = styles.alertGrid
+  const originModuleOptions = [
+    { value: 'all', label: 'Todos los módulos' },
+    { value: 'credits', label: moduleLabel('credits') },
+    { value: 'budgets', label: moduleLabel('budgets') },
+    { value: 'receivables', label: moduleLabel('receivables') },
+    { value: 'payables', label: moduleLabel('payables') },
+    { value: 'recurring', label: moduleLabel('recurring') },
+    { value: 'alerts', label: moduleLabel('alerts') },
+  ]
+  const manualModuleOptions = originModuleOptions.filter(option => option.value !== 'all')
+  const manualSeverityOptions = [
+    { value: 'CRITICAL', label: 'Crítica' },
+    { value: 'OPERATIONAL', label: 'Operativa' },
+    { value: 'SUGGESTION', label: 'Sugerencia' },
+  ]
+  const manualChannelOptions = [
+    { value: 'inbox_email', label: 'Inbox + correo (referencia)' },
+    { value: 'inbox', label: 'Solo inbox (referencia)' },
+    { value: 'digest', label: 'Resumen semanal (referencia)' },
+  ]
 
-  const unreadCount = useMemo(() => alerts.filter(a => !a.is_read).length, [alerts])
-  const readCount = alerts.length - unreadCount
-  const criticalUnreadCount = useMemo(
-    () => alerts.filter(a => !a.is_read && a.alert_type === 'CRITICAL').length,
-    [alerts],
-  )
-  const operationalUnreadCount = useMemo(
-    () => alerts.filter(a => !a.is_read && a.alert_type === 'OPERATIONAL').length,
-    [alerts],
-  )
-  const activeModules = useMemo(
-    () => new Set(alerts.filter(a => !a.is_read).map(a => a.source_module)).size,
-    [alerts],
-  )
-  const resolutionRate = alerts.length === 0
-    ? 100
-    : Math.round((readCount / alerts.length) * 100)
-
-  const resetFilters = useCallback(() => {
-    setTypeFilter('all')
-    setReadFilter('all')
-    setModuleFilter('all')
-    setQuery('')
-  }, [])
-
-  const sectionDescription = loading
-    ? 'Actualizando bandeja de riesgo.'
-    : `${filtered.length} alerta(s) visibles de ${alerts.length} registradas.`
-  const manualPreviewTone = manualSeverity === 'CRITICAL' ? 'danger' : 'warning'
-  const manualChannelLabel = manualChannel === 'inbox_email'
-    ? 'Inbox + correo'
-    : manualChannel === 'inbox'
-      ? 'Solo inbox'
-      : 'Resumen semanal'
-  const manualModuleLabel = moduleLabel(manualModule)
+  const createDiscardMessage = 'Los cambios del aviso se descartarán. El aviso solo se guarda manualmente en la bandeja; el canal y el umbral se conservan como metadatos.'
+  const deleteReadCount = `${readCount} aviso${readCount === 1 ? '' : 's'} leído${readCount === 1 ? '' : 's'}`
+  const deleteReadMessage = `Se eliminará${readCount === 1 ? '' : 'n'} ${deleteReadCount} de la bandeja. Los avisos no leídos no se eliminarán.`
 
   return (
     <>
-      <PageLayout
-      className="max-w-[1320px] gap-5"
-      header={(
-        <ModuleHeader
-          eyebrow="Bandeja de riesgo"
-          title="Alertas"
-          description="Vencimientos, desvíos y recordatorios críticos en una sola bandeja priorizable."
-          mode="content"
-          actions={(
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                onClick={() => setShowManualAlertModal(true)}
-                variant="primary"
-                size="md"
-                testId="alerts-create-button"
-              >
-                Nueva alerta
-              </Button>
-              <Button
-                type="button"
-                onClick={() => void handleRefresh()}
-                variant="secondary"
-                size="md"
-                loading={refreshing}
-              >
-                Actualizar inbox
-              </Button>
+      <PageLayout className={`max-w-none !gap-0 ${movementStyles.v3ModuleContent} ${styles.page}`}>
+        <div className={movementStyles.pageOverview} data-testid="alerts-page-overview">
+          <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <h1 data-ft-route-heading="" tabIndex={-1} className="font-display text-[26px] font-semibold leading-8 tracking-[-0.035em] text-[var(--ft-text-strong)]">Avisos</h1>
+              <p className="mt-0.5 max-w-2xl text-[12px] leading-5 text-[var(--ft-text-muted)]">Revisa vencimientos, recordatorios y avisos relacionados con tus finanzas.</p>
             </div>
-          )}
-        />
-      )}
-      stats={(
-        <StatGrid>
-          <StatCard
-            label="Pendientes"
-            value={unreadCount}
-            detail={criticalUnreadCount > 0 ? `${criticalUnreadCount} críticas` : 'Sin críticas'}
-            caption="Alertas activas que todavía requieren atención."
-            tone={unreadCount > 0 ? 'primary' : 'neutral'}
-          />
-          <StatCard
-            label="Críticas activas"
-            value={criticalUnreadCount}
-            detail={criticalUnreadCount > 0 ? 'Escalar hoy' : 'Bandeja estable'}
-            caption="Incidencias con mayor impacto sobre pagos, cobranzas o crédito."
-            tone={criticalUnreadCount > 0 ? 'danger' : 'success'}
-          />
-          <StatCard
-            label="Operativas activas"
-            value={operationalUnreadCount}
-            detail={activeModules > 0 ? `${activeModules} módulos` : 'Sin frentes abiertos'}
-            caption="Tareas de seguimiento que ordenan el flujo financiero diario."
-            tone={operationalUnreadCount > 0 ? 'warning' : 'neutral'}
-          />
-          <StatCard
-            label="Cobertura"
-            value={`${resolutionRate}%`}
-            detail={`${readCount} resueltas`}
-            caption="Porcentaje de alertas ya atendidas dentro de la bandeja."
-            tone={resolutionRate >= 70 ? 'success' : resolutionRate >= 40 ? 'warning' : 'info'}
-          />
-        </StatGrid>
-      )}
-      controls={(
-        <ControlsBar
-          presets={(
-            <>
-              <DataFilterPreset
-                label="Todo"
-                active={!hasActiveFilters}
-                onClick={resetFilters}
-                count={alerts.length}
-              />
-              <DataFilterPreset
-                label="Pendientes"
-                active={readFilter === 'unread' && typeFilter === 'all' && moduleFilter === 'all' && query.trim().length === 0}
-                onClick={() => {
-                  setTypeFilter('all')
-                  setReadFilter('unread')
-                  setModuleFilter('all')
-                  setQuery('')
-                }}
-                count={unreadCount}
-                color="var(--c-primary)"
-              />
-              <DataFilterPreset
-                label="Críticas"
-                active={typeFilter === 'CRITICAL' && readFilter === 'unread' && moduleFilter === 'all' && query.trim().length === 0}
-                onClick={() => {
-                  setTypeFilter('CRITICAL')
-                  setReadFilter('unread')
-                  setModuleFilter('all')
-                  setQuery('')
-                }}
-                count={criticalUnreadCount}
-                color="var(--c-danger)"
-              />
-              <DataFilterPreset
-                label="Resueltas"
-                active={readFilter === 'read' && typeFilter === 'all' && moduleFilter === 'all' && query.trim().length === 0}
-                onClick={() => {
-                  setTypeFilter('all')
-                  setReadFilter('read')
-                  setModuleFilter('all')
-                  setQuery('')
-                }}
-                count={readCount}
-              />
-            </>
-          )}
-          search={(
-            <DataSearchField
-              value={query}
-              onChange={setQuery}
-              placeholder="Buscar por alerta, mensaje o módulo"
-              className="filters-search"
-            />
-          )}
-          filters={(
-            <AlertFilters
-              typeFilter={typeFilter}
-              readFilter={readFilter}
-              moduleFilter={moduleFilter}
-              onTypeChange={setTypeFilter}
-              onReadChange={setReadFilter}
-              onModuleChange={setModuleFilter}
-            />
-          )}
-          actions={alerts.length > 0 ? (
-            <>
-              <Button
-                type="button"
-                disabled={bulkBusy || unreadCount === 0}
-                onClick={() => void handleMarkAllRead()}
-                variant="secondary"
-                size="sm"
-              >
-                Resolver pendientes
+            <div className={styles.headerActions}>
+              <Button type="button" onClick={() => void handleRefresh()} variant="secondary" size="sm" loading={refreshing} className={styles.headerSecondaryAction} testId="alerts-refresh-button">
+                Actualizar
               </Button>
-              <Button
-                type="button"
-                disabled={bulkBusy || readCount === 0}
-                onClick={() => void handleDeleteRead()}
-                variant="danger"
-                size="sm"
-              >
-                Limpiar resueltas
-              </Button>
-            </>
-          ) : null}
-        />
-      )}
-    >
-      {error ? (
-        <DataErrorBanner
-          message={error}
-          onRetry={() => {
-            void loadAlerts()
-          }}
-        />
-      ) : null}
+              <CreateModuleButton onClick={() => { resetManualAlertForm(); setShowCreateModal(true) }} label="Nuevo aviso" className={movementStyles.v3ModulePrimaryAction} testId="alerts-create-button" />
+            </div>
+          </header>
+          <section className={movementStyles.summary} aria-label="Resumen de avisos">
+            <div className={movementStyles.summaryItem}>
+              <p>No leídos</p>
+              <div className={`${movementStyles.summaryValue} tabular-nums`}>{loading && alerts.length === 0 ? '—' : unreadCount}</div>
+              <span className={movementStyles.summaryDetail}>Pendientes de revisión</span>
+            </div>
+            <div className={movementStyles.summaryItem}>
+              <p>Críticos no leídos</p>
+              <div className={`${movementStyles.summaryValue} tabular-nums`}>{loading && alerts.length === 0 ? '—' : criticalUnreadCount}</div>
+              <span className={movementStyles.summaryDetail}>Según severidad registrada</span>
+            </div>
+            <div className={`${movementStyles.summaryItem} ${movementStyles.summaryQualitative}`}>
+              <p>Leídos</p>
+              <div className={`${movementStyles.summaryValue} tabular-nums`}>{loading && alerts.length === 0 ? '—' : readCount}</div>
+              <span className={movementStyles.summaryDetail}>Leer un aviso no cambia el estado financiero relacionado</span>
+            </div>
+          </section>
+        </div>
 
-      <section className="overflow-hidden rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)]">
-        <div className="flex flex-col gap-3 border-b border-[var(--c-border)] bg-[var(--c-surface-2)] px-4 py-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-              Cola operativa
-            </p>
-            <h2 className="mt-1 text-sm font-semibold text-[var(--c-text)]">
-              Riesgos priorizados para actuar sin fricción
-            </h2>
-            <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">
-              {sectionDescription}
-            </p>
+        <nav className={`${movementStyles.tabs} ${styles.statusTabs}`} aria-label="Estado de avisos" data-testid="alerts-status-tabs">
+          {([
+            ['unread', 'No leídos', unreadCount],
+            ['read', 'Leídos', readCount],
+            ['all', 'Todos', alerts.length],
+          ] as const).map(([value, label, count]) => (
+            <button key={value} type="button" aria-pressed={readFilter === value} onClick={() => setReadFilter(value)} className={styles.statusTab} data-active={readFilter === value}>
+              {label}<span className={styles.tabCount}>{count}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className={`${movementStyles.controls} ${movementStyles.portfolioFilterBar} ${styles.filterToolbar}`} data-testid="alerts-filter-toolbar">
+          <div className={`${movementStyles.controlsMain} ${styles.filterToolbarMain}`}>
+            <div className={`${movementStyles.searchControl} ${styles.searchControl}`}>
+              <DataSearchField value={query} onChange={setQuery} placeholder="Buscar por título, detalle o módulo" aria-label="Buscar avisos" data-testid="alerts-search" className={styles.searchInput} />
+            </div>
+            <AlertFilters typeFilter={typeFilter} moduleFilter={moduleFilter} onTypeChange={setTypeFilter} onModuleChange={setModuleFilter} originModuleOptions={originModuleOptions} />
           </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge tone={unreadCount > 0 ? 'primary' : 'muted'} dot={unreadCount > 0}>
-              {unreadCount} pendientes
-            </StatusBadge>
-            {hasActiveFilters ? (
-              <Button type="button" onClick={resetFilters} variant="ghost" size="sm">
-                Limpiar filtros
-              </Button>
-            ) : null}
+          <div className={`${movementStyles.controlsActions} ${styles.bulkActions}`}>
+            <Button type="button" variant="secondary" size="sm" disabled={bulkBusy || unreadCount === 0} onClick={() => void handleMarkAllRead()} testId="alerts-mark-all-read-button">Marcar todos como leídos</Button>
+            <Button type="button" variant="danger" size="sm" disabled={bulkBusy || readCount === 0} onClick={() => setDeleteReadConfirmOpen(true)} testId="alerts-delete-read-button">Eliminar leídos</Button>
           </div>
         </div>
 
-        {loading ? (
-          <div className="divide-y divide-[var(--c-border)]">
-            {[...Array(5)].map((_, index) => (
-              <div
-                key={index}
-                className={`grid gap-3 px-4 py-4 ${LIST_GRID_CLASS}`}
-              >
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <div className="h-7 w-24 animate-pulse rounded-md bg-[var(--c-surface-2)]" />
-                    <div className="h-7 w-20 animate-pulse rounded-md bg-[var(--c-surface-2)]" />
-                  </div>
-                  <div className="h-4 w-4/5 animate-pulse rounded bg-[var(--c-surface-2)]" />
-                  <div className="h-3 w-full animate-pulse rounded bg-[var(--c-surface-2)]" />
-                </div>
-                <div className="h-4 w-24 animate-pulse self-center rounded bg-[var(--c-surface-2)]" />
-                <div className="h-7 w-20 animate-pulse self-center rounded-md bg-[var(--c-surface-2)]" />
-                <div className="h-4 w-16 animate-pulse self-center rounded bg-[var(--c-surface-2)]" />
-                <div className="flex gap-2 md:justify-end">
-                  <div className="h-8 w-16 animate-pulse rounded-lg bg-[var(--c-surface-2)]" />
-                  <div className="h-8 w-24 animate-pulse rounded-lg bg-[var(--c-surface-2)]" />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="p-4">
-            <EmptyState
-              compact
-              title={hasActiveFilters ? 'No hay alertas con este corte.' : 'La bandeja está bajo control.'}
-              description={hasActiveFilters
-                ? 'Ajusta la prioridad, el estado o el módulo para volver a abrir la cola operativa.'
-                : 'Genera alertas nuevas para revisar riesgos, vencimientos y recordatorios desde tus módulos financieros.'}
-              action={hasActiveFilters ? (
-                <Button type="button" onClick={resetFilters} variant="secondary" size="md">
-                  Limpiar filtros
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  onClick={() => void handleRefresh()}
-                  variant="primary"
-                  size="md"
-                  loading={refreshing}
-                >
-                  Actualizar inbox
-                </Button>
-              )}
-            />
-          </div>
-        ) : (
-          <>
-            <div className={`hidden border-b border-[var(--c-border)] px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)] md:grid ${LIST_GRID_CLASS}`}>
-              <span>Detalle</span>
-              <span>Módulo</span>
-              <span>Estado</span>
-              <span>Ingreso</span>
-              <span className="text-right">Acciones</span>
-            </div>
+        {error ? <DataErrorBanner message={error} onRetry={() => void loadAlerts()} /> : null}
 
-            <div>
-              {filtered.map(a => (
-                <AlertCard
-                  key={a.id}
-                  {...a}
-                  busy={busyId === a.id || bulkBusy}
-                  onToggleRead={(id, next) => void handleToggleRead(id, next)}
-                  onDelete={id => void handleDelete(id)}
-                />
-              ))}
+        {error && alerts.length === 0 ? null : <section className={styles.register} aria-labelledby="alerts-register-title" data-testid="alerts-register">
+          <div className={styles.registerHeader}>
+            <div className="min-w-0">
+              <h2 id="alerts-register-title">Avisos financieros</h2>
+              <p>{loading && alerts.length === 0 ? 'Cargando avisos…' : `${filtered.length} de ${alerts.length} aviso(s)`}</p>
             </div>
-          </>
-        )}
-      </section>
+            {hasActiveFilters ? <Button type="button" onClick={resetFilters} variant="ghost" size="sm">Limpiar filtros</Button> : null}
+          </div>
+
+          {loading && alerts.length === 0 ? (
+            <div className={styles.loadingRows} aria-label="Cargando avisos" aria-busy="true">
+              {[0, 1, 2, 3].map(index => <div className={styles.loadingRow} key={index} aria-hidden="true"><span /><span /><span /></div>)}
+            </div>
+          ) : error && alerts.length === 0 ? null : filtered.length === 0 ? (
+            <EmptyState compact title={hasActiveFilters ? 'No hay avisos con estos filtros.' : 'No hay avisos en esta vista.'} description={hasActiveFilters ? 'Prueba otra búsqueda, severidad o módulo de origen.' : 'Los avisos generados o guardados manualmente aparecerán aquí.'} action={hasActiveFilters ? <Button type="button" onClick={resetFilters} variant="secondary" size="md">Limpiar filtros</Button> : null} />
+          ) : (
+            <>
+              <div className={`${styles.tableHeading} ${rowsGridClass}`} aria-hidden="true">
+                <span>Severidad</span><span>Aviso</span><span>Origen</span><span>Fecha</span><span>Estado</span><span className="text-right">Acciones</span>
+              </div>
+              <div className={styles.rows}>
+                {filtered.map(alert => {
+                  const actions: AnchoredAction[] = [{
+                    id: 'delete', label: 'Eliminar aviso', destructive: true, disabled: busyId === alert.id || bulkBusy,
+                    onSelect: () => void handleDelete(alert.id),
+                  }]
+                  return <AlertCard key={alert.id} {...alert} dateLabel={formatAlertDate(alert.created_at)} href={isValidAlertHref(alert.href) ? alert.href : null} busy={busyId === alert.id || bulkBusy} actions={actions} onToggleRead={(id, next) => void handleToggleRead(id, next)} />
+                })}
+              </div>
+            </>
+          )}
+        </section>}
       </PageLayout>
 
       <RecordModal
-        open={showManualAlertModal}
-        onClose={() => {
-          if (savingManualAlert) return
-          setShowManualAlertModal(false)
-        }}
+        open={showCreateModal}
+        onClose={requestCreateClose}
         testId="alerts-create-modal"
-        title="Nueva alerta manual"
-        subtitle="Define una alerta manual, guarda la regla y publícala directamente en tu inbox operativo."
-        eyebrow="Alertas · Standalone"
-        widthClassName="w-[calc(100vw-32px)] max-w-[980px]"
-        bodyClassName="space-y-0"
+        title="Nuevo aviso"
+        eyebrow="Avisos"
+        subtitle="Guarda un aviso manual en tu bandeja."
+        widthClassName="w-[calc(100vw-32px)] max-w-[580px]"
+        size="md"
+        presentation="workbench"
+        focusTrapActive={discardTarget !== 'create'}
+        preserveFocusOnResume
+        bodyClassName="space-y-5"
         footer={(
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="max-w-[42ch] text-[12px] leading-5 text-[var(--c-text-muted)]">
-              La regla crea una alerta manual en tu bandeja para dejar visible el seguimiento mientras definimos automatizaciones más profundas.
-            </p>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="secondary"
-                disabled={savingManualAlert}
-                onClick={() => {
-                  setShowManualAlertModal(false)
-                  resetManualAlertForm()
-                }}
-              >
-                Cerrar
-              </Button>
-              <Button
-                variant="primary"
-                onClick={() => void handleSaveManualAlert()}
-                loading={savingManualAlert}
-                disabled={manualRuleTitle.trim().length < 3}
-                testId="alerts-save-rule-button"
-              >
-                Guardar regla
-              </Button>
-            </div>
-          </div>
+          <FormActions
+            secondaryAction={<Button type="button" variant="secondary" size="md" disabled={savingManualAlert} onClick={requestCreateClose}>Cancelar</Button>}
+            primaryAction={<Button type="button" variant="primary" size="md" loading={savingManualAlert} disabled={manualTitle.trim().length < 3 || manualTitle.trim().length > 140} onClick={() => void handleSaveManualAlert()} testId="alerts-save-rule-button">Guardar aviso</Button>}
+          />
         )}
       >
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <section className="space-y-4">
-            <div className="rounded-[22px] border border-[var(--c-border)] bg-[var(--c-surface-2)] px-4 py-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <SettingsBadge tone="accent">Regla</SettingsBadge>
-                <SettingsBadge tone="neutral">{manualModuleLabel}</SettingsBadge>
-              </div>
-              <p className="mt-3 text-sm leading-6 text-[var(--c-text-muted)]">
-                Define la condición base y el módulo financiero que disparará la alerta. El objetivo aquí es validar la composición de la ventana, no crear nueva lógica operativa.
-              </p>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="space-y-2 md:col-span-2">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--c-text-faint)]">
-                  Nombre de la regla
-                </span>
-                <input
-                  value={manualRuleTitle}
-                  onChange={event => setManualRuleTitle(event.target.value)}
-                  data-testid="alerts-rule-title-input"
-                  className={settingsInputClassName()}
-                />
-              </label>
-
-              <label className="space-y-2">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--c-text-faint)]">
-                  Módulo
-                </span>
-                <select
-                  value={manualModule}
-                  onChange={event => setManualModule(event.target.value)}
-                  data-testid="alerts-rule-module-select"
-                  className={settingsInputClassName()}
-                >
-                  <option value="budgets">Presupuestos</option>
-                  <option value="payables">Cuentas por pagar</option>
-                  <option value="receivables">Cuentas por cobrar</option>
-                  <option value="credits">Créditos</option>
-                </select>
-              </label>
-
-              <label className="space-y-2">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--c-text-faint)]">
-                  Severidad
-                </span>
-                <select
-                  value={manualSeverity}
-                  onChange={event => setManualSeverity(event.target.value as 'CRITICAL' | 'OPERATIONAL')}
-                  data-testid="alerts-rule-severity-select"
-                  className={settingsInputClassName()}
-                >
-                  <option value="OPERATIONAL">Operativa</option>
-                  <option value="CRITICAL">Crítica</option>
-                </select>
-              </label>
-
-              <label className="space-y-2">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--c-text-faint)]">
-                  Umbral
-                </span>
-                <input
-                  value={manualThreshold}
-                  onChange={event => setManualThreshold(event.target.value)}
-                  inputMode="numeric"
-                  data-testid="alerts-rule-threshold-input"
-                  className={settingsInputClassName()}
-                />
-              </label>
-
-              <label className="space-y-2">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--c-text-faint)]">
-                  Entrega
-                </span>
-                <select
-                  value={manualChannel}
-                  onChange={event => setManualChannel(event.target.value)}
-                  data-testid="alerts-rule-channel-select"
-                  className={settingsInputClassName()}
-                >
-                  <option value="inbox_email">Inbox + correo</option>
-                  <option value="inbox">Solo inbox</option>
-                  <option value="digest">Resumen semanal</option>
-                </select>
-              </label>
-            </div>
-          </section>
-
-          <aside className="space-y-3">
-            <div className="rounded-[22px] border border-[var(--c-border)] bg-[var(--c-surface-2)] px-4 py-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <SettingsBadge tone={manualPreviewTone}>Preview</SettingsBadge>
-                <SettingsBadge tone="neutral">{manualChannelLabel}</SettingsBadge>
-              </div>
-              <p className="mt-3 text-sm font-semibold text-[var(--c-text)]">{manualRuleTitle}</p>
-              <p className="mt-1 text-[12px] leading-5 text-[var(--c-text-muted)]">
-                {manualModuleLabel} disparará una alerta {manualSeverity === 'CRITICAL' ? 'crítica' : 'operativa'} cuando el umbral llegue a {manualThreshold}%.
-              </p>
-            </div>
-
-            <SettingsMetric
-              label="Módulo"
-              value={manualModuleLabel}
-              caption="Contexto financiero que originará la señal."
-            />
-            <SettingsMetric
-              label="Entrega"
-              value={manualChannelLabel}
-              caption="Canal estimado para la recepción de la alerta."
-            />
-            <SettingsMetric
-              label="Estado"
-              value="Shell listo"
-              caption="La interacción visual ya quedó separada de la persistencia futura."
-            />
-          </aside>
+        <div className={styles.manualNotice} role="note">
+          El aviso se guarda manualmente. El canal y el umbral, si se completan, quedan como metadatos de referencia; no activan reglas ni envíos automáticos.
         </div>
+        <FormSection title="Contenido del aviso" columns="1" className="gap-y-4">
+          <FormField label="Título" htmlFor="alerts-rule-title" hint={`${manualTitle.trim().length}/140`}>
+            <input id="alerts-rule-title" value={manualTitle} onChange={event => setManualTitle(event.target.value)} maxLength={140} data-testid="alerts-rule-title-input" className="field-base w-full" autoComplete="off" />
+          </FormField>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <FormField label="Módulo relacionado">
+              <AppSelect value={manualModule} onChange={setManualModule} options={manualModuleOptions} ariaLabel="Módulo relacionado" testId="alerts-rule-module-select" compact matchTriggerWidth />
+            </FormField>
+            <FormField label="Severidad">
+              <AppSelect value={manualSeverity} onChange={value => setManualSeverity(value as ManualSeverity)} options={manualSeverityOptions} ariaLabel="Severidad del aviso" testId="alerts-rule-severity-select" compact matchTriggerWidth />
+            </FormField>
+          </div>
+        </FormSection>
+        <FormSection title="Metadatos opcionales" columns="1" className="gap-y-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <FormField label="Umbral de referencia" optional hint="Se guarda como texto informativo; no ejecuta una regla.">
+              <input value={manualThreshold} onChange={event => setManualThreshold(event.target.value)} maxLength={20} data-testid="alerts-rule-threshold-input" className="field-base w-full" inputMode="decimal" />
+            </FormField>
+            <FormField label="Canal asociado" optional hint="Referencia guardada, sin envío automático.">
+              <AppSelect value={manualChannel} onChange={setManualChannel} options={manualChannelOptions} ariaLabel="Canal asociado como metadato" testId="alerts-rule-channel-select" compact matchTriggerWidth />
+            </FormField>
+          </div>
+        </FormSection>
       </RecordModal>
+
+      <ConfirmDialog open={discardTarget === 'create'} title="¿Descartar cambios?" message={createDiscardMessage} onConfirm={confirmDiscardCreate} onCancel={() => setDiscardTarget(null)} confirmLabel="Descartar cambios" cancelLabel="Seguir editando" danger testId="alerts-discard-confirmation" />
+      <ConfirmDialog open={deleteReadConfirmOpen} title="Eliminar avisos leídos" message={deleteReadMessage} onConfirm={() => void handleDeleteRead()} onCancel={() => setDeleteReadConfirmOpen(false)} loading={bulkBusy} danger confirmLabel="Eliminar avisos leídos" testId="alerts-delete-read-confirmation" />
     </>
   )
 }

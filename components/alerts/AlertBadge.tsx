@@ -21,23 +21,23 @@ const BADGE_CONFIG: Record<
   CRITICAL: {
     label: 'Crítica',
     tone: 'danger',
-    color: 'var(--c-danger)',
-    background: 'var(--c-danger-soft)',
-    border: 'color-mix(in srgb, var(--c-danger) 16%, var(--c-border))',
+    color: 'var(--ft-danger)',
+    background: 'var(--ft-danger-soft)',
+    border: 'color-mix(in srgb, var(--ft-danger) 16%, var(--ft-border))',
   },
   OPERATIONAL: {
     label: 'Operativa',
     tone: 'warning',
-    color: 'var(--c-warning)',
-    background: 'var(--c-warning-soft)',
-    border: 'color-mix(in srgb, var(--c-warning) 18%, var(--c-border))',
+    color: 'var(--ft-warning)',
+    background: 'var(--ft-warning-soft)',
+    border: 'color-mix(in srgb, var(--ft-warning) 18%, var(--ft-border))',
   },
   SUGGESTION: {
     label: 'Sugerencia',
     tone: 'info',
-    color: 'var(--c-info)',
-    background: 'var(--c-info-soft)',
-    border: 'color-mix(in srgb, var(--c-info) 18%, var(--c-border))',
+    color: 'var(--ft-info)',
+    background: 'var(--ft-info-soft)',
+    border: 'color-mix(in srgb, var(--ft-info) 18%, var(--ft-border))',
   },
 }
 
@@ -92,6 +92,10 @@ export function moduleLabel(module: string): string {
     receivables: 'Por Cobrar',
     payables:    'Por Pagar',
     recurring:   'Recurrentes',
+    alerts:      'Avisos',
+    assets:      'Activos',
+    transactions:'Movimientos',
+    portfolio:   'Cuentas',
   }
   return map[module] ?? module
 }

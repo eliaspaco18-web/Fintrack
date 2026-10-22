@@ -522,7 +522,7 @@ test.describe('authenticated management connectivity', () => {
     })
   })
 
-  test('can create and resolve a manual alert', async ({ page }) => {
+  test('can create and mark a manual alert as read', async ({ page }) => {
     await loginViaUI(page, credentials!)
 
     const alertTitle = `E2E Manual Alert ${Date.now()}`
@@ -531,9 +531,9 @@ test.describe('authenticated management connectivity', () => {
     const row = page.locator('[data-testid^="alert-row-"]').filter({ hasText: alertTitle }).first()
     await expect(row).toBeVisible({ timeout: 15_000 })
 
-    const resolveButton = row.locator('[data-testid^="alert-toggle-"]')
-    await resolveButton.click()
-    await expect(row.getByText('Resuelta')).toBeVisible({ timeout: 15_000 })
+    const markReadButton = row.locator('[data-testid^="alert-toggle-"]')
+    await markReadButton.click()
+    await expect(row.getByText('Leído')).toBeVisible({ timeout: 15_000 })
   })
 
   test('new receivable keeps linked portfolio visible in debtor detail', async ({ page }) => {

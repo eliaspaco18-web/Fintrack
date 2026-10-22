@@ -1,0 +1,211 @@
+.page {
+  min-width: 0;
+  color: var(--ft-text-strong);
+  font-family: Manrope, system-ui, sans-serif;
+}
+
+.page :global(button),
+.page :global(input) { font-family: inherit; }
+
+.headerActions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.headerSecondaryAction {
+  min-height: 36px;
+  height: 36px;
+  padding: 0 12px;
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.statusTabs {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: stretch;
+  gap: 24px;
+  margin-bottom: 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.statusTabs::-webkit-scrollbar { display: none; }
+
+.statusTab {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: 6px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  padding: 0 0 13px;
+  color: var(--ft-text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.statusTab:hover { color: var(--ft-text-strong); }
+.statusTab[data-active='true'] { border-bottom-color: var(--ft-primary); color: var(--ft-primary); }
+.statusTab:focus-visible { border-radius: 3px; outline: 2px solid var(--ft-primary); outline-offset: 3px; }
+.tabCount { color: var(--ft-text-subtle); font-size: 10px; font-weight: 500; }
+.statusTab[data-active='true'] .tabCount { color: currentColor; }
+
+.filterToolbar { align-items: flex-start; margin-bottom: 14px; }
+.filterToolbarMain { align-items: center; }
+.filterToolbarMain > .searchControl { flex: 1 1 280px; width: auto; min-width: min(100%, 250px); max-width: 520px; }
+.searchInput { display: flex; min-width: 0; flex: 1 1 auto; align-items: center; gap: 8px; }
+.searchInput > :global(svg) { position: static; inset: auto; width: 16px; height: 16px; flex: 0 0 16px; transform: none; color: var(--ft-text-muted); }
+.searchInput :global(input[data-testid='alerts-search']) {
+  display: block;
+  width: 0;
+  min-width: 0;
+  max-width: none;
+  height: 20px;
+  flex: 1 1 auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--ft-text-strong);
+  font-size: 12px;
+  line-height: 18px;
+  box-shadow: none;
+  outline: 0;
+}
+.searchInput :global(input[data-testid='alerts-search']:hover),
+.searchInput :global(input[data-testid='alerts-search']:focus) { border: 0; box-shadow: none; outline: 0; }
+.bulkActions { flex-wrap: wrap; }
+
+.register {
+  min-width: 0;
+  overflow: visible;
+  border: 1px solid var(--ft-border);
+  border-radius: 18px;
+  background: var(--ft-surface);
+  box-shadow: var(--ft-shadow-sm, 0 1px 2px rgb(20 30 35 / 4%));
+}
+
+.registerHeader {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 18px;
+}
+
+.registerHeader h2 {
+  margin: 0;
+  color: var(--ft-text-strong);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+  letter-spacing: -0.02em;
+}
+
+.registerHeader p {
+  margin: 3px 0 0;
+  color: var(--ft-text-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.alertGrid {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 96px minmax(220px, 1fr) minmax(100px, 145px) minmax(150px, 185px) minmax(90px, 110px) minmax(210px, 240px);
+  align-items: center;
+  column-gap: 14px;
+}
+
+.tableHeading {
+  min-height: 36px;
+  border-top: 1px solid var(--ft-border);
+  border-bottom: 1px solid var(--ft-border);
+  background: var(--ft-surface-muted);
+  padding: 0 18px;
+  color: var(--ft-text-subtle);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.rows { min-width: 0; }
+
+.loadingRows { padding: 0 18px; }
+.loadingRow {
+  display: grid;
+  min-height: 74px;
+  grid-template-columns: minmax(120px, 1fr) 1.8fr minmax(100px, .8fr);
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid var(--ft-border);
+}
+.loadingRow span { height: 12px; border-radius: 999px; background: var(--ft-surface-muted); animation: pulse 1.5s ease-in-out infinite; }
+.loadingRow span:first-child { width: 64%; }
+.loadingRow span:last-child { width: 72%; }
+
+.manualNotice {
+  border: 1px solid var(--ft-primary-border, var(--ft-border));
+  border-radius: 12px;
+  background: var(--ft-primary-soft, var(--ft-surface-muted));
+  padding: 11px 13px;
+  color: var(--ft-text-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+@keyframes pulse { 50% { opacity: .5; } }
+
+@media (max-width: 1100px) {
+  .alertGrid {
+    grid-template-columns: 86px minmax(180px, 1fr) minmax(85px, 120px) minmax(130px, 160px) minmax(82px, 100px) 176px;
+    column-gap: 10px;
+  }
+  .tableHeading { padding-inline: 14px; }
+}
+
+@media (max-width: 900px) {
+  .filterToolbar { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .bulkActions { justify-content: flex-start; margin-left: 0; }
+  .tableHeading { display: none; }
+}
+
+@media (max-width: 767px) {
+  .headerActions { width: 100%; justify-content: flex-start; }
+  .headerSecondaryAction { min-height: 44px; height: 44px; }
+  .statusTabs { gap: 20px; }
+  .filterToolbar { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .filterToolbarMain { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .filterToolbarMain > .searchControl { grid-column: 1 / -1; min-width: 0; max-width: none; width: 100%; }
+  .searchInput :global(input[data-testid='alerts-search']) { height: 42px; font-size: 16px; }
+  .bulkActions { justify-content: flex-start; margin-left: 0; }
+  .registerHeader { padding: 13px 14px; }
+  .loadingRows { padding: 0 14px; }
+  .loadingRow { min-height: 68px; grid-template-columns: 1fr 1.4fr; }
+  .loadingRow span:last-child { display: none; }
+}
+
+@media (max-width: 520px) {
+  .headerActions > :global(button) { flex: 1 1 auto; }
+  .bulkActions > :global(button) { flex: 1 1 150px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loadingRow span { animation: none; }
+}
