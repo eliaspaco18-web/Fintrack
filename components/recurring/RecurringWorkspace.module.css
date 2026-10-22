@@ -12,7 +12,7 @@
 
 .tabs::-webkit-scrollbar { display: none; }
 
-.formWorkbenchOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
+.editWorkbenchOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
   width: min(900px, calc(100vw - 24px));
 }
 

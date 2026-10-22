@@ -37,7 +37,7 @@ function compileModule(path: string, moduleId: string, exportNames: string[]) {
   return `(()=>{const React=window.React;${bindings.join('\n')}\n${compiled}\nwindow.__recurringModules[${JSON.stringify(moduleId)}]={...(window.__recurringModules[${JSON.stringify(moduleId)}]||{}),${exportNames.join(',')}};})();`
 }
 
-test('real recurring workspace keeps approved tabs and list geometry across desktop, tablet and mobile', async ({ page }) => {
+test('real recurring workspace uses the approved Income workbench and AppSelect geometry across breakpoints', async ({ page }) => {
   const cssRoot = join(process.cwd(), '.next/static/css')
   const css = readdirSync(cssRoot).filter(file => file.endsWith('.css')).sort().map(file => readFileSync(join(cssRoot, file), 'utf8')).join('\n')
   const movementCss = cssModuleMap(css, 'components/tables/TransactionsRound07.module.css', 'TransactionsRound07')
@@ -64,7 +64,7 @@ test('real recurring workspace keeps approved tabs and list geometry across desk
     window.__recurringModules['@/components/ui/RecordModal']={RecordModal:()=>null};
     window.__recurringModules['@/components/finance']={PageLayout:({children,className})=>React.createElement('div',{className:'mx-auto flex w-full max-w-[1440px] flex-col gap-4 pb-10 '+className},children),DataErrorBanner:({message})=>React.createElement('p',{role:'alert'},message),EmptyState:({title})=>React.createElement('p',null,title),ConfirmDialog:()=>null,StatusBadge:({children})=>React.createElement('span',{className:'inline-flex rounded-full border px-2 py-1 text-xs'},children),DataTable:({children,className=''})=>React.createElement('section',{className:'relative rounded-panel border border-[var(--ft-border)] bg-[var(--ft-surface)] '+className},children),DataSearchField:({value,onChange,placeholder,...props})=>React.createElement('input',{...props,type:'search',value,placeholder,onChange:event=>onChange(event.target.value),className:'h-9 w-full rounded-control border border-[var(--ft-border)] bg-[var(--ft-surface)] px-3 text-[13px]'})};
     window.__recurringModules['@/components/ui/AnchoredActionMenu']={AnchoredActionMenu:({label,triggerContent})=>React.createElement('button',{type:'button','aria-label':label,className:'h-8 w-8'},triggerContent)};
-    window.__recurringModules['@/components/ui/AppSelect']={AppSelect:({value,onChange,options=[],ariaLabel,className})=>React.createElement('select',{value,onChange:event=>onChange(event.target.value),className,'aria-label':ariaLabel},options.map(option=>React.createElement('option',{key:option.value,value:option.value},option.label)))};
+    window.__recurringModules['@/components/ui/AppSelect']={};
     window.__recurringModules['@/components/ui/Button']={Button:({children,onClick,className='',testId,disabled,ariaLabel,type='button',form})=>React.createElement('button',{type,form,onClick,className:'inline-flex h-9 items-center justify-center gap-2 rounded-control px-3 text-xs '+className,'data-testid':testId,'aria-label':ariaLabel,disabled},children)};
     window.__recurringModules['@/components/ui/CreateModuleButton']={CreateModuleButton:({label,onClick,className,testId})=>React.createElement('button',{type:'button',onClick,className:'module-create-btn '+className,'data-testid':testId},label)};
     window.__recurringModules['@/components/forms/primitives']={FormField:({label,children,optional})=>React.createElement('label',{className:'flex flex-col gap-2'},React.createElement('span',null,label,optional?' · Opcional':''),children),FormSection:({title,children,className=''})=>React.createElement('section',{className},React.createElement('h3',null,title),children)};
@@ -78,6 +78,7 @@ test('real recurring workspace keeps approved tabs and list geometry across desk
     window.__recurringModules['@/lib/ui/v3-modal-background']={acquireV3ModalBackground:()=>()=>{}};
     window.__recurringModules['@/components/ui/ConfirmDialog']={};` })
   await page.addScriptTag({ content: compileModule('modules/recurring/recurring-presentation.ts', '@/modules/recurring/recurring-presentation', ['getRecurringOperation','getRecurringDirection','matchesRecurringTab','recurringUseHref','summarizeRecurringRows']) })
+  await page.addScriptTag({ content: compileModule('components/ui/AppSelect.tsx', '@/components/ui/AppSelect', ['AppSelect','resolveAppSelectPortalRoot','getTriggerMatchedMenuStyle','getAdaptiveMenuStyle','filterAppSelectOptions']) })
   await page.addScriptTag({ content: compileModule('components/recurring/RecurringForm.tsx', './RecurringForm', ['RecurringCreateForm','RecurringForm','recurringTypeTone','TYPE_LABELS']) })
   await page.addScriptTag({ content: compileModule('components/ui/RecordModal.tsx', '@/components/ui/RecordModal', ['RecordModal','RecordModalFooter']) })
   await page.addScriptTag({ content: compileModule('components/recurring/RecurringWorkspace.tsx', '@/components/recurring/RecurringWorkspace', ['RecurringWorkspace']) })
@@ -111,7 +112,7 @@ test('real recurring workspace keeps approved tabs and list geometry across desk
       const firstTab = tabs.querySelector<HTMLElement>('button')!
       const toolbar = document.querySelector<HTMLElement>('[data-testid="recurring-filter-toolbar"]')!
       return { viewport: document.documentElement.clientWidth, document: document.documentElement.scrollWidth, tabs: rect('[data-testid="recurring-operation-tabs"]'), tabGap: getComputedStyle(tabs).gap, tabFontSize: getComputedStyle(firstTab).fontSize, tabHeight: Math.round(firstTab.getBoundingClientRect().height), toolbar: rect('[data-testid="recurring-filter-toolbar"]'), list: rect('[data-testid^="recurring-row-"]'), tableWidth: document.querySelector<HTMLElement>('[data-testid^="recurring-row-"]')!.parentElement!.getBoundingClientRect().width, workbench: document.querySelector<HTMLElement>(`.${workbenchOverlayClass} .ft-v3-workbench-wrapper`)?.getBoundingClientRect().width ?? 0, dialog: document.querySelector<HTMLElement>('[data-testid="recurring-create-modal"]')?.getBoundingClientRect().width ?? 0, footer: Boolean(document.querySelector('[data-testid="recurring-create-modal"] [data-record-modal-body] + *')) }
-    }, workspaceCss.formWorkbenchOverlay)
+    }, movementCss.formOverlay)
     console.info(`Recurring geometry ${width}px:`, JSON.stringify(geometry))
     expect(geometry.document).toBeLessThanOrEqual(geometry.viewport)
     expect(geometry.tabs.width).toBeGreaterThan(0)
@@ -119,14 +120,87 @@ test('real recurring workspace keeps approved tabs and list geometry across desk
     expect(geometry.tabFontSize).toBe('12px')
     expect(geometry.list.width).toBeLessThanOrEqual(geometry.tableWidth)
     expect(geometry.workbench).toBeGreaterThan(0)
-    expect(geometry.dialog).toBeGreaterThan(0)
-    expect(geometry.dialog).toBeLessThanOrEqual(geometry.workbench)
+    expect(geometry.dialog).toBe(geometry.workbench)
     expect(geometry.footer).toBe(true)
+    expect(geometry.dialog).toBeLessThanOrEqual(width - 16)
+    const workbenchState = await page.evaluate(() => {
+      const dialog = document.querySelector<HTMLElement>('[data-testid="recurring-create-modal"]')!
+      const wrapper = dialog.closest<HTMLElement>('.ft-v3-workbench-wrapper')!
+      const header = dialog.firstElementChild as HTMLElement
+      const body = dialog.querySelector<HTMLElement>('[data-record-modal-body="true"]')!
+      const footer = body.nextElementSibling as HTMLElement
+      const form = dialog.querySelector<HTMLElement>('#recurring-create-form')!
+      const trigger = form.querySelector<HTMLElement>('.app-select-trigger')!
+      const bodyRect = body.getBoundingClientRect()
+      const footerRect = footer.getBoundingClientRect()
+      const dialogRect = dialog.getBoundingClientRect()
+      const wrapperRect = wrapper.getBoundingClientRect()
+      return {
+        wrapperHeight: Math.round(wrapperRect.height),
+        headerHeight: Math.round(header.getBoundingClientRect().height),
+        headerPaddingLeft: getComputedStyle(header).paddingLeft,
+        bodyOverflowY: getComputedStyle(body).overflowY,
+        bodyWidth: body.clientWidth,
+        bodyScrollWidth: body.scrollWidth,
+        bodyPaddingLeft: getComputedStyle(body).paddingLeft,
+        bodyPaddingTop: getComputedStyle(body).paddingTop,
+        formFont: getComputedStyle(form).fontFamily,
+        triggerHeight: trigger.getBoundingClientRect().height,
+        triggerFont: getComputedStyle(trigger).fontFamily,
+        triggerFontSize: getComputedStyle(trigger).fontSize,
+        triggerRadius: getComputedStyle(trigger).borderRadius,
+        footerBottomGap: Math.round(dialogRect.bottom - footerRect.bottom),
+        bodyFooterGap: Math.round(footerRect.top - bodyRect.bottom),
+        footerBackground: getComputedStyle(footer).backgroundColor,
+      }
+    })
+    expect(workbenchState.bodyOverflowY).toBe('auto')
+    expect(workbenchState.bodyScrollWidth).toBeLessThanOrEqual(workbenchState.bodyWidth)
+    expect(workbenchState.formFont.toLowerCase()).toContain('manrope')
+    expect(workbenchState.triggerFont.toLowerCase()).toContain('manrope')
+    expect(workbenchState.triggerHeight).toBeGreaterThanOrEqual(44)
+    expect(workbenchState.triggerRadius).toBe('6px')
+    expect(workbenchState.wrapperHeight).toBe(width < 768 ? 828 : 908)
+    expect(workbenchState.headerHeight).toBeGreaterThan(0)
+    expect(workbenchState.headerPaddingLeft).toBe(width < 768 ? '18px' : '24px')
+    expect(workbenchState.bodyPaddingLeft).toBe(width < 768 ? '18px' : '24px')
+    expect(workbenchState.bodyPaddingTop).toBe(width < 768 ? '20px' : '22px')
+    expect(workbenchState.footerBottomGap).toBeLessThanOrEqual(1)
+    expect(workbenchState.bodyFooterGap).toBeLessThanOrEqual(1)
+    expect(workbenchState.footerBackground).not.toBe('rgba(0, 0, 0, 0)')
     if (width === 390) expect(geometry.tabs.width).toBeLessThanOrEqual(geometry.viewport)
   }
 
+  const typeSelect = page.locator('[data-testid="recurring-create-modal"] #recurring-create-form .app-select-trigger').nth(1)
+  await typeSelect.click()
+  const typeMenu = page.locator('[data-testid="recurring-create-modal"] .app-select-menu').last()
+  await expect(typeMenu).toBeVisible()
+  await expect(typeMenu.locator('.app-select-search')).toBeVisible()
+  const dropdownGeometry = await typeMenu.evaluate(menu => {
+    const option = menu.querySelector<HTMLElement>('[role="option"]')!
+    const menuRect = menu.getBoundingClientRect()
+    const optionRect = option.getBoundingClientRect()
+    return {
+      width: Math.round(menuRect.width),
+      optionHeight: Math.round(optionRect.height),
+      radius: getComputedStyle(menu).borderRadius,
+      optionFontSize: getComputedStyle(option).fontSize,
+      optionFontFamily: getComputedStyle(option).fontFamily,
+      scrollWidth: menu.scrollWidth,
+      clientWidth: menu.clientWidth,
+    }
+  })
+  expect(dropdownGeometry.width).toBeGreaterThanOrEqual(320)
+  expect(dropdownGeometry.radius).toBe('14px')
+  expect(dropdownGeometry.optionHeight).toBeGreaterThanOrEqual(36)
+  expect(dropdownGeometry.optionFontFamily.toLowerCase()).toContain('manrope')
+  expect(dropdownGeometry.scrollWidth).toBeLessThanOrEqual(dropdownGeometry.clientWidth)
+  await page.keyboard.press('Escape')
+  await expect(typeMenu).toHaveCount(0)
+
   await page.getByLabel('Nombre', { exact: true }).fill('Servicio de prueba')
-  await page.getByLabel('Cuenta de origen').selectOption('a1')
+  await page.getByLabel('Cuenta de origen').click()
+  await page.getByRole('option', { name: 'Cuenta principal · PEN' }).click()
   await page.getByLabel('Importe').fill('125.50')
   await page.getByTestId('recurring-create-modal').getByRole('button', { name: 'Crear plantilla' }).click()
   await expect(page.getByTestId('recurring-create-modal')).toHaveCount(0)

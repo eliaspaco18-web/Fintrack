@@ -458,7 +458,7 @@ export function RecurringWorkspace() {
         subtitle="Guarda los datos de referencia; revisarás y confirmarás cada movimiento al usarla."
         presentation="workbench"
         size="lg"
-        overlayClassName={`z-modal ${styles.formWorkbenchOverlay}`}
+        overlayClassName={`z-modal ${movementStyles.formOverlay}`}
         focusTrapActive={discardTarget !== 'create'}
         preserveFocusOnResume
         footer={(
@@ -485,7 +485,7 @@ export function RecurringWorkspace() {
         subtitle="Actualiza el nombre y el contexto; los datos financieros originales permanecen protegidos."
         presentation="workbench"
         size="lg"
-        overlayClassName={`z-modal ${styles.formWorkbenchOverlay}`}
+        overlayClassName={`z-modal ${styles.editWorkbenchOverlay}`}
         focusTrapActive={discardTarget !== 'edit'}
         preserveFocusOnResume
         footer={(

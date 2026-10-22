@@ -438,7 +438,7 @@ export function RecurringCreateForm({ onSuccess, onDirtyChange, onBusyChange, on
   }
 
   return (
-    <form id="recurring-create-form" onSubmit={event => void handleSubmit(event)} className="space-y-4" data-testid="recurring-create-form">
+    <form id="recurring-create-form" onSubmit={event => void handleSubmit(event)} className="tx-modal-form !space-y-2.5" data-testid="recurring-create-form">
       <FormSection title="Identificación" className="rounded-panel border border-[var(--ft-border)] bg-[var(--ft-surface)] p-4 sm:p-5">
         <div className="grid gap-3 sm:grid-cols-2">
           <FormField label="Nombre">
