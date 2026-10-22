@@ -11,7 +11,8 @@
 
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useToast } from '@/lib/toast/toast'
 import { FormActions, FormField, FormSection } from '@/components/forms/primitives'
 import { CountrySelect, COUNTRIES } from '@/components/ui/CountrySelect'
@@ -19,7 +20,6 @@ import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
 import { ActionIconButton } from '@/components/ui/ActionIconButton'
 import { AppSelect } from '@/components/ui/AppSelect'
 import { Button } from '@/components/ui/Button'
-import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
 import {
   ConfirmDialog,
   DataSearchField,
@@ -83,6 +83,9 @@ function resolveCountryLabel(country: string | null): string {
 // ─── COMPONENT ────────────────────────────────────────────────────────────────
 
 export function CurrenciesManager() {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const { toast } = useToast()
   const [items, setItems] = useState<CurrencyItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -95,6 +98,8 @@ export function CurrenciesManager() {
   const [form, setForm] = useState<CurrencyForm>(EMPTY_FORM)
   const [modalOpen, setModalOpen] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<CurrencyItem | null>(null)
+  const handledQueryOpen = useRef(false)
+  const openFromHeroQuery = searchParams.get('new') === 'currency'
 
   // ─── DATA ─────────────────────────────────────────────────────────────────
 
@@ -147,11 +152,29 @@ export function CurrenciesManager() {
     setModalOpen(true)
   }, [resetForm])
 
+  useEffect(() => {
+    if (!openFromHeroQuery) {
+      handledQueryOpen.current = false
+      return
+    }
+    if (handledQueryOpen.current) return
+    handledQueryOpen.current = true
+    openCreateModal()
+  }, [openCreateModal, openFromHeroQuery])
+
+  const clearCreateQueryParam = useCallback(() => {
+    if (searchParams.get('new') !== 'currency') return
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete('new')
+    router.replace(params.toString() ? `${pathname}?${params.toString()}` : pathname, { scroll: false })
+  }, [pathname, router, searchParams])
+
   const closeModal = useCallback(() => {
     if (saving) return
     setModalOpen(false)
     resetForm()
-  }, [resetForm, saving])
+    clearCreateQueryParam()
+  }, [clearCreateQueryParam, resetForm, saving])
 
   const startEdit = useCallback((item: CurrencyItem) => {
     if (item.is_system) return
@@ -254,8 +277,7 @@ export function CurrenciesManager() {
   return (
     <div className="space-y-5">
       <CatalogTable
-        title="Catálogo de monedas"
-        description="Disponibilidad monetaria para portafolios, transacciones y reportes base."
+        title="Monedas"
         count={filteredItems.length}
         summary={(
           <>
@@ -263,9 +285,6 @@ export function CurrenciesManager() {
             <StatusBadge tone="info">{customCount} personalizadas</StatusBadge>
             <StatusBadge tone="primary">{defaultCount} predeterminadas</StatusBadge>
           </>
-        )}
-        primaryAction={(
-          <CreateModuleButton onClick={openCreateModal} label="Nueva moneda" />
         )}
         search={(
           <DataSearchField
@@ -325,11 +344,6 @@ export function CurrenciesManager() {
             description={query.trim().length > 0
               ? 'Prueba otra búsqueda o cambia el estado para revisar el catálogo completo.'
               : 'Crea la primera moneda personalizada para ampliar el catálogo disponible.'}
-            action={(
-              <Button type="button" onClick={openCreateModal} variant="secondary" size="md">
-                Nueva moneda
-              </Button>
-            )}
           />
         )}
         columns={[

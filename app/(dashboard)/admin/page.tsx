@@ -8,8 +8,8 @@ import type { Metadata } from 'next'
 import { AdminWorkspace } from '@/components/management/AdminWorkspace'
 
 export const metadata: Metadata = {
-  title: 'Administración | FinTrack',
-  description: 'Catálogos base de bancos, monedas, categorías y tipos de activo.',
+  title: 'Catálogos | FinTrack',
+  description: 'Referencias para organizar tus registros financieros.',
 }
 
 export default function AdminPage() {

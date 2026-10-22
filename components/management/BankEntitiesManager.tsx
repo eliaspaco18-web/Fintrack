@@ -33,7 +33,6 @@ import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
 import { ActionIconButton } from '@/components/ui/ActionIconButton'
 import { AppSelect } from '@/components/ui/AppSelect'
 import { Button } from '@/components/ui/Button'
-import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
 import {
   ConfirmDialog,
   DataSearchField,
@@ -352,8 +351,7 @@ export function BankEntitiesManager() {
   return (
     <div className="space-y-5">
       <CatalogTable
-        title="Catálogo de entidades bancarias"
-        description="Instituciones financieras disponibles para portafolio, créditos y trazabilidad de cuentas."
+        title="Entidades"
         count={filtered.length}
         summary={(
           <>
@@ -361,9 +359,6 @@ export function BankEntitiesManager() {
             <StatusBadge tone="muted">{entities.length} registradas</StatusBadge>
             {inactiveCount > 0 ? <StatusBadge tone="warning">{inactiveCount} inactivas</StatusBadge> : null}
           </>
-        )}
-        primaryAction={(
-          <CreateModuleButton onClick={openCreateModal} label="Nueva entidad" testId="bank-entities-create-button" />
         )}
         search={(
           <DataSearchField
@@ -423,11 +418,6 @@ export function BankEntitiesManager() {
             description={query.trim().length > 0
               ? 'Prueba otra búsqueda o revisa el estado seleccionado para ver más resultados.'
               : 'Registra tu primera entidad para conectar portafolios y productos financieros al banco correcto.'}
-            action={(
-              <Button type="button" onClick={openCreateModal} variant="secondary" size="md">
-                Nueva entidad
-              </Button>
-            )}
           />
         )}
         columns={[

@@ -11,7 +11,8 @@
 
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useToast } from '@/lib/toast/toast'
 import { FormActions, FormField, FormSection, OptionalSection } from '@/components/forms/primitives'
 import { FinancialIcon } from '@/components/ui/FinancialIcon'
@@ -21,7 +22,6 @@ import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
 import { ActionIconButton } from '@/components/ui/ActionIconButton'
 import { AppSelect } from '@/components/ui/AppSelect'
 import { Button } from '@/components/ui/Button'
-import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
 import {
   ConfirmDialog,
   DataSearchField,
@@ -76,6 +76,9 @@ function isSystemAssetType(item: AssetTypeItem): boolean {
 // ─── COMPONENT ────────────────────────────────────────────────────────────────
 
 export function AssetTypesManager() {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const { toast } = useToast()
   const [items, setItems] = useState<AssetTypeItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -88,6 +91,8 @@ export function AssetTypesManager() {
   const [form, setForm] = useState<AssetTypeForm>(EMPTY_FORM)
   const [modalOpen, setModalOpen] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<AssetTypeItem | null>(null)
+  const handledQueryOpen = useRef(false)
+  const openFromHeroQuery = searchParams.get('new') === 'asset-type'
 
   // ─── DATA ─────────────────────────────────────────────────────────────────
 
@@ -135,11 +140,29 @@ export function AssetTypesManager() {
     setModalOpen(true)
   }, [resetForm])
 
+  useEffect(() => {
+    if (!openFromHeroQuery) {
+      handledQueryOpen.current = false
+      return
+    }
+    if (handledQueryOpen.current) return
+    handledQueryOpen.current = true
+    openCreateModal()
+  }, [openCreateModal, openFromHeroQuery])
+
+  const clearCreateQueryParam = useCallback(() => {
+    if (searchParams.get('new') !== 'asset-type') return
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete('new')
+    router.replace(params.toString() ? `${pathname}?${params.toString()}` : pathname, { scroll: false })
+  }, [pathname, router, searchParams])
+
   const closeModal = useCallback(() => {
     if (saving) return
     setModalOpen(false)
     resetForm()
-  }, [resetForm, saving])
+    clearCreateQueryParam()
+  }, [clearCreateQueryParam, resetForm, saving])
 
   const startEdit = useCallback((item: AssetTypeItem) => {
     setEditingId(item.id)
@@ -237,8 +260,7 @@ export function AssetTypesManager() {
   return (
     <div className="space-y-5">
       <CatalogTable
-        title="Catálogo de tipos de activo"
-        description="Clasificación base para registrar bienes, patrimonio y posiciones personales."
+        title="Tipos de activo"
         count={filteredItems.length}
         summary={(
           <>
@@ -246,9 +268,6 @@ export function AssetTypesManager() {
             <StatusBadge tone="info">{customCount} personalizados</StatusBadge>
             <StatusBadge tone="muted">{items.length - customCount} del sistema</StatusBadge>
           </>
-        )}
-        primaryAction={(
-          <CreateModuleButton onClick={openCreateModal} label="Nuevo tipo" />
         )}
         search={(
           <DataSearchField
@@ -308,11 +327,6 @@ export function AssetTypesManager() {
             description={query.trim().length > 0
               ? 'Prueba otra búsqueda o cambia el estado para revisar el catálogo completo.'
               : 'Crea un tipo nuevo para clasificar mejor tus activos financieros o patrimoniales.'}
-            action={(
-              <Button type="button" onClick={openCreateModal} variant="secondary" size="md">
-                Nuevo tipo
-              </Button>
-            )}
           />
         )}
         columns={[

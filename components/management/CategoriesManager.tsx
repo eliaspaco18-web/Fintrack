@@ -14,7 +14,8 @@
 'use client'
 
 import Image from 'next/image'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '@/lib/toast/toast'
 import { FormActions, FormField, FormSection, OptionalSection } from '@/components/forms/primitives'
 import { FinancialIcon } from '@/components/ui/FinancialIcon'
@@ -25,7 +26,6 @@ import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
 import { ActionIconButton } from '@/components/ui/ActionIconButton'
 import { AppSelect } from '@/components/ui/AppSelect'
 import { Button } from '@/components/ui/Button'
-import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
 import {
   ConfirmDialog,
   DataSearchField,
@@ -114,6 +114,9 @@ function getOriginBadge(category: CategoryItem): { tone: 'muted' | 'info'; label
 // ─── COMPONENT ────────────────────────────────────────────────────────────────
 
 export function CategoriesManager() {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const supabase = useMemo(() => createClient(), [])
   const { toast } = useToast()
   const [categories, setCategories] = useState<CategoryItem[]>([])
@@ -129,6 +132,8 @@ export function CategoriesManager() {
   const [scopeFilter, setScopeFilter] = useState<'all' | CategoryScope>('all')
   const [rowActionId, setRowActionId] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<CategoryItem | null>(null)
+  const handledQueryOpenRef = useRef(false)
+  const openFromHeroQuery = searchParams.get('new') === 'category'
 
   // ─── DATA LOADING ─────────────────────────────────────────────────────────
 
@@ -203,11 +208,29 @@ export function CategoriesManager() {
     setModalOpen(true)
   }, [resetForm])
 
+  useEffect(() => {
+    if (!openFromHeroQuery) {
+      handledQueryOpenRef.current = false
+      return
+    }
+    if (handledQueryOpenRef.current) return
+    handledQueryOpenRef.current = true
+    openCreateModal()
+  }, [openCreateModal, openFromHeroQuery])
+
+  const clearCreateQueryParam = useCallback(() => {
+    if (searchParams.get('new') !== 'category') return
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete('new')
+    router.replace(params.toString() ? `${pathname}?${params.toString()}` : pathname, { scroll: false })
+  }, [pathname, router, searchParams])
+
   const closeModal = useCallback(() => {
     if (saving) return
     setModalOpen(false)
     resetForm()
-  }, [resetForm, saving])
+    clearCreateQueryParam()
+  }, [clearCreateQueryParam, resetForm, saving])
 
   const startEdit = useCallback((category: CategoryItem) => {
     if (isProtectedCategory(category)) return
@@ -306,8 +329,7 @@ export function CategoriesManager() {
   return (
     <div className="space-y-5">
       <CatalogTable
-        title="Catálogo de categorías"
-        description="Estructura de clasificación para ingresos, egresos y lectura financiera transversal."
+        title="Categorías"
         count={filtered.length}
         summary={(
           <>
@@ -316,9 +338,6 @@ export function CategoriesManager() {
             <StatusBadge tone="info">{userCategories.length} personalizadas</StatusBadge>
             {protectedCount > 0 ? <StatusBadge tone="muted">{protectedCount} protegidas</StatusBadge> : null}
           </>
-        )}
-        primaryAction={(
-          <CreateModuleButton onClick={openCreateModal} label="Nueva categoría" />
         )}
         search={(
           <DataSearchField
@@ -378,11 +397,6 @@ export function CategoriesManager() {
             description={query.trim().length > 0
               ? 'Prueba otra búsqueda o cambia el alcance para revisar el catálogo completo.'
               : 'Crea una categoría nueva para afinar el orden financiero de tus movimientos.'}
-            action={(
-              <Button type="button" onClick={openCreateModal} variant="secondary" size="md">
-                Nueva categoría
-              </Button>
-            )}
           />
         )}
         columns={[

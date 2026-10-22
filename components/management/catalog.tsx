@@ -4,22 +4,20 @@ import type { ReactNode } from 'react'
 import {
   DataErrorBanner,
   EmptyState,
-  ModuleHeader,
-  type ModuleHeaderMode,
   PageLayout,
 } from '@/components/finance'
+import assetsStyles from '@/components/assets/AssetsListPanel.module.css'
+import movementStyles from '@/components/tables/TransactionsRound07.module.css'
 
 export interface CatalogNavItem<T extends string> {
   key: T
   label: string
-  description: string
-  icon: ReactNode
 }
 
 export function CatalogAdminLayout<T extends string>({
   title,
   description,
-  headerMode = 'full',
+  action,
   nav,
   activeKey,
   onSelect,
@@ -27,7 +25,7 @@ export function CatalogAdminLayout<T extends string>({
 }: {
   title: string
   description: string
-  headerMode?: ModuleHeaderMode
+  action?: ReactNode
   nav: CatalogNavItem<T>[]
   activeKey: T
   onSelect: (key: T) => void
@@ -35,59 +33,34 @@ export function CatalogAdminLayout<T extends string>({
 }) {
   return (
     <PageLayout
-      className="max-w-[1320px] gap-5"
+      className={`max-w-none !gap-0 ${movementStyles.v3ModuleContent}`}
       header={(
-        <ModuleHeader
-          eyebrow="Catálogos base"
-          title={title}
-          description={description}
-          mode={headerMode}
-        />
+        <header className="flex flex-col gap-3 pb-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="font-display text-[26px] font-semibold leading-8 tracking-[-0.035em] text-[var(--ft-text-strong)]">{title}</h1>
+            <p className="mt-0.5 max-w-2xl text-[12px] leading-5 text-[var(--ft-text-muted)]">{description}</p>
+          </div>
+          {action ? <div className="flex w-full items-center sm:w-auto sm:shrink-0">{action}</div> : null}
+        </header>
       )}
     >
-      <section className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-2">
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-          {nav.map(item => {
-            const active = item.key === activeKey
+      <nav aria-label="Catálogos" className={`${movementStyles.tabs} ${assetsStyles.tabs} mb-3`} data-testid="catalog-tabs">
+        {nav.map(item => (
+          <button
+            key={item.key}
+            type="button"
+            aria-current={item.key === activeKey ? 'page' : undefined}
+            aria-pressed={item.key === activeKey}
+            data-active={item.key === activeKey}
+            className={assetsStyles.tab}
+            onClick={() => onSelect(item.key)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
 
-            return (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => onSelect(item.key)}
-                className={`
-                  ui-pressable flex items-start gap-3 rounded-lg border px-3.5 py-3 text-left
-                  transition-[border-color,background-color,color,transform] duration-150
-                  ${active
-                    ? 'border-[var(--c-primary-border)] bg-[var(--c-primary-soft)] text-[var(--c-text)]'
-                    : 'border-transparent bg-transparent text-[var(--c-text-muted)] hover:border-[var(--c-border)] hover:bg-[var(--c-surface-2)] hover:text-[var(--c-text)]'}
-                `}
-              >
-                <span
-                  className={`
-                    flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border
-                    ${active
-                      ? 'border-[var(--c-primary-border)] bg-[var(--c-surface)] text-[var(--c-primary)]'
-                      : 'border-[var(--c-border)] bg-[var(--c-surface-2)] text-[var(--c-text-muted)]'}
-                  `}
-                >
-                  {item.icon}
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-[12.5px] font-semibold text-[var(--c-text)]">
-                    {item.label}
-                  </span>
-                  <span className="mt-1 block text-[11px] leading-5 text-[var(--c-text-muted)]">
-                    {item.description}
-                  </span>
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      </section>
-
-      <div className="animate-fade-in">
+      <div className="min-w-0 pt-1">
         {children}
       </div>
     </PageLayout>

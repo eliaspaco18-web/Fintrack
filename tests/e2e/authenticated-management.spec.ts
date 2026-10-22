@@ -41,6 +41,7 @@ async function createPortfolioAccount(page: Page, accountName: string) {
 
 async function createCategory(page: Page, categoryName: string) {
   await page.goto('/admin')
+  await page.getByTestId('categories-create-button').click()
   await expect(page.getByTestId('categories-form')).toBeVisible()
 
   await page.getByTestId('categories-name-input').fill(categoryName)
