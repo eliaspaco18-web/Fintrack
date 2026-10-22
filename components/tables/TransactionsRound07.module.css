@@ -1359,8 +1359,8 @@
 .formOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
   width: min(580px, calc(100vw - 24px));
   max-width: min(580px, calc(100vw - 24px));
-  height: calc(100dvh - 52px);
-  margin: 40px 12px 12px auto;
+  height: calc(100dvh - 24px);
+  margin: 12px 12px 12px auto;
 }
 
 .formOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-ft-workbench]) {
@@ -1434,8 +1434,8 @@
 
 .astraOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
   width: min(580px, calc(100vw - 24px));
-  height: calc(100dvh - 52px);
-  margin: 40px 12px 12px;
+  height: calc(100dvh - 24px);
+  margin: 12px;
 }
 
 .astraOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-ft-workbench] > :first-child) {

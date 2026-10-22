@@ -111,7 +111,11 @@ test('real recurring workspace uses the approved Income workbench and AppSelect 
       const tabs = document.querySelector<HTMLElement>('[data-testid="recurring-operation-tabs"]')!
       const firstTab = tabs.querySelector<HTMLElement>('button')!
       const toolbar = document.querySelector<HTMLElement>('[data-testid="recurring-filter-toolbar"]')!
-      return { viewport: document.documentElement.clientWidth, document: document.documentElement.scrollWidth, tabs: rect('[data-testid="recurring-operation-tabs"]'), tabGap: getComputedStyle(tabs).gap, tabFontSize: getComputedStyle(firstTab).fontSize, tabHeight: Math.round(firstTab.getBoundingClientRect().height), toolbar: rect('[data-testid="recurring-filter-toolbar"]'), list: rect('[data-testid^="recurring-row-"]'), tableWidth: document.querySelector<HTMLElement>('[data-testid^="recurring-row-"]')!.parentElement!.getBoundingClientRect().width, workbench: document.querySelector<HTMLElement>(`.${workbenchOverlayClass} .ft-v3-workbench-wrapper`)?.getBoundingClientRect().width ?? 0, dialog: document.querySelector<HTMLElement>('[data-testid="recurring-create-modal"]')?.getBoundingClientRect().width ?? 0, footer: Boolean(document.querySelector('[data-testid="recurring-create-modal"] [data-record-modal-body] + *')) }
+      const workbench = document.querySelector<HTMLElement>(`.${workbenchOverlayClass} .ft-v3-workbench-wrapper`)
+      const workbenchRect = workbench?.getBoundingClientRect()
+      const dialog = document.querySelector<HTMLElement>('[data-testid="recurring-create-modal"]')
+      const dialogRect = dialog?.getBoundingClientRect()
+      return { viewport: document.documentElement.clientWidth, document: document.documentElement.scrollWidth, viewportHeight: window.innerHeight, tabs: rect('[data-testid="recurring-operation-tabs"]'), tabGap: getComputedStyle(tabs).gap, tabFontSize: getComputedStyle(firstTab).fontSize, tabHeight: Math.round(firstTab.getBoundingClientRect().height), toolbar: rect('[data-testid="recurring-filter-toolbar"]'), list: rect('[data-testid^="recurring-row-"]'), tableWidth: document.querySelector<HTMLElement>('[data-testid^="recurring-row-"]')!.parentElement!.getBoundingClientRect().width, workbench: workbenchRect ? { x: workbenchRect.x, y: workbenchRect.y, width: workbenchRect.width, height: workbenchRect.height, bottom: window.innerHeight - workbenchRect.bottom } : null, dialog: dialogRect ? { x: dialogRect.x, y: dialogRect.y, width: dialogRect.width, height: dialogRect.height, bottom: window.innerHeight - dialogRect.bottom } : null, footer: Boolean(document.querySelector('[data-testid="recurring-create-modal"] [data-record-modal-body] + *')) }
     }, movementCss.formOverlay)
     console.info(`Recurring geometry ${width}px:`, JSON.stringify(geometry))
     expect(geometry.document).toBeLessThanOrEqual(geometry.viewport)
@@ -119,10 +123,39 @@ test('real recurring workspace uses the approved Income workbench and AppSelect 
     expect(geometry.tabGap).toBe('24px')
     expect(geometry.tabFontSize).toBe('12px')
     expect(geometry.list.width).toBeLessThanOrEqual(geometry.tableWidth)
-    expect(geometry.workbench).toBeGreaterThan(0)
-    expect(geometry.dialog).toBe(geometry.workbench)
+    expect(geometry.workbench?.width).toBeGreaterThan(0)
+    expect(geometry.dialog?.width).toBe(geometry.workbench?.width)
     expect(geometry.footer).toBe(true)
-    expect(geometry.dialog).toBeLessThanOrEqual(width - 16)
+    expect(geometry.dialog?.width).toBeLessThanOrEqual(width - 16)
+    const expectedGap = width < 768 ? 8 : 12
+    expect(geometry.workbench?.y).toBeCloseTo(expectedGap, 0)
+    expect(geometry.workbench?.bottom).toBeCloseTo(expectedGap, 0)
+    expect(geometry.workbench?.height).toBeCloseTo(geometry.viewportHeight - expectedGap * 2, 0)
+    expect(geometry.dialog?.y).toBeCloseTo(geometry.workbench?.y ?? 0, 0)
+    expect(geometry.dialog?.bottom).toBeCloseTo(geometry.workbench?.bottom ?? 0, 0)
+    const astraGeometry = await page.evaluate(astraOverlayClass => {
+      const dialog = document.querySelector<HTMLElement>('[data-testid="recurring-create-modal"]')!
+      const overlay = dialog.closest<HTMLElement>('[data-ft-workbench-overlay]')!
+      const originalClassName = overlay.className
+      overlay.className = `app-modal-overlay ${astraOverlayClass}`
+      const wrapper = dialog.closest<HTMLElement>('.ft-v3-workbench-wrapper')!
+      const wrapperRect = wrapper.getBoundingClientRect()
+      const dialogRect = dialog.getBoundingClientRect()
+      const result = {
+        wrapperTop: wrapperRect.top,
+        wrapperBottom: window.innerHeight - wrapperRect.bottom,
+        wrapperHeight: wrapperRect.height,
+        dialogTop: dialogRect.top,
+        dialogBottom: window.innerHeight - dialogRect.bottom,
+      }
+      overlay.className = originalClassName
+      return result
+    }, movementCss.astraOverlay)
+    expect(astraGeometry.wrapperTop).toBeCloseTo(expectedGap, 0)
+    expect(astraGeometry.wrapperBottom).toBeCloseTo(expectedGap, 0)
+    expect(astraGeometry.wrapperHeight).toBeCloseTo(geometry.viewportHeight - expectedGap * 2, 0)
+    expect(astraGeometry.dialogTop).toBeCloseTo(expectedGap, 0)
+    expect(astraGeometry.dialogBottom).toBeCloseTo(expectedGap, 0)
     const workbenchState = await page.evaluate(() => {
       const dialog = document.querySelector<HTMLElement>('[data-testid="recurring-create-modal"]')!
       const wrapper = dialog.closest<HTMLElement>('.ft-v3-workbench-wrapper')!
@@ -137,6 +170,10 @@ test('real recurring workspace uses the approved Income workbench and AppSelect 
       const wrapperRect = wrapper.getBoundingClientRect()
       return {
         wrapperHeight: Math.round(wrapperRect.height),
+        wrapperTopGap: wrapperRect.top,
+        wrapperBottomGap: window.innerHeight - wrapperRect.bottom,
+        dialogTopGap: dialogRect.top,
+        dialogBottomGap: window.innerHeight - dialogRect.bottom,
         headerHeight: Math.round(header.getBoundingClientRect().height),
         headerPaddingLeft: getComputedStyle(header).paddingLeft,
         bodyOverflowY: getComputedStyle(body).overflowY,
@@ -160,7 +197,11 @@ test('real recurring workspace uses the approved Income workbench and AppSelect 
     expect(workbenchState.triggerFont.toLowerCase()).toContain('manrope')
     expect(workbenchState.triggerHeight).toBeGreaterThanOrEqual(44)
     expect(workbenchState.triggerRadius).toBe('6px')
-    expect(workbenchState.wrapperHeight).toBe(width < 768 ? 828 : 908)
+    expect(workbenchState.wrapperHeight).toBe(width < 768 ? 828 : 936)
+    expect(workbenchState.wrapperTopGap).toBe(width < 768 ? 8 : 12)
+    expect(workbenchState.wrapperBottomGap).toBe(width < 768 ? 8 : 12)
+    expect(workbenchState.dialogTopGap).toBe(width < 768 ? 8 : 12)
+    expect(workbenchState.dialogBottomGap).toBe(width < 768 ? 8 : 12)
     expect(workbenchState.headerHeight).toBeGreaterThan(0)
     expect(workbenchState.headerPaddingLeft).toBe(width < 768 ? '18px' : '24px')
     expect(workbenchState.bodyPaddingLeft).toBe(width < 768 ? '18px' : '24px')
