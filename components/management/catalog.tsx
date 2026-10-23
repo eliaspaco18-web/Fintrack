@@ -190,7 +190,7 @@ export function CatalogCell({
   return (
     <div className={`min-w-0 ${align === 'right' ? 'md:text-right' : ''}`.trim()}>
       {label ? (
-        <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--ft-text-muted)] md:hidden">
+        <p className="sr-only">
           {label}
         </p>
       ) : null}

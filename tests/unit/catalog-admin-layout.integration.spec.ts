@@ -141,7 +141,7 @@ test('all catalog tabs use compact neutral rows and the shared contextual action
       expect(geometry.iconHeight).toBe(28)
       expect(geometry.actionHeight).toBe(36)
       expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.viewportWidth)
-      expect(geometry.rowHeight, `${tab} at ${width}px`).toBeLessThan(width < 768 ? 220 : 84)
+      expect(geometry.rowHeight, `${tab} at ${width}px`).toBeLessThan(width < 768 ? 160 : 84)
       if (tab === 'Categorías') {
         const expectedColumnCount = width < 768 ? 2 : 5
         expect(geometry.columns.trim().split(/\s+/)).toHaveLength(expectedColumnCount)
