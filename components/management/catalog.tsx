@@ -9,6 +9,7 @@ import {
 import assetsStyles from '@/components/assets/AssetsListPanel.module.css'
 import movementStyles from '@/components/tables/TransactionsRound07.module.css'
 import styles from '@/components/management/CatalogWorkspace.module.css'
+import { AnchoredActionMenu, type AnchoredAction } from '@/components/ui/AnchoredActionMenu'
 
 export interface CatalogNavItem<T extends string> {
   key: T
@@ -156,21 +157,21 @@ export function CatalogTable({
 
 export function CatalogRow({
   gridClassName,
-  accentColor,
   muted = false,
+  testId,
+  'data-testid': dataTestId,
   children,
 }: {
   gridClassName: string
-  accentColor?: string
   muted?: boolean
+  testId?: string
+  'data-testid'?: string
   children: ReactNode
 }) {
   return (
     <article
-      className={`${styles.row} grid gap-3 border-b border-[var(--c-border)] px-4 transition-[background-color,opacity] duration-150 last:border-b-0 hover:bg-[var(--c-surface-2)] ${gridClassName} ${muted ? 'opacity-65' : ''}`.trim()}
-      style={{
-        boxShadow: accentColor ? `inset 2px 0 0 ${accentColor}` : undefined,
-      }}
+      data-testid={testId ?? dataTestId}
+      className={`${styles.row} grid gap-3 border-b border-[var(--ft-border)] px-4 transition-[background-color,opacity] duration-150 last:border-b-0 hover:bg-[var(--ft-surface-hover)] ${gridClassName} ${muted ? 'opacity-65' : ''}`.trim()}
     >
       {children}
     </article>
@@ -189,7 +190,7 @@ export function CatalogCell({
   return (
     <div className={`min-w-0 ${align === 'right' ? 'md:text-right' : ''}`.trim()}>
       {label ? (
-        <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--c-text-faint)] md:hidden">
+        <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--ft-text-muted)] md:hidden">
           {label}
         </p>
       ) : null}
@@ -213,18 +214,61 @@ export function CatalogIdentity({
     <div className="flex min-w-0 items-center gap-3">
       {icon ? <div className="shrink-0">{icon}</div> : null}
       <div className="min-w-0">
-        <p className="truncate text-sm font-semibold text-[var(--c-text)]">
+        <p className="truncate text-[13px] font-semibold leading-[19px] text-[var(--ft-text-strong)]">
           {title}
         </p>
         {(subtitle || meta) ? (
-          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
             {subtitle ? (
-              <span className="text-[12px] text-[var(--c-text-muted)]">{subtitle}</span>
+              <span className="text-[11px] leading-4 text-[var(--ft-text-muted)]">{subtitle}</span>
             ) : null}
             {meta}
           </div>
         ) : null}
       </div>
+    </div>
+  )
+}
+
+/** Shared compact row actions: direct Edit plus the approved contextual menu. */
+export function CatalogRowActions({
+  label,
+  editLabel = 'Editar',
+  onEdit,
+  actions,
+  disabled = false,
+}: {
+  label: string
+  editLabel?: string
+  onEdit: () => void
+  actions: AnchoredAction[]
+  disabled?: boolean
+}) {
+  return (
+    <div className="flex items-center justify-end gap-1">
+      <button
+        type="button"
+        onClick={onEdit}
+        disabled={disabled}
+        aria-label={`${editLabel} ${label}`}
+        className="min-h-9 rounded-control px-2.5 text-[11px] font-semibold text-[var(--ft-text-muted)] hover:bg-[var(--ft-surface-muted)] hover:text-[var(--ft-text-strong)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ft-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {editLabel}
+      </button>
+      <AnchoredActionMenu
+        label={`Más acciones para ${label}`}
+        disabled={disabled || actions.length === 0}
+        actions={actions}
+        align="end"
+        triggerContent={(
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="5" cy="12" r="1.7" />
+            <circle cx="12" cy="12" r="1.7" />
+            <circle cx="19" cy="12" r="1.7" />
+          </svg>
+        )}
+        className="grid h-9 w-9 place-items-center rounded-control text-[var(--ft-text-muted)] hover:bg-[var(--ft-surface-muted)] hover:text-[var(--ft-text-strong)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ft-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+      />
     </div>
   )
 }

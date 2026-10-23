@@ -23,7 +23,6 @@ import { IconImageUpload } from '@/components/ui/IconImageUpload'
 import { ColorSwatchPicker, IconGridPicker } from '@/components/ui/VisualPickers'
 import { CATEGORY_COLOR_OPTIONS, CATEGORY_ICON_OPTIONS } from '@/lib/constants/visual-options'
 import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
-import { ActionIconButton } from '@/components/ui/ActionIconButton'
 import { AppSelect } from '@/components/ui/AppSelect'
 import { Button } from '@/components/ui/Button'
 import {
@@ -36,6 +35,7 @@ import {
   CatalogEmptyState,
   CatalogIdentity,
   CatalogRow,
+  CatalogRowActions,
   CatalogTable,
 } from '@/components/management/catalog'
 import { getApiErrorMessage } from '@/lib/api/error-message'
@@ -83,11 +83,6 @@ const SCOPE_LABELS: Record<string, string> = {
   EXPENSE: 'Egreso',
 }
 
-const SCOPE_TONES: Record<string, 'success' | 'danger'> = {
-  INCOME: 'success',
-  EXPENSE: 'danger',
-}
-
 const CATEGORY_SCOPE_OPTIONS: Array<{ value: CategoryScope; label: string; detail: string }> = [
   { value: 'INCOME', label: 'Ingresos', detail: 'Disponible solo para entradas.' },
   { value: 'EXPENSE', label: 'Egresos', detail: 'Disponible solo para salidas.' },
@@ -105,10 +100,14 @@ function isProtectedCategory(category: CategoryItem): boolean {
   return category.is_system || category.user_id === null || isLockedCategorySystemKey(category.system_key)
 }
 
-function getOriginBadge(category: CategoryItem): { tone: 'muted' | 'info'; label: string } {
-  if (category.is_system) return { tone: 'muted', label: 'Sistema' }
-  if (isLockedCategorySystemKey(category.system_key)) return { tone: 'muted', label: 'Protegida' }
-  return { tone: 'info', label: 'Personalizada' }
+function getCategoryOrigin(category: CategoryItem): string {
+  return category.is_system || category.user_id === null ? 'Sistema' : 'Personalizada'
+}
+
+function getCategoryDescription(category: CategoryItem): string {
+  if (isProtectedCategory(category)) return 'Registro protegido'
+  if (category.is_system || category.user_id === null) return 'Registro del sistema'
+  return 'Categoría personal'
 }
 
 // ─── COMPONENT ────────────────────────────────────────────────────────────────
@@ -372,21 +371,19 @@ export function CategoriesManager() {
             {[...Array(4)].map((_, index) => (
               <div
                 key={index}
-                className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1.7fr)_160px_170px_auto] md:items-center"
+                className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1fr)_80px_100px_90px_120px] lg:grid-cols-[minmax(0,1.55fr)_100px_130px_120px_120px] md:items-center"
               >
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 animate-pulse rounded-lg bg-[var(--c-surface-2)]" />
+                  <div className="h-7 w-7 animate-pulse rounded-md bg-[var(--ft-surface-muted)]" />
                   <div className="min-w-0 flex-1 space-y-2">
-                    <div className="h-4 w-40 animate-pulse rounded bg-[var(--c-surface-2)]" />
-                    <div className="h-3 w-20 animate-pulse rounded bg-[var(--c-surface-2)]" />
+                    <div className="h-4 w-40 animate-pulse rounded bg-[var(--ft-surface-muted)]" />
+                    <div className="h-3 w-28 animate-pulse rounded bg-[var(--ft-surface-muted)]" />
                   </div>
                 </div>
-                <div className="h-7 w-24 animate-pulse rounded-md bg-[var(--c-surface-2)]" />
-                <div className="h-7 w-24 animate-pulse rounded-md bg-[var(--c-surface-2)]" />
-                <div className="flex gap-2 md:justify-end">
-                  <div className="h-8 w-8 animate-pulse rounded-lg bg-[var(--c-surface-2)]" />
-                  <div className="h-8 w-8 animate-pulse rounded-lg bg-[var(--c-surface-2)]" />
-                </div>
+                <div className="h-4 w-14 animate-pulse rounded bg-[var(--ft-surface-muted)]" />
+                <div className="h-5 w-20 animate-pulse rounded bg-[var(--ft-surface-muted)]" />
+                <div className="h-4 w-8 animate-pulse rounded bg-[var(--ft-surface-muted)]" />
+                <div className="ml-auto h-8 w-24 animate-pulse rounded bg-[var(--ft-surface-muted)]" />
               </div>
             ))}
           </div>
@@ -401,75 +398,80 @@ export function CategoriesManager() {
         )}
         columns={[
           { label: 'Categoría' },
-          { label: 'Alcance' },
+          { label: 'Tipo' },
           { label: 'Origen' },
+          { label: 'Relaciones' },
           { label: 'Acciones', align: 'right' },
         ]}
-        gridClassName="md:grid-cols-[minmax(0,1.7fr)_160px_170px_auto] md:items-center"
+        gridClassName="md:grid-cols-[minmax(0,1fr)_80px_100px_90px_120px] lg:grid-cols-[minmax(0,1.55fr)_100px_130px_120px_120px] md:items-center"
       >
         {filtered.map(category => {
-          const originBadge = getOriginBadge(category)
-
           return (
             <CatalogRow
               key={category.id}
-              gridClassName="md:grid-cols-[minmax(0,1.7fr)_160px_170px_auto] md:items-center"
-              accentColor={category.color}
+              gridClassName="md:grid-cols-[minmax(0,1fr)_80px_100px_90px_120px] lg:grid-cols-[minmax(0,1.55fr)_100px_130px_120px_120px] md:items-center"
             >
               <CatalogCell label="Categoría">
                 <CatalogIdentity
                   icon={(
                     <span
-                      className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--c-border)]"
-                      style={{ backgroundColor: `${category.color}16`, color: category.color }}
+                      aria-hidden="true"
+                      className="inline-flex h-7 w-7 items-center justify-center text-[var(--ft-text-muted)]"
+                      style={{ color: category.color }}
                     >
                       {iconSignedUrls[category.id] ? (
                         <Image
                           src={iconSignedUrls[category.id]!}
-                          alt={category.name}
-                          width={32}
-                          height={32}
+                          alt=""
+                          width={24}
+                          height={24}
                           unoptimized
-                          className="h-9 w-9 rounded-md object-contain"
+                          className="h-6 w-6 rounded-sm object-contain"
                         />
                       ) : (
-                        <FinancialIcon name={category.icon} size={17} />
+                        <FinancialIcon name={category.icon} size={16} />
                       )}
                     </span>
                   )}
                   title={category.name}
+                  subtitle={getCategoryDescription(category)}
                 />
               </CatalogCell>
 
-              <CatalogCell label="Alcance">
-                <StatusBadge tone={SCOPE_TONES[category.scope] ?? 'muted'}>
+              <CatalogCell label="Tipo">
+                <span className="text-[12px] font-medium text-[var(--ft-text-strong)]">
                   {SCOPE_LABELS[category.scope] ?? category.scope}
-                </StatusBadge>
+                </span>
               </CatalogCell>
 
               <CatalogCell label="Origen">
-                <StatusBadge tone={originBadge.tone}>
-                  {originBadge.label}
-                </StatusBadge>
+                <span className="inline-flex rounded-[4px] bg-[var(--ft-surface-muted)] px-2 py-1 text-[10px] font-semibold leading-4 text-[var(--ft-text-muted)]">
+                  {getCategoryOrigin(category)}
+                </span>
+              </CatalogCell>
+
+              <CatalogCell label="Relaciones">
+                <span aria-label="Dato no disponible" title="Dato no disponible con los datos cargados" className="text-[12px] tabular-nums text-[var(--ft-text-muted)]">
+                  —
+                </span>
               </CatalogCell>
 
               <CatalogCell label="Acciones" align="right">
                 {!isProtectedCategory(category) ? (
-                  <div className="flex items-center gap-1.5 md:justify-end">
-                    <ActionIconButton
-                      onClick={() => startEdit(category)}
-                      disabled={Boolean(rowActionId)}
-                      icon="edit"
-                      label="Editar categoría"
-                    />
-                    <ActionIconButton
-                      onClick={() => setPendingDelete(category)}
-                      disabled={Boolean(rowActionId)}
-                      icon="delete"
-                      label="Eliminar categoría"
-                      variant="danger"
-                    />
-                  </div>
+                  <CatalogRowActions
+                    label={category.name}
+                    onEdit={() => startEdit(category)}
+                    disabled={Boolean(rowActionId)}
+                    actions={[
+                      {
+                        id: 'delete',
+                        label: 'Eliminar',
+                        detail: 'Solo si no tiene transacciones relacionadas.',
+                        destructive: true,
+                        onSelect: () => setPendingDelete(category),
+                      },
+                    ]}
+                  />
                 ) : (
                   <div className="md:text-right">
                     <StatusBadge tone="muted">Protegida</StatusBadge>
