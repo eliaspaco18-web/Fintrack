@@ -13,6 +13,7 @@ import { SecuritySettingsPanel } from '@/components/settings/SecuritySettingsPan
 import { SettingsSidebar } from '@/components/settings/SettingsSidebar'
 import { SupportPanel } from '@/components/settings/SupportPanel'
 import { PageLayout } from '@/components/finance/primitives'
+import { Button } from '@/components/ui/Button'
 import styles from '@/components/settings/SettingsWorkspace.module.css'
 import { createClient } from '@/lib/supabase.server'
 import { withTimeout } from '@/lib/server/promise-timeout'
@@ -49,6 +50,7 @@ function renderPanel({
   currentTheme,
   profilePreloadWarning,
   accountsPreloadWarning,
+  externalProfileSave = false,
 }: {
   activeTab: SettingsTab
   profilePayload: {
@@ -73,6 +75,7 @@ function renderPanel({
   currentTheme: 'dark' | 'light'
   profilePreloadWarning: SettingsPreloadWarning | null
   accountsPreloadWarning: SettingsPreloadWarning | null
+  externalProfileSave?: boolean
 }) {
   if (activeTab === 'profile') {
     return (
@@ -81,6 +84,7 @@ function renderPanel({
         accountCount={accountRows.length}
         profilePreloadWarning={profilePreloadWarning}
         accountsPreloadWarning={accountsPreloadWarning}
+        externalSaveAction={externalProfileSave}
       />
     )
   }
@@ -181,18 +185,32 @@ export default async function SettingsPage({
     <PageLayout
       className={`max-w-none !gap-0 pb-10 ${styles.workspace}`}
       header={(
-        <header className="pb-4">
-          <h1 className="font-display text-[26px] font-semibold leading-8 tracking-[-0.035em] text-[var(--ft-text-strong)]">Configuración</h1>
-          <p className="mt-0.5 max-w-2xl text-[12px] leading-5 text-[var(--ft-text-muted)]">Preferencias claras, bajo tu control.</p>
+        <header className="flex flex-col gap-3 pb-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="font-display text-[26px] font-semibold leading-8 tracking-[-0.035em] text-[var(--ft-text-strong)]">Configuración</h1>
+            <p className="mt-0.5 max-w-2xl text-[12px] leading-5 text-[var(--ft-text-muted)]">Preferencias claras, bajo tu control.</p>
+          </div>
+          {activeTab === 'profile' ? (
+            <Button
+              type="submit"
+              form="settings-profile-form"
+              variant="primary"
+              size="sm"
+              disabled={Boolean(profilePreloadWarning)}
+              testId="settings-header-save"
+            >
+              Guardar
+            </Button>
+          ) : null}
         </header>
       )}
     >
-      <div className="mt-2 grid min-w-0 gap-4 lg:grid-cols-[190px_minmax(0,900px)] lg:justify-center lg:items-start lg:gap-6">
+      <div className="mt-2 grid min-w-0 items-start gap-4 lg:grid-cols-[200px_minmax(0,1fr)] lg:gap-6" data-testid="settings-workspace-grid">
         <aside className="min-w-0 lg:sticky lg:top-[calc(var(--topbar-height)+24px)]">
           <SettingsSidebar activeTab={activeTab} />
         </aside>
 
-        <main id="settings-content" className="min-w-0 w-full max-w-[900px]">
+        <main id="settings-content" className="min-w-0 w-full">
           {renderPanel({
             activeTab,
             profilePayload,
@@ -203,6 +221,7 @@ export default async function SettingsPage({
             currentTheme,
             profilePreloadWarning,
             accountsPreloadWarning,
+            externalProfileSave: activeTab === 'profile',
           })}
         </main>
       </div>

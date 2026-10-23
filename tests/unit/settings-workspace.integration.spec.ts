@@ -21,12 +21,12 @@ test('settings workspace renders compact real settings primitives without nested
     .replace(/:global\(([^)]+)\)/g, '$1')
     .replace(/\.workspace/g, '.settings-root')
   await page.setContent('<main><div id="root"></div></main>')
-  await page.addStyleTag({ content: `${css}\n${moduleCss}\n[data-settings-grid]{display:grid;grid-template-columns:190px minmax(0,900px);gap:24px}@media(max-width:1023px){[data-settings-grid]{grid-template-columns:minmax(0,1fr)}}` })
+  await page.addStyleTag({ content: `${css}\n${moduleCss}\n[data-settings-grid]{display:grid;width:100%;grid-template-columns:200px minmax(0,1fr);gap:24px}@media(max-width:1023px){[data-settings-grid]{grid-template-columns:minmax(0,1fr)}}` })
   await page.addScriptTag({ path: join(process.cwd(), 'node_modules/react/umd/react.development.js') })
   await page.addScriptTag({ path: join(process.cwd(), 'node_modules/react-dom/umd/react-dom.development.js') })
   await page.addScriptTag({ content: 'window.React=React;' })
   await page.addScriptTag({ content: compileSettingsPrimitives('components/settings/primitives.tsx') })
-  await page.addScriptTag({ content: `const React=window.React;const {SettingsPanel,SettingsSubsection,SettingsRow}=window.__settingsPrimitives;function Harness(){return React.createElement('div',{className:'settings-root','data-settings-root':true,style:{width:'100%',maxWidth:'1116px',margin:'0 auto',fontFamily:'Manrope, system-ui, sans-serif'}},React.createElement('div',{'data-settings-grid':true},React.createElement('aside',null,'Perfil · Seguridad · Preferencias · Notificaciones · Cuentas · Datos · Soporte'),React.createElement('main',null,React.createElement(SettingsPanel,{title:'Preferencias',description:'Apariencia, moneda y privacidad.',density:'compact'},React.createElement(SettingsSubsection,{title:'Apariencia',description:'Elige cómo se muestra FinTrack.'},React.createElement(SettingsRow,{title:'Tema',description:'Claro u oscuro'},React.createElement('button',null,'Oscuro'))),React.createElement(SettingsSubsection,{title:'Privacidad',description:'Controla la visibilidad de tus importes.'},React.createElement(SettingsRow,{title:'Importes privados',description:'Oculta los importes en pantalla'},React.createElement('button',null,'Activado')))))));}ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Harness));` })
+  await page.addScriptTag({ content: `const React=window.React;const {SettingsPanel,SettingsSubsection,SettingsRow}=window.__settingsPrimitives;function Harness(){return React.createElement('div',{className:'settings-root','data-settings-root':true,style:{width:'100%',maxWidth:'1480px',margin:'0 auto',fontFamily:'Manrope, system-ui, sans-serif'}},React.createElement('div',{'data-settings-grid':true},React.createElement('aside',null,'Perfil · Seguridad · Preferencias · Notificaciones · Cuentas · Datos · Soporte'),React.createElement('main',null,React.createElement(SettingsPanel,{title:'Preferencias',description:'Apariencia, moneda y privacidad.',density:'compact'},React.createElement(SettingsSubsection,{title:'Apariencia',description:'Elige cómo se muestra FinTrack.'},React.createElement(SettingsRow,{title:'Tema',description:'Claro u oscuro'},React.createElement('button',null,'Oscuro'))),React.createElement(SettingsSubsection,{title:'Privacidad',description:'Controla la visibilidad de tus importes.'},React.createElement(SettingsRow,{title:'Importes privados',description:'Oculta los importes en pantalla'},React.createElement('button',null,'Activado')))))));}ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Harness));` })
   for (const width of [390, 834, 1440, 1710]) {
     await page.setViewportSize({ width, height: 900 })
     const metrics = await page.locator('.ft-settings-panel').evaluate(element => {
@@ -38,6 +38,8 @@ test('settings workspace renders compact real settings primitives without nested
         pageWidth: root.clientWidth,
         pageScrollWidth: root.scrollWidth,
         panelWidth: Math.round(element.getBoundingClientRect().width),
+        gridWidth: Math.round(element.closest('[data-settings-grid]')!.getBoundingClientRect().width),
+        sidebarWidth: Math.round(element.closest('[data-settings-grid]')!.firstElementChild!.getBoundingClientRect().width),
         panelRadius: panel.borderRadius,
         sectionBorder: sub.borderWidth,
         sectionBackground: sub.backgroundColor,
@@ -47,7 +49,11 @@ test('settings workspace renders compact real settings primitives without nested
     })
     console.info(`Settings workspace geometry ${width}px:`, JSON.stringify(metrics))
     expect(metrics.pageScrollWidth).toBeLessThanOrEqual(metrics.pageWidth)
-    expect(metrics.panelWidth).toBeGreaterThan(0)
+    expect(metrics.panelWidth).toBeGreaterThan(width >= 1024 ? 950 : 0)
+    if (width >= 1024) {
+      expect(metrics.panelWidth).toBeGreaterThan(metrics.gridWidth * 0.7)
+      expect(metrics.sidebarWidth).toBe(200)
+    }
     expect(metrics.panelRadius).toBe('12px')
     expect(metrics.sectionBorder).toBe('0px')
     expect(metrics.sectionBackground).toBe('rgba(0, 0, 0, 0)')
