@@ -371,11 +371,7 @@ function buildSummary(rows: TransactionExportRow[]): ExportSummary {
 }
 
 async function readLogoFilePath(): Promise<string | null> {
-  const candidates = [
-    path.join(process.cwd(), 'public', 'brand', 'fintrack-mark.png'),
-    path.join(process.cwd(), 'public', 'brand', 'logo-fintrack.png'),
-    path.join(process.cwd(), 'public', 'logo.png'),
-  ]
+  const candidates = [path.join(process.cwd(), 'public', 'brand', 'v3', 'ft-ligature.png')]
 
   for (const filePath of candidates) {
     try {

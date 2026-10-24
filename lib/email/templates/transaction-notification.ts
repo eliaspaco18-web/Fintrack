@@ -131,7 +131,7 @@ export function buildTransactionEmailHtml(data: TransactionEmailData): string {
   const displayName = data.userName || data.userEmail.split('@')[0] || 'Usuario'
   const safeAppUrl = data.appUrl.replace(/\/+$/, '')
   const txLink     = `${safeAppUrl}/transactions?highlight=${data.transactionId}`
-  const logoUrl    = `${safeAppUrl}/brand/fintrack-mark.png`
+  const logoUrl    = `${safeAppUrl}/brand/v3/ft-ligature.png`
 
   // Friendly opening sentence
   const accountRef = data.type === 'TRANSFER' && data.destinationAccountName

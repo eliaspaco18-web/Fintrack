@@ -27,9 +27,14 @@ export const metadata: Metadata = {
   },
   description: 'Plataforma financiera para gestionar ingresos, egresos, créditos, activos y alertas.',
   icons: {
-    icon: '/brand/fintrack-tab-icon.png',
-    shortcut: '/brand/fintrack-tab-icon.png',
-    apple: '/brand/fintrack-mark.png',
+    icon: [
+      { url: '/brand/v3/ft-favicon.svg', type: 'image/svg+xml', sizes: 'any' },
+      { url: '/brand/v3/ft-favicon-16.png', type: 'image/png', sizes: '16x16' },
+      { url: '/brand/v3/ft-favicon-32.png', type: 'image/png', sizes: '32x32' },
+      { url: '/brand/v3/ft-favicon-48.png', type: 'image/png', sizes: '48x48' },
+    ],
+    shortcut: '/brand/v3/ft-favicon-32.png',
+    apple: [{ url: '/brand/v3/ft-apple-touch-icon.png', type: 'image/png', sizes: '180x180' }],
   },
   robots: { index: false, follow: false },
 }
