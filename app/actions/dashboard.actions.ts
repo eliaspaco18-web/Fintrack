@@ -72,9 +72,9 @@ export async function getExpensesByCategoryAction(): Promise<Result<ExpenseCateg
 // ─── PATRIMONIO NETO ──────────────────────────────────────────────────────────
 
 export async function getNetWorthAction(): Promise<Result<{
-  netWorthPen:  number
-  netWorthUsd:  number
-  exchangeRate: number
+  netWorthPen:  number | null
+  netWorthUsd:  number | null
+  exchangeRate: number | null
 }>> {
   const { service, userId } = await getDashboardService()
   if (!service || !userId) return Errors.unauthorized()

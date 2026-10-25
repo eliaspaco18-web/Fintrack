@@ -7,7 +7,6 @@
 
 import type { Metadata } from 'next'
 import { Suspense }      from 'react'
-import { resolveLiveUsdPenExchangeRate } from '@/lib/server/exchange-rate'
 import { ReceivablesManager } from '@/components/receivables/ReceivablesManager'
 
 export const metadata: Metadata = {
@@ -16,12 +15,9 @@ export const metadata: Metadata = {
 }
 
 export default async function ReceivablesPage() {
-  // Tipo de cambio para equivalencias
-  const exchangeSnapshot = await resolveLiveUsdPenExchangeRate()
-
   return (
     <Suspense fallback={<ReceivablesSkeleton />}>
-      <ReceivablesManager exchangeRate={Number(exchangeSnapshot.rate)} />
+      <ReceivablesManager />
     </Suspense>
   )
 }

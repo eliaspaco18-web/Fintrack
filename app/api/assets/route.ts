@@ -8,7 +8,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient }              from '@/lib/supabase.server'
 import { getSessionUserId }          from '@/lib/api/response'
+import { fromResult } from '@/lib/api/response'
+import { TransactionService } from '@/modules/transactions/transaction.service'
 import { resolveAccountingUsdPenExchangeRate } from '@/lib/server/exchange-rate'
+import { getVerifiedUsdPenRate } from '@/lib/finance/exchange-rate-verification'
 import {
   ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE,
   hasUnsupportedAttachmentWrite,
@@ -123,66 +126,43 @@ export async function POST(req: NextRequest) {
     allowPrior: true,
     ensureForToday: true,
   })
-  const exchangeRate = Number(exchangeSnapshot.rate)
-  const amountPen = currency === 'USD'
-    ? Math.round((purchase_value * exchangeRate) * 100) / 100
-    : purchase_value
-
-  // ── 1. Crear la transacción EXPENSE en la cuenta portafolio
+  const verifiedRate = getVerifiedUsdPenRate(exchangeSnapshot)
+  if (currency === 'USD' && verifiedRate === null) {
+    return NextResponse.json(
+      { ok: false, error: { code: 'VALIDATION_ERROR', message: 'No hay un tipo de cambio verificado para registrar este activo en USD.' } },
+      { status: 422 },
+    )
+  }
   const txDescription = description || `Compra de activo: ${name}`
-  const { data: txData, error: txError } = await supabase
-    .from('transactions')
-    .insert({
-      user_id: userId,
-      type: 'EXPENSE',
-      amount: purchase_value,
-      amount_pen: amountPen,
-      currency,
-      exchange_rate: exchangeRate,
-      description: txDescription,
-      transaction_date: purchase_date,
-      source_account_id: account_id,
-      notes,
-      recipient,
-    })
-    .select('id')
-    .single()
-
-  if (txError || !txData) {
-    return NextResponse.json(
-      { ok: false, error: { code: 'DATABASE_ERROR', message: txError?.message ?? 'Error creando transacción' } },
-      { status: 500 }
-    )
-  }
-
-  // ── 2. Crear el registro de activo vinculado a la transacción
-  const { data: assetData, error: assetError } = await supabase
-    .from('assets')
-    .insert({
-      user_id: userId,
+  const service = new TransactionService(supabase)
+  const result = await service.createTransaction(userId, {
+    type: 'EXPENSE',
+    source_account_id: account_id,
+    amount: purchase_value,
+    currency,
+    exchange_rate: verifiedRate ?? undefined,
+    description: txDescription,
+    transaction_date: purchase_date,
+    recipient: recipient ?? undefined,
+    notes: notes ?? undefined,
+    asset: {
       name,
-      asset_type_id: asset_type_id || null,
-      asset_type: 'OTHER',          // legacy enum — asset_type_id es el campo v3
-      purchase_date,
+      asset_type: 'OTHER',
+      asset_type_id: asset_type_id ?? undefined,
       purchase_value,
-      current_value: purchase_value, // empieza igual al valor de compra
-      currency,
-      recipient,
-      notes,
-      status: 'ACTIVE',
-      transaction_id: txData.id,
-    })
-    .select('*')
-    .single()
+      current_value: purchase_value,
+      purchase_date,
+      notes: notes ?? undefined,
+    },
+  })
 
-  if (assetError || !assetData) {
-    // Rollback: eliminar la transacción si el activo falla
-    await supabase.from('transactions').delete().eq('id', txData.id)
+  if (!result.ok) return fromResult(result)
+  if (!result.data.asset) {
     return NextResponse.json(
-      { ok: false, error: { code: 'DATABASE_ERROR', message: assetError?.message ?? 'Error creando activo' } },
-      { status: 500 }
+      { ok: false, error: { code: 'ATOMICITY_FAILURE', message: 'No se pudo confirmar el activo asociado a la compra.' } },
+      { status: 500 },
     )
   }
 
-  return NextResponse.json({ ok: true, data: assetData }, { status: 201 })
+  return NextResponse.json({ ok: true, data: result.data.asset }, { status: 201 })
 }

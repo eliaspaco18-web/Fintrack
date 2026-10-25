@@ -8,7 +8,6 @@
 import 'server-only'
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { DEFAULT_USD_PEN_EXCHANGE_RATE } from '@/lib/constants/currency'
 import { withTimeout } from '@/lib/server/promise-timeout'
 import { createClient, createServiceClient } from '@/lib/supabase.server'
 
@@ -17,7 +16,7 @@ const ACCOUNTING_TIMEZONE = 'America/Lima'
 const LIVE_EXCHANGE_RATE_TTL_MINUTES = 10
 
 export interface ExchangeRateSnapshot {
-  rate: number
+  rate: number | null
   fetched_at: string | null
   source: string
   refreshed: boolean
@@ -70,7 +69,7 @@ function normalizeEffectiveDate(date?: string | null): string {
 
 function fallbackSnapshot(effectiveDate?: string | null): ExchangeRateSnapshot {
   return {
-    rate: DEFAULT_USD_PEN_EXCHANGE_RATE,
+    rate: null,
     fetched_at: null,
     source: 'fallback',
     refreshed: false,

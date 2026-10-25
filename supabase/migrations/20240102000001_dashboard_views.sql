@@ -25,7 +25,7 @@ SELECT
   a.is_active,
   CASE
     WHEN a.currency = 'PEN' THEN a.balance
-    ELSE a.balance * COALESCE(fn_latest_exchange_rate(a.currency, 'PEN'), 1)
+    ELSE a.balance * fn_latest_exchange_rate(a.currency, 'PEN')
   END AS balance_pen
 FROM accounts a
 WHERE a.is_active = true;
@@ -224,7 +224,7 @@ AS $$
 DECLARE
   v_result        jsonb;
   v_current_month date  := date_trunc('month', CURRENT_DATE)::date;
-  v_exchange_rate numeric := COALESCE(fn_latest_exchange_rate('USD', 'PEN'), 3.7);
+  v_exchange_rate numeric := fn_latest_exchange_rate('USD', 'PEN');
 BEGIN
   SELECT jsonb_build_object(
 

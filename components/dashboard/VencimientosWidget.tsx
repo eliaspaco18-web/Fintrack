@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import useSWR from 'swr'
-import { formatNumber } from '@/lib/contracts/ui.contracts'
+import { formatCurrencyOrUnavailable } from '@/lib/contracts/ui.contracts'
 import type { DashboardSidebar } from '@/lib/dashboard/types'
 import { fetchDashboardData } from './api'
 import { PremiumCard } from './PremiumCard'
@@ -157,7 +157,7 @@ export function VencimientosWidget() {
                     {badge.label}
                   </span>
                   <span className="mt-1 block text-[11px] font-semibold tabular-nums text-[var(--c-text)]">
-                    S/ {formatNumber(item.monto, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {formatCurrencyOrUnavailable(item.monto, item.currency)}
                   </span>
                 </span>
               </Link>

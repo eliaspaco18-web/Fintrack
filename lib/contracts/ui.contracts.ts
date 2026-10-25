@@ -195,6 +195,15 @@ export function formatCurrency(amount: number, currency: CurrencyCode, locale = 
   }).format(amount)
 }
 
+export function formatCurrencyOrUnavailable(
+  amount: number | null | undefined,
+  currency: CurrencyCode,
+  locale = 'es-PE',
+): string {
+  if (amount == null || !Number.isFinite(amount)) return 'No disponible'
+  return formatCurrency(amount, currency, locale)
+}
+
 export function formatNumber(
   value: number,
   options?: {
@@ -342,9 +351,10 @@ export type DisplayCurrency = 'PEN' | 'USD'
 export function toPenAmount(
   amount:       number,
   currency:     CurrencyCode,
-  exchangeRate: number
-): number {
+  exchangeRate: number | null
+): number | null {
   if (currency === 'PEN') return amount
+  if (exchangeRate === null || !Number.isFinite(exchangeRate) || exchangeRate <= 0) return null
   return Math.round(amount * exchangeRate * 100) / 100
 }
 
@@ -352,9 +362,10 @@ export function toPenAmount(
 export function toDisplayAmount(
   amountPen:    number,
   preferred:    DisplayCurrency,
-  exchangeRate: number
-): number {
+  exchangeRate: number | null
+): number | null {
   if (preferred === 'PEN') return amountPen
+  if (exchangeRate === null || !Number.isFinite(exchangeRate) || exchangeRate <= 0) return null
   return Math.round((amountPen / exchangeRate) * 100) / 100
 }
 

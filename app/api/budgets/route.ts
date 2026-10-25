@@ -86,10 +86,12 @@ type ExpenseTxRow = {
 type BudgetMetrics = {
   period_start: string
   period_end: string
-  spent_amount: number
-  remaining_amount: number
-  progress_percent: number
-  over_limit: boolean
+  spent_amount: number | null
+  remaining_amount: number | null
+  progress_percent: number | null
+  over_limit: boolean | null
+  metrics_complete: boolean
+  missing_conversion_count: number
 }
 
 function buildBudgetMetrics(

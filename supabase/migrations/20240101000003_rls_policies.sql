@@ -321,7 +321,7 @@ SELECT
   SUM(
     CASE
       WHEN a.currency = 'PEN' THEN a.balance
-      ELSE a.balance * COALESCE(fn_latest_exchange_rate(a.currency, 'PEN'), 1)
+      ELSE a.balance * fn_latest_exchange_rate(a.currency, 'PEN')
     END
   ) AS net_worth_pen,
   COUNT(*) FILTER (WHERE a.is_active) AS active_accounts

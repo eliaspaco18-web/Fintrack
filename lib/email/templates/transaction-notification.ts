@@ -252,7 +252,7 @@ export function buildTransactionEmailHtml(data: TransactionEmailData): string {
                           <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
                             <tr>
                               <td style="font-size:13px;color:#64748b;">Equivalente en soles</td>
-                              <td style="font-size:13px;color:#111827;font-weight:600;text-align:right;">≈ ${formatCurrency(data.amount * (data.exchangeRate ?? 1), 'PEN')} (T/C ${(data.exchangeRate ?? 1).toFixed(3)})</td>
+                              <td style="font-size:13px;color:#111827;font-weight:600;text-align:right;">≈ ${formatCurrency(data.amount * data.exchangeRate!, 'PEN')} (T/C ${data.exchangeRate!.toFixed(3)})</td>
                             </tr>
                           </table>
                         </td></tr>` : ''}

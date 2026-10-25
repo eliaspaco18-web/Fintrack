@@ -313,6 +313,19 @@ export class TransactionService {
       ? await this.resolveExpenseBudgetPeriodId(userId, preparedInput)
       : null
 
+    // Credit-line adjustments still use repository writes alongside the
+    // transaction RPC. Verify the deployed RPC call shape first so an absent
+    // function or stale schema fails closed before that module write.
+    const atomicPayload = this.buildAtomicPayload(userId, preparedInput)
+    if (
+      expenseInput?.credit_card_id || transferCreditContext ||
+      atomicPayload.p_asset || atomicPayload.p_credit || atomicPayload.p_loan ||
+      atomicPayload.p_receivable || atomicPayload.p_payable
+    ) {
+      const preflight = await this.verifyAtomicFunctionAvailable(atomicPayload)
+      if (!preflight.ok) return preflight
+    }
+
     // ── PASO 4: Verificar saldo para EXPENSE y TRANSFER ─────────────────────
     if (
       (preparedInput.type === 'EXPENSE' && !usesCreditCardAsSource) ||
@@ -369,10 +382,13 @@ export class TransactionService {
     const rpcResult = await this.callAtomicFunction(payload)
     if (!rpcResult.ok) {
       if (creditAdjusted) {
-        if (creditAdjusted.op === 'CONSUMPTION') {
-          await this.creditRepo.decrementUsedAmount(creditAdjusted.id, creditAdjusted.amount, creditAdjusted.currency)
-        } else {
-          await this.creditRepo.incrementUsedAmount(creditAdjusted.id, creditAdjusted.amount, creditAdjusted.currency)
+        const rollbackResult = creditAdjusted.op === 'CONSUMPTION'
+          ? await this.creditRepo.decrementUsedAmount(creditAdjusted.id, creditAdjusted.amount, creditAdjusted.currency)
+          : await this.creditRepo.incrementUsedAmount(creditAdjusted.id, creditAdjusted.amount, creditAdjusted.currency)
+        if (!rollbackResult.ok) {
+          return Errors.atomicityFailure(
+            `La transacción no se registró y no se pudo revertir el ajuste de la línea de crédito (${rollbackResult.error.message}). Se requiere conciliación antes de volver a intentar.`,
+          )
         }
       }
       return rpcResult
@@ -383,8 +399,6 @@ export class TransactionService {
     if (payload.p_budget_period_id) {
       await this.attachBudgetPeriodToTransaction(ids.transaction_id, payload.p_budget_period_id)
     }
-
-    await this.syncCounterpartyLinks(ids, payload)
 
     // ── PASO 7: Cargar registros creados y retornar ───────────────────────────
     return this.loadCreatedRecords(ids)
@@ -1234,7 +1248,9 @@ export class TransactionService {
       p_type:                   input.type,
       p_amount:                 input.amount,
       p_currency:               input.currency,
-      p_exchange_rate:          input.exchange_rate ?? 1.0,
+      // PEN operations use the neutral persisted value; USD inputs are validated
+      // to require an explicit or source-backed positive rate before this point.
+      p_exchange_rate:          input.currency === 'PEN' ? 1 : input.exchange_rate!,
       p_description:            input.description?.trim() ?? '',
       p_transaction_date:       input.transaction_date,
       p_notes:                  input.notes ?? null,
@@ -1270,6 +1286,7 @@ export class TransactionService {
         base.p_asset = {
           name:              exp.asset.name,
           asset_type:        exp.asset.asset_type,
+          asset_type_id:     exp.asset.asset_type_id,
           purchase_value:    exp.asset.purchase_value ?? input.amount,
           current_value:     exp.asset.current_value ?? exp.asset.purchase_value ?? input.amount,
           purchase_date:     exp.asset.purchase_date ?? input.transaction_date,
@@ -1345,7 +1362,9 @@ export class TransactionService {
 
       if (error) {
         if (this.isMissingAtomicFunction(error.message)) {
-          return this.createTransactionFallback(payload)
+          return Errors.atomicityFailure(
+            'La función atómica de transacciones no está disponible. No se registró ningún movimiento; aplica la migración aprobada y vuelve a intentarlo.'
+          )
         }
         return Errors.atomicityFailure(
           error.message.replace('create_transaction_atomic failed: ', '')
@@ -1359,10 +1378,85 @@ export class TransactionService {
       return ok(data as unknown as AtomicTransactionResult)
     } catch (e) {
       if (e instanceof Error && this.isMissingAtomicFunction(e.message)) {
-        return this.createTransactionFallback(payload)
+        return Errors.atomicityFailure(
+          'La función atómica de transacciones no está disponible. No se registró ningún movimiento; aplica la migración aprobada y vuelve a intentarlo.'
+        )
       }
       return Errors.atomicityFailure(
         e instanceof Error ? e.message : 'Error inesperado en operación atómica'
+      )
+    }
+  }
+
+  /**
+   * Confirms the current atomic RPC's authorization guard before operations
+   * that also mutate derived modules. The probe uses a different user ID and
+   * invalid type: the converged RPC rejects at its auth guard; older enum-backed
+   * routines reject the invalid type during the first INSERT cast. Either path
+   * must fail before any row is written. Unknown errors fail closed.
+   */
+  private async verifyAtomicFunctionAvailable(
+    payload: AtomicTransactionPayload,
+  ): Promise<Result<true>> {
+    const probe: AtomicTransactionPayload = {
+      ...payload,
+      p_user_id: '00000000-0000-0000-0000-000000000000',
+      p_type: '__FINTRACK_ATOMIC_RPC_PREFLIGHT__' as AtomicTransactionPayload['p_type'],
+      p_asset: null,
+      p_credit: null,
+      p_loan: null,
+      p_receivable: null,
+      p_payable: null,
+    }
+
+    try {
+      const { data, error } = await (this.db.rpc as unknown as (
+        fn: string,
+        args: Record<string, unknown>
+      ) => Promise<{ data: unknown; error: { message: string } | null }>)(
+        'create_transaction_atomic',
+        {
+          p_user_id:                probe.p_user_id,
+          p_source_account_id:      probe.p_source_account_id,
+          p_destination_account_id: probe.p_destination_account_id,
+          p_category_id:            probe.p_category_id,
+          p_budget_id:              probe.p_budget_id ?? null,
+          p_type:                   probe.p_type,
+          p_amount:                 probe.p_amount,
+          p_currency:               probe.p_currency,
+          p_exchange_rate:          probe.p_exchange_rate,
+          p_description:            probe.p_description,
+          p_transaction_date:       probe.p_transaction_date,
+          p_notes:                  probe.p_notes,
+          p_is_recurring:           probe.p_is_recurring,
+          p_sender:                 probe.p_sender,
+          p_recipient:              probe.p_recipient,
+          ...atomicDerivedJsonbArguments(probe),
+        },
+      )
+
+      if (error) {
+        const message = error.message.toLowerCase()
+        if (this.isMissingAtomicFunction(error.message)) {
+          return Errors.atomicityFailure(
+            'La función atómica de transacciones no está disponible. No se modificó el saldo de la tarjeta; aplica la migración aprobada y vuelve a intentarlo.'
+          )
+        }
+
+        if (message.includes('not authorized to create this transaction')) {
+          return ok(true)
+        }
+      }
+
+      // An old routine may reject the invalid enum but lacks the explicit
+      // authorization guard. Do not treat that as a compatible V3 writer.
+      void data
+      return Errors.atomicityFailure(
+        'No se pudo verificar de forma segura la función atómica. No se modificó el saldo de la tarjeta; revisa la migración y vuelve a intentarlo.'
+      )
+    } catch {
+      return Errors.atomicityFailure(
+        'No se pudo verificar de forma segura la función atómica. No se modificó el saldo de la tarjeta; revisa la conexión y vuelve a intentarlo.'
       )
     }
   }
@@ -1373,166 +1467,6 @@ export class TransactionService {
       lower.includes('could not find the function public.create_transaction_atomic') ||
       (lower.includes('create_transaction_atomic') && lower.includes('does not exist'))
     )
-  }
-
-  /**
-   * Fallback operativo para entornos donde la función RPC aún no fue migrada.
-   * Inserta la transacción principal para no bloquear el registro básico.
-   */
-  private async createTransactionFallback(
-    payload: AtomicTransactionPayload
-  ): Promise<Result<AtomicTransactionResult>> {
-    const { data, error } = await this.db
-      .from('transactions')
-      .insert({
-        user_id: payload.p_user_id,
-        source_account_id: payload.p_source_account_id,
-        destination_account_id: payload.p_destination_account_id,
-        category_id: payload.p_category_id,
-        budget_id: payload.p_budget_id ?? null,
-        budget_period_id: payload.p_budget_period_id ?? null,
-        type: payload.p_type,
-        amount: payload.p_amount,
-        amount_pen: payload.p_currency === 'USD'
-          ? Math.round((payload.p_amount * payload.p_exchange_rate) * 100) / 100
-          : payload.p_amount,
-        currency: payload.p_currency,
-        exchange_rate: payload.p_exchange_rate,
-        description: payload.p_description,
-        transaction_date: payload.p_transaction_date,
-        notes: payload.p_notes,
-        is_recurring: payload.p_is_recurring,
-        sender: payload.p_sender,
-        recipient: payload.p_recipient,
-        creditor_id: payload.p_payable?.creditor_id ?? null,
-        debtor_id: payload.p_receivable?.debtor_id ?? null,
-      })
-      .select('id')
-      .single()
-
-    if (error || !data) {
-      return Errors.atomicityFailure(error?.message ?? 'No se pudo registrar la transacción')
-    }
-
-    const result: AtomicTransactionResult = {
-      transaction_id: data.id,
-      asset_id: null,
-      credit_id: null,
-      loan_id: null,
-      receivable_id: null,
-      payable_id: null,
-      installments_generated: 0,
-    }
-
-    const rollbackTransaction = async () => {
-      await this.db
-        .from('transactions')
-        .delete()
-        .eq('id', data.id)
-        .eq('user_id', payload.p_user_id)
-    }
-
-    if (payload.p_receivable) {
-      const receivableResult = await this.receivableRepo.create({
-        user_id: payload.p_user_id,
-        transaction_id: data.id,
-        debtor_id: payload.p_receivable.debtor_id ?? null,
-        debtor_name: payload.p_receivable.debtor_name,
-        amount: payload.p_amount,
-        currency: payload.p_currency,
-        issue_date: payload.p_transaction_date,
-        due_date: payload.p_receivable.due_date ?? null,
-        concept: payload.p_receivable.concept ?? null,
-        notes: payload.p_receivable.notes ?? null,
-        status: 'PENDING',
-      })
-
-      if (!receivableResult.ok) {
-        await rollbackTransaction()
-        return Errors.atomicityFailure(
-          receivableResult.error.message || 'No se pudo registrar la cuenta por cobrar'
-        )
-      }
-
-      result.receivable_id = receivableResult.data.id
-    }
-
-    if (payload.p_payable) {
-      const payableResult = await this.payableRepo.create({
-        user_id: payload.p_user_id,
-        transaction_id: data.id,
-        creditor_id: payload.p_payable.creditor_id ?? null,
-        creditor_name: payload.p_payable.creditor_name,
-        amount: payload.p_amount,
-        currency: payload.p_currency,
-        issue_date: payload.p_transaction_date,
-        due_date: payload.p_payable.due_date ?? null,
-        concept: payload.p_payable.concept ?? null,
-        notes: payload.p_payable.notes ?? null,
-        status: 'PENDING',
-      })
-
-      if (!payableResult.ok) {
-        if (result.receivable_id) {
-          await this.receivableRepo.delete(result.receivable_id)
-        }
-        await rollbackTransaction()
-        return Errors.atomicityFailure(
-          payableResult.error.message || 'No se pudo registrar la cuenta por pagar'
-        )
-      }
-
-      result.payable_id = payableResult.data.id
-    }
-
-    return ok(result)
-  }
-
-  /**
-   * Compatibilidad defensiva para entornos donde la función SQL aún no persiste
-   * debtor_id / creditor_id en la transacción o en el módulo derivado.
-   */
-  private async syncCounterpartyLinks(
-    ids: AtomicTransactionResult,
-    payload: AtomicTransactionPayload,
-  ): Promise<void> {
-    try {
-      const transactionPatch: Record<string, string> = {}
-
-      if (payload.p_receivable?.debtor_id) {
-        transactionPatch.debtor_id = payload.p_receivable.debtor_id
-
-        if (ids.receivable_id) {
-          await this.db
-            .from('accounts_receivable')
-            .update({ debtor_id: payload.p_receivable.debtor_id })
-            .eq('id', ids.receivable_id)
-            .eq('user_id', payload.p_user_id)
-        }
-      }
-
-      if (payload.p_payable?.creditor_id) {
-        transactionPatch.creditor_id = payload.p_payable.creditor_id
-
-        if (ids.payable_id) {
-          await this.db
-            .from('accounts_payable')
-            .update({ creditor_id: payload.p_payable.creditor_id })
-            .eq('id', ids.payable_id)
-            .eq('user_id', payload.p_user_id)
-        }
-      }
-
-      if (Object.keys(transactionPatch).length > 0) {
-        await this.db
-          .from('transactions')
-          .update(transactionPatch)
-          .eq('id', ids.transaction_id)
-          .eq('user_id', payload.p_user_id)
-      }
-    } catch {
-      // No bloquea la creación principal; solo corrige vínculos en entornos legacy.
-    }
   }
 
   /**

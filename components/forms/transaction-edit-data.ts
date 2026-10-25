@@ -92,7 +92,9 @@ export function toInitialValues(
     amount: Number(transaction.amount ?? 0),
     currency: transaction.currency === 'USD' ? 'USD' : 'PEN',
     exchange_rate: transaction.currency === 'USD'
-      ? Number(transaction.exchange_rate ?? 1)
+      ? (typeof transaction.exchange_rate === 'number' && Number.isFinite(transaction.exchange_rate) && transaction.exchange_rate > 0
+        ? Number(transaction.exchange_rate)
+        : undefined)
       : undefined,
     payment_method: transaction.payment_method ?? 'DEBIT',
     description: transaction.description ?? '',

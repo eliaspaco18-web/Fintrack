@@ -405,9 +405,9 @@ export function TransactionForm({
   const initialEditDate = isEditMode && typeof initialValues?.transaction_date === 'string'
     ? initialValues.transaction_date
     : null
-  const [currentLiveRate, setCurrentLiveRate] = useState<number>(() => {
+  const [currentLiveRate, setCurrentLiveRate] = useState<number | null>(() => {
     if (initialEditExchangeRate) return initialEditExchangeRate
-    return Number.isFinite(liveExchangeRate) && liveExchangeRate > 0 ? liveExchangeRate : 0
+    return Number.isFinite(liveExchangeRate) && liveExchangeRate !== null && liveExchangeRate > 0 ? liveExchangeRate : null
   })
   const [currentRateVerified, setCurrentRateVerified] = useState(Boolean(initialEditExchangeRate))
   const [currentRateEffectiveDate, setCurrentRateEffectiveDate] = useState<string | null>(initialEditDate)
@@ -495,7 +495,7 @@ export function TransactionForm({
   const transactionDate = watch('transaction_date')
   const destinationAccountId = watch('destination_account_id')
   const accentColor = TYPE_CONFIG[type].accentColor
-  const safeLiveRate = currentRateVerified && Number.isFinite(currentLiveRate) && currentLiveRate > 0
+  const safeLiveRate = currentRateVerified && currentLiveRate !== null && Number.isFinite(currentLiveRate) && currentLiveRate > 0
     ? currentLiveRate
     : 0
   const manualRate = typeof exchangeRateInput === 'number'
@@ -503,15 +503,15 @@ export function TransactionForm({
     : Number(exchangeRateInput)
   const hasManualRate = Number.isFinite(manualRate) && manualRate > 0
   const appliedRate = currency === 'USD'
-    ? (hasManualRate ? manualRate : safeLiveRate)
+    ? (hasManualRate ? manualRate : safeLiveRate > 0 ? safeLiveRate : null)
     : safeLiveRate
   const numericAmount = typeof amount === 'number' ? amount : Number(amount)
   const hasAmount = Number.isFinite(numericAmount) && numericAmount > 0
   const equivalentPen = hasAmount
-    ? (currency === 'USD' ? (appliedRate > 0 ? numericAmount * appliedRate : null) : numericAmount)
+    ? (currency === 'USD' ? (appliedRate !== null && appliedRate > 0 ? numericAmount * appliedRate : null) : numericAmount)
     : null
   const equivalentUsd = hasAmount
-    ? (currency === 'PEN' ? (appliedRate > 0 ? numericAmount / appliedRate : null) : numericAmount)
+    ? (currency === 'PEN' ? (appliedRate !== null && appliedRate > 0 ? numericAmount / appliedRate : null) : numericAmount)
     : null
   const rateDateLabel = currentRateEffectiveDate
     ? `fecha ${currentRateEffectiveDate}`
@@ -519,7 +519,7 @@ export function TransactionForm({
 
   useEffect(() => {
     if (transactionDate) return
-    if (!Number.isFinite(liveExchangeRate) || liveExchangeRate <= 0) return
+    if (liveExchangeRate === null || !Number.isFinite(liveExchangeRate) || liveExchangeRate <= 0) return
     setCurrentLiveRate(liveExchangeRate)
   }, [liveExchangeRate, transactionDate])
 
@@ -1897,7 +1897,7 @@ export function TransactionForm({
       <span className={`${incomeStyles.incomeAppliedRate} ${currency === 'USD' ? incomeStyles.incomeAppliedRateUsd : ''}`}>
         <span>
           {currency === 'USD' && hasManualRate
-            ? <>TC aplicado {formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN</>
+            ? <>TC aplicado {formatNumber(manualRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN</>
             : safeLiveRate > 0
               ? <>TC referencia {formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN</>
               : 'Tipo de cambio no disponible'}
@@ -1908,7 +1908,7 @@ export function TransactionForm({
             {' · actualizando…'}
           </span>
         </span>
-        {currency === 'USD' && safeLiveRate > 0 ? (
+        {currency === 'USD' && safeLiveRate > 0 && appliedRate !== null ? (
           <span
             className={`${incomeStyles.incomeReferenceRate} ${Math.abs(appliedRate - safeLiveRate) < 0.0005 ? incomeStyles.incomeReferenceRateReserved : ''}`}
             aria-hidden={Math.abs(appliedRate - safeLiveRate) < 0.0005}
@@ -1949,7 +1949,7 @@ export function TransactionForm({
         </span>
       )}
       <span className="text-[9px] text-[var(--c-text-faint)] tabular-nums">
-        TC {appliedRate > 0 ? formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : 'no disponible'}
+        TC {appliedRate !== null && appliedRate > 0 ? formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : 'no disponible'}
       </span>
     </div>
   ) : (
@@ -1959,7 +1959,7 @@ export function TransactionForm({
           Equivalente estimado
         </p>
         <span className="text-[10px] text-[var(--c-text-faint)] tabular-nums">
-          TC {appliedRate > 0 ? `${formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN` : 'no disponible'} {refreshingLiveRate ? '· actualizando…' : ''}
+          TC {appliedRate !== null && appliedRate > 0 ? `${formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN` : 'no disponible'} {refreshingLiveRate ? '· actualizando…' : ''}
         </span>
       </div>
       {!hasAmount ? (

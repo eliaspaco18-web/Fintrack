@@ -54,10 +54,9 @@ function getDaysUntil(dueDateIso: string, todayUtc: Date): number {
   return Math.floor((due.getTime() - todayUtc.getTime()) / DAY_IN_MS)
 }
 
-function toPenAmount(amount: number, currency: string, exchangeRate: number): number {
-  return currency === 'USD'
-    ? amount * exchangeRate
-    : amount
+function toPenAmount(amount: number, currency: string, exchangeRate: number | null): number | null {
+  if (currency !== 'USD') return amount
+  return exchangeRate === null ? null : amount * exchangeRate
 }
 
 export async function GET(req: NextRequest) {
@@ -71,10 +70,12 @@ export async function GET(req: NextRequest) {
     if (!result.ok) return fromResult(result)
 
     const summary = result.data
-    const saldoTotal = summary.accounts.reduce((sum, account) => sum + account.balancePen, 0)
+    const saldoTotal = summary.accounts.some(account => account.balancePen === null)
+      ? null
+      : summary.accounts.reduce((sum, account) => sum + (account.balancePen ?? 0), 0)
     const porCobrar = summary.receivables.totalPendingPen
     const porPagar = summary.payables.totalPendingPen
-    const neto = porCobrar - porPagar
+    const neto = porCobrar === null || porPagar === null ? null : porCobrar - porPagar
     const exchangeRate = summary.meta.exchangeRateUsdPen
 
     const todayUtc = startOfTodayUtc()
@@ -101,7 +102,7 @@ export async function GET(req: NextRequest) {
     ] = await Promise.all([
       supabase
         .from('credits')
-        .select('id, name')
+        .select('id, name, currency')
         .eq('user_id', userId)
         .eq('status', 'ACTIVE')
         .eq('credit_type', 'CREDIT_CARD'),
@@ -173,7 +174,7 @@ export async function GET(req: NextRequest) {
     }
 
     const activeCards = activeCardsResult.data ?? []
-    const cardById = new Map(activeCards.map((card) => [card.id, card.name]))
+    const cardById = new Map(activeCards.map((card) => [card.id, { name: card.name, currency: card.currency }]))
     const cardIds = activeCards.map((card) => card.id)
 
     let cycleRows: Array<{
@@ -181,6 +182,7 @@ export async function GET(req: NextRequest) {
       credit_id: string
       payment_date: string
       total_to_pay: number
+      currency: string
     }> = []
 
     if (cardIds.length > 0) {
@@ -204,46 +206,53 @@ export async function GET(req: NextRequest) {
         credit_id: row.credit_id,
         payment_date: row.payment_date,
         total_to_pay: Number(row.total_to_pay ?? 0),
+        currency: cardById.get(row.credit_id)?.currency ?? 'PEN',
       }))
     }
 
     const debtorsById = new Map((debtorsResult.data ?? []).map((debtor) => [debtor.id, debtor.name]))
     const creditorsById = new Map((creditorsResult.data ?? []).map((creditor) => [creditor.id, creditor.name]))
 
-    const debtorPending = new Map<string, number>()
+    const debtorPending = new Map<string, number | null>()
     for (const row of receivablesResult.data ?? []) {
       if (!row.debtor_id) continue
       const pendingOriginal = Number(row.amount ?? 0) - Number(row.collected_amount ?? 0)
       const pendingPen = toPenAmount(Math.max(0, pendingOriginal), row.currency, exchangeRate)
-      debtorPending.set(row.debtor_id, (debtorPending.get(row.debtor_id) ?? 0) + pendingPen)
+      const current = debtorPending.get(row.debtor_id)
+      debtorPending.set(row.debtor_id, current === null || pendingPen === null
+        ? null
+        : (current ?? 0) + pendingPen)
     }
 
-    const creditorPending = new Map<string, number>()
+    const creditorPending = new Map<string, number | null>()
     for (const row of payablesResult.data ?? []) {
       if (!row.creditor_id) continue
       const pendingOriginal = Number(row.amount ?? 0) - Number(row.paid_amount ?? 0)
       const pendingPen = toPenAmount(Math.max(0, pendingOriginal), row.currency, exchangeRate)
-      creditorPending.set(row.creditor_id, (creditorPending.get(row.creditor_id) ?? 0) + pendingPen)
+      const current = creditorPending.get(row.creditor_id)
+      creditorPending.set(row.creditor_id, current === null || pendingPen === null
+        ? null
+        : (current ?? 0) + pendingPen)
     }
 
     const topDeudores: DashboardCounterpartyPreview[] = Array.from(debtorPending.entries())
     .map(([id, pendingAmountPen]) => ({
       id,
       name: debtorsById.get(id) ?? 'Deudor',
-      pending_amount_pen: Math.round(pendingAmountPen * 100) / 100,
+      pending_amount_pen: pendingAmountPen === null ? null : Math.round(pendingAmountPen * 100) / 100,
       href: `/receivables?debtorId=${id}`,
     }))
-    .sort((a, b) => b.pending_amount_pen - a.pending_amount_pen)
+    .sort((a, b) => (b.pending_amount_pen ?? -Infinity) - (a.pending_amount_pen ?? -Infinity))
     .slice(0, 3)
 
     const topAcreedores: DashboardCounterpartyPreview[] = Array.from(creditorPending.entries())
     .map(([id, pendingAmountPen]) => ({
       id,
       name: creditorsById.get(id) ?? 'Acreedor',
-      pending_amount_pen: Math.round(pendingAmountPen * 100) / 100,
+      pending_amount_pen: pendingAmountPen === null ? null : Math.round(pendingAmountPen * 100) / 100,
       href: `/payables?creditorId=${id}`,
     }))
-    .sort((a, b) => b.pending_amount_pen - a.pending_amount_pen)
+    .sort((a, b) => (b.pending_amount_pen ?? -Infinity) - (a.pending_amount_pen ?? -Infinity))
     .slice(0, 3)
 
     const transactionCount = monthTransactionsResult.count
@@ -318,14 +327,16 @@ export async function GET(req: NextRequest) {
         name: item.creditorName,
         due_date: item.dueDate,
         monto: item.totalAmount,
+        currency: item.currency === 'USD' ? 'USD' as const : 'PEN' as const,
       }))
 
     const vencimientosTarjeta = cycleRows.map((cycle) => ({
       id: cycle.id,
       tipo: 'ciclo_tarjeta' as const,
-      name: cardById.get(cycle.credit_id) ?? 'Tarjeta de crédito',
+      name: cardById.get(cycle.credit_id)?.name ?? 'Tarjeta de crédito',
       due_date: cycle.payment_date,
       monto: cycle.total_to_pay,
+      currency: cycle.currency === 'USD' ? 'USD' as const : 'PEN' as const,
     }))
 
     const vencimientosPorPagar = summary.payables.items
@@ -341,6 +352,7 @@ export async function GET(req: NextRequest) {
         name: item.creditorName,
         due_date: item.dueDate as string,
         monto: item.pendingAmount,
+        currency: item.currency === 'USD' ? 'USD' as const : 'PEN' as const,
       }))
 
     const payload: DashboardSidebar = {
@@ -348,14 +360,14 @@ export async function GET(req: NextRequest) {
         total_consolidado: saldoTotal,
         items: summary.accounts
           .slice()
-          .sort((a, b) => b.balancePen - a.balancePen)
+          .sort((a, b) => (b.balancePen ?? -Infinity) - (a.balancePen ?? -Infinity))
           .map((account) => ({
             portfolio_id: account.id,
             name: account.name,
             saldo: account.balancePen,
-            pct_of_total: saldoTotal > 0
+            pct_of_total: saldoTotal !== null && saldoTotal > 0 && account.balancePen !== null
               ? Math.round((account.balancePen / saldoTotal) * 10000) / 100
-              : 0,
+              : null,
           })),
       },
       flujo_pendiente: {
@@ -364,7 +376,7 @@ export async function GET(req: NextRequest) {
         por_pagar_total: porPagar,
         por_pagar_count: summary.payables.count,
         neto,
-        nota: neto > 0 ? 'favorece' : neto < 0 ? 'desfavorece' : 'equilibrado',
+        nota: neto === null ? 'incomplete' : neto > 0 ? 'favorece' : neto < 0 ? 'desfavorece' : 'equilibrado',
         top_deudores: topDeudores,
         top_acreedores: topAcreedores,
       },

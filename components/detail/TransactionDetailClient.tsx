@@ -14,7 +14,7 @@
 import { useState, useCallback }     from 'react'
 import { useRouter }                 from 'next/navigation'
 import { useCurrency }               from '@/lib/hooks/useDashboard'
-import { formatCurrency, formatNumber } from '@/lib/contracts/ui.contracts'
+import { formatCurrency, formatCurrencyOrUnavailable, formatNumber } from '@/lib/contracts/ui.contracts'
 import type { TransactionFormOptions } from '@/lib/contracts/ui.contracts'
 import { deleteTransactionAction }   from '@/app/actions/transaction.actions'
 import { TransactionEditModal }      from '@/components/forms/TransactionEditModal'
@@ -137,7 +137,7 @@ export function TransactionDetailClient({
             }
             title={tx.description}
             subtitle={formatDate(tx.transaction_date)}
-            amount={<>{typeConfig.prefix}{formatCurrency(format(amountPen), preferred)}</>}
+            amount={<>{typeConfig.prefix}{formatCurrencyOrUnavailable(format(amountPen), preferred)}</>}
             amountMeta={(tx.currency !== 'PEN' || !tx.affects_reports) ? (
               <>
                 {tx.currency !== 'PEN' && (
@@ -244,7 +244,9 @@ export function TransactionDetailClient({
             {tx.currency}
             {tx.currency === 'USD' && (
               <span className="ml-2 text-[11px] text-[var(--ft-text-muted)]">
-                · TC {formatNumber(Number(tx.exchange_rate ?? 0), { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN
+                · TC {typeof tx.exchange_rate === 'number' && Number.isFinite(tx.exchange_rate) && tx.exchange_rate > 0
+                  ? `${formatNumber(tx.exchange_rate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN`
+                  : 'No disponible'}
               </span>
             )}
           </CanonicalDetailFact>

@@ -42,7 +42,7 @@ interface ShellUser {
 interface AppShellProps {
   user:            ShellUser
   /** Tipo de cambio inicial para el CurrencyProvider (viene del servidor) */
-  exchangeRate:    number
+  exchangeRate:    number | null
   /** Badges de alertas por key de nav (cuotas vencidas, etc.) */
   navBadges?:      Partial<Record<string, number>>
   children:        React.ReactNode

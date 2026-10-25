@@ -64,10 +64,12 @@ type BudgetItem = {
   end_date: string | null
   period_start: string
   period_end: string
-  spent_amount: number
-  remaining_amount: number
-  progress_percent: number
-  over_limit: boolean
+  spent_amount: number | null
+  remaining_amount: number | null
+  progress_percent: number | null
+  over_limit: boolean | null
+  metrics_complete?: boolean
+  missing_conversion_count?: number
   is_active: boolean
   notes: string | null
   created_at: string
@@ -124,10 +126,12 @@ type BudgetPeriodViewItem = {
   period_end: string
   amount: number
   status: string
-  spent_amount: number
-  remaining_amount: number
-  progress_percent: number
-  over_limit: boolean
+  spent_amount: number | null
+  remaining_amount: number | null
+  progress_percent: number | null
+  over_limit: boolean | null
+  metrics_complete?: boolean
+  missing_conversion_count?: number
   budget: {
     id: string
     name: string
@@ -767,10 +771,12 @@ export function BudgetsManager() {
       end_date: row.period_end,
       period_start: row.period_start,
       period_end: row.period_end,
-      spent_amount: Number(row.spent_amount ?? 0),
-      remaining_amount: Number(row.remaining_amount ?? 0),
-      progress_percent: Number(row.progress_percent ?? 0),
+      spent_amount: row.spent_amount == null ? null : Number(row.spent_amount),
+      remaining_amount: row.remaining_amount == null ? null : Number(row.remaining_amount),
+      progress_percent: row.progress_percent == null ? null : Number(row.progress_percent),
       over_limit: row.over_limit,
+      metrics_complete: row.metrics_complete !== false,
+      missing_conversion_count: row.missing_conversion_count ?? 0,
       is_active: row.budget.is_active,
       notes: null,
       created_at: '',
@@ -788,10 +794,12 @@ export function BudgetsManager() {
       period_end: row.period_end,
       start_date: row.period_start,
       end_date: row.period_end,
-      spent_amount: Number(row.spent_amount ?? 0),
-      remaining_amount: Number(row.remaining_amount ?? 0),
-      progress_percent: Number(row.progress_percent ?? 0),
+      spent_amount: row.spent_amount == null ? null : Number(row.spent_amount),
+      remaining_amount: row.remaining_amount == null ? null : Number(row.remaining_amount),
+      progress_percent: row.progress_percent == null ? null : Number(row.progress_percent),
       over_limit: row.over_limit,
+      metrics_complete: row.metrics_complete !== false,
+      missing_conversion_count: row.missing_conversion_count ?? 0,
       is_active: row.budget.is_active,
     }
     const otherPeriods = base.periods.filter(period =>
@@ -858,7 +866,7 @@ export function BudgetsManager() {
 
   const priorityExceededPeriod = useMemo(
     () => [...exceededPeriodRows].sort((left, right) =>
-      right.progress_percent - left.progress_percent || left.budget.name.localeCompare(right.budget.name),
+      (right.progress_percent ?? -1) - (left.progress_percent ?? -1) || left.budget.name.localeCompare(right.budget.name),
     )[0] ?? null,
     [exceededPeriodRows],
   )
@@ -1151,15 +1159,17 @@ export function BudgetsManager() {
                   <div className={movementPageStyles.summaryItem}>
                     <p>Gasto vinculado · {summary.currency}</p>
                     <div className={`${movementPageStyles.summaryValue} ${styles.summaryValue} tabular-nums`}>{formatBudgetCurrency(summary.spent, summary.currency)}</div>
-                    <span className={movementPageStyles.summaryDetail}>Egresos vinculados</span>
+                    <span className={movementPageStyles.summaryDetail}>{summary.metrics_complete ? 'Egresos vinculados' : 'Falta tasa histórica verificable'}</span>
                   </div>
                   <div className={movementPageStyles.summaryItem}>
                     <p>Disponible · {summary.currency}</p>
-                    <div className={`${movementPageStyles.summaryValue} ${styles.summaryValue} tabular-nums ${summary.available < 0 ? 'text-[var(--ft-danger)]' : ''}`}>
+                    <div className={`${movementPageStyles.summaryValue} ${styles.summaryValue} tabular-nums ${summary.available !== null && summary.available < 0 ? 'text-[var(--ft-danger)]' : ''}`}>
                       {formatBudgetCurrency(summary.available, summary.currency)}
                     </div>
                     <span className={movementPageStyles.summaryDetail}>
-                      {summary.available < 0
+                      {!summary.metrics_complete
+                        ? 'Cálculo incompleto'
+                        : summary.available !== null && summary.available < 0
                         ? `Excedido por ${formatBudgetCurrency(Math.abs(summary.available), summary.currency)}`
                         : 'Asignado menos gasto'}
                     </span>
@@ -1275,7 +1285,7 @@ export function BudgetsManager() {
                     <span aria-hidden="true"> · </span>
                     Límite <strong>{formatBudgetCurrency(priorityExceededPeriod.amount, priorityExceededPeriod.budget.currency)}</strong>
                     <span aria-hidden="true"> · </span>
-                    Exceso <strong>{formatBudgetCurrency(Math.abs(priorityExceededPeriod.remaining_amount), priorityExceededPeriod.budget.currency)}</strong>
+                    Exceso <strong>{formatBudgetCurrency(priorityExceededPeriod.remaining_amount === null ? null : Math.abs(priorityExceededPeriod.remaining_amount), priorityExceededPeriod.budget.currency)}</strong>
                   </p>
                 </div>
                 <Button type="button" variant="secondary" size="sm" onClick={() => openPeriodDetail(priorityExceededPeriod)}>
@@ -1327,10 +1337,11 @@ export function BudgetsManager() {
                   <span>Presupuesto</span><span>Uso del límite</span><span>Gasto / límite</span><span>Disponible</span><span className="text-right">Acciones</span>
                 </div>
                 {filteredPeriodRows.map(row => {
-                  const progress = Math.max(0, Number(row.progress_percent ?? 0))
+                  const metricsComplete = row.metrics_complete !== false && row.progress_percent !== null && row.spent_amount !== null && row.remaining_amount !== null
+                  const progress = metricsComplete ? Math.max(0, Number(row.progress_percent)) : 0
                   const visualProgress = Math.min(100, progress)
                   const fillClass = row.over_limit ? styles.progressFillDanger : progress >= 80 ? styles.progressFillWarning : styles.progressFill
-                  const remaining = Number(row.remaining_amount ?? 0)
+                  const remaining = row.remaining_amount
                   return (
                     <article key={row.id} className={styles.periodRow} data-testid={`budget-period-row-${row.id}`}>
                       <div className="min-w-0">
@@ -1341,17 +1352,17 @@ export function BudgetsManager() {
                       <div className={styles.periodProgress}>
                         <div className="mb-1 flex items-center justify-between gap-2">
                           <span className="text-[10px] text-[var(--ft-text-subtle)] md:hidden">Uso del límite</span>
-                          <span className="text-[12px] font-semibold tabular-nums text-[var(--ft-text-strong)]">{displayBudgetProgress(progress)}</span>
+                          <span className="text-[12px] font-semibold tabular-nums text-[var(--ft-text-strong)]">{metricsComplete ? displayBudgetProgress(progress) : '—'}</span>
                         </div>
                         <div className={styles.progressTrack} role="progressbar" aria-label={`Ejecución de ${row.budget.name}`} aria-valuemin={0} aria-valuemax={Math.max(100, progress)} aria-valuenow={progress}>
                           <div className={`${styles.progressFill} ${fillClass}`} style={{ width: `${visualProgress}%` }} />
                         </div>
-                        <p className="mt-1 text-[10px] text-[var(--ft-text-muted)]">{row.over_limit ? `Excedido por ${formatBudgetCurrency(Math.abs(remaining), row.budget.currency)}` : 'Del límite asignado'}</p>
+                        <p className="mt-1 text-[10px] text-[var(--ft-text-muted)]">{!metricsComplete ? 'Falta tasa histórica verificable' : row.over_limit ? `Excedido por ${formatBudgetCurrency(Math.abs(remaining!), row.budget.currency)}` : 'Del límite asignado'}</p>
                       </div>
                       <div className={styles.periodSpentLimit}>
                         <div>
                           <p className="text-[10px] text-[var(--ft-text-subtle)] md:hidden">Gastado</p>
-                          <p className={`${styles.summaryValue} ${styles.periodSpent} text-[13px] font-semibold tabular-nums text-[var(--ft-text-strong)]`}>{formatBudgetCurrency(Number(row.spent_amount ?? 0), row.budget.currency)}</p>
+                          <p className={`${styles.summaryValue} ${styles.periodSpent} text-[13px] font-semibold tabular-nums text-[var(--ft-text-strong)]`}>{formatBudgetCurrency(row.spent_amount, row.budget.currency)}</p>
                         </div>
                         <div>
                           <p className="text-[10px] text-[var(--ft-text-subtle)] md:hidden">Límite</p>
@@ -1360,8 +1371,8 @@ export function BudgetsManager() {
                       </div>
                       <div className="min-w-0">
                         <p className="text-[10px] text-[var(--ft-text-subtle)] md:hidden">Disponible</p>
-                        <p className={`${styles.summaryValue} text-[13px] font-semibold tabular-nums ${remaining < 0 ? 'text-[var(--ft-danger)]' : 'text-[var(--ft-text-strong)]'}`}>{formatBudgetCurrency(remaining, row.budget.currency)}</p>
-                        <StatusBadge tone={periodStatusTone(row.status, row.over_limit)} dot={row.status !== 'CLOSED'}>{row.over_limit ? 'Excedido' : periodStatusLabel(row.status)}</StatusBadge>
+                        <p className={`${styles.summaryValue} text-[13px] font-semibold tabular-nums ${remaining !== null && remaining < 0 ? 'text-[var(--ft-danger)]' : 'text-[var(--ft-text-strong)]'}`}>{formatBudgetCurrency(remaining, row.budget.currency)}</p>
+                        <StatusBadge tone={!metricsComplete ? 'muted' : periodStatusTone(row.status, row.over_limit === true)} dot={row.status !== 'CLOSED'}>{!metricsComplete ? 'Datos incompletos' : row.over_limit ? 'Excedido' : periodStatusLabel(row.status)}</StatusBadge>
                       </div>
                       <div className={`${styles.periodActions} flex items-center gap-1.5 md:justify-end`}>
                         <BudgetViewPeriodAction
@@ -1430,9 +1441,10 @@ export function BudgetsManager() {
         ) : viewMode === 'list' ? (
           <div className="space-y-2">
             {filteredBudgetSeries.map(budget => {
-              const actualProgress = Math.max(0, Number(budget.progress_percent ?? 0))
+              const metricsComplete = budget.metrics_complete !== false && budget.spent_amount !== null && budget.remaining_amount !== null && budget.progress_percent !== null
+              const actualProgress = metricsComplete ? Math.max(0, Number(budget.progress_percent)) : 0
               const progress = Math.min(100, actualProgress)
-              const tone = budgetProgressTone(budget.over_limit, actualProgress)
+              const tone = budgetProgressTone(budget.over_limit === true, actualProgress)
 
               return (
                 <article
@@ -1465,8 +1477,8 @@ export function BudgetsManager() {
                         <StatusBadge tone={budget.is_active ? 'success' : 'muted'}>
                           {budget.is_active ? 'Activo' : 'Inactivo'}
                         </StatusBadge>
-                        <StatusBadge tone={budget.over_limit ? 'danger' : 'primary'} dot={false}>
-                          {budget.over_limit ? 'Excedido' : 'En rango'}
+                        <StatusBadge tone={!metricsComplete ? 'muted' : budget.over_limit ? 'danger' : 'primary'} dot={false}>
+                          {!metricsComplete ? 'Datos incompletos' : budget.over_limit ? 'Excedido' : 'En rango'}
                         </StatusBadge>
                       </div>
                       <p className="mt-2 text-[12px] text-[var(--c-text-muted)]">
@@ -1483,11 +1495,13 @@ export function BudgetsManager() {
                       <ProgressMetric
                         value={progress}
                         label="Ejecucion"
-                        valueLabel={displayBudgetProgress(actualProgress)}
+                        valueLabel={metricsComplete ? displayBudgetProgress(actualProgress) : '—'}
                         tone={tone}
-                        description={budget.over_limit
-                          ? `Excedido por ${formatBudgetCurrency(Math.abs(Number(budget.remaining_amount ?? 0)), budget.currency)}`
-                          : `Disponible ${formatBudgetCurrency(Math.max(0, Number(budget.remaining_amount ?? 0)), budget.currency)}`}
+                        description={!metricsComplete
+                          ? 'Falta una tasa histórica verificable'
+                          : budget.over_limit
+                            ? `Excedido por ${formatBudgetCurrency(Math.abs(Number(budget.remaining_amount)), budget.currency)}`
+                            : `Disponible ${formatBudgetCurrency(Math.max(0, Number(budget.remaining_amount)), budget.currency)}`}
                       />
                     </div>
 
@@ -1552,9 +1566,10 @@ export function BudgetsManager() {
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {filteredBudgetSeries.map(budget => {
-              const actualProgress = Math.max(0, Number(budget.progress_percent ?? 0))
+              const metricsComplete = budget.metrics_complete !== false && budget.spent_amount !== null && budget.remaining_amount !== null && budget.progress_percent !== null
+              const actualProgress = metricsComplete ? Math.max(0, Number(budget.progress_percent)) : 0
               const progress = Math.min(100, actualProgress)
-              const tone = budgetProgressTone(budget.over_limit, actualProgress)
+              const tone = budgetProgressTone(budget.over_limit === true, actualProgress)
 
               return (
                 <article
@@ -1586,16 +1601,16 @@ export function BudgetsManager() {
                       <ProgressMetric
                         value={progress}
                         label="Ejecucion"
-                        valueLabel={displayBudgetProgress(actualProgress)}
+                        valueLabel={metricsComplete ? displayBudgetProgress(actualProgress) : '—'}
                         tone={tone}
-                        description={`Gastado ${formatBudgetCurrency(Number(budget.spent_amount ?? 0), budget.currency)}`}
+                        description={`Gastado ${formatBudgetCurrency(budget.spent_amount, budget.currency)}`}
                       />
                     </div>
 
                     <div className="mt-4 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
                       <AmountCell
-                        label={budget.over_limit ? 'Excedido por' : 'Disponible'}
-                        value={formatBudgetCurrency(Math.abs(Number(budget.remaining_amount ?? 0)), budget.currency)}
+                        label={!metricsComplete ? 'Saldo' : budget.over_limit ? 'Excedido por' : 'Disponible'}
+                        value={formatBudgetCurrency(metricsComplete ? Math.abs(Number(budget.remaining_amount)) : null, budget.currency)}
                         meta={`Periodo visible: ${formatRange(budget.period_start, budget.period_end)}`}
                         align="left"
                         tone={tone}

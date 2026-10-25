@@ -68,7 +68,7 @@ type FormState = {
 type PayableFormProps = {
   payable?:     PayableRow | null
   creditors:    CreditorRow[]
-  exchangeRate: number
+  exchangeRate: number | null
   onSuccess:    () => void
   defaultCreditorId?: string
   disabled?:    boolean
@@ -183,9 +183,11 @@ export function PayableForm({
   // ── Equivalencia ────────────────────────────────────────────────────────────
   const amount     = parseNumericInput(form.amount, 0)
   const isPen      = form.currency === 'PEN'
-  const equivLabel = isPen
-    ? `≈ ${formatCurrency(amount / (exchangeRate || 1), 'USD')}`
-    : `≈ ${formatCurrency(amount * (exchangeRate || 1), 'PEN')}`
+  const equivLabel = exchangeRate === null || !Number.isFinite(exchangeRate) || exchangeRate <= 0
+    ? 'Equivalencia no disponible'
+    : isPen
+      ? `≈ ${formatCurrency(amount / exchangeRate, 'USD')}`
+      : `≈ ${formatCurrency(amount * exchangeRate, 'PEN')}`
 
   // ── Subir adjunto ────────────────────────────────────────────────────────────
   // ── Submit ──────────────────────────────────────────────────────────────────

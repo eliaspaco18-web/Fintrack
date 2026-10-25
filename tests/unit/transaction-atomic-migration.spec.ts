@@ -59,6 +59,15 @@ test.describe('atomic transaction migration contract', () => {
     expect(converged).toContain('p_budget_id             => NULL::uuid')
   })
 
+  test('forward hardening does not default omitted USD exchange rates to one', () => {
+    const hardened = migration('20261025000002_atomic_exchange_rate_default_null.sql')
+    expect(hardened.match(/p_exchange_rate\s+numeric\s+DEFAULT NULL,/g)).toHaveLength(2)
+    expect(hardened).not.toContain('p_exchange_rate           numeric      DEFAULT 1.000000,')
+    expect(hardened).toContain("p_currency = 'USD' AND")
+    expect(hardened).toContain('(p_exchange_rate IS NULL OR p_exchange_rate < 0.01 OR p_exchange_rate > 100)')
+    expect(hardened).toContain('CREATE OR REPLACE FUNCTION public.create_transaction_atomic(')
+  })
+
   test('checks the caller and every externally supplied related id before insertion', () => {
     const guards = [
       'auth.uid() IS NULL',
@@ -77,6 +86,21 @@ test.describe('atomic transaction migration contract', () => {
       expect(converged.indexOf(guard), guard).toBeGreaterThan(-1)
       expect(converged.indexOf(guard), guard).toBeLessThan(firstInsert)
     }
+  })
+
+  test('links receivable/payable counterparties inside the atomic RPC instead of after-commit updates', () => {
+    expect(converged).toContain('creditor_id, debtor_id')
+    expect(converged).toContain("WHEN p_payable IS NOT NULL AND NULLIF(trim(p_payable->>'creditor_id'), '') IS NOT NULL")
+    expect(converged).toContain("WHEN p_receivable IS NOT NULL AND NULLIF(trim(p_receivable->>'debtor_id'), '') IS NOT NULL")
+    expect(converged).toContain('creditor_id, creditor_name')
+    expect(converged).toContain('user_id, transaction_id, debtor_id, debtor_name')
+
+    const receivableRoute = readFileSync(resolve(process.cwd(), 'app/api/receivables/route.ts'), 'utf8')
+    const payableRoute = readFileSync(resolve(process.cwd(), 'app/api/payables/route.ts'), 'utf8')
+    expect(receivableRoute).toContain('debtor_id: debtorId')
+    expect(payableRoute).toContain('creditor_id,')
+    expect(receivableRoute).not.toContain(".from('accounts_receivable')\n    .update(")
+    expect(payableRoute).not.toContain(".from('accounts_payable')\n    .update(")
   })
 
   test('explicitly removes anonymous and service-role execution from both overloads', () => {

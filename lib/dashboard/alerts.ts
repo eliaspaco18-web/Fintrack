@@ -17,7 +17,7 @@ export function sortDashboardAlerts(alerts: DashboardAlertItem[]): DashboardAler
       if (dateDelta !== 0) return dateDelta
     }
 
-    return Math.abs(b.amountPen) - Math.abs(a.amountPen)
+    return Math.abs(b.amountPen ?? b.amount) - Math.abs(a.amountPen ?? a.amount)
   })
 }
 

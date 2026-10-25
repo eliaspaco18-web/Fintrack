@@ -59,24 +59,25 @@ function EmptyState() {
 
 function buildItems(data: FullDashboardSummary | undefined): CompositionItem[] {
   if (!data) return []
+  if (data.accounts.some((account) => account.balancePen === null) || data.assets.byType.some((asset) => asset.totalPen === null)) return []
 
   const liquidity = data.accounts
-    .filter((account) => account.balancePen > 0)
-    .reduce((sum, account) => sum + account.balancePen, 0)
+    .filter((account) => account.balancePen !== null && account.balancePen > 0)
+    .reduce((sum, account) => sum + (account.balancePen ?? 0), 0)
 
   const rawItems: CompositionItem[] = []
   if (liquidity > 0) {
     rawItems.push({
       id: 'liquidity',
       label: 'Liquidez bancaria',
-      helper: `${data.accounts.filter((account) => account.balancePen > 0).length} cuenta(s)`,
+      helper: `${data.accounts.filter((account) => account.balancePen !== null && account.balancePen > 0).length} cuenta(s)`,
       value: liquidity,
       color: COLOR_SCALE[0]!,
     })
   }
 
   for (const asset of data.assets.byType) {
-    if (asset.totalPen <= 0) continue
+    if (asset.totalPen === null || asset.totalPen <= 0) continue
     rawItems.push({
       id: `asset-${asset.assetType}`,
       label: assetTypeLabel(asset.assetType),
@@ -114,6 +115,7 @@ export function PatrimonioComposicionWidget() {
   })
 
   const items = buildItems(data)
+  const incomplete = !!data && (data.accounts.some((account) => account.balancePen === null) || data.assets.byType.some((asset) => asset.totalPen === null))
   const total = items.reduce((sum, item) => sum + item.value, 0)
   let offset = 0
 
@@ -137,6 +139,15 @@ export function PatrimonioComposicionWidget() {
             </div>
           </div>
         </div>
+      </PremiumCard>
+    )
+  }
+
+  if (incomplete) {
+    return (
+      <PremiumCard innerClassName="p-5">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ft-text-subtle)]">Composición del patrimonio</p>
+        <p className="mt-3 text-sm text-[var(--ft-text-muted)]">No disponible: falta una conversión verificada para consolidar las monedas.</p>
       </PremiumCard>
     )
   }

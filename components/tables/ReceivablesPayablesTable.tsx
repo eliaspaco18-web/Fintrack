@@ -11,7 +11,7 @@ import Link                          from 'next/link'
 import { useState, useEffect }       from 'react'
 import { useReceivables, usePayables } from '@/lib/hooks/useModules'
 import { useCurrency }               from '@/lib/hooks/useDashboard'
-import { formatCurrency, formatPercent, toPenAmount } from '@/lib/contracts/ui.contracts'
+import { formatCurrency, formatCurrencyOrUnavailable, formatPercent, toPenAmount } from '@/lib/contracts/ui.contracts'
 import {
   TableShell,
   Toolbar,
@@ -127,8 +127,8 @@ export function ReceivablesTable() {
     .filter(r => r.status === 'PENDING' || r.status === 'PARTIAL')
     .reduce((s, r) => {
       const pen = toPenAmount(r.amount - r.collected_amount, r.currency, exchangeRate)
-      return s + pen
-    }, 0)
+      return pen === null || s === null ? null : s + pen
+    }, 0 as number | null)
 
   return (
     <TableShell>
@@ -136,13 +136,14 @@ export function ReceivablesTable() {
         <FilterPill label="Pendientes" active={activeStatus === 'PENDING'}  onClick={() => setActiveStatus('PENDING')} color="#06b6d4"/>
         <FilterPill label="Todos"      active={activeStatus === ''}         onClick={() => setActiveStatus('')}/>
         <FilterPill label="Cobrados"   active={activeStatus === 'COLLECTED'} onClick={() => setActiveStatus('COLLECTED')} color="var(--c-primary)"/>
-        {totalPending > 0 && (
+        {totalPending !== null && totalPending > 0 && (
           <span className="text-[11px] text-white/25 tabular-nums hidden sm:inline">
             Por cobrar: <strong className="text-cyan-400">
-              {formatCurrency(format(totalPending), preferred)}
+              {formatCurrencyOrUnavailable(format(totalPending), preferred)}
             </strong>
           </span>
         )}
+        {totalPending === null && filtered.length > 0 && <span className="text-[11px] text-[var(--c-text-muted)] hidden sm:inline">Por cobrar: <strong>No disponible</strong></span>}
         <SearchInput value={search} onChange={setSearch} placeholder="Buscar deudor…" className="filters-search xl:ml-auto"/>
       </Toolbar>
 
@@ -223,7 +224,7 @@ export function ReceivablesTable() {
                     <Td right className="hidden sm:table-cell">
                       {pending > 0 && (
                         <span className="text-[12px] font-bold tabular-nums text-cyan-400">
-                          {formatCurrency(format(pendingPen), preferred)}
+                          {pendingPen === null || format(pendingPen) === null ? 'No disponible' : formatCurrency(format(pendingPen)!, preferred)}
                         </span>
                       )}
                     </Td>
@@ -287,8 +288,8 @@ export function PayablesTable() {
     .filter(p => p.status === 'PENDING' || p.status === 'PARTIAL')
     .reduce((s, p) => {
       const pen = toPenAmount(p.amount - p.paid_amount, p.currency, exchangeRate)
-      return s + pen
-    }, 0)
+      return pen === null || s === null ? null : s + pen
+    }, 0 as number | null)
 
   return (
     <TableShell>
@@ -296,13 +297,14 @@ export function PayablesTable() {
         <FilterPill label="Pendientes" active={activeStatus === 'PENDING'}  onClick={() => setActiveStatus('PENDING')} color="#f97316"/>
         <FilterPill label="Todos"      active={activeStatus === ''}         onClick={() => setActiveStatus('')}/>
         <FilterPill label="Pagados"    active={activeStatus === 'PAID'}     onClick={() => setActiveStatus('PAID')}    color="var(--c-primary)"/>
-        {totalPending > 0 && (
+        {totalPending !== null && totalPending > 0 && (
           <span className="text-[11px] text-white/25 tabular-nums hidden sm:inline">
             Por pagar: <strong className="text-orange-400">
-              {formatCurrency(format(totalPending), preferred)}
+              {formatCurrencyOrUnavailable(format(totalPending), preferred)}
             </strong>
           </span>
         )}
+        {totalPending === null && filtered.length > 0 && <span className="text-[11px] text-[var(--c-text-muted)] hidden sm:inline">Por pagar: <strong>No disponible</strong></span>}
         <SearchInput value={search} onChange={setSearch} placeholder="Buscar acreedor…" className="filters-search xl:ml-auto"/>
       </Toolbar>
 
@@ -383,7 +385,7 @@ export function PayablesTable() {
                     <Td right className="hidden sm:table-cell">
                       {pending > 0 && (
                         <span className="text-[12px] font-bold tabular-nums text-orange-400">
-                          {formatCurrency(format(pendingPen), preferred)}
+                          {pendingPen === null || format(pendingPen) === null ? 'No disponible' : formatCurrency(format(pendingPen)!, preferred)}
                         </span>
                       )}
                     </Td>

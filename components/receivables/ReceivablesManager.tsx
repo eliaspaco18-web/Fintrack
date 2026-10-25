@@ -192,7 +192,7 @@ function DebtorActions({
   )
 }
 
-export function ReceivablesManager({ exchangeRate = 3.7 }: { exchangeRate?: number }) {
+export function ReceivablesManager() {
   const pathname = usePathname()
   const router = useRouter()
   const searchParams = useSearchParams()

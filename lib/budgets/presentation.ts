@@ -2,16 +2,18 @@ import type { CurrencyCode } from '@/types/database.types'
 
 export type BudgetPeriodSummaryRow = {
   amount: number
-  spent_amount: number
-  remaining_amount: number
+  spent_amount: number | null
+  remaining_amount: number | null
+  metrics_complete?: boolean
   budget: { currency: CurrencyCode }
 }
 
 export type BudgetCurrencySummary = {
   currency: CurrencyCode
   assigned: number
-  spent: number
-  available: number
+  spent: number | null
+  available: number | null
+  metrics_complete: boolean
 }
 
 export type BudgetStatusItem = { is_active: boolean }
@@ -50,11 +52,21 @@ export function summarizeBudgetCurrencies(
       assigned: 0,
       spent: 0,
       available: 0,
+      metrics_complete: true,
     }
     summary.assigned += Number(row.amount ?? 0)
-    summary.spent += Number(row.spent_amount ?? 0)
-    // Keep negative availability visible when the budget is exceeded.
-    summary.available += Number(row.remaining_amount ?? 0)
+    if (row.metrics_complete === false || row.spent_amount === null || row.remaining_amount === null) {
+      summary.metrics_complete = false
+      summary.spent = null
+      summary.available = null
+      summaries.set(currency, summary)
+      continue
+    }
+    if (summary.metrics_complete) {
+      summary.spent = (summary.spent ?? 0) + Number(row.spent_amount ?? 0)
+      // Keep negative availability visible when the budget is exceeded.
+      summary.available = (summary.available ?? 0) + Number(row.remaining_amount ?? 0)
+    }
     summaries.set(currency, summary)
   }
 
@@ -64,7 +76,8 @@ export function summarizeBudgetCurrencies(
 }
 
 /** Display-only formatter that preserves non-PEN/USD currency codes. */
-export function formatBudgetCurrency(amount: number, currency: CurrencyCode): string {
+export function formatBudgetCurrency(amount: number | null | undefined, currency: CurrencyCode): string {
+  if (amount === null || amount === undefined || !Number.isFinite(Number(amount))) return 'No disponible'
   const code = String(currency)
   try {
     return new Intl.NumberFormat('es-PE', {

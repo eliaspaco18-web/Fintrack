@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useCurrency } from '@/lib/hooks/useDashboard'
-import { formatCurrency } from '@/lib/contracts/ui.contracts'
+import { formatCurrencyOrUnavailable } from '@/lib/contracts/ui.contracts'
 import type { CashFlowPoint, DailyFlowPoint } from '@/modules/dashboard/dashboard.types'
 
 const VIEW_W = 760
@@ -79,9 +79,11 @@ function smoothPath(points: Array<{ x: number; y: number }>) {
   return d
 }
 
-function formatAxisValue(value: number, preferred: 'PEN' | 'USD') {
-  const sign = value < 0 ? '-' : ''
-  const abs = Math.abs(value)
+function formatAxisValue(value: number, preferred: 'PEN' | 'USD', exchangeRate: number | null) {
+  if (preferred === 'USD' && (exchangeRate === null || !Number.isFinite(exchangeRate) || exchangeRate <= 0)) return '—'
+  const displayValue = preferred === 'USD' ? value / (exchangeRate as number) : value
+  const sign = displayValue < 0 ? '-' : ''
+  const abs = Math.abs(displayValue)
   const symbol = preferred === 'PEN' ? 'S/' : '$'
 
   if (abs >= 1_000_000) return `${sign}${symbol}${(abs / 1_000_000).toFixed(1)}M`
@@ -122,7 +124,7 @@ interface CashFlowChartProps {
 }
 
 export function CashFlowChart({ data, dailyData, loading }: CashFlowChartProps) {
-  const { preferred, format } = useCurrency()
+  const { preferred, format, exchangeRate } = useCurrency()
   const [range, setRange] = useState<RangeKey>('1M')
   const [hovered, setHovered] = useState<number | null>(null)
 
@@ -191,7 +193,7 @@ export function CashFlowChart({ data, dailyData, loading }: CashFlowChartProps) 
   const activeIndex = hovered ?? plotted.length - 1
   const active = plotted[activeIndex] ?? plotted.at(-1)!
 
-  const activeValueLabel = formatCurrency(format(active.balancePen), preferred)
+  const activeValueLabel = formatCurrencyOrUnavailable(format(active.balancePen), preferred)
   const badgeWidth = Math.max(86, Math.ceil(activeValueLabel.length * 7.2) + 22)
   const badgeX = clamp(active.x - badgeWidth / 2, PAD.left + 1, VIEW_W - PAD.right - badgeWidth - 1)
   const badgeY = clamp(active.y - 43, PAD.top + 2, BASE_Y - 26)
@@ -251,7 +253,7 @@ export function CashFlowChart({ data, dailyData, loading }: CashFlowChartProps) 
                 fill="rgba(23,49,47,0.42)"
                 fontFamily="Inter, sans-serif"
               >
-                {formatAxisValue(line.value, preferred)}
+                {formatAxisValue(line.value, preferred, exchangeRate)}
               </text>
             </g>
           ))}
@@ -348,7 +350,7 @@ export function CashFlowChart({ data, dailyData, loading }: CashFlowChartProps) 
                   onMouseEnter={() => setHovered(index)}
                   onFocus={() => setHovered(index)}
                   tabIndex={0}
-                  aria-label={`${point.label}: ${formatCurrency(format(point.balancePen), preferred)}`}
+                  aria-label={`${point.label}: ${formatCurrencyOrUnavailable(format(point.balancePen), preferred)}`}
                   style={{ cursor: 'crosshair' }}
                 />
               </g>
@@ -359,8 +361,8 @@ export function CashFlowChart({ data, dailyData, loading }: CashFlowChartProps) 
 
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 pb-5 pt-1">
         <div className="flex flex-wrap items-center gap-3 text-[11px] text-[var(--c-text-muted)]">
-          <span className="font-semibold">Ingreso: {formatCurrency(format(totalIncome), preferred)}</span>
-          <span className="font-semibold">Egreso: {formatCurrency(format(totalExpense), preferred)}</span>
+          <span className="font-semibold">Ingreso: {formatCurrencyOrUnavailable(format(totalIncome), preferred)}</span>
+          <span className="font-semibold">Egreso: {formatCurrencyOrUnavailable(format(totalExpense), preferred)}</span>
         </div>
 
         <div className="flex items-center gap-1 rounded-full border border-[var(--c-border)] bg-[var(--c-surface-2)] p-1">

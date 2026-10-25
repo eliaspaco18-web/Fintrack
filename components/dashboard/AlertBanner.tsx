@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useState } from 'react'
 import useSWR from 'swr'
-import { formatCurrency } from '@/lib/contracts/ui.contracts'
+import { formatCurrencyOrUnavailable } from '@/lib/contracts/ui.contracts'
 import type { DashboardAlertItem, DashboardAlertsResponse } from '@/lib/dashboard/types'
 import { fetchDashboardData } from './api'
 
@@ -58,7 +58,7 @@ export function AlertBanner() {
   if (isLoading || !data || data.criticalCount === 0) return null
 
   const alertCountLabel = `${data.criticalCount} vencimiento${data.criticalCount === 1 ? '' : 's'} crítico${data.criticalCount === 1 ? '' : 's'}`
-  const totalLabel = formatCurrency(data.totalAmountPen, 'PEN')
+  const totalLabel = formatCurrencyOrUnavailable(data.totalAmountPen, 'PEN')
 
   return (
     <section className="alert-banner overflow-hidden border-b border-[color-mix(in_oklch,var(--ft-danger)_18%,transparent)] bg-[color-mix(in_oklch,var(--ft-danger)_5%,var(--ft-surface))]">
@@ -116,7 +116,7 @@ export function AlertBanner() {
                 </span>
               </span>
               <span className="self-center text-right font-semibold tabular-nums text-[var(--ft-danger)]">
-                {formatCurrency(alert.amount, alert.currency)}
+                {formatCurrencyOrUnavailable(alert.amount, alert.currency)}
               </span>
             </Link>
           ))}

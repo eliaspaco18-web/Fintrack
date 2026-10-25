@@ -7,7 +7,7 @@
 'use client'
 
 import { useCurrency }          from '@/lib/hooks/useDashboard'
-import { formatCurrency }       from '@/lib/contracts/ui.contracts'
+import { formatCurrencyOrUnavailable } from '@/lib/contracts/ui.contracts'
 import {
   WidgetShell,
   SectionHeader,
@@ -126,7 +126,7 @@ export function ExpenseBreakdown({ categories, loading }: ExpenseBreakdownProps)
             <div>
               <p className="text-[10px] text-[var(--color-text-faint)] uppercase tracking-wide">Total mes</p>
               <p className="text-[1.45rem] font-semibold tabular-nums text-[var(--c-primary)] leading-tight">
-                {formatCurrency(format(total), preferred)}
+                {formatCurrencyOrUnavailable(format(total), preferred)}
               </p>
               <p className="text-[11px] text-[var(--color-text-faint)] mt-0.5">
                 {cats.length} categoría{cats.length !== 1 ? 's' : ''}
@@ -149,7 +149,7 @@ export function ExpenseBreakdown({ categories, loading }: ExpenseBreakdownProps)
                     </span>
                   </div>
                   <span className="text-[11px] text-[var(--color-text-faint)] tabular-nums flex-shrink-0 ml-2">
-                    {formatCurrency(format(cat.totalPen), preferred)}
+                    {formatCurrencyOrUnavailable(format(cat.totalPen), preferred)}
                   </span>
                 </div>
                 <ProgressBar

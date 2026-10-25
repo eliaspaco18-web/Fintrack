@@ -44,13 +44,14 @@ function toSafeNumber(value: unknown, fallback = 0): number {
 
 function normalizeTransactionRow(row: TransactionApiRow): TransactionApiRow {
   const amount = toSafeNumber(row.amount, 0)
-  const rate = toSafeNumber(row.exchange_rate, 1)
+  const rawRate = row.exchange_rate == null ? null : Number(row.exchange_rate)
+  const rate = rawRate !== null && Number.isFinite(rawRate) && rawRate > 0 ? rawRate : null
   const rawAmountPen = row.amount_pen ?? row.amountPen
   const computedAmountPen =
-    rawAmountPen !== undefined && rawAmountPen !== null
-      ? toSafeNumber(rawAmountPen, 0)
+    rawAmountPen !== undefined && rawAmountPen !== null && Number.isFinite(Number(rawAmountPen))
+      ? Number(rawAmountPen)
       : row.currency === 'USD'
-        ? amount * rate
+        ? rate === null ? null : amount * rate
         : amount
 
   const txDate =
@@ -75,6 +76,7 @@ function normalizeTransactionRow(row: TransactionApiRow): TransactionApiRow {
     amount,
     amount_pen: computedAmountPen,
     amountPen: computedAmountPen,
+    exchange_rate: rate,
     transaction_date: txDate,
     transactionDate: txDate,
     affects_reports: affectsReports,

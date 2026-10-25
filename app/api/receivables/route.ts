@@ -277,18 +277,6 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  const { error: receivableUpdateError } = await supabase
-    .from('accounts_receivable')
-    .update({
-      debtor_id: debtorId,
-    })
-    .eq('id', receivableId)
-    .eq('user_id', userId)
-
-  if (receivableUpdateError) {
-    return apiError({ code: 'DATABASE_ERROR', message: receivableUpdateError.message })
-  }
-
   const recurringTemplate = await createRecurringTemplate({
     supabase,
     userId,

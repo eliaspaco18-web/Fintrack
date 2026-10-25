@@ -29,16 +29,21 @@ export async function GET() {
     const s = result.data
     const exchangeRate = s.meta.exchangeRateUsdPen
 
-    const balancePen = s.accounts.reduce((sum, account) => sum + account.balancePen, 0)
-    const balanceUsd = DashboardService.convertCurrency(balancePen, 'PEN', 'USD', exchangeRate)
+    const balancesPen = s.accounts.map(account => account.balancePen)
+    const balancePen = balancesPen.some(value => value === null)
+      ? null
+      : balancesPen.reduce<number>((sum, value) => sum + (value ?? 0), 0)
+    const balanceUsd = balancePen === null
+      ? null
+      : DashboardService.convertCurrency(balancePen, 'PEN', 'USD', exchangeRate)
 
     const ingresosMes = s.currentMonth.incomePen
     const egresosMes = s.currentMonth.expensePen
     const balanceMes = ingresosMes - egresosMes
-    const previousBalancePen = balancePen - balanceMes
-    const monthlyVariationPct = Math.abs(previousBalancePen) > 0
+    const previousBalancePen = balancePen === null ? null : balancePen - balanceMes
+    const monthlyVariationPct = previousBalancePen !== null && Math.abs(previousBalancePen) > 0
       ? Math.round((balanceMes / Math.abs(previousBalancePen)) * 1000) / 10
-      : balanceMes === 0
+      : previousBalancePen !== null && balanceMes === 0
         ? 0
         : null
     const patrimonioPen = s.netWorth.pen
@@ -59,13 +64,13 @@ export async function GET() {
 
     const payload: DashboardSummary = {
       balance_consolidado: {
-        pen: Math.round(balancePen * 100) / 100,
+        pen: balancePen === null ? null : Math.round(balancePen * 100) / 100,
         usd: balanceUsd,
       },
       monthly_balance_variation: {
         amount_pen: Math.round(balanceMes * 100) / 100,
         percent: monthlyVariationPct,
-        previous_balance_pen: Math.round(previousBalancePen * 100) / 100,
+        previous_balance_pen: previousBalancePen === null ? null : Math.round(previousBalancePen * 100) / 100,
         trend: balanceMes > 0 ? 'up' : balanceMes < 0 ? 'down' : 'flat',
       },
       resultado_mensual: balanceMes,

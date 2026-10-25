@@ -8,8 +8,8 @@
 import type { SupabaseClient }        from '@supabase/supabase-js'
 import type { Database }              from '@/types/database.types'
 import { type Result, Errors, ok }    from '@/modules/shared/result.types'
-import { DEFAULT_USD_PEN_EXCHANGE_RATE } from '@/lib/constants/currency'
 import { resolveLiveUsdPenExchangeRate } from '@/lib/server/exchange-rate'
+import { getVerifiedUsdPenRate } from '@/lib/finance/exchange-rate-verification'
 import type {
   DashboardSummary,
   MonthlyComparison,
@@ -241,13 +241,13 @@ export class DashboardService {
    * La conversión a USD usa el tipo de cambio más reciente.
    */
   async getNetWorth(userId: string): Promise<Result<{
-    netWorthPen: number
-    netWorthUsd: number
-    exchangeRate: number
+    netWorthPen: number | null
+    netWorthUsd: number | null
+    exchangeRate: number | null
   }>> {
     try {
       const exchangeSnapshot = await resolveLiveUsdPenExchangeRate()
-      const exchangeRate = exchangeSnapshot.rate ?? DEFAULT_USD_PEN_EXCHANGE_RATE
+      const exchangeRate = getVerifiedUsdPenRate(exchangeSnapshot)
 
       const { data: nw } = await this.db
         .from('v_net_worth')
@@ -255,12 +255,14 @@ export class DashboardService {
         .eq('user_id', userId)
         .maybeSingle()
 
-      const netWorthPen = Number(nw?.net_worth_pen ?? 0)
+      const netWorthPen = nw?.net_worth_pen == null ? null : Number(nw.net_worth_pen)
 
       return ok({
         netWorthPen,
-        netWorthUsd:  Math.round((netWorthPen / exchangeRate) * 100) / 100,
-        exchangeRate: Number(exchangeRate),
+        netWorthUsd: netWorthPen === null || exchangeRate === null
+          ? null
+          : Math.round((netWorthPen / exchangeRate) * 100) / 100,
+        exchangeRate,
       })
     } catch (e) {
       return Errors.database(e instanceof Error ? e.message : 'Error desconocido')
@@ -308,9 +310,10 @@ export class DashboardService {
     amount:       number,
     fromCurrency: 'PEN' | 'USD',
     toCurrency:   'PEN' | 'USD',
-    exchangeRate: number  // siempre expresado como "1 USD = N PEN"
-  ): number {
+    exchangeRate: number | null  // siempre expresado como "1 USD = N PEN"
+  ): number | null {
     if (fromCurrency === toCurrency) return amount
+    if (exchangeRate === null || !Number.isFinite(exchangeRate) || exchangeRate <= 0) return null
 
     const result = fromCurrency === 'USD'
       ? amount * exchangeRate          // USD → PEN
@@ -325,16 +328,20 @@ export class DashboardService {
   static consolidate(
     items:          Array<{ amount: number; currency: 'PEN' | 'USD' }>,
     targetCurrency: 'PEN' | 'USD',
-    exchangeRate:   number
-  ): number {
-    return items.reduce((sum, item) => {
-      return sum + DashboardService.convertCurrency(
+    exchangeRate:   number | null
+  ): number | null {
+    let total = 0
+    for (const item of items) {
+      const converted = DashboardService.convertCurrency(
         item.amount,
         item.currency,
         targetCurrency,
         exchangeRate
       )
-    }, 0)
+      if (converted === null) return null
+      total += converted
+    }
+    return total
   }
 
   // ╔══════════════════════════════════════════════════════════════════════════╗
@@ -342,7 +349,7 @@ export class DashboardService {
   // ╚══════════════════════════════════════════════════════════════════════════╝
 
   private mapRpcResult(raw: RawDashboardRpc, dailyFlow: DailyFlowPoint[] = []): DashboardSummary {
-    const rate = raw.meta?.exchange_rate_usd_pen ?? DEFAULT_USD_PEN_EXCHANGE_RATE
+    const rate = raw.meta?.exchange_rate_usd_pen ?? null
     const toUrgency = (value: string | null | undefined): DashboardUrgency | null => {
       if (value === 'OVERDUE' || value === 'DUE_SOON' || value === 'UPCOMING') {
         return value
@@ -352,8 +359,8 @@ export class DashboardService {
 
     return {
       netWorth: {
-        pen: raw.net_worth_pen ?? 0,
-        usd: Math.round(((raw.net_worth_pen ?? 0) / rate) * 100) / 100,
+        pen: raw.net_worth_pen ?? null,
+        usd: raw.net_worth_pen == null ? null : DashboardService.convertCurrency(raw.net_worth_pen, 'PEN', 'USD', rate),
       },
 
       currentMonth: {
@@ -364,14 +371,16 @@ export class DashboardService {
         expenseUsd: DashboardService.convertCurrency(raw.current_month?.expense_pen ?? 0, 'PEN', 'USD', rate),
       },
 
-      accounts: (raw.accounts ?? []).map(a => ({
+        accounts: (raw.accounts ?? []).map(a => ({
         id:         a.id,
         name:       a.name,
         type:       a.type,
         currency:   a.currency,
         balance:    a.balance,
-        balancePen: a.balance_pen,
-        balanceUsd: DashboardService.convertCurrency(a.balance_pen, 'PEN', 'USD', rate),
+        balancePen: a.balance_pen ?? (a.currency === 'PEN' ? a.balance : null),
+        balanceUsd: a.currency === 'USD'
+          ? a.balance
+          : DashboardService.convertCurrency(a.balance, 'PEN', 'USD', rate),
         color:      a.color,
         icon:       a.icon,
       })),
@@ -420,10 +429,10 @@ export class DashboardService {
       })),
 
       receivables: {
-        totalPendingPen: raw.receivables?.total_pending_pen ?? 0,
-        totalPendingUsd: DashboardService.convertCurrency(
-          raw.receivables?.total_pending_pen ?? 0, 'PEN', 'USD', rate
-        ),
+        totalPendingPen: raw.receivables?.total_pending_pen !== undefined
+          ? raw.receivables.total_pending_pen
+          : hasUnconvertedUsd(raw.receivables?.items ?? [], rate) ? null : sumNativeCurrency(raw.receivables?.items ?? [], 'PEN'),
+        totalPendingUsd: sumNativeCurrency(raw.receivables?.items ?? [], 'USD'),
         count: raw.receivables?.count ?? 0,
         items: (raw.receivables?.items ?? []).map(r => ({
           id:            r.id,
@@ -436,10 +445,10 @@ export class DashboardService {
       },
 
       payables: {
-        totalPendingPen: raw.payables?.total_pending_pen ?? 0,
-        totalPendingUsd: DashboardService.convertCurrency(
-          raw.payables?.total_pending_pen ?? 0, 'PEN', 'USD', rate
-        ),
+        totalPendingPen: raw.payables?.total_pending_pen !== undefined
+          ? raw.payables.total_pending_pen
+          : hasUnconvertedUsd(raw.payables?.items ?? [], rate) ? null : sumNativeCurrency(raw.payables?.items ?? [], 'PEN'),
+        totalPendingUsd: sumNativeCurrency(raw.payables?.items ?? [], 'USD'),
         count: raw.payables?.count ?? 0,
         items: (raw.payables?.items ?? []).map(p => ({
           id:            p.id,
@@ -452,20 +461,21 @@ export class DashboardService {
       },
 
       assets: {
-        totalValuePen: raw.assets?.total_value_pen ?? 0,
-        totalValueUsd: DashboardService.convertCurrency(
-          raw.assets?.total_value_pen ?? 0, 'PEN', 'USD', rate
-        ),
+        totalValuePen: raw.assets?.total_value_pen ?? null,
+        totalValueUsd: raw.assets?.total_value_pen == null
+          ? null
+          : DashboardService.convertCurrency(raw.assets.total_value_pen, 'PEN', 'USD', rate),
         count:  raw.assets?.count  ?? 0,
         byType: (raw.assets?.by_type ?? []).map((assetType) => ({
           assetType: assetType.asset_type,
-          totalPen:  assetType.total_pen,
+          totalPen:  assetType.total_pen ?? null,
           count:     assetType.count,
         })),
       },
 
       meta: {
         exchangeRateUsdPen: rate,
+        exchangeRateVerified: rate !== null,
         calculatedAt:       raw.meta?.calculated_at ?? new Date().toISOString(),
         currentMonth:       raw.meta?.current_month ?? '',
       },
@@ -476,15 +486,25 @@ export class DashboardService {
 // ─── SHAPE RAW DEL RPC (interno) ─────────────────────────────────────────────
 
 interface RawDashboardRpc {
-  net_worth_pen:           number
+  net_worth_pen:           number | null
   current_month:           { income_pen: number; expense_pen: number }
-  accounts:                Array<{ id: string; name: string; type: string; currency: string; balance: number; balance_pen: number; color: string; icon: string }>
+  accounts:                Array<{ id: string; name: string; type: string; currency: string; balance: number; balance_pen: number | null; color: string; icon: string }>
   cash_flow_6m:            Array<{ month: string; month_label: string; income_pen: number; expense_pen: number; net_pen: number }>
   top_expense_categories:  Array<{ category_id: string; category_name: string; category_icon: string; category_color: string; total_pen: number; percentage: number; transaction_count?: number; count?: number }>
   credits:                 Array<{ id: string; name: string; credit_type: string; currency: string; credit_limit: number; used_amount: number; available_amount: number; utilization_pct: number; next_closing_date: string | null }>
   upcoming_installments:   Array<{ id: string; creditor_name: string; total_amount: number; currency: string; due_date: string; days_until_due: number; urgency: string; installment_number: number; total_installments: number }>
-  receivables:             { total_pending_pen: number; count: number; items: Array<{ id: string; debtor_name: string; pending_amount: number; currency: string; due_date: string | null; urgency: string | null }> }
-  payables:                { total_pending_pen: number; count: number; items: Array<{ id: string; creditor_name: string; pending_amount: number; currency: string; due_date: string | null; urgency: string | null }> }
-  assets:                  { total_value_pen: number; count: number; by_type: Array<{ asset_type: string; total_pen: number; count: number }> }
-  meta:                    { exchange_rate_usd_pen: number; calculated_at: string; current_month: string }
+  receivables:             { total_pending_pen: number | null; count: number; items: Array<{ id: string; debtor_name: string; pending_amount: number; currency: string; due_date: string | null; urgency: string | null }> }
+  payables:                { total_pending_pen: number | null; count: number; items: Array<{ id: string; creditor_name: string; pending_amount: number; currency: string; due_date: string | null; urgency: string | null }> }
+  assets:                  { total_value_pen: number | null; count: number; by_type: Array<{ asset_type: string; total_pen: number | null; count: number }> }
+  meta:                    { exchange_rate_usd_pen: number | null; exchange_rate_verified?: boolean; calculated_at: string; current_month: string }
+}
+
+function sumNativeCurrency<T extends { pending_amount: number; currency: string }>(
+  items: T[], currency: 'PEN' | 'USD',
+): number {
+  return items.reduce((sum, item) => item.currency === currency ? sum + Number(item.pending_amount ?? 0) : sum, 0)
+}
+
+function hasUnconvertedUsd<T extends { currency: string }>(items: T[], exchangeRate: number | null): boolean {
+  return exchangeRate === null && items.some((item) => item.currency === 'USD')
 }

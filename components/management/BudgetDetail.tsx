@@ -8,6 +8,7 @@ import { getApiErrorMessage } from '@/lib/api/error-message'
 import type { CurrencyCode, BudgetPeriod } from '@/types/database.types'
 import { createBudgetRecordActionScope } from '@/modules/budgets/budget-action-scope'
 import { formatBudgetCurrency } from '@/lib/budgets/presentation'
+import { convertBudgetAmount } from '@/lib/budgets/budget-metrics'
 import { AppSelect } from '@/components/ui/AppSelect'
 import styles from '@/components/management/BudgetDetail.module.css'
 import {
@@ -33,10 +34,11 @@ type BudgetRef = {
   period_start: string
   period_end: string
   amount: number
-  spent_amount: number
-  remaining_amount?: number
-  progress_percent?: number
-  over_limit?: boolean
+  spent_amount: number | null
+  remaining_amount?: number | null
+  progress_percent?: number | null
+  over_limit?: boolean | null
+  metrics_complete?: boolean
   is_active?: boolean
   category?: { name: string } | null
 }
@@ -114,6 +116,13 @@ function getPeriodStatus(period: BudgetRef): {
   tone: 'ok' | 'warning' | 'danger' | 'empty'
   description: string
 } {
+  if (period.metrics_complete === false || period.spent_amount === null || period.remaining_amount === null) {
+    return {
+      label: 'Datos incompletos',
+      tone: 'empty',
+      description: 'Falta una tasa histórica verificable para calcular el período',
+    }
+  }
   const spent = Number(period.spent_amount ?? 0)
   const progress = clampProgress(period.progress_percent)
 
@@ -277,18 +286,21 @@ export function BudgetDetail({ open, budget, periods, suspendFocusTrap = false, 
   })
 
   // Total gastado en la moneda del presupuesto
-  const safeRate = (r: number | null) => (r && r > 0 ? r : 3.7)
-  const totalSpent = filtered.reduce((sum, tx) => {
+  let totalSpent: number | null = 0
+  filtered.forEach(tx => {
     const amt = Number(tx.amount ?? 0)
-    if (tx.currency === selectedBudget.currency) return sum + amt
-    if (tx.currency === 'USD' && selectedBudget.currency === 'PEN') return sum + amt * safeRate(tx.exchange_rate)
-    if (tx.currency === 'PEN' && selectedBudget.currency === 'USD') return sum + amt / safeRate(tx.exchange_rate)
-    return sum + amt
-  }, 0)
+    const converted = convertBudgetAmount(amt, tx.currency, selectedBudget.currency, tx.exchange_rate)
+    if (converted === null) totalSpent = null
+    else if (totalSpent !== null) totalSpent += converted
+  })
 
-  const progress = clampProgress(selectedBudget.progress_percent)
-  const visibleSpent = Number(selectedBudget.spent_amount ?? 0)
-  const visibleRemaining = Number(selectedBudget.remaining_amount ?? Number(selectedBudget.amount ?? 0) - visibleSpent)
+  const metricsComplete = selectedBudget.metrics_complete !== false
+    && selectedBudget.spent_amount !== null
+    && selectedBudget.remaining_amount !== null
+    && selectedBudget.progress_percent !== null
+  const progress = metricsComplete ? clampProgress(selectedBudget.progress_percent) : null
+  const visibleSpent = metricsComplete ? Number(selectedBudget.spent_amount) : null
+  const visibleRemaining = metricsComplete ? Number(selectedBudget.remaining_amount) : null
   const parsedPeriodAmount = parseAmountInput(periodAmount)
   const amountChanged =
     editingPeriod !== null && parsedPeriodAmount !== null && Math.abs(parsedPeriodAmount - Number(editingPeriod.amount ?? 0)) >= 0.01
@@ -367,14 +379,16 @@ export function BudgetDetail({ open, budget, periods, suspendFocusTrap = false, 
       setPeriodItems(prev =>
         prev.map(period => {
           if (period.id !== editingPeriod.id) return period
-          const spent = Number(period.spent_amount ?? 0)
-          const remaining = nextAmount - spent
+          const metricsComplete = period.metrics_complete !== false && period.spent_amount !== null
+          const spent = metricsComplete ? Number(period.spent_amount) : null
+          const remaining = spent === null ? null : nextAmount - spent
           return {
             ...period,
             amount: nextAmount,
             remaining_amount: remaining,
-            progress_percent: nextAmount > 0 ? Math.round((spent / nextAmount) * 10000) / 100 : 0,
-            over_limit: spent > nextAmount,
+            progress_percent: spent === null ? null : nextAmount > 0 ? Math.round((spent / nextAmount) * 10000) / 100 : 0,
+            over_limit: spent === null ? null : spent > nextAmount,
+            metrics_complete: metricsComplete,
           }
         }),
       )
@@ -403,7 +417,7 @@ export function BudgetDetail({ open, budget, periods, suspendFocusTrap = false, 
           <div className={styles.footerTotals}>
             <div>
               <p className={styles.detailFooterLabel}>Total gastado · {filtered.length} movimiento{filtered.length === 1 ? '' : 's'}</p>
-              <p className={styles.detailFooterValue}>{formatBudgetCurrency(Math.round(totalSpent * 100) / 100, selectedBudget.currency)}</p>
+              <p className={styles.detailFooterValue}>{totalSpent === null ? 'No disponible' : formatBudgetCurrency(Math.round(totalSpent * 100) / 100, selectedBudget.currency)}</p>
             </div>
             <div className={styles.detailFooterSecondary}>
               <p className={styles.detailFooterLabel}>Límite del período</p>
@@ -485,7 +499,7 @@ export function BudgetDetail({ open, budget, periods, suspendFocusTrap = false, 
                     </span>
                     <span className={styles.periodOptionAmounts}>
                       <span className={styles.periodOptionAmount}>{formatBudgetCurrency(Number(period.amount ?? 0), period.currency)}</span>
-                      <span className={styles.periodOptionProgressLabel}>{periodProgress.toFixed(0)}%</span>
+                      <span className={styles.periodOptionProgressLabel}>{period.metrics_complete === false ? '—' : `${periodProgress.toFixed(0)}%`}</span>
                     </span>
                     <span className={styles.progressTrack} aria-hidden="true">
                       <span className={`${styles.progressFill} ${tone.bar}`} style={{ width: `${Math.min(100, periodProgress)}%` }} />
@@ -532,9 +546,9 @@ export function BudgetDetail({ open, budget, periods, suspendFocusTrap = false, 
                   <strong className={styles.detailMetricValue}>{formatBudgetCurrency(visibleSpent, selectedBudget.currency)}</strong>
                 </div>
                 <div className={styles.detailMetric}>
-                  <p className={styles.detailMetricLabel}>{visibleRemaining < 0 ? 'Exceso' : 'Disponible'}</p>
-                  <strong className={`${styles.detailMetricValue} ${visibleRemaining < 0 ? styles.detailMetricValueDanger : ''}`}>
-                    {formatBudgetCurrency(Math.abs(visibleRemaining), selectedBudget.currency)}
+                  <p className={styles.detailMetricLabel}>{visibleRemaining === null ? 'Saldo' : visibleRemaining < 0 ? 'Exceso' : 'Disponible'}</p>
+                  <strong className={`${styles.detailMetricValue} ${visibleRemaining !== null && visibleRemaining < 0 ? styles.detailMetricValueDanger : ''}`}>
+                    {visibleRemaining === null ? 'No disponible' : formatBudgetCurrency(Math.abs(visibleRemaining), selectedBudget.currency)}
                   </strong>
                 </div>
               </div>
@@ -542,10 +556,10 @@ export function BudgetDetail({ open, budget, periods, suspendFocusTrap = false, 
               <div className={styles.execution}>
                 <div className={styles.executionHeading}>
                   <span>Ejecución del límite</span>
-                  <strong className={`${styles.executionPercent} ${selectedBudget.over_limit ? styles.toneDanger : ''}`}>{progress.toFixed(0)}%</strong>
+                  <strong className={`${styles.executionPercent} ${selectedBudget.over_limit ? styles.toneDanger : ''}`}>{progress === null ? '—' : `${progress.toFixed(0)}%`}</strong>
                 </div>
-                <div className={styles.progressTrack} role="progressbar" aria-label="Ejecución del presupuesto" aria-valuemin={0} aria-valuemax={Math.max(100, progress)} aria-valuenow={progress}>
-                  <div className={`${styles.progressFill} ${selectedTone.bar}`} style={{ width: `${Math.min(100, progress)}%` }} />
+                <div className={styles.progressTrack} role="progressbar" aria-label="Ejecución del presupuesto" aria-valuemin={0} aria-valuemax={Math.max(100, progress ?? 100)} aria-valuenow={progress ?? undefined}>
+                  <div className={`${styles.progressFill} ${selectedTone.bar}`} style={{ width: `${Math.min(100, progress ?? 0)}%` }} />
                 </div>
               </div>
             </div>

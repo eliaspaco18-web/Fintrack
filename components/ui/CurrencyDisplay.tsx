@@ -14,7 +14,7 @@ interface CurrencyDisplayProps {
   /** Código de moneda del monto (ej: 'PEN', 'USD') */
   currency: string
   /** Tipo de cambio USD→PEN para calcular equivalencia */
-  exchangeRate: number
+  exchangeRate: number | null
   /** Tamaño del monto principal */
   size?: 'sm' | 'md' | 'lg' | 'xl'
   /** Color del monto (CSS class o color) */
@@ -38,7 +38,7 @@ export function CurrencyDisplay({
   id,
 }: CurrencyDisplayProps) {
   const formatted = formatWithSymbol(amount, currency)
-  const equivalence = showEquivalence && exchangeRate > 0
+  const equivalence = showEquivalence && exchangeRate !== null && exchangeRate > 0
     ? calculateEquivalence(amount, currency, exchangeRate)
     : null
 
@@ -74,7 +74,7 @@ export function CurrencyDisplay({
 interface CurrencyInlineProps {
   amount: number
   currency: string
-  exchangeRate?: number
+  exchangeRate?: number | null
   colorClass?: string
   id?: string
 }

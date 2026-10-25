@@ -191,7 +191,7 @@ export function CashFlowProjectionWidget({
     return () => window.clearTimeout(timer)
   }, [])
 
-  const { data, isLoading } = useSWR(loadProjection ? '/api/dashboard/projection' : null, fetcher, {
+  const { data, isLoading, error } = useSWR(loadProjection ? '/api/dashboard/projection' : null, fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 30_000,
   })
@@ -282,6 +282,15 @@ export function CashFlowProjectionWidget({
   }, [compact, data, horizon])
 
   if ((!loadProjection || isLoading) && !data) return <ProjectionSkeleton compact={compact} />
+
+  if (error && !data) {
+    return (
+      <PremiumCard innerClassName={compact ? 'p-4' : 'p-5 md:p-6'}>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ft-text-subtle)]">Proyección de flujo</p>
+        <p className="mt-3 text-sm text-[var(--ft-text-muted)]">Proyección no disponible: falta información completa y una tasa verificada para consolidar las monedas.</p>
+      </PremiumCard>
+    )
+  }
 
   const hasSignals = (data?.projectionPoints ?? []).some((point) => point.inflows > 0 || point.outflows > 0)
     || (data?.recurringMonthlyExpense ?? 0) > 0
