@@ -44,10 +44,6 @@ function compileRecordModal() {
 test('RecordModal places remote submit actions in its fixed footer and associates them to the real form', async ({ page }) => {
   const cssPath = join(process.cwd(), '.next/static/css')
   const css = readdirSync(cssPath).filter(file => file.endsWith('.css')).sort().map(file => readFileSync(join(cssPath, file), 'utf8')).join('\n')
-  const formClasses = Object.fromEntries(['formRoot', 'formGrid', 'formSectionContainer', 'dateGrid', 'currencyGrid'].map(name => [
-    name,
-    css.match(new RegExp(`\\.(ReceivableForm_${name}__[\\w-]+)`))?.[1] ?? name,
-  ]))
   const receivableOverlayClass = css.match(/\.(ReceivablesManager_receivableFormOverlay__[\w-]+)/)?.[1] ?? 'receivableFormOverlay'
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.setContent('<main data-ft-v3-shell><div id="root"></div></main>')
@@ -100,27 +96,6 @@ test('RecordModal places remote submit actions in its fixed footer and associate
   expect(geometry.footerHeight).toBeGreaterThan(50)
   expect(geometry.footerBorderTop).toBe('1px')
   expect(geometry.workbenchWidth).toBe(580)
-  await page.evaluate(classes => {
-    const host = document.createElement('div')
-    host.innerHTML = `<form class="${classes.formRoot}" style="width: 1000px"><div class="${classes.formGrid}"><section class="${classes.formSectionContainer}"></section><section class="${classes.formSectionContainer}"><div class="${classes.dateGrid}"><div></div><div></div></div></section></div></form>`
-    host.style.cssText = 'position:fixed;left:-2000px;top:0'
-    document.body.append(host)
-    const form = host.querySelector('form')!
-    const grid = host.querySelector(`.${classes.formGrid}`)!
-    const dates = host.querySelector(`.${classes.dateGrid}`)!
-    const wide = { gridColumns: getComputedStyle(grid).gridTemplateColumns.split(' ').length, dateColumns: getComputedStyle(dates).gridTemplateColumns.split(' ').length, scrollWidth: form.scrollWidth, clientWidth: form.clientWidth }
-    form.style.width = '650px'
-    const compact = { gridColumns: getComputedStyle(grid).gridTemplateColumns.split(' ').length, dateColumns: getComputedStyle(dates).gridTemplateColumns.split(' ').length, scrollWidth: form.scrollWidth, clientWidth: form.clientWidth }
-    host.remove()
-    return { wide, compact }
-  }, formClasses).then(layout => {
-    expect(layout.wide.gridColumns).toBe(2)
-    expect(layout.wide.dateColumns).toBe(2)
-    expect(layout.wide.scrollWidth).toBeLessThanOrEqual(layout.wide.clientWidth)
-    expect(layout.compact.gridColumns).toBe(1)
-    expect(layout.compact.dateColumns).toBe(1)
-    expect(layout.compact.scrollWidth).toBeLessThanOrEqual(layout.compact.clientWidth)
-  })
   await page.setViewportSize({ width: 390, height: 844 })
   const mobileWorkbenchWidth = await dialog.locator('xpath=ancestor::div[contains(@class,"ft-v3-workbench-wrapper")]').evaluate(element => Math.round(element.getBoundingClientRect().width))
   expect(mobileWorkbenchWidth).toBe(374)

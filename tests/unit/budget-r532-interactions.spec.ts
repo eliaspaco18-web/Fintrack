@@ -205,9 +205,12 @@ test('budget tabs reserve the same 20px rhythm before filters as the approved ac
   })
 
   const spacing = await page.evaluate(() => {
-    const tabs = document.querySelector('.budgetTabs')!.getBoundingClientRect()
+    const navigation = document.querySelector<HTMLElement>('.budgetPeriodNavigation')!
+    const navigationRect = navigation.getBoundingClientRect()
     const toolbar = document.querySelector('[data-testid="budgets-filter-toolbar"]')!.getBoundingClientRect()
-    return toolbar.top - tabs.bottom
+    const divider = Number.parseFloat(getComputedStyle(navigation).borderBottomWidth)
+    return { afterDivider: toolbar.top - navigationRect.bottom, divider }
   })
-  expect(spacing).toBe(20)
+  expect(spacing.divider).toBe(1)
+  expect(spacing.afterDivider).toBe(20)
 })

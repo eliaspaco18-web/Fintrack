@@ -53,6 +53,11 @@ async function mountRealCreditsList(page: Page, count: number, viewport: { width
     return Object.fromEntries(Array.from(source.matchAll(/styles\.([\w]+)/g), match => match[1]).map(name => [name, css.match(new RegExp(`\\.CreditsListPanel_${name}__[\\w-]+`))?.[0]?.slice(1) ?? name]))
   }
   const moduleClasses = classMap('components/credits/CreditsListPanel.tsx')
+  const headerClassNames = ['creditsTableHead', 'creditsTableHeaderGridCell', 'creditsTableHeaderLeft', 'creditsTableHeaderRight']
+  const headerClasses = Object.fromEntries(headerClassNames.map(name => [
+    name,
+    css.match(new RegExp(`\\.CreditsTableHeader_${name}__[\\w-]+`))?.[0]?.slice(1) ?? name,
+  ]))
   const pageClasses = Object.fromEntries(['pageOverview', 'v3ModulePrimaryAction', 'summary', 'summaryItem', 'summaryValue', 'tabs', 'controls', 'portfolioFilterBar', 'portfolioControls', 'controlsMain', 'searchControl', 'controlsActions'].map(name => [name, css.match(new RegExp(`\\.TransactionsRound07_${name}__[\\w-]+`))?.[0]?.slice(1) ?? name]))
   await page.addStyleTag({ content: css })
   await page.addScriptTag({ path: resolve(process.cwd(), 'node_modules/react/umd/react.development.js') })
@@ -89,6 +94,7 @@ async function mountRealCreditsList(page: Page, count: number, viewport: { width
     window.__creditsListModules['@/types/database.types'] = {};
     window.__creditsListModules['@/components/tables/TransactionsRound07.module.css'] = {default:${JSON.stringify(pageClasses)}};
     window.__creditsListModules['./CreditsListPanel.module.css'] = {default:cls};
+    window.__creditsListModules['@/components/credits/CreditsTableHeader.module.css'] = {default:${JSON.stringify(headerClasses)}};
     window.__creditsListModules['./CreditsWorkbench.module.css'] = {default:{}};
     window.fetch = async () => ({ok:true,json:async()=>({ok:true,data:[{id:'bank-1',name:'Banco Andino Round 07',short_name:'Banco Andino'}]})});
   })();` })
@@ -143,6 +149,7 @@ test('overview keeps card debt and verified loan capital separate by native curr
 test('credits screen uses approved V3 primitives and responsive list defaults', () => {
   const source = readFileSync(resolve(process.cwd(), 'components/credits/CreditsListPanel.tsx'), 'utf8')
   const css = readFileSync(resolve(process.cwd(), 'components/credits/CreditsListPanel.module.css'), 'utf8')
+  const sharedPageCss = readFileSync(resolve(process.cwd(), 'components/tables/TransactionsRound07.module.css'), 'utf8')
   const shell = readFileSync(resolve(process.cwd(), 'components/layout/AppShell.tsx'), 'utf8')
   const workspace = readFileSync(resolve(process.cwd(), 'components/credits/CreditsWorkspace.tsx'), 'utf8')
   const loanForm = readFileSync(resolve(process.cwd(), 'components/credits/BankLoanForm.tsx'), 'utf8')
@@ -170,7 +177,7 @@ test('credits screen uses approved V3 primitives and responsive list defaults', 
   expect(loanSchedule).toContain('workbenchKind="schedule"')
   expect(source).toContain('pageStyles.controlsMain')
   expect(source).toContain('pageStyles.controlsActions')
-  expect(css).toContain('min-height: 36px')
+  expect(sharedPageCss).toContain('min-height: 36px')
   expect(css).toContain('min-height: 72px')
   expect(css).toContain('minmax(205px, 26fr)')
   expect(css).toContain('minmax(172px, 26fr)')
@@ -257,6 +264,7 @@ for (const viewport of [
       await actionTrigger.click()
       const menu = page.getByRole('menu')
       await expect(menu).toBeVisible()
+      await expect(menu).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)')
       const menuBox = await menu.boundingBox()
       expect(menuBox).not.toBeNull()
       expect(menuBox!.width).toBeGreaterThanOrEqual(188)
