@@ -15,6 +15,7 @@ declare global {
     __serverOptionLoad: { delayMs: number; fail: boolean }
     __navigateMock?: (path: string) => void
     __mountAssetsWorkspace?: () => void
+    __mountUsdTransactionForm?: () => void
     __routeDebug?: { path: string; search: string }
   }
 }
@@ -153,6 +154,7 @@ function browserMocks(): string {
       formatNumber: value => String(value ?? ''),
     };
     window.__fintrackModules['@/lib/hooks/useDashboard'] = { useCurrency: () => ({ exchangeRate: 3.7 }) };
+    window.__fintrackModules['@/lib/finance/exchange-rate-verification'] = { getVerifiedUsdPenRate: () => null };
     window.__fintrackModules['@/components/forms/TransactionForm/TypeSelector'] = {
       TypeSelector: () => null,
       TYPE_CONFIG: {
@@ -293,6 +295,17 @@ async function mountIntegratedFlow(page: Page) {
     const root = window.ReactDOM.createRoot(document.getElementById('root'));
     root.render(React.createElement(window.__fintrackExports.DashboardRound07));
     window.__mountAssetsWorkspace = () => root.render(React.createElement(window.__fintrackExports.AssetsWorkspace, { demoAllowed: false }));
+    window.__mountUsdTransactionForm = () => root.render(React.createElement(window.__fintrackExports.TransactionForm, {
+      options: window.__fintrackOptions,
+      initialValues: {
+        type: 'EXPENSE',
+        currency: 'USD',
+        source_account_id: window.__fintrackOptions.accounts.find(account => account.meta?.currency === 'USD')?.value ?? 'synthetic-account',
+        transaction_date: '2026-10-25',
+      },
+      operationType: 'expense',
+      hideTypeSelector: true,
+    }));
     window.__navigateMock = path => {
       window.__routeDebug = { path: location.pathname, search: location.search };
       if (new URL(path, location.href).pathname === '/dashboard') {
@@ -411,6 +424,28 @@ test('payables issue deep link mounts the approved Recibir préstamo form withou
   await expect(form.getByRole('button', { name: 'Cancelar' })).toBeVisible()
   await form.getByRole('button', { name: 'Cancelar' }).click()
   await expect(dialog).toHaveCount(0)
+  expect(await page.evaluate(() => window.__unexpectedSupabaseCalls)).toBe(0)
+})
+
+test('USD transaction does not auto-apply the numeric context fallback when the accounting rate is unavailable', async ({ page }) => {
+  await mountIntegratedFlow(page)
+  await page.evaluate(() => {
+    ;(window.__fintrackOptions as typeof formOptions).accounts.push({
+      value: 'synthetic-usd-account',
+      label: 'Cuenta USD sintética',
+      meta: { currency: 'USD', type: 'CHECKING', balance: 1000 },
+    })
+    window.__mountUsdTransactionForm?.()
+  })
+
+  const form = page.getByTestId('transaction-form')
+  await expect(form).toBeVisible()
+  await expect(form.getByTestId('transaction-currency-select')).toHaveValue('USD')
+  const exchangeRateInput = form.getByTestId('transaction-exchange-rate-input')
+  await expect(exchangeRateInput).toBeVisible()
+  await expect(exchangeRateInput).toHaveValue('')
+  await expect(form.getByText('Tipo de cambio no disponible')).toBeVisible()
+  await expect(form.getByText('No disponible').first()).toBeVisible()
   expect(await page.evaluate(() => window.__unexpectedSupabaseCalls)).toBe(0)
 })
 

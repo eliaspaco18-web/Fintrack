@@ -58,6 +58,7 @@ import {
 }                                       from './transaction.validations'
 import { type Result, Errors, ok }      from '@/modules/shared/result.types'
 import { resolveAccountingUsdPenExchangeRate } from '@/lib/server/exchange-rate'
+import { getVerifiedUsdPenRate } from '@/lib/finance/exchange-rate-verification'
 import { CategoryKeys } from '@/lib/constants/category-keys'
 import { getCreditCardTransferPolicy } from './credit-card-transfer-policy'
 import { atomicDerivedJsonbArguments } from './transaction-atomic-rpc-arguments'
@@ -1645,9 +1646,9 @@ export class TransactionService {
       allowPrior: true,
       ensureForToday: true,
     })
-    const rate = Number(snapshot.rate)
+    const rate = getVerifiedUsdPenRate(snapshot)
 
-    if (!Number.isFinite(rate) || rate <= 0) {
+    if (rate === null) {
       return input
     }
 

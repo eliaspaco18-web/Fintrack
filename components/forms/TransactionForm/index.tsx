@@ -74,6 +74,7 @@ import {
   type AttachmentUploadResponse,
 } from '@/modules/attachments/attachment-client'
 import { MAX_FINANCIAL_ATTACHMENT_BYTES } from '@/modules/attachments/attachment-integrity'
+import { getVerifiedUsdPenRate } from '@/lib/finance/exchange-rate-verification'
 
 const ATTACHMENT_ACCEPT =
   'image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt'
@@ -406,8 +407,9 @@ export function TransactionForm({
     : null
   const [currentLiveRate, setCurrentLiveRate] = useState<number>(() => {
     if (initialEditExchangeRate) return initialEditExchangeRate
-    return Number.isFinite(liveExchangeRate) && liveExchangeRate > 0 ? liveExchangeRate : 3.7
+    return Number.isFinite(liveExchangeRate) && liveExchangeRate > 0 ? liveExchangeRate : 0
   })
+  const [currentRateVerified, setCurrentRateVerified] = useState(Boolean(initialEditExchangeRate))
   const [currentRateEffectiveDate, setCurrentRateEffectiveDate] = useState<string | null>(initialEditDate)
   const [refreshingLiveRate, setRefreshingLiveRate] = useState(false)
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
@@ -493,9 +495,9 @@ export function TransactionForm({
   const transactionDate = watch('transaction_date')
   const destinationAccountId = watch('destination_account_id')
   const accentColor = TYPE_CONFIG[type].accentColor
-  const safeLiveRate = Number.isFinite(currentLiveRate) && currentLiveRate > 0
+  const safeLiveRate = currentRateVerified && Number.isFinite(currentLiveRate) && currentLiveRate > 0
     ? currentLiveRate
-    : 3.7
+    : 0
   const manualRate = typeof exchangeRateInput === 'number'
     ? exchangeRateInput
     : Number(exchangeRateInput)
@@ -506,11 +508,11 @@ export function TransactionForm({
   const numericAmount = typeof amount === 'number' ? amount : Number(amount)
   const hasAmount = Number.isFinite(numericAmount) && numericAmount > 0
   const equivalentPen = hasAmount
-    ? (currency === 'USD' ? numericAmount * appliedRate : numericAmount)
-    : 0
+    ? (currency === 'USD' ? (appliedRate > 0 ? numericAmount * appliedRate : null) : numericAmount)
+    : null
   const equivalentUsd = hasAmount
-    ? (currency === 'PEN' ? numericAmount / appliedRate : numericAmount)
-    : 0
+    ? (currency === 'PEN' ? (appliedRate > 0 ? numericAmount / appliedRate : null) : numericAmount)
+    : null
   const rateDateLabel = currentRateEffectiveDate
     ? `fecha ${currentRateEffectiveDate}`
     : 'fecha seleccionada'
@@ -703,9 +705,11 @@ export function TransactionForm({
       ) {
         setCurrentLiveRate(initialEditExchangeRate)
         setCurrentRateEffectiveDate(initialEditDate)
+        setCurrentRateVerified(true)
         return
       }
 
+      setCurrentRateVerified(false)
       setRefreshingLiveRate(true)
       try {
         const params = new URLSearchParams({ mode: 'accounting', ensure: '1' })
@@ -719,6 +723,7 @@ export function TransactionForm({
         if (!Number.isFinite(incomingRate) || incomingRate <= 0) return
 
         setCurrentLiveRate(incomingRate)
+        setCurrentRateVerified(getVerifiedUsdPenRate(json.data) !== null)
         setCurrentRateEffectiveDate(
           typeof json.data?.effective_date === 'string'
             ? json.data.effective_date
@@ -741,6 +746,14 @@ export function TransactionForm({
       && initialEditDate
       && transactionDate === initialEditDate
     ) {
+      return
+    }
+    if (!safeLiveRate) {
+      const lastAutoRate = lastAutoExchangeRateRef.current
+      if (lastAutoRate !== null && hasManualRate && Math.abs(manualRate - lastAutoRate) < 0.0005) {
+        setValue('exchange_rate', '', { shouldValidate: false })
+        lastAutoExchangeRateRef.current = null
+      }
       return
     }
     const roundedRate = Math.round(safeLiveRate * 1000) / 1000
@@ -1157,7 +1170,19 @@ export function TransactionForm({
     : 0
   const crossRateDiffPercent = safeLiveRate > 0 && implicitCrossRate > 0
     ? ((implicitCrossRate - safeLiveRate) / safeLiveRate) * 100
-    : 0
+    : null
+  const crossRateComparisonClass = crossRateDiffPercent === null
+    ? 'bg-[var(--c-surface)] text-[var(--c-text-muted)]'
+    : Math.abs(crossRateDiffPercent) <= 1
+      ? 'bg-emerald-500/10 text-emerald-300'
+      : Math.abs(crossRateDiffPercent) <= 3
+        ? 'bg-amber-500/10 text-amber-300'
+        : 'bg-red-500/10 text-red-300'
+  const crossRateComparisonMessage = crossRateDiffPercent === null
+    ? 'No hay una tasa de referencia verificada para comparar.'
+    : Math.abs(crossRateDiffPercent) <= 0.5
+      ? 'El tipo de cambio implícito es muy similar al del sistema. Sin observaciones.'
+      : `Tu TC implícito (${formatNumber(implicitCrossRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}) está ${formatNumber(Math.abs(crossRateDiffPercent), { maximumFractionDigits: 1 })}% ${crossRateDiffPercent > 0 ? 'por encima' : 'por debajo'} del TC del sistema.${Math.abs(crossRateDiffPercent) > 3 ? ' Verifica los importes.' : ' Solo informativo.'}`
 
   // Reset destination amount and debt target when transfer accounts change
   useEffect(() => {
@@ -1819,7 +1844,9 @@ export function TransactionForm({
     >
       <FieldWrapper
         label="Tipo de cambio"
-        hint={`${usesApprovedRatePresentation ? 'Referencia diaria: ' : ''}1 USD = ${formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN (${refreshingLiveRate ? 'actualizando…' : rateDateLabel})`}
+        hint={safeLiveRate > 0
+          ? `${usesApprovedRatePresentation ? 'Referencia diaria: ' : ''}1 USD = ${formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN (${refreshingLiveRate ? 'actualizando…' : rateDateLabel})`
+          : `No hay una tasa verificada para la fecha seleccionada${refreshingLiveRate ? ' · actualizando…' : ''}. Ingresa el tipo de cambio aplicado.`}
         required
         error={errors.exchange_rate?.message}
       >
@@ -1869,7 +1896,11 @@ export function TransactionForm({
       </div>
       <span className={`${incomeStyles.incomeAppliedRate} ${currency === 'USD' ? incomeStyles.incomeAppliedRateUsd : ''}`}>
         <span>
-          {currency === 'USD' ? 'TC aplicado' : 'TC referencia'} {formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN
+          {currency === 'USD' && hasManualRate
+            ? <>TC aplicado {formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN</>
+            : safeLiveRate > 0
+              ? <>TC referencia {formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN</>
+              : 'Tipo de cambio no disponible'}
           <span
             className={refreshingLiveRate ? undefined : incomeStyles.incomeRateRefreshingReserved}
             aria-hidden={!refreshingLiveRate}
@@ -1877,7 +1908,7 @@ export function TransactionForm({
             {' · actualizando…'}
           </span>
         </span>
-        {currency === 'USD' ? (
+        {currency === 'USD' && safeLiveRate > 0 ? (
           <span
             className={`${incomeStyles.incomeReferenceRate} ${Math.abs(appliedRate - safeLiveRate) < 0.0005 ? incomeStyles.incomeReferenceRateReserved : ''}`}
             aria-hidden={Math.abs(appliedRate - safeLiveRate) < 0.0005}
@@ -1889,11 +1920,11 @@ export function TransactionForm({
       <div className={incomeStyles.incomeEquivalenceValues} aria-live="polite">
         <div>
           <span>En soles</span>
-          <strong>{hasAmount ? formatCurrency(equivalentPen, 'PEN') : '—'}</strong>
+          <strong>{!hasAmount ? '—' : equivalentPen === null ? 'No disponible' : formatCurrency(equivalentPen, 'PEN')}</strong>
         </div>
         <div>
           <span>En dólares</span>
-          <strong>{hasAmount ? formatCurrency(equivalentUsd, 'USD') : '—'}</strong>
+          <strong>{!hasAmount ? '—' : equivalentUsd === null ? 'No disponible' : formatCurrency(equivalentUsd, 'USD')}</strong>
         </div>
         {!hasAmount ? <span className="sr-only">Ingresa un monto para ver su equivalencia.</span> : null}
       </div>
@@ -1906,10 +1937,10 @@ export function TransactionForm({
       {hasAmount ? (
         <div className="flex items-center gap-3 text-[11px]">
           <span className="tabular-nums text-[var(--c-primary)] font-semibold">
-            {formatCurrency(equivalentPen, 'PEN')}
+          {equivalentPen === null ? 'No disponible' : formatCurrency(equivalentPen, 'PEN')}
           </span>
           <span className="tabular-nums text-cyan-300 font-semibold">
-            {formatCurrency(equivalentUsd, 'USD')}
+          {equivalentUsd === null ? 'No disponible' : formatCurrency(equivalentUsd, 'USD')}
           </span>
         </div>
       ) : (
@@ -1918,7 +1949,7 @@ export function TransactionForm({
         </span>
       )}
       <span className="text-[9px] text-[var(--c-text-faint)] tabular-nums">
-        TC {formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+        TC {appliedRate > 0 ? formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : 'no disponible'}
       </span>
     </div>
   ) : (
@@ -1928,7 +1959,7 @@ export function TransactionForm({
           Equivalente estimado
         </p>
         <span className="text-[10px] text-[var(--c-text-faint)] tabular-nums">
-          TC {formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN {refreshingLiveRate ? '· actualizando…' : ''}
+          TC {appliedRate > 0 ? `${formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN` : 'no disponible'} {refreshingLiveRate ? '· actualizando…' : ''}
         </span>
       </div>
       {!hasAmount ? (
@@ -1940,13 +1971,13 @@ export function TransactionForm({
           <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
             <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">En soles</p>
             <p className="mt-1 text-[15px] font-bold tabular-nums text-[var(--c-primary)]">
-              {formatCurrency(equivalentPen, 'PEN')}
+          {equivalentPen === null ? 'No disponible' : formatCurrency(equivalentPen, 'PEN')}
             </p>
           </div>
           <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
             <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">En dólares</p>
             <p className="mt-1 text-[15px] font-bold tabular-nums text-cyan-300">
-              {formatCurrency(equivalentUsd, 'USD')}
+          {equivalentUsd === null ? 'No disponible' : formatCurrency(equivalentUsd, 'USD')}
             </p>
           </div>
         </div>
@@ -2389,26 +2420,13 @@ export function TransactionForm({
                     <div className="rounded-lg bg-[var(--c-surface)] px-2.5 py-2">
                       <p className="text-[9px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">TC del sistema</p>
                       <p className="mt-0.5 text-[14px] font-bold tabular-nums text-[var(--c-text-muted)]">
-                        {formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                        {safeLiveRate > 0 ? formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : 'No disponible'}
                       </p>
                     </div>
                   </div>
-                  <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-[11px] leading-[1.5] ${
-                    Math.abs(crossRateDiffPercent) <= 1
-                      ? 'bg-emerald-500/10 text-emerald-300'
-                      : Math.abs(crossRateDiffPercent) <= 3
-                        ? 'bg-amber-500/10 text-amber-300'
-                        : 'bg-red-500/10 text-red-300'
-                  }`}>
+                  <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-[11px] leading-[1.5] ${crossRateComparisonClass}`}>
                     <span className="mt-px shrink-0">ℹ️</span>
-                    <span>
-                      {Math.abs(crossRateDiffPercent) <= 0.5
-                        ? 'El tipo de cambio implícito es muy similar al del sistema. Sin observaciones.'
-                        : crossRateDiffPercent > 0
-                          ? `Tu TC implícito (${formatNumber(implicitCrossRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}) está ${formatNumber(Math.abs(crossRateDiffPercent), { maximumFractionDigits: 1 })}% por encima del TC del sistema.${Math.abs(crossRateDiffPercent) > 3 ? ' Verifica los montos.' : ' Solo informativo.'}`
-                          : `Tu TC implícito (${formatNumber(implicitCrossRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}) está ${formatNumber(Math.abs(crossRateDiffPercent), { maximumFractionDigits: 1 })}% por debajo del TC del sistema.${Math.abs(crossRateDiffPercent) > 3 ? ' Verifica los montos.' : ' Solo informativo.'}`
-                      }
-                    </span>
+                    <span>{crossRateComparisonMessage}</span>
                   </div>
                 </div>
               )}
@@ -2580,27 +2598,14 @@ export function TransactionForm({
                 <div className={isTransferLayout ? incomeStyles.operationTransferFxRate : 'rounded-lg bg-[var(--c-surface)] px-2.5 py-2'}>
                   <p className="text-[9px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">TC del sistema · referencia</p>
                   <p className="mt-0.5 text-[14px] font-bold tabular-nums text-[var(--c-text-muted)]">
-                    {formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                    {safeLiveRate > 0 ? formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : 'No disponible'}
                   </p>
                 </div>
               </div>
 
-              <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-[11px] leading-[1.5] ${
-                Math.abs(crossRateDiffPercent) <= 1
-                  ? 'bg-emerald-500/10 text-emerald-300'
-                  : Math.abs(crossRateDiffPercent) <= 3
-                    ? 'bg-amber-500/10 text-amber-300'
-                    : 'bg-red-500/10 text-red-300'
-              }`}>
+              <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-[11px] leading-[1.5] ${crossRateComparisonClass}`}>
                 <span className="mt-px shrink-0">ℹ️</span>
-                <span>
-                  {Math.abs(crossRateDiffPercent) <= 0.5
-                    ? 'El tipo de cambio implícito es muy similar al del sistema. Sin observaciones.'
-                    : crossRateDiffPercent > 0
-                      ? `Tu TC implícito (${formatNumber(implicitCrossRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}) está ${formatNumber(Math.abs(crossRateDiffPercent), { maximumFractionDigits: 1 })}% por encima del TC del sistema.${Math.abs(crossRateDiffPercent) > 3 ? ' Verifica los montos ingresados.' : ' Solo informativo.'}`
-                      : `Tu TC implícito (${formatNumber(implicitCrossRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}) está ${formatNumber(Math.abs(crossRateDiffPercent), { maximumFractionDigits: 1 })}% por debajo del TC del sistema.${Math.abs(crossRateDiffPercent) > 3 ? ' Verifica los montos ingresados.' : ' Solo informativo.'}`
-                  }
-                </span>
+                <span>{crossRateComparisonMessage}</span>
               </div>
             </div>
           )}

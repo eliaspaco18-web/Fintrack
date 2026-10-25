@@ -24,7 +24,7 @@ export const revalidate = 60
 
 export default function DashboardPage() {
   return (
-    process.env.VERCEL_ENV !== 'production' && isV3ShellEnabled()
+    isV3ShellEnabled()
       ? <DashboardRound07 />
       : <DashboardClient />
   )
