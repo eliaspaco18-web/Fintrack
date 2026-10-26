@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { createHash } from 'node:crypto'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import * as ts from 'typescript'
@@ -29,6 +30,7 @@ function v3Document(content: string, css: string, theme: 'light' | 'dark' = 'lig
 
 async function routeV3FontAssets(page: import('@playwright/test').Page) {
   const generatedMedia = new Set(readdirSync(join(process.cwd(), '.next/static/media')))
+  const servedFonts = new Map<string, { sha256: string; file: string; status: number }>()
   await page.route('http://fintrack.test/**', async route => {
     const pathname = new URL(route.request().url()).pathname
     const publicFont = pathname.match(/^\/fonts\/v3\/(manrope-(?:regular|semibold|bold)\.ttf)$/)
@@ -39,11 +41,28 @@ async function routeV3FontAssets(page: import('@playwright/test').Page) {
         ? join(process.cwd(), '.next/static/media', nextFont[1])
         : null
     if (!file) return route.abort()
+    const body = readFileSync(file)
+    servedFonts.set(pathname, {
+      sha256: createHash('sha256').update(body).digest('hex'),
+      file,
+      status: 200,
+    })
     await route.fulfill({
-      body: readFileSync(file),
+      body,
       contentType: 'font/ttf',
       headers: { 'access-control-allow-origin': '*' },
     })
+  })
+  return servedFonts
+}
+
+function fontFaces(css: string, family: string) {
+  return [...css.matchAll(/@font-face\s*\{([^}]+)\}/g)].flatMap(match => {
+    const rule = match[1] ?? ''
+    const ruleFamily = rule.match(/font-family:\s*([^;]+)/)?.[1]?.replaceAll(/["']/g, '').trim()
+    const weight = rule.match(/font-weight:\s*([^;]+)/)?.[1]?.trim()
+    const url = rule.match(/src:\s*url\(([^)]+)\)/)?.[1]?.replaceAll(/["']/g, '').trim()
+    return ruleFamily === family && weight && url ? [{ weight, url }] : []
   })
 }
 
@@ -74,16 +93,22 @@ function browserComponentSource(): string {
 async function preparePage(page: import('@playwright/test').Page, css: string) {
   page.on('pageerror', error => console.log('AppSelect browser error:', error.message))
   page.on('console', message => { if (message.type() === 'error') console.log('AppSelect console error:', message.text()) })
-  await routeV3FontAssets(page)
+  const servedFonts = await routeV3FontAssets(page)
   await page.setContent(v3Document('<div id="root" class="fin-shell" data-ft-v3 data-ft-v3-shell></div>', css))
   await page.addStyleTag({ content: css })
   await page.addScriptTag({ path: reactPath })
   await page.addScriptTag({ path: reactDomPath })
   await page.addScriptTag({ content: browserComponentSource() })
   await page.evaluate(async family => {
-    await Promise.all([document.fonts.load('500 13px Manrope'), document.fonts.load(`500 13px "${family}"`)])
+    await Promise.all([
+      ...['400', '600', '700'].flatMap(weight => [
+        document.fonts.load(`${weight} 13px Manrope`),
+        document.fonts.load(`${weight} 13px "${family}"`),
+      ]),
+    ])
     await document.fonts.ready
   }, v3FontFamily(css))
+  return servedFonts
 }
 
 test('portfolio filter menus render at trigger width with built V3 CSS and body portal', async ({ page }) => {
@@ -333,7 +358,7 @@ test('adaptive institution menu shows medium labels completely and truncates onl
     { width: 1710, height: 1000 },
   ]) {
     await page.setViewportSize(viewport)
-    await preparePage(page, css)
+    const servedFonts = await preparePage(page, css)
     await page.locator('#root').evaluate((element, workspaceClass) => element.classList.add(workspaceClass), classes.workspace)
     await page.addScriptTag({ content: `(() => {
       const classes = ${JSON.stringify(classes)};
@@ -412,6 +437,7 @@ test('adaptive institution menu shows medium labels completely and truncates onl
         color: labelStyle.color,
         smoothing: labelStyle.getPropertyValue('-webkit-font-smoothing'),
         fontLoaded: document.fonts.check(`500 13px ${effectiveFontFamily}`),
+        triggerFontLoaded: document.fonts.check('600 12px Manrope'),
         bodyFontToken: getComputedStyle(document.body).getPropertyValue('--font-fintrack-v3').trim(),
         textOverflow: labelStyle.textOverflow,
       }
@@ -424,8 +450,12 @@ test('adaptive institution menu shows medium labels completely and truncates onl
     expect(medium.labelScrollWidth).toBeLessThanOrEqual(medium.labelClientWidth + 1)
     expect(medium.textOverflow).toBe('ellipsis')
     expect(medium.bodyFontToken).toContain('__fintrackV3Font_')
-    expect(medium.triggerLabelFontFamily).toContain('__fintrackV3Font_')
-    expect(medium.triggerLabelFontFamily).toBe(medium.menuFontFamily)
+    // The approved trigger uses the local `Manrope` alias from globals.css;
+    // the portaled menu inherits next/font/local's generated family token.
+    // Compare their real font files and loaded faces instead of requiring CSS
+    // aliases to have identical names.
+    expect(medium.triggerLabelFontFamily.split(',')[0]?.replaceAll('"', '')).toBe('Manrope')
+    expect(medium.menuFontFamily.split(',')[0]?.replaceAll('"', '')).toBe(v3FontFamily(css))
     expect(medium.menuFontFamily).toContain('__fintrackV3Font_')
     expect(medium.fontFamily).toBe(medium.menuFontFamily)
     expect(medium.menuFontFamily).not.toContain('Geist')
@@ -438,6 +468,24 @@ test('adaptive institution menu shows medium labels completely and truncates onl
     expect(medium.color).toBe(medium.triggerLabelColor)
     expect(medium.smoothing).toBe('auto')
     expect(medium.fontLoaded).toBe(true)
+    expect(medium.triggerFontLoaded).toBe(true)
+
+    const triggerFaces = fontFaces(css, 'Manrope')
+    const menuFaces = fontFaces(css, v3FontFamily(css))
+    for (const weight of ['400', '600', '700']) {
+      const triggerFace = triggerFaces.find(face => face.weight === weight || (weight === '700' && face.weight === '700 800'))
+      const menuFace = menuFaces.find(face => face.weight === weight)
+      expect(triggerFace, `Manrope alias should declare weight ${weight}`).toBeDefined()
+      expect(menuFace, `V3 local font should declare weight ${weight}`).toBeDefined()
+      if (viewport.width === 390) {
+        // Later viewports reuse the browser's font cache; assert the actual
+        // network responses and byte identity on the first viewport only.
+        expect(servedFonts.get(triggerFace!.url), `trigger font asset ${triggerFace!.url} should load`).toMatchObject({ status: 200 })
+        expect(servedFonts.get(menuFace!.url), `menu font asset ${menuFace!.url} should load`).toMatchObject({ status: 200 })
+        expect(servedFonts.get(triggerFace!.url)!.sha256, `both aliases must use the same Manrope bytes at weight ${weight}`)
+          .toBe(servedFonts.get(menuFace!.url)!.sha256)
+      }
+    }
 
     await page.evaluate(() => {
       (window as Window & { setInstitutionValue?: (value: string) => void }).setInstitutionValue?.('andino')

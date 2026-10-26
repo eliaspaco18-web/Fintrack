@@ -60,6 +60,16 @@ function compileComponent(path: string, exportName: string): string {
   return `(() => { ${bindings.join('\n')}\n${reactBinding}\n${compiled}\nwindow.__budgetExports[${JSON.stringify(exportName)}] = ${exportName};\n})();`
 }
 
+function compileBudgetMetricsModule(): string {
+  const source = sourceOf('lib/budgets/budget-metrics.ts')
+    .replace(/^import\s+type\s+[^\n]+\n/m, '')
+    .replace(/\bexport\s+(?=(?:async\s+)?(?:function|const|class|interface|type)\b)/g, '')
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+  }).outputText
+  return `(() => { ${compiled}\nwindow.__budgetModules['@/lib/budgets/budget-metrics'] = { convertBudgetAmount }; })();`
+}
+
 async function installReactHarness(page: Page) {
   page.on('pageerror', error => console.error('[budget-geometry pageerror]', error.message))
   page.on('console', message => {
@@ -129,6 +139,8 @@ async function installReactHarness(page: Page) {
       }] }) };
     };
 })();` })
+
+  await page.addScriptTag({ content: compileBudgetMetricsModule() })
 
   await page.addScriptTag({ content: compileComponent('components/ui/Button.tsx', 'Button') })
   await page.addScriptTag({ content: `window.__budgetModules['@/components/ui/Button'] = { Button: window.__budgetExports.Button };` })
