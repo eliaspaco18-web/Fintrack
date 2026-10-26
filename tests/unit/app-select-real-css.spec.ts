@@ -449,14 +449,18 @@ test('adaptive institution menu shows medium labels completely and truncates onl
     expect(Number.parseFloat(medium.menuCssWidth)).toBeGreaterThanOrEqual(medium.naturalCanvasWidth + 26)
     expect(medium.labelScrollWidth).toBeLessThanOrEqual(medium.labelClientWidth + 1)
     expect(medium.textOverflow).toBe('ellipsis')
-    expect(medium.bodyFontToken).toContain('__fintrackV3Font_')
+    expect(medium.bodyFontToken).toBe(v3FontToken(css))
     // The approved trigger uses the local `Manrope` alias from globals.css;
     // the portaled menu inherits next/font/local's generated family token.
     // Compare their real font files and loaded faces instead of requiring CSS
     // aliases to have identical names.
     expect(medium.triggerLabelFontFamily.split(',')[0]?.replaceAll('"', '')).toBe('Manrope')
     expect(medium.menuFontFamily.split(',')[0]?.replaceAll('"', '')).toBe(v3FontFamily(css))
-    expect(medium.menuFontFamily).toContain('__fintrackV3Font_')
+    const expectedMenuFontFamily = `${v3FontToken(css)
+      .split(',')
+      .map((family, index) => index === 0 ? family.replaceAll('"', '') : family.trim())
+      .join(', ')}, system-ui, sans-serif`
+    expect(medium.menuFontFamily).toBe(expectedMenuFontFamily)
     expect(medium.fontFamily).toBe(medium.menuFontFamily)
     expect(medium.menuFontFamily).not.toContain('Geist')
     expect(medium.menuFontSize).toBe('15px')
