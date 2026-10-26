@@ -17,6 +17,26 @@ BEGIN
   IF dashboard_oid IS NULL OR seed_oid IS NULL OR handler_oid IS NULL THEN
     RAISE EXCEPTION 'Expected RPC or registration function is missing';
   END IF;
+  IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public' AND p.proname = 'fn_dashboard_summary') <> 1
+     OR (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public' AND p.proname = 'fn_seed_default_categories') <> 1 THEN
+    RAISE EXCEPTION 'Unexpected overload remains for a user-scoped RPC';
+  END IF;
+
+  -- has_function_privilege checks effective ACLs, including PUBLIC inheritance.
+  IF EXISTS (
+    SELECT 1
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    CROSS JOIN LATERAL aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
+    WHERE n.nspname = 'public'
+      AND p.proname IN ('fn_dashboard_summary', 'fn_seed_default_categories')
+      AND acl.grantee = 0
+      AND acl.privilege_type = 'EXECUTE'
+  ) THEN
+    RAISE EXCEPTION 'PUBLIC still has EXECUTE on a user-scoped RPC';
+  END IF;
 
   IF NOT has_function_privilege('authenticated', dashboard_oid, 'EXECUTE') THEN
     RAISE EXCEPTION 'authenticated must retain dashboard RPC execution';

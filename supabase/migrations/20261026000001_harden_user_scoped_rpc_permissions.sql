@@ -15,6 +15,13 @@ BEGIN
     RAISE EXCEPTION 'Expected dashboard and user-category functions are missing';
   END IF;
 
+  IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public' AND p.proname = 'fn_dashboard_summary') <> 1
+     OR (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public' AND p.proname = 'fn_seed_default_categories') <> 1 THEN
+    RAISE EXCEPTION 'Unexpected overload found for a user-scoped RPC; inspect and secure every signature first';
+  END IF;
+
   SELECT proowner INTO seed_owner
   FROM pg_proc WHERE oid = 'public.fn_seed_default_categories(uuid)'::regprocedure;
 

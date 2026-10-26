@@ -1,79 +1,153 @@
-# RPC security rehearsal
+# Isolated RPC security rehearsal
 
-This procedure is for a **new disposable local Supabase stack** only. Do not point it at the existing `supabase_db_fintrack`, OX, a tunnel, or any remote project. The migration has not been applied as part of this change.
+This rehearsal uses one **new disposable local Supabase project** and the same database for baseline and post-migration checks. It does not use the existing `supabase_db_fintrack`, OX, or a remote project. No rehearsal command has been run in this change.
 
-## What the forward migration changes
+## Backup and static review
 
-`20261026000001_harden_user_scoped_rpc_permissions.sql` preserves the dashboard RPC signature and body, adding a caller/target equality check. It removes direct and inherited client execution from the category seeder while retaining the existing `auth.users` trigger path. It pins both definer search paths and removes schema `CREATE` from public API roles. A migration precondition checks that the seeder and trigger share an owner and that the auth trigger exists.
+The original candidate `00dfa6e6e3819610e8fdafb876a6e38a0abfc325` was bundled before follow-up changes at:
 
-## Create a separate rehearsal checkout and Supabase project
+`~/Documents/FinTrackV3-Backup/fintrack-rpc-security-00dfa6e6.bundle`
 
-1. Create a detached checkout of the committed security branch under a new temporary path. Do not reuse a checkout that has an active Supabase stack:
+It passed `git bundle verify` and contains the exact candidate ref and full history.
 
-   ```sh
-   git worktree add --detach /private/tmp/fintrack-rpc-security-disposable <SECURITY_COMMIT_SHA>
-   ```
+The migration and SQL test now fail closed if an unexpected overload exists for either user-scoped function. The SQL test checks effective role privileges (`has_function_privilege` / `has_schema_privilege`), which include inherited `PUBLIC` grants, and also inspects stored function ACLs for explicit `PUBLIC EXECUTE`. Exact function identities are used for the intended signatures. No database was queried from the sandbox.
 
-2. In that checkout only, edit `supabase/config.toml` to set `project_id = "fintrack-rpc-security-disposable"` and unique ports: API `55321`, database `55322`, Studio `55323`, Inbucket `55324`. Confirm no other local service is bound to these ports before starting the stack.
-3. Start Supabase using that checkout as its workdir (first confirm the installed CLI accepts `--workdir` in this position):
+## macOS Terminal procedure
 
-   ```sh
-   supabase --workdir "$REHEARSAL_DIR" start
-   docker ps --format 'table {{.Names}}\t{{.Ports}}'
-   docker inspect <dedicated-db-container> --format '{{json .Config.Labels}} {{json .Mounts}} {{json .NetworkSettings.Ports}}'
-   ```
+Use a clean Terminal session with Node 24 and Docker running. The Supabase CLI runs from a separate worktree; do not run `supabase link`, `db push`, or any command with `--linked`.
 
-   Verify every Supabase container is named/labeled for the dedicated project ID, uses the expected unique ports, and mounts only new volumes. Inspect `docker volume ls` and `docker inspect` to confirm no existing FinTrack or OX volume is selected. A loopback URL alone is not proof against tunnels or port forwarding.
-4. Only after independently confirming the new stack identity, initialize its empty database using the repository migration chain:
-
-   ```sh
-   supabase --workdir "$REHEARSAL_DIR" db reset --local
-   ```
-
-   This destructive command is intended only for the newly created disposable stack. Do not use it against any other project/workdir. Confirm the database port is `55322`, the API port is `55321`, and the migration ledger matches the expected migration set.
-
-The commands that start containers or initialize the disposable database are intentionally not run by this commit. The existing local instance was not contacted.
-
-## Run read-only ACL assertions and existing financial regression
-
-With the disposable database initialized, execute the ACL assertions and the existing atomic-RPC suite against its database URL only:
+### 1. Create the isolated worktree
 
 ```sh
-psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/tests/user_scoped_rpc_acl.sql
-psql "$DISPOSABLE_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f supabase/tests/create_transaction_atomic_security.sql
+SECURITY_REPO="$HOME/Documents/FinTrackV3-Security"
+REHEARSAL_ROOT="/private/tmp/FinTrackV3-RPC-Rehearsal"
+APPROVED_SHA="${FINTRACK_RPC_REHEARSAL_SHA:?Set this to the exact reviewed local commit SHA}"
+test "$(git -C "$SECURITY_REPO" rev-parse refs/heads/codex/security-dependencies)" = "$APPROVED_SHA" || { echo 'STOP: security branch does not match the reviewed rehearsal SHA'; exit 1; }
+mkdir -p "$REHEARSAL_ROOT"
+git -C "$SECURITY_REPO" worktree add --detach "$REHEARSAL_ROOT/project" "$APPROVED_SHA"
 ```
 
-The second script creates synthetic rows inside a transaction and rolls them back. Run it only on the disposable database.
+In **that worktree only**, set `project_id = "fintrack-rpc-security-rehearsal"` in `supabase/config.toml`; set API `55321`, database `55322`, database shadow `55320`, Studio `55323`, and Inbucket UI `55324`. Keep analytics and the pooler disabled, leave optional SMTP/POP3 and S3 ports unset/disabled, and do not change the original repository config.
 
-## Run PostgREST authentication tests
-
-Obtain local anon/service-role keys from the disposable stack status output without copying or printing them into logs. Export them only in the current shell, then run:
+Confirm the selected ports are free immediately before starting. This check was run once in the Codex environment and ports `55320–55329` were free at that time; it does not reserve them and must be repeated in Terminal:
 
 ```sh
-export FINTRACK_RPC_SECURITY_TARGET=fintrack-rpc-security-disposable
-export SUPABASE_URL=http://127.0.0.1:55321
-export SUPABASE_ANON_KEY='<disposable-local-anon-key>'
-export SUPABASE_SERVICE_ROLE_KEY='<disposable-local-service-role-key>'
-node scripts/db-certification/rpc-security-postgrest.mjs
-unset SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY
+for p in 55320 55321 55322 55323 55324 55325 55326 55327 55328 55329; do
+  if lsof -nP -iTCP:"$p" -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "STOP: port $p is already listening"
+    lsof -nP -iTCP:"$p" -sTCP:LISTEN
+    exit 1
+  fi
+done
 ```
 
-The test creates two synthetic Auth users, verifies registration seeding, checks an authenticated user's own dashboard, checks anonymous and cross-user denials, attempts the seeder as anon, user A, and service role, verifies user B's category snapshot remains byte-for-byte unchanged, and deletes the synthetic users in `finally`. The service-role client is used only for Auth fixture creation/cleanup and read-only snapshots, not for the tested RPC calls.
+The assigned ports are 55320–55324; 55325–55329 are checked as reserve space if the installed CLI config exposes another host port. If any configured service needs a port outside this block, stop and allocate/check another unique port before starting.
 
-The script fails closed unless the target marker is explicit, keys carry the expected role claims, and the URL is HTTP loopback on port `55321`. Those checks do not defeat a tunnel or proxy; before execution, independently verify the Docker project/volume labels and local Supabase status for the dedicated project.
+### 2. Baseline: run without the corrective migration
 
-## Expected outcome
+The worktree is the approved commit containing the migration. Temporarily move only that migration outside `supabase/migrations` so the first reset reproduces the parent state. The shell trap restores it on success, error, interrupt, or termination:
 
-- `fn_dashboard_summary(A)` succeeds for A; anon calls and `A -> B` fail with SQLSTATE `42501`.
-- `fn_seed_default_categories(B)` is not executable by anon, A, or service role, and B's rows remain unchanged.
-- Creating a synthetic Auth user still causes the registration trigger to seed that user's default categories.
-- `create_transaction_atomic` remains executable by authenticated users and passes the existing atomicity/ownership test.
-- No request is sent to a remote Supabase endpoint and no existing local database is reset or modified.
+```sh
+cd "$REHEARSAL_ROOT/project"
+MIGRATION="$PWD/supabase/migrations/20261026000001_harden_user_scoped_rpc_permissions.sql"
+HELD="$REHEARSAL_ROOT/harden-rpc.pending.sql"
+test -f "$MIGRATION" && test ! -e "$HELD" || { echo 'STOP: unexpected migration file state'; exit 1; }
+restore_migration() { if test -f "$HELD"; then mv "$HELD" "$MIGRATION"; fi; }
+trap restore_migration EXIT HUP INT TERM
+mv "$MIGRATION" "$HELD"
+```
 
+Start the stack, then verify the CLI reports project `fintrack-rpc-security-rehearsal`, API `127.0.0.1:55321`, and DB `127.0.0.1:55322`. Inspect containers, labels, mounts and volumes before resetting. Stop if the expected unique project/container name is absent, if a mount is shared with an existing stack, or if anything points to OX/FinTrack’s existing project. Do not print status output containing local keys:
 
-## Production impact check (read-only; not performed)
+```sh
+supabase start
+umask 077
+STATUS_ENV="$REHEARSAL_ROOT/local-status.env"
+supabase status -o env > "$STATUS_ENV"
+chmod 600 "$STATUS_ENV"
+docker ps --format 'table {{.Names}}\t{{.Ports}}'
+```
 
-Only after separate authorization to inspect Production, run catalog-only queries using an approved read-only connection. Do not call the RPCs or query financial tables. The following query distinguishes the stored ACL entries (including `PUBLIC`) from effective role privileges and reports owner and security configuration:
+Identify exactly one new database container whose name includes `fintrack-rpc-security-rehearsal`, then inspect it without printing secrets:
+
+```sh
+DB_CONTAINER="<exact new database container name>"
+docker inspect "$DB_CONTAINER" --format '{{.Name}} {{json .Config.Labels}} {{json .Mounts}} {{json .NetworkSettings.Ports}}'
+```
+
+Only after confirming the container name, unique mounts and ports, reset this new local project. The command is deliberately unlinked and targets the current worktree’s local database:
+
+```sh
+supabase db reset
+```
+
+Do not run this command from any other directory. It rebuilds only this newly created disposable database. Then run the before-phase PostgREST test, using the candidate checkout’s installed Node dependencies and only the local status file’s keys:
+
+```sh
+set -a
+. "$STATUS_ENV"
+set +a
+export SUPABASE_URL="$API_URL"
+export SUPABASE_ANON_KEY="$ANON_KEY"
+export SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
+node --version  # require v24.x
+RPC_SECURITY_PHASE=before FINTRACK_RPC_SECURITY_TARGET=fintrack-rpc-security-rehearsal \
+  node "$SECURITY_REPO/scripts/db-certification/rpc-security-postgrest.mjs"
+docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres -X -v ON_ERROR_STOP=1 \
+  < "$SECURITY_REPO/supabase/tests/create_transaction_atomic_security.sql"
+unset SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY ANON_KEY SERVICE_ROLE_KEY API_URL
+rm -f "$STATUS_ENV"
+```
+
+The baseline script confirms that a normal authenticated A→B call exposes B’s synthetic account if the vulnerable definition/grant is present. It reports whether anon is also able to call the dashboard in this fresh stack (the repository’s baseline migrations revoke `PUBLIC` for that RPC, so direct anon permission may differ from the reported existing instance). It probes anon and user A category seeding by removing only a category belonging to synthetic user B and checking whether the RPC restores it. It removes both synthetic Auth users in `finally`.
+
+### 3. Apply the forward migration to the same disposable database
+
+Restore the migration and clear the trap. Apply pending local migrations, not a reset; this exercises the actual forward upgrade against the same disposable database:
+
+```sh
+restore_migration
+trap - EXIT HUP INT TERM
+supabase migration up --local
+```
+
+If `migration up --local` is unavailable in the installed CLI, stop and inspect `supabase migration up --help`; do not substitute `db push` or a linked command.
+
+Reconfirm the same project/API/DB identity and database container. Refresh the protected local status file, then run the post-phase tests:
+
+```sh
+umask 077
+STATUS_ENV="$REHEARSAL_ROOT/local-status.env"
+supabase status -o env > "$STATUS_ENV"
+chmod 600 "$STATUS_ENV"
+set -a
+. "$STATUS_ENV"
+set +a
+export SUPABASE_URL="$API_URL"
+export SUPABASE_ANON_KEY="$ANON_KEY"
+export SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
+RPC_SECURITY_PHASE=after FINTRACK_RPC_SECURITY_TARGET=fintrack-rpc-security-rehearsal \
+  node "$SECURITY_REPO/scripts/db-certification/rpc-security-postgrest.mjs"
+docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres -X -v ON_ERROR_STOP=1 \
+  < "$SECURITY_REPO/supabase/tests/user_scoped_rpc_acl.sql"
+docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres -X -v ON_ERROR_STOP=1 \
+  < "$SECURITY_REPO/supabase/tests/create_transaction_atomic_security.sql"
+unset SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY ANON_KEY SERVICE_ROLE_KEY API_URL
+rm -f "$STATUS_ENV"
+```
+
+Expected post-migration results: the owner dashboard works; anonymous, null-ID, cross-user, and service-role dashboard calls fail with `42501`; anon/A/service-role seeder calls fail and B’s post-setup category snapshot stays unchanged; new user registration still seeds categories; ACL assertions pass; the existing atomic financial RPC test confirms successful PEN/USD and derived operations plus rollback after failure. All financial SQL fixtures are wrapped in a transaction and rolled back. The PostgREST test writes only synthetic users, categories and one synthetic account, then deletes the users.
+
+Finally stop only the project from its worktree, retaining its volume for review. Do not destroy volumes until certification is accepted:
+
+```sh
+cd "$REHEARSAL_ROOT/project"
+supabase stop
+```
+
+## Read-only Production impact check (not performed)
+
+Use the catalog query below only after separate authorization and a read-only Production session. It reads function definitions/ACLs and schema privileges only; it does not call the functions or read financial rows. Compare the definition, ACL, overload count and applied migration ledger with the exact deployed release. Never include keys or user data in the report.
 
 ```sql
 SELECT
@@ -83,7 +157,6 @@ SELECT
   p.proconfig AS function_settings,
   p.proacl AS stored_acl,
   pg_get_functiondef(p.oid) AS function_definition,
-  md5(pg_get_functiondef(p.oid)) AS definition_fingerprint,
   has_function_privilege('anon', p.oid, 'EXECUTE') AS anon_effective_execute,
   has_function_privilege('authenticated', p.oid, 'EXECUTE') AS authenticated_effective_execute,
   has_function_privilege('service_role', p.oid, 'EXECUTE') AS service_role_effective_execute
@@ -118,5 +191,3 @@ SELECT t.tgname, t.tgenabled, t.tgfoid::regprocedure AS handler
 FROM pg_trigger t
 WHERE t.tgrelid = 'auth.users'::regclass AND NOT t.tgisinternal;
 ```
-
-Compare `definition_fingerprint`/`pg_get_functiondef` and the applied migration ledger with the exact deployed release. A `true` result for `anon_effective_execute` on the dashboard function, together with the vulnerable pre-migration definition, confirms unauthenticated RPC exposure. A `true` result for anon/authenticated execution on the category seeder confirms a callable mutation path. Preserve the output as metadata only; do not include project credentials or user data. This check does not establish that Production has the vulnerable migration state unless the returned function definition/settings and applied migration ledger are compared to the exact deployed release.
