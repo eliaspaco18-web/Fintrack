@@ -33,7 +33,7 @@ import {
   LOAN_SCHEDULE_PRINCIPAL_ERROR,
   getManualScheduleSubmissionIssue,
   type LoanScheduleIntegrity,
-  zManualLoanInstallmentInput,
+  zManualLoanInstallmentsInput,
 } from '@/modules/credits/loan-schedule-integrity'
 import type { TablesInsert } from '@/types/database.types'
 import { LOAN_TYPE_VALUES } from '@/modules/loans/loan-type'
@@ -75,7 +75,7 @@ const zCreateBankCreditSchema = z.object({
   transaction_date: zDate.optional(),
   description: z.string().trim().min(2).max(255).optional(),
   generate_schedule: z.boolean().default(true),
-  installments: z.array(zManualLoanInstallmentInput).optional(),
+  installments: zManualLoanInstallmentsInput.optional(),
   notes: z.string().trim().max(500).optional().nullable(),
 })
 
