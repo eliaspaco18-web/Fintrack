@@ -47,12 +47,12 @@ const zUpdateAssetTypeInput = z.object({
 )
 
 async function getAuthContext() {
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data: { user }, error } = await supabase.auth.getUser()
 
   if (error || !user) {
     return {
-      supabase: null as ReturnType<typeof createClient> | null,
+      supabase: null as Awaited<ReturnType<typeof createClient>> | null,
       userId: null as string | null,
       currencyRepo: null as CurrencyRepository | null,
       assetTypeRepo: null as AssetTypeRepository | null,

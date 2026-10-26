@@ -18,7 +18,7 @@ import type { DashboardSummary } from '@/lib/dashboard/types'
 
 export async function GET() {
   return measureServerOperation('api.dashboard.summary', async () => {
-    const supabase = createClient()
+    const supabase = await createClient()
     const userId = await getSessionUserId(supabase)
     if (!userId) return apiUnauthorized()
 

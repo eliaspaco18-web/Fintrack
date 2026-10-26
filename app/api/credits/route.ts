@@ -167,7 +167,7 @@ function roundMoney(value: number): number {
 }
 
 async function ensureUserActiveBankEntity(params: { userId: string; bankEntityId: string }) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data, error } = await supabase
     .from('bank_entities')
     .select('id, name, short_name, is_active')
@@ -189,7 +189,7 @@ async function ensureUserActiveBankEntity(params: { userId: string; bankEntityId
 async function ensureUserActiveAccount(
   params: { userId: string; accountId: string; expectedType?: 'CREDIT_CARD' }
 ) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data, error } = await supabase
     .from('accounts')
     .select('id, name, type, is_active, bank_entity_id')
@@ -231,7 +231,7 @@ async function rollbackCreatedRecords(params: {
   creditId?: string | null
   loanId?: string | null
 }): Promise<boolean> {
-  const supabase = createClient()
+  const supabase = await createClient()
   const txService = new TransactionService(supabase)
   let rollbackComplete = true
 
@@ -303,7 +303,7 @@ async function createCreditCard(userId: string, payload: Extract<CreditCreateReq
     return apiError({ code: bankValidation.code, message: bankValidation.message })
   }
 
-  const supabase = createClient()
+  const supabase = await createClient()
   const creditLimitPen = Number(payload.credit_limit_pen ?? (payload.currency === 'PEN' ? payload.credit_limit ?? 0 : 0))
   const creditLimitUsd = Number(payload.credit_limit_usd ?? (payload.currency === 'USD' ? payload.credit_limit ?? 0 : 0))
   const usedAmountPen = Number(payload.used_amount_pen ?? (payload.currency === 'PEN' ? payload.used_amount ?? 0 : 0))
@@ -426,7 +426,7 @@ async function createBankCredit(userId: string, payload: Extract<CreditCreateReq
     return apiError({ code: accountValidation.code, message: accountValidation.message })
   }
 
-  const supabase = createClient()
+  const supabase = await createClient()
   const txService = new TransactionService(supabase)
 
   const transactionDate = payload.transaction_date ?? payload.start_date
@@ -602,7 +602,7 @@ async function createBankCredit(userId: string, payload: Extract<CreditCreateReq
 }
 
 export async function GET(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
@@ -755,7 +755,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 

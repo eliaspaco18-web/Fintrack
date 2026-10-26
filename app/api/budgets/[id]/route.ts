@@ -58,7 +58,7 @@ const zDeleteBudgetSchema = z.object({
 })
 
 async function validateBudgetCategory(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   categoryId: string,
 ) {
@@ -89,11 +89,12 @@ async function validateBudgetCategory(
 }
 
 interface Params {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }
 
-export async function PATCH(req: NextRequest, { params }: Params) {
-  const supabase = createClient()
+export async function PATCH(req: NextRequest, props: Params) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
@@ -221,8 +222,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   return apiOk(data)
 }
 
-export async function DELETE(req: NextRequest, { params }: Params) {
-  const supabase = createClient()
+export async function DELETE(req: NextRequest, props: Params) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 

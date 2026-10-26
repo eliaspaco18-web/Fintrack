@@ -58,7 +58,7 @@ function normalizeReceivableRow<T extends ReceivableResponseRow>(row: T) {
 }
 
 async function resolveUserCategoryIdBySystemKey(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   systemKey: string,
 ) {
@@ -76,7 +76,7 @@ async function resolveUserCategoryIdBySystemKey(
 }
 
 export async function GET(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
@@ -123,7 +123,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
@@ -333,7 +333,7 @@ async function createRecurringTemplate({
   paymentMethod,
   notes,
 }: {
-  supabase: ReturnType<typeof createClient>
+  supabase: Awaited<ReturnType<typeof createClient>>
   userId: string
   saveRecurring: boolean
   recurringName: string

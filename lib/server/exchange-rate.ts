@@ -31,7 +31,7 @@ interface ExternalRateResult {
 
 type UntypedDbClient = SupabaseClient
 
-function untyped(db: ReturnType<typeof createClient> | ReturnType<typeof createServiceClient>): UntypedDbClient {
+function untyped(db: Awaited<ReturnType<typeof createClient>> | ReturnType<typeof createServiceClient>): UntypedDbClient {
   return db as unknown as UntypedDbClient
 }
 
@@ -218,7 +218,7 @@ async function fetchExternalUsdPenRateForDate(effectiveDate: string): Promise<Ex
 
 async function getLatestLegacyRateFromDb(): Promise<ExchangeRateSnapshot | null> {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const { data, error } = await withTimeout(
       supabase
         .from('exchange_rates')
@@ -247,7 +247,7 @@ async function getLatestLegacyRateFromDb(): Promise<ExchangeRateSnapshot | null>
 
 async function getLiveRateFromDb(): Promise<ExchangeRateSnapshot | null> {
   try {
-    const supabase = untyped(createClient())
+    const supabase = untyped(await createClient())
     const { data, error } = await withTimeout(
       supabase
         .from('exchange_rates_live')
@@ -275,7 +275,7 @@ async function getLiveRateFromDb(): Promise<ExchangeRateSnapshot | null> {
 
 async function getDailyRateByDate(effectiveDate: string): Promise<ExchangeRateSnapshot | null> {
   try {
-    const supabase = untyped(createClient())
+    const supabase = untyped(await createClient())
     const { data, error } = await withTimeout(
       supabase
         .from('exchange_rates_daily')
@@ -304,7 +304,7 @@ async function getDailyRateByDate(effectiveDate: string): Promise<ExchangeRateSn
 
 async function getDailyRateOnOrBefore(effectiveDate: string): Promise<ExchangeRateSnapshot | null> {
   try {
-    const supabase = untyped(createClient())
+    const supabase = untyped(await createClient())
     const { data, error } = await withTimeout(
       supabase
         .from('exchange_rates_daily')

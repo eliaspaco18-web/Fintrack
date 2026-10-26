@@ -21,13 +21,13 @@ const zParamsSchema = z.object({
 
 export async function GET(
   _req: NextRequest,
-  context: { params: { id: string } },
+  context: { params: Promise<{ id: string }> },
 ) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
-  const parsed = zParamsSchema.safeParse(context.params)
+  const parsed = zParamsSchema.safeParse((await context.params))
   if (!parsed.success) return apiZodError(parsed.error)
 
   const { data, error } = await getImportJobWithRows(supabase, userId, parsed.data.id)

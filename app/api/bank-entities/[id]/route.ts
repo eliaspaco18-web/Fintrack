@@ -40,7 +40,7 @@ const zUpdateBankEntitySchema = z.object({
 )
 
 interface Params {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }
 
 function bankFeatureUnavailable() {
@@ -52,8 +52,9 @@ function bankFeatureUnavailable() {
   })
 }
 
-export async function PATCH(req: NextRequest, { params }: Params) {
-  const supabase = createClient()
+export async function PATCH(req: NextRequest, props: Params) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
@@ -172,8 +173,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   return apiOk(data)
 }
 
-export async function DELETE(_req: NextRequest, { params }: Params) {
-  const supabase = createClient()
+export async function DELETE(_req: NextRequest, props: Params) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 

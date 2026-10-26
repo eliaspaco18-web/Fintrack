@@ -12,7 +12,7 @@ function privateNoStore(response: NextResponse) {
 }
 
 export async function GET() {
-  const supabase = createClient()
+  const supabase = await createClient()
   const result = await readAccountMonthlyHistories({
     getUserId: () => getSessionUserId(supabase),
     listAccounts: async (userId, signal) => await supabase

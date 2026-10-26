@@ -91,7 +91,7 @@ function normalizeTransactionRow(row: TransactionApiRow): TransactionApiRow {
 // ─── GET /api/transactions ────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
@@ -122,7 +122,7 @@ export async function GET(req: NextRequest) {
 // ─── POST /api/transactions ───────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 

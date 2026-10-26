@@ -245,13 +245,13 @@ function hasInitialCurrencyColumns(credit: Record<string, unknown>): boolean {
 
 export async function GET(
   _req: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
-  const creditId = context.params.id
+  const creditId = (await context.params).id
   const { data: credit, error: creditError } = await supabase
     .from('credits')
     .select('*')
@@ -401,9 +401,9 @@ export async function GET(
 
 export async function PATCH(
   req: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
@@ -417,7 +417,7 @@ export async function PATCH(
   const parsed = zUpdateCreditSchema.safeParse(body)
   if (!parsed.success) return apiZodError(parsed.error)
 
-  const creditId = context.params.id
+  const creditId = (await context.params).id
   const { data: credit, error: creditError } = await supabase
     .from('credits')
     .select('*')
@@ -938,13 +938,13 @@ export async function PATCH(
 
 export async function DELETE(
   _req: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
-  const creditId = context.params.id
+  const creditId = (await context.params).id
   const { data: credit, error: creditError } = await supabase
     .from('credits')
     .select('id, name, account_id, transaction_id, credit_type, notes')

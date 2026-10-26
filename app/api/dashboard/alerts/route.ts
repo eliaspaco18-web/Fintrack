@@ -65,7 +65,7 @@ function currentMonthKey(): string {
 
 export async function GET() {
   return measureServerOperation('api.dashboard.alerts', async () => {
-    const supabase = createClient()
+    const supabase = await createClient()
     const userId = await getSessionUserId(supabase)
     if (!userId) return apiUnauthorized()
 

@@ -1,22 +1,22 @@
 // =============================================================================
 // lib/supabase.server.ts
 // Cliente de Supabase para uso en Server Components, Server Actions y
-// API Routes de Next.js 14. Usa cookies para mantener la sesión del usuario.
+// API Routes de Next.js. Usa cookies async para mantener la sesión del usuario.
 //
 // NUNCA importar en Client Components — usar lib/supabase.client.ts para eso.
 // =============================================================================
 
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { SupabaseClient }                          from '@supabase/supabase-js'
-import { cookies }                                 from 'next/headers'
+import { cookies } from 'next/headers'
 import type { Database }                           from '@/types/database.types'
 
 /**
  * Cliente Supabase autenticado para Server Components y API Routes.
  * Usa la sesión del usuario actual via cookies.
  */
-export function createClient() {
-  const cookieStore = cookies()
+export async function createClient() {
+  const cookieStore = await cookies()
 
   return createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -73,7 +73,7 @@ export function createServiceClient() {
  * Lanza un error si el usuario no está autenticado.
  */
 export async function getAuthenticatedUser() {
-  const supabase = createClient()
+  const supabase = await createClient()
 
   const {
     data: { user },
@@ -99,6 +99,6 @@ export async function getTransactionService() {
   const { TransactionService } = await import(
     '@/modules/transactions/transaction.service'
   )
-  const db = createClient()
+  const db = await createClient()
   return new TransactionService(db)
 }

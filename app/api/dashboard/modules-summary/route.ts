@@ -12,7 +12,7 @@ import type { ModulesSummary } from '@/lib/dashboard/types'
 
 export async function GET() {
   return measureServerOperation('api.dashboard.modules-summary', async () => {
-    const supabase = createClient()
+    const supabase = await createClient()
     const userId = await getSessionUserId(supabase)
     if (!userId) return apiUnauthorized()
 

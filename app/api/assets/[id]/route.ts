@@ -22,13 +22,14 @@ import {
   wouldReplaceLegacyAttachmentNotes,
 } from '@/modules/attachments/attachment-integrity'
 
-type Ctx = { params: { id: string } }
+type Ctx = { params: Promise<{ id: string }> }
 const ASSET_STATUSES = new Set(['ACTIVE', 'SOLD', 'DEPRECIATED'] as const)
 
 // ─── GET ──────────────────────────────────────────────────────────────────────
 
-export async function GET(_req: NextRequest, { params }: Ctx) {
-  const supabase = createClient()
+export async function GET(_req: NextRequest, props: Ctx) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) return NextResponse.json({ ok: false, error: { code: 'UNAUTHORIZED' } }, { status: 401 })
 
@@ -45,8 +46,9 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
 
 // ─── PATCH ────────────────────────────────────────────────────────────────────
 
-export async function PATCH(req: NextRequest, { params }: Ctx) {
-  const supabase = createClient()
+export async function PATCH(req: NextRequest, props: Ctx) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) return NextResponse.json({ ok: false, error: { code: 'UNAUTHORIZED' } }, { status: 401 })
 
@@ -111,8 +113,9 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
 
 // ─── DELETE ───────────────────────────────────────────────────────────────────
 
-export async function DELETE(_req: NextRequest, { params }: Ctx) {
-  const supabase = createClient()
+export async function DELETE(_req: NextRequest, props: Ctx) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) return NextResponse.json({ ok: false, error: { code: 'UNAUTHORIZED' } }, { status: 401 })
 

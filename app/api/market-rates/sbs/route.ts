@@ -48,7 +48,7 @@ function isSbsAutomationChallenge(html: string): boolean {
 }
 
 export async function GET(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 

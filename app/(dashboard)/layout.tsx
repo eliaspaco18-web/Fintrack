@@ -32,7 +32,7 @@ const SERVER_QUERY_TIMEOUT_MS = 4_000
 
 async function getLayoutData(userId: string) {
   return measureServerOperation('dashboard.layout-data', async () => {
-    const supabase = createClient()
+    const supabase = await createClient()
     const [profileResult, exchangeRateResult] = await Promise.allSettled([
       withTimeout(
         supabase
@@ -73,7 +73,7 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()

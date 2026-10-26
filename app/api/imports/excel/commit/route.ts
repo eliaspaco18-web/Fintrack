@@ -23,7 +23,7 @@ const zCommitSchema = z.object({
 export const runtime = 'nodejs'
 
 export async function POST(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 

@@ -126,12 +126,13 @@ function renderPanel({
   return <SupportPanel />
 }
 
-export default async function SettingsPage({
-  searchParams,
-}: {
-  searchParams?: { tab?: string }
-}) {
-  const supabase = createClient()
+export default async function SettingsPage(
+  props: {
+    searchParams?: Promise<{ tab?: string }>
+  }
+) {
+  const searchParams = await props.searchParams;
+  const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()

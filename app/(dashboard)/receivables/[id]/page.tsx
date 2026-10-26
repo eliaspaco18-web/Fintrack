@@ -6,8 +6,9 @@ import { ReceivableDetail }    from '@/components/detail/ModuleDetails'
 
 const SERVER_QUERY_TIMEOUT_MS = 4_000
 
-export default async function ReceivableDetailPage({ params }: { params: { id: string } }) {
-  const supabase = createClient()
+export default async function ReceivableDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 

@@ -25,7 +25,7 @@ function normalizeCategoryScope(scope: string): CategoryScope {
 }
 
 function normalizeCategoryKey(name: string, scope: CategoryScope): string {
-  return `${scope}::${name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('es')}`
+  return `${scope}::${name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('es')}`;
 }
 
 const zUpdateCategorySchema = z.object({
@@ -40,11 +40,12 @@ const zUpdateCategorySchema = z.object({
 )
 
 interface Params {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }
 
-export async function PATCH(req: NextRequest, { params }: Params) {
-  const supabase = createClient()
+export async function PATCH(req: NextRequest, props: Params) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
@@ -111,8 +112,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   return apiOk(data)
 }
 
-export async function DELETE(_req: NextRequest, { params }: Params) {
-  const supabase = createClient()
+export async function DELETE(_req: NextRequest, props: Params) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 

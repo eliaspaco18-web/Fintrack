@@ -22,7 +22,7 @@ const zCreateAlertSchema = z.object({
 })
 
 export async function GET(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) {
     return NextResponse.json(
@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) {
     return NextResponse.json(
@@ -140,7 +140,7 @@ export async function POST(req: NextRequest) {
 
 /** DELETE /api/alerts — elimina todas las alertas leídas del usuario (bulk) */
 export async function DELETE(_req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) {
     return NextResponse.json(

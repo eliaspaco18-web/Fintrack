@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase.server'
 
-type SupabaseServerClient = ReturnType<typeof createClient>
+type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
 function normalizeName(value: string | null | undefined) {
   return (value ?? '').trim().toLocaleLowerCase('es')

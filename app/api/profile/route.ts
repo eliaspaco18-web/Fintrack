@@ -52,7 +52,7 @@ async function ensureProfileRow(user: AuthenticatedUser) {
 }
 
 export async function GET() {
-  const supabase = createClient()
+  const supabase = await createClient()
   const {
     data: { user },
     error: authError,
@@ -79,7 +79,7 @@ export async function GET() {
 }
 
 export async function PATCH(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const {
     data: { user },
     error: authError,
@@ -132,7 +132,7 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE() {
-  const supabase = createClient()
+  const supabase = await createClient()
   const {
     data: { user },
     error: authError,

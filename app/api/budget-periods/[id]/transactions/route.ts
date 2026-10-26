@@ -13,7 +13,7 @@ import {
 } from '@/lib/api/response'
 
 interface Params {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }
 
 type BudgetPeriodRef = {
@@ -42,8 +42,9 @@ function pickSingle<T>(value: T | T[] | null | undefined): T | null {
   return value ?? null
 }
 
-export async function GET(_req: Request, { params }: Params) {
-  const supabase = createClient()
+export async function GET(_req: Request, props: Params) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 

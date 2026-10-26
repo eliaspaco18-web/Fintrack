@@ -1703,7 +1703,7 @@ async function buildPdf(payload: ExportPayload): Promise<Uint8Array> {
 }
 
 async function fetchExportMeta(userId: string): Promise<MetaPayload> {
-  const supabase = createClient()
+  const supabase = await createClient()
   const [{ data: txDates, error: txError }, { data: portfolios, error: portfolioError }] = await Promise.all([
     supabase
       .from('transactions')
@@ -1743,7 +1743,7 @@ async function fetchExportMeta(userId: string): Promise<MetaPayload> {
 }
 
 async function fetchTransactions(userId: string): Promise<TransactionExportRow[]> {
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data, error } = await supabase
     .from('transactions')
     .select(`
@@ -1825,7 +1825,7 @@ async function fetchTransactions(userId: string): Promise<TransactionExportRow[]
 }
 
 export async function GET(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const {
     data: { user },
     error: authError,

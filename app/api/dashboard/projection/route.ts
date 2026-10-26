@@ -71,7 +71,7 @@ function pushEvent(map: Map<string, CashFlowProjectionEvent[]>, event: CashFlowP
 
 export async function GET() {
   return measureServerOperation('api.dashboard.projection', async () => {
-    const supabase = createClient()
+    const supabase = await createClient()
     const userId = await getSessionUserId(supabase)
     if (!userId) return apiUnauthorized()
 

@@ -69,14 +69,14 @@ const ACCOUNT_SELECT_WITH_BANK =
   `${ACCOUNT_SELECT_WITH_BANK_ID},bank_entity:bank_entities(id,name,short_name,color,icon,is_active)` as const
 
 interface Params {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }
 
 const ACCOUNT_LINKED_RECORDS_MESSAGE =
   'Esta cuenta participa en transacciones o creditos. Reasigna esos registros antes de continuar.'
 
 async function getEarliestAccountTransactionDate(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   accountId: string,
 ) {
@@ -96,7 +96,7 @@ async function getEarliestAccountTransactionDate(
 }
 
 async function getAccountBlockers(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   accountId: string,
 ) {
@@ -139,8 +139,9 @@ function normalizeLegacyAccount<T extends Record<string, unknown>>(account: T) {
   }
 }
 
-export async function PATCH(req: NextRequest, { params }: Params) {
-  const supabase = createClient()
+export async function PATCH(req: NextRequest, props: Params) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
@@ -332,8 +333,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   return apiOk(responseData)
 }
 
-export async function DELETE(_req: NextRequest, { params }: Params) {
-  const supabase = createClient()
+export async function DELETE(_req: NextRequest, props: Params) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 

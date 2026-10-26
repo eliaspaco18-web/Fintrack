@@ -61,7 +61,7 @@ function toPenAmount(amount: number, currency: string, exchangeRate: number | nu
 
 export async function GET(req: NextRequest) {
   return measureServerOperation('api.dashboard.sidebar', async () => {
-    const supabase = createClient()
+    const supabase = await createClient()
     const userId = await getSessionUserId(supabase)
     if (!userId) return apiUnauthorized()
 

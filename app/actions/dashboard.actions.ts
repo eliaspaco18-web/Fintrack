@@ -19,7 +19,7 @@ import type {
 // ─── HELPER ───────────────────────────────────────────────────────────────────
 
 async function getDashboardService() {
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data: { user }, error } = await supabase.auth.getUser()
   if (error || !user) return { service: null, userId: null }
   return { service: new DashboardService(supabase), userId: user.id }
