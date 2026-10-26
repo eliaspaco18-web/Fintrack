@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase.server'
+import { readBoundedJsonBody } from '@/lib/api/read-bounded-json-body'
 import {
   apiError,
   apiNoContent,
@@ -407,12 +408,14 @@ export async function PATCH(
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
-  let body: unknown
-  try {
-    body = await req.json()
-  } catch {
+  const bodyResult = await readBoundedJsonBody(req)
+  if (!bodyResult.ok && bodyResult.reason === 'too_large') {
+    return apiError({ code: 'PAYLOAD_TOO_LARGE', message: 'La solicitud supera el tamaño máximo permitido' })
+  }
+  if (!bodyResult.ok) {
     return apiError({ code: 'VALIDATION_ERROR', message: 'Body JSON inválido' })
   }
+  const body = bodyResult.value
 
   const parsed = zUpdateCreditSchema.safeParse(body)
   if (!parsed.success) return apiZodError(parsed.error)

@@ -437,7 +437,7 @@ test('adaptive institution menu shows medium labels completely and truncates onl
         color: labelStyle.color,
         smoothing: labelStyle.getPropertyValue('-webkit-font-smoothing'),
         fontLoaded: document.fonts.check(`500 13px ${effectiveFontFamily}`),
-        triggerFontLoaded: document.fonts.check('600 12px Manrope'),
+        triggerFontLoaded: document.fonts.check(`600 12px ${triggerLabelStyle.fontFamily.split(',')[0]}`),
         bodyFontToken: getComputedStyle(document.body).getPropertyValue('--font-fintrack-v3').trim(),
         textOverflow: labelStyle.textOverflow,
       }
@@ -450,11 +450,10 @@ test('adaptive institution menu shows medium labels completely and truncates onl
     expect(medium.labelScrollWidth).toBeLessThanOrEqual(medium.labelClientWidth + 1)
     expect(medium.textOverflow).toBe('ellipsis')
     expect(medium.bodyFontToken).toBe(v3FontToken(css))
-    // The approved trigger uses the local `Manrope` alias from globals.css;
-    // the portaled menu inherits next/font/local's generated family token.
-    // Compare their real font files and loaded faces instead of requiring CSS
-    // aliases to have identical names.
-    expect(medium.triggerLabelFontFamily.split(',')[0]?.replaceAll('"', '')).toBe('Manrope')
+    // Both the trigger and the portaled menu use next/font/local's generated
+    // family token. The source CSS and the served font-byte checks below
+    // verify that this token resolves to the approved Manrope assets.
+    expect(medium.triggerLabelFontFamily.split(',')[0]?.replaceAll('"', '')).toBe(v3FontFamily(css))
     expect(medium.menuFontFamily.split(',')[0]?.replaceAll('"', '')).toBe(v3FontFamily(css))
     const expectedMenuFontFamily = `${v3FontToken(css)
       .split(',')
