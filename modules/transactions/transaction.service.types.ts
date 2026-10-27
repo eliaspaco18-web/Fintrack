@@ -202,7 +202,7 @@ export interface AtomicTransactionPayload {
   p_type:                     TransactionType
   p_amount:                   number
   p_currency:                 CurrencyCode
-  p_exchange_rate:            number
+  p_exchange_rate:            number | null
   p_description:              string
   p_transaction_date:         string
   p_notes:                    string | null
