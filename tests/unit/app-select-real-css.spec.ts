@@ -450,11 +450,12 @@ test('adaptive institution menu shows medium labels completely and truncates onl
     expect(medium.labelScrollWidth).toBeLessThanOrEqual(medium.labelClientWidth + 1)
     expect(medium.textOverflow).toBe('ellipsis')
     expect(medium.bodyFontToken).toBe(v3FontToken(css))
-    // The in-page trigger intentionally uses the shared `Manrope` alias while
-    // the body-ported menu uses next/font/local's generated family token. The
-    // font-face and served-byte checks below prove both names resolve to the
-    // exact same approved local Manrope assets.
-    expect(medium.triggerLabelFontFamily.split(',')[0]?.replaceAll('"', '')).toBe('Manrope')
+    // The compiled page may resolve the trigger through the shared alias or
+    // next/font/local's generated family token. Both must remain approved local
+    // Manrope faces; the served-byte checks below compare their actual assets.
+    expect(['Manrope', v3FontFamily(css)]).toContain(
+      medium.triggerLabelFontFamily.split(',')[0]?.replaceAll('"', ''),
+    )
     expect(medium.menuFontFamily.split(',')[0]?.replaceAll('"', '')).toBe(v3FontFamily(css))
     const expectedMenuFontFamily = `${v3FontToken(css)
       .split(',')
