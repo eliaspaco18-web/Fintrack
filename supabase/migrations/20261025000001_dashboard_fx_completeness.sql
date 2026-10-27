@@ -66,13 +66,20 @@ RETURNS jsonb
 LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_result         jsonb;
   v_current_month  date    := date_trunc('month', CURRENT_DATE)::date;
   v_exchange_rate  numeric := fn_latest_exchange_rate('USD', 'PEN');
 BEGIN
+  -- Keep this migration safe on its own. Later migrations must not be needed
+  -- to restore the user boundary after CREATE OR REPLACE preserves old ACLs.
+  IF auth.uid() IS NULL OR p_user_id IS DISTINCT FROM auth.uid() THEN
+    RAISE EXCEPTION 'Not authorized to read this dashboard'
+      USING ERRCODE = '42501';
+  END IF;
+
   SELECT jsonb_build_object(
     'net_worth_pen', CASE
       WHEN v_exchange_rate IS NULL AND EXISTS (
@@ -334,5 +341,6 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION fn_dashboard_summary FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION fn_dashboard_summary TO authenticated;
+REVOKE ALL ON FUNCTION public.fn_dashboard_summary(uuid)
+  FROM PUBLIC, anon, service_role;
+GRANT EXECUTE ON FUNCTION public.fn_dashboard_summary(uuid) TO authenticated;

@@ -6,6 +6,7 @@ const migration = (name: string) =>
   readFileSync(resolve(process.cwd(), 'supabase/migrations', name), 'utf8')
 
 const converged = migration('20260927000001_converge_transaction_atomic_security.sql')
+const dashboardFx = migration('20261025000001_dashboard_fx_completeness.sql')
 
 test.describe('atomic transaction migration contract', () => {
   test('drops all enum defaults before conversion and restores PEN after conversion', () => {
@@ -67,6 +68,28 @@ test.describe('atomic transaction migration contract', () => {
     expect(hardened).toContain('(p_exchange_rate IS NULL OR p_exchange_rate < 0.01 OR p_exchange_rate > 100)')
     expect(hardened).toContain('CREATE OR REPLACE FUNCTION public.create_transaction_atomic(')
   })
+
+  test('first dashboard FX migration preserves user isolation and least-privilege RPC access by itself', () => {
+    const fnStart = dashboardFx.indexOf('CREATE OR REPLACE FUNCTION fn_dashboard_summary(p_user_id uuid)')
+    const fnEnd = dashboardFx.indexOf('\n$$;', fnStart)
+    const fnBody = dashboardFx.slice(fnStart, fnEnd)
+    const revoke = dashboardFx.indexOf(
+      'REVOKE ALL ON FUNCTION public.fn_dashboard_summary(uuid)\n  FROM PUBLIC, anon, service_role;'
+    )
+    const grant = dashboardFx.indexOf(
+      'GRANT EXECUTE ON FUNCTION public.fn_dashboard_summary(uuid) TO authenticated;'
+    )
+
+    expect(fnStart).toBeGreaterThan(-1)
+    expect(fnEnd).toBeGreaterThan(fnStart)
+    expect(fnBody).toContain('IF auth.uid() IS NULL OR p_user_id IS DISTINCT FROM auth.uid() THEN')
+    expect(fnBody).toContain("USING ERRCODE = '42501'")
+    expect(fnBody).toContain('SET search_path = pg_catalog, public, pg_temp')
+    expect(revoke).toBeGreaterThan(fnEnd)
+    expect(grant).toBeGreaterThan(revoke)
+    expect(dashboardFx.slice(revoke)).not.toMatch(/GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.fn_dashboard_summary\(uuid\)\s+TO\s+(PUBLIC|anon|service_role)/i)
+  })
+
 
   test('checks the caller and every externally supplied related id before insertion', () => {
     const guards = [
