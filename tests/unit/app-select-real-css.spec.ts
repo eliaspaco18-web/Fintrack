@@ -450,10 +450,11 @@ test('adaptive institution menu shows medium labels completely and truncates onl
     expect(medium.labelScrollWidth).toBeLessThanOrEqual(medium.labelClientWidth + 1)
     expect(medium.textOverflow).toBe('ellipsis')
     expect(medium.bodyFontToken).toBe(v3FontToken(css))
-    // Both the trigger and the portaled menu use next/font/local's generated
-    // family token. The source CSS and the served font-byte checks below
-    // verify that this token resolves to the approved Manrope assets.
-    expect(medium.triggerLabelFontFamily.split(',')[0]?.replaceAll('"', '')).toBe(v3FontFamily(css))
+    // The in-page trigger intentionally uses the shared `Manrope` alias while
+    // the body-ported menu uses next/font/local's generated family token. The
+    // font-face and served-byte checks below prove both names resolve to the
+    // exact same approved local Manrope assets.
+    expect(medium.triggerLabelFontFamily.split(',')[0]?.replaceAll('"', '')).toBe('Manrope')
     expect(medium.menuFontFamily.split(',')[0]?.replaceAll('"', '')).toBe(v3FontFamily(css))
     const expectedMenuFontFamily = `${v3FontToken(css)
       .split(',')
@@ -683,6 +684,10 @@ test('matched menu flips upward near the viewport bottom and keeps dark V3 surfa
   await trigger.click()
   const menu = page.getByRole('dialog', { name: 'Filtro inferior' })
   await expect(menu).toBeVisible()
+  await page.waitForFunction(() => {
+    const element = document.querySelector<HTMLElement>('.app-select-menu')
+    return Boolean(element && element.getAnimations().every(animation => animation.playState === 'finished'))
+  })
   const geometry = await page.evaluate(() => {
     const triggerElement = document.querySelector<HTMLElement>('[data-testid="bottom-filter"]')!
     const menuElement = document.querySelector<HTMLElement>('.app-select-menu')!

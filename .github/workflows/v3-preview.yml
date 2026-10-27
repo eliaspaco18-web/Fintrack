@@ -1,0 +1,104 @@
+name: FinTrack V3 Preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: "Exact 40-character candidate SHA to build and deploy to Vercel Preview"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fintrack-v3-preview
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    # Configure this GitHub environment with required reviewers before use.
+    environment: preview
+    permissions:
+      contents: read
+    env:
+      CI: true
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      PREVIEW_SUPABASE_PROJECT_REF: ${{ vars.PREVIEW_SUPABASE_PROJECT_REF }}
+      V3_CANDIDATE_BRANCH: ${{ vars.V3_CANDIDATE_BRANCH }}
+      PRODUCTION_SUPABASE_PROJECT_REF: yahocagtrxvevqhhlkln
+    steps:
+      - name: Check out the exact candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+
+      - name: Validate candidate and isolated Preview target
+        env:
+          CANDIDATE_SHA: ${{ inputs.commit_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid candidate SHA' >&2; exit 1; }
+          [[ "$V3_CANDIDATE_BRANCH" =~ ^codex/[a-zA-Z0-9._/-]+$ ]] || { echo 'V3_CANDIDATE_BRANCH must name the protected codex candidate branch' >&2; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]] || { echo 'Checkout SHA mismatch' >&2; exit 1; }
+          git fetch --no-tags origin "refs/heads/$V3_CANDIDATE_BRANCH:refs/remotes/origin/$V3_CANDIDATE_BRANCH"
+          git merge-base --is-ancestor "$CANDIDATE_SHA" "origin/$V3_CANDIDATE_BRANCH" || { echo 'Candidate SHA is not reachable from the designated V3 branch' >&2; exit 1; }
+          [[ -n "$VERCEL_ORG_ID" && -n "$VERCEL_PROJECT_ID" ]] || { echo 'Preview Vercel project configuration is incomplete' >&2; exit 1; }
+          [[ "$PREVIEW_SUPABASE_PROJECT_REF" =~ ^[a-z0-9]{20}$ ]] || { echo 'Preview Supabase project ref is missing or malformed' >&2; exit 1; }
+          [[ "$PREVIEW_SUPABASE_PROJECT_REF" != "$PRODUCTION_SUPABASE_PROJECT_REF" ]] || { echo 'Preview must use a separate Supabase project' >&2; exit 1; }
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run lint
+      - run: npm run typecheck
+      # Unit geometry tests inspect the compiled CSS Modules under .next.
+      - run: npm run build
+      - run: npm run test:unit
+
+      - name: Install pinned Vercel CLI
+        run: npm install --global vercel@63.1.0
+
+      - name: Verify protected Preview credential is configured
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: test -n "$VERCEL_TOKEN"
+
+      - name: Link the designated Vercel project
+        run: vercel link --yes --project "$VERCEL_PROJECT_ID"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      - name: Pull Vercel Preview configuration only
+        run: vercel pull --yes --environment=preview
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      - name: Verify Preview Supabase URL before build
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs')
+          const path = '.vercel/.env.preview.local'
+          if (!fs.existsSync(path)) throw new Error('Vercel Preview environment file is missing')
+          const line = fs.readFileSync(path, 'utf8').split(/\r?\n/).find((value) => value.startsWith('NEXT_PUBLIC_SUPABASE_URL='))
+          if (!line) throw new Error('Preview Supabase URL is not configured')
+          const raw = line.slice('NEXT_PUBLIC_SUPABASE_URL='.length).trim().replace(/^(["'])(.*)\1$/, '$2')
+          const url = new URL(raw)
+          if (url.hostname !== `${process.env.PREVIEW_SUPABASE_PROJECT_REF}.supabase.co`) throw new Error('Preview build is not connected to its designated Preview Supabase project')
+          if (url.hostname === `${process.env.PRODUCTION_SUPABASE_PROJECT_REF}.supabase.co`) throw new Error('Production Supabase URL is forbidden in Preview')
+          NODE
+
+      - name: Build Vercel Preview artifact
+        run: vercel build
+
+      - name: Deploy candidate to Preview (never Production)
+        run: vercel deploy --prebuilt
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

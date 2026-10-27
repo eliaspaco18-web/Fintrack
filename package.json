@@ -11,7 +11,7 @@
     "start": "next start",
     "lint": "eslint app components lib modules middleware.ts",
     "typecheck": "tsc --noEmit",
-    "test:unit": "playwright test --config=playwright.unit.config.ts",
+    "test:unit": "NODE_PATH=./tests/unit/support/node_modules playwright test --config=playwright.unit.config.ts",
     "test:e2e": "playwright test",
     "test:e2e:authenticated:qa": "playwright test --config=playwright.authenticated.config.ts",
     "test:e2e:registrations": "playwright test --config=playwright.authenticated.config.ts tests/e2e/authenticated-transactions.spec.ts tests/e2e/authenticated-management.spec.ts tests/e2e/authenticated-quick-create.spec.ts",
