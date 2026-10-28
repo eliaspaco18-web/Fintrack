@@ -1,0 +1,98 @@
+name: Promote Approved Production Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Exact SHA approved for this promotion
+        required: true
+        type: string
+      deployment_url:
+        description: Vercel deployment URL emitted by the staging workflow
+        required: true
+        type: string
+      release_kind:
+        description: V2 bridge or V3
+        required: true
+        type: choice
+        options:
+          - v2-bridge
+          - v3
+      migration_run_id:
+        description: Required for V3; successful production-migrations workflow run ID
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: fintrack-production-promotion
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production-promotion
+    env:
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      PROMOTION_ENABLED: ${{ vars.FINTRACK_PRODUCTION_PROMOTION_ENABLED }}
+      RELEASE_SHA: ${{ inputs.release_sha }}
+      DEPLOYMENT_URL: ${{ inputs.deployment_url }}
+    steps:
+      - name: Check out main for release ancestry
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify explicit promotion gate
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$RELEASE_SHA" HEAD
+          [[ "$PROMOTION_ENABLED" == "1" ]]
+          [[ -n "$VERCEL_ORG_ID" && -n "$VERCEL_PROJECT_ID" ]]
+          [[ "$DEPLOYMENT_URL" =~ ^https://[a-zA-Z0-9.-]+\.vercel\.app$ ]]
+          migration_ids="$(git ls-tree -r --name-only "$RELEASE_SHA" -- supabase/migrations | grep -E '20261025000001|20261025000002|20261026000001' || true)"
+          if [[ "${{ inputs.release_kind }}" == "v3" ]]; then
+            [[ "$(printf '%s\n' "$migration_ids" | sed '/^$/d' | wc -l | tr -d ' ')" == "3" ]]
+            [[ "${{ inputs.migration_run_id }}" =~ ^[0-9]+$ ]]
+          else
+            [[ -z "$migration_ids" ]]
+          fi
+
+      - name: Download V3 migration evidence
+        if: ${{ inputs.release_kind == 'v3' }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: fintrack-production-migration-evidence
+          run-id: ${{ inputs.migration_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/fintrack-migration-evidence
+
+      - name: Bind V3 promotion to successful migration evidence
+        if: ${{ inputs.release_kind == 'v3' }}
+        run: node scripts/release/assert-migration-evidence.mjs "$RUNNER_TEMP/fintrack-migration-evidence/evidence.json" "$RELEASE_SHA"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+
+      - name: Install pinned Vercel CLI
+        run: npm install --global vercel@63.1.0
+
+      - name: Verify staged deployment belongs to this SHA and project
+        run: node scripts/release/verify-staged-deployment.mjs
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      - name: Promote the verified deployment
+        run: vercel promote --yes "$DEPLOYMENT_URL"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

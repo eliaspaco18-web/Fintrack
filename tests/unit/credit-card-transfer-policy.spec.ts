@@ -1,7 +1,7 @@
-import { describe, expect, test } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import { getCreditCardTransferPolicy } from '@/modules/transactions/credit-card-transfer-policy'
 
-describe('credit-card transfer policy', () => {
+test.describe('credit-card transfer policy', () => {
   test('keeps transfers between non-card accounts as ordinary transfers', () => {
     expect(getCreditCardTransferPolicy('SAVINGS', 'CHECKING')).toEqual({
       kind: null,

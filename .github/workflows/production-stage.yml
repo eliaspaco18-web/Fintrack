@@ -1,0 +1,130 @@
+name: Stage Exact Production Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Exact commit to stage without assigning Production domains
+        required: true
+        type: string
+      release_kind:
+        description: V2 bridge or V3; V3 requires successful migration evidence
+        required: true
+        type: choice
+        options:
+          - v2-bridge
+          - v3
+      migration_run_id:
+        description: Required for V3; successful production-migrations workflow run ID
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: fintrack-production-stage
+  cancel-in-progress: false
+
+jobs:
+  stage:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production-stage
+    env:
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      STAGE_ENABLED: ${{ vars.FINTRACK_PRODUCTION_STAGE_ENABLED }}
+      CRONS_DISABLED: ${{ vars.FINTRACK_PRODUCTION_CRONS_DISABLED }}
+      RELEASE_SHA: ${{ inputs.release_sha }}
+    steps:
+      - name: Check out the exact release commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify release authorization and main ancestry
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$RELEASE_SHA" ]]
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+          [[ "$STAGE_ENABLED" == "1" ]]
+          [[ "$CRONS_DISABLED" == "1" ]]
+          [[ -n "$VERCEL_ORG_ID" && -n "$VERCEL_PROJECT_ID" ]]
+          migration_ids="$(git ls-tree -r --name-only "$RELEASE_SHA" -- supabase/migrations | grep -E '20261025000001|20261025000002|20261026000001' || true)"
+          if [[ "${{ inputs.release_kind }}" == "v3" ]]; then
+            [[ "$(printf '%s\n' "$migration_ids" | sed '/^$/d' | wc -l | tr -d ' ')" == "3" ]]
+            [[ "${{ inputs.migration_run_id }}" =~ ^[0-9]+$ ]]
+          else
+            [[ -z "$migration_ids" ]]
+          fi
+
+      - name: Verify V3 migration evidence
+        if: ${{ inputs.release_kind == 'v3' }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: fintrack-production-migration-evidence
+          run-id: ${{ inputs.migration_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/fintrack-migration-evidence
+
+      - name: Bind V3 stage to successful migration evidence
+        if: ${{ inputs.release_kind == 'v3' }}
+        run: node scripts/release/assert-migration-evidence.mjs "$RUNNER_TEMP/fintrack-migration-evidence/evidence.json" "$RELEASE_SHA"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+
+      - name: Install pinned Vercel CLI
+        run: npm install --global vercel@63.1.0
+
+      - name: Link approved Vercel project
+        run: vercel link --yes --project "$VERCEL_PROJECT_ID"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      - name: Pull Production build environment
+        run: vercel pull --yes --environment=production
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      - name: Remove runtime secrets from the build environment
+        env:
+          RELEASE_KIND: ${{ inputs.release_kind }}
+        run: node scripts/release/sanitize-build-env.mjs .vercel/.env.production.local "$RELEASE_KIND"
+
+      - name: Build the exact release artifact
+        run: vercel build --prod
+
+      - name: Remove pulled environment file before artifact upload
+        run: rm -f .vercel/.env.production.local .env.local
+
+      - name: Stage without assigning any domain
+        id: deploy
+        run: |
+          set -euo pipefail
+          log_file="$RUNNER_TEMP/vercel-stage-deploy.log"
+          vercel deploy --prebuilt --prod --skip-domain 2>&1 | tee "$log_file"
+          url="$(grep -Eo 'https://[a-zA-Z0-9.-]+\.vercel\.app' "$log_file" | tail -n 1)"
+          [[ "$url" =~ ^https://[a-zA-Z0-9.-]+\.vercel\.app$ ]]
+          echo "deployment_url=$url" >> "$GITHUB_OUTPUT"
+          echo "Staged deployment: $url"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      - name: Publish staged deployment reference
+        run: |
+          {
+            echo "Release SHA: ${{ inputs.release_sha }}"
+            echo "Staged URL: ${{ steps.deploy.outputs.deployment_url }}"
+            echo "No Production domain was assigned. Promotion is a separate workflow and approval."
+          } >> "$GITHUB_STEP_SUMMARY"
