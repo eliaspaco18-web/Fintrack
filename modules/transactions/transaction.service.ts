@@ -58,6 +58,7 @@ import {
 }                                       from './transaction.validations'
 import { type Result, Errors, ok }      from '@/modules/shared/result.types'
 import { resolveAccountingUsdPenExchangeRate } from '@/lib/server/exchange-rate'
+import { getVerifiedUsdPenRate } from '@/lib/server/verified-exchange-rate'
 import { CategoryKeys } from '@/lib/constants/category-keys'
 import { getCreditCardTransferPolicy } from './credit-card-transfer-policy'
 import {
@@ -1232,7 +1233,11 @@ export class TransactionService {
       p_type:                   input.type,
       p_amount:                 input.amount,
       p_currency:               input.currency,
-      p_exchange_rate:          input.exchange_rate ?? 1.0,
+      // PEN may use its neutral accounting factor; USD must never inherit 1.0
+      // when the resolver returned a fallback or no verified observation.
+      p_exchange_rate:          input.currency === 'USD'
+        ? input.exchange_rate ?? null
+        : input.exchange_rate ?? 1.0,
       p_description:            input.description?.trim() ?? '',
       p_transaction_date:       input.transaction_date,
       p_notes:                  input.notes ?? null,
@@ -1346,9 +1351,6 @@ export class TransactionService {
       )
 
       if (error) {
-        if (this.isMissingAtomicFunction(error.message)) {
-          return this.createTransactionFallback(payload)
-        }
         return Errors.atomicityFailure(
           error.message.replace('create_transaction_atomic failed: ', '')
         )
@@ -1360,134 +1362,10 @@ export class TransactionService {
 
       return ok(data as unknown as AtomicTransactionResult)
     } catch (e) {
-      if (e instanceof Error && this.isMissingAtomicFunction(e.message)) {
-        return this.createTransactionFallback(payload)
-      }
       return Errors.atomicityFailure(
         e instanceof Error ? e.message : 'Error inesperado en operación atómica'
       )
     }
-  }
-
-  private isMissingAtomicFunction(message: string): boolean {
-    const lower = message.toLowerCase()
-    return (
-      lower.includes('could not find the function public.create_transaction_atomic') ||
-      (lower.includes('create_transaction_atomic') && lower.includes('does not exist'))
-    )
-  }
-
-  /**
-   * Fallback operativo para entornos donde la función RPC aún no fue migrada.
-   * Inserta la transacción principal para no bloquear el registro básico.
-   */
-  private async createTransactionFallback(
-    payload: AtomicTransactionPayload
-  ): Promise<Result<AtomicTransactionResult>> {
-    const { data, error } = await this.db
-      .from('transactions')
-      .insert({
-        user_id: payload.p_user_id,
-        source_account_id: payload.p_source_account_id,
-        destination_account_id: payload.p_destination_account_id,
-        category_id: payload.p_category_id,
-        budget_id: payload.p_budget_id ?? null,
-        budget_period_id: payload.p_budget_period_id ?? null,
-        type: payload.p_type,
-        amount: payload.p_amount,
-        amount_pen: payload.p_currency === 'USD'
-          ? Math.round((payload.p_amount * payload.p_exchange_rate) * 100) / 100
-          : payload.p_amount,
-        currency: payload.p_currency,
-        exchange_rate: payload.p_exchange_rate,
-        description: payload.p_description,
-        transaction_date: payload.p_transaction_date,
-        notes: payload.p_notes,
-        is_recurring: payload.p_is_recurring,
-        sender: payload.p_sender,
-        recipient: payload.p_recipient,
-        creditor_id: payload.p_payable?.creditor_id ?? null,
-        debtor_id: payload.p_receivable?.debtor_id ?? null,
-      })
-      .select('id')
-      .single()
-
-    if (error || !data) {
-      return Errors.atomicityFailure(error?.message ?? 'No se pudo registrar la transacción')
-    }
-
-    const result: AtomicTransactionResult = {
-      transaction_id: data.id,
-      asset_id: null,
-      credit_id: null,
-      loan_id: null,
-      receivable_id: null,
-      payable_id: null,
-      installments_generated: 0,
-    }
-
-    const rollbackTransaction = async () => {
-      await this.db
-        .from('transactions')
-        .delete()
-        .eq('id', data.id)
-        .eq('user_id', payload.p_user_id)
-    }
-
-    if (payload.p_receivable) {
-      const receivableResult = await this.receivableRepo.create({
-        user_id: payload.p_user_id,
-        transaction_id: data.id,
-        debtor_id: payload.p_receivable.debtor_id ?? null,
-        debtor_name: payload.p_receivable.debtor_name,
-        amount: payload.p_amount,
-        currency: payload.p_currency,
-        issue_date: payload.p_transaction_date,
-        due_date: payload.p_receivable.due_date ?? null,
-        concept: payload.p_receivable.concept ?? null,
-        notes: payload.p_receivable.notes ?? null,
-        status: 'PENDING',
-      })
-
-      if (!receivableResult.ok) {
-        await rollbackTransaction()
-        return Errors.atomicityFailure(
-          receivableResult.error.message || 'No se pudo registrar la cuenta por cobrar'
-        )
-      }
-
-      result.receivable_id = receivableResult.data.id
-    }
-
-    if (payload.p_payable) {
-      const payableResult = await this.payableRepo.create({
-        user_id: payload.p_user_id,
-        transaction_id: data.id,
-        creditor_id: payload.p_payable.creditor_id ?? null,
-        creditor_name: payload.p_payable.creditor_name,
-        amount: payload.p_amount,
-        currency: payload.p_currency,
-        issue_date: payload.p_transaction_date,
-        due_date: payload.p_payable.due_date ?? null,
-        concept: payload.p_payable.concept ?? null,
-        notes: payload.p_payable.notes ?? null,
-        status: 'PENDING',
-      })
-
-      if (!payableResult.ok) {
-        if (result.receivable_id) {
-          await this.receivableRepo.delete(result.receivable_id)
-        }
-        await rollbackTransaction()
-        return Errors.atomicityFailure(
-          payableResult.error.message || 'No se pudo registrar la cuenta por pagar'
-        )
-      }
-
-      result.payable_id = payableResult.data.id
-    }
-
-    return ok(result)
   }
 
   /**
@@ -1648,9 +1526,9 @@ export class TransactionService {
       allowPrior: true,
       ensureForToday: true,
     })
-    const rate = Number(snapshot.rate)
+    const rate = getVerifiedUsdPenRate(snapshot.rate, snapshot.source)
 
-    if (!Number.isFinite(rate) || rate <= 0) {
+    if (rate === null) {
       return input
     }
 

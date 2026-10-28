@@ -8,8 +8,7 @@
 import type { SupabaseClient }        from '@supabase/supabase-js'
 import type { Database }              from '@/types/database.types'
 import { type Result, Errors, ok }    from '@/modules/shared/result.types'
-import { DEFAULT_USD_PEN_EXCHANGE_RATE } from '@/lib/constants/currency'
-import { resolveLiveUsdPenExchangeRate } from '@/lib/server/exchange-rate'
+import { getVerifiedUsdPenRate } from '@/lib/server/verified-exchange-rate'
 import type {
   DashboardSummary,
   MonthlyComparison,
@@ -53,20 +52,39 @@ export class DashboardService {
   ): Promise<Result<DashboardSummary>> {
     try {
       const includeDailyFlow = options.includeDailyFlow ?? true
-      const [{ data, error }, dailyFlowResult] = await Promise.all([
+      const [{ data, error }, dailyFlowResult, verifiedRateResult] = await Promise.all([
         this.db.rpc('fn_dashboard_summary', {
           p_user_id: userId,
         }),
         includeDailyFlow
           ? this.getDailyFlow(userId, 370)
           : Promise.resolve(ok<DailyFlowPoint[]>([])),
+        this.getVerifiedPersistedUsdPenRate(),
       ])
 
       if (error) return Errors.database(error.message)
       if (!data)  return Errors.notFound('Dashboard')
+      if (!verifiedRateResult.ok) return verifiedRateResult
+
+      const raw = data as unknown as RawDashboardRpc
+      const rpcRate = getVerifiedUsdPenRate(
+        raw.meta?.exchange_rate_usd_pen,
+        raw.meta?.exchange_rate_verified === false ? 'fallback' : 'persisted',
+      )
+      if (
+        rpcRate === null ||
+        Math.abs(rpcRate - verifiedRateResult.data) > 0.000001 ||
+        raw.net_worth_pen == null ||
+        (raw.accounts ?? []).some((account) => account.balance_pen == null)
+      ) {
+        return Errors.businessRule(
+          'El resumen convertido no está disponible',
+          'No hay una tasa USD/PEN verificada y consistente para consolidar los importes.'
+        )
+      }
 
       const dailyFlow = dailyFlowResult.ok ? dailyFlowResult.data : []
-      return ok(this.mapRpcResult(data as unknown as RawDashboardRpc, dailyFlow))
+      return ok(this.mapRpcResult(raw, verifiedRateResult.data, dailyFlow))
     } catch (e) {
       return Errors.database(e instanceof Error ? e.message : 'Error desconocido')
     }
@@ -246,24 +264,44 @@ export class DashboardService {
     exchangeRate: number
   }>> {
     try {
-      const exchangeSnapshot = await resolveLiveUsdPenExchangeRate()
-      const exchangeRate = exchangeSnapshot.rate ?? DEFAULT_USD_PEN_EXCHANGE_RATE
-
-      const { data: nw } = await this.db
-        .from('v_net_worth')
-        .select('net_worth_pen')
-        .eq('user_id', userId)
-        .maybeSingle()
-
-      const netWorthPen = Number(nw?.net_worth_pen ?? 0)
+      // Reuse the checked RPC result rather than the legacy view, whose older
+      // definition can substitute a numeric exchange-rate fallback.
+      const summaryResult = await this.getSummary(userId, { includeDailyFlow: false })
+      if (!summaryResult.ok) return summaryResult
+      const { netWorth, meta } = summaryResult.data
 
       return ok({
-        netWorthPen,
-        netWorthUsd:  Math.round((netWorthPen / exchangeRate) * 100) / 100,
-        exchangeRate: Number(exchangeRate),
+        netWorthPen: netWorth.pen,
+        netWorthUsd: netWorth.usd,
+        exchangeRate: meta.exchangeRateUsdPen,
       })
     } catch (e) {
       return Errors.database(e instanceof Error ? e.message : 'Error desconocido')
+    }
+  }
+
+  private async getVerifiedPersistedUsdPenRate(): Promise<Result<number>> {
+    try {
+      const { data, error } = await this.db
+        .from('exchange_rates')
+        .select('rate, source')
+        .eq('from_currency', 'USD')
+        .eq('to_currency', 'PEN')
+        .not('source', 'ilike', 'fallback')
+        .order('fetched_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) return Errors.database(error.message)
+      const rate = getVerifiedUsdPenRate(data?.rate, data?.source)
+      return rate === null
+        ? Errors.businessRule(
+            'El tipo de cambio USD/PEN no está disponible',
+            'Registra o sincroniza una tasa verificable antes de mostrar equivalencias.'
+          )
+        : ok(rate)
+    } catch (error) {
+      return Errors.database(error instanceof Error ? error.message : 'No se pudo verificar el tipo de cambio')
     }
   }
 
@@ -341,8 +379,7 @@ export class DashboardService {
   // ║  MAPEO PRIVADO RPC → tipos del servicio                                ║
   // ╚══════════════════════════════════════════════════════════════════════════╝
 
-  private mapRpcResult(raw: RawDashboardRpc, dailyFlow: DailyFlowPoint[] = []): DashboardSummary {
-    const rate = raw.meta?.exchange_rate_usd_pen ?? DEFAULT_USD_PEN_EXCHANGE_RATE
+  private mapRpcResult(raw: RawDashboardRpc, rate: number, dailyFlow: DailyFlowPoint[] = []): DashboardSummary {
     const toUrgency = (value: string | null | undefined): DashboardUrgency | null => {
       if (value === 'OVERDUE' || value === 'DUE_SOON' || value === 'UPCOMING') {
         return value
@@ -352,8 +389,8 @@ export class DashboardService {
 
     return {
       netWorth: {
-        pen: raw.net_worth_pen ?? 0,
-        usd: Math.round(((raw.net_worth_pen ?? 0) / rate) * 100) / 100,
+        pen: raw.net_worth_pen!,
+        usd: Math.round((raw.net_worth_pen! / rate) * 100) / 100,
       },
 
       currentMonth: {
@@ -370,8 +407,8 @@ export class DashboardService {
         type:       a.type,
         currency:   a.currency,
         balance:    a.balance,
-        balancePen: a.balance_pen,
-        balanceUsd: DashboardService.convertCurrency(a.balance_pen, 'PEN', 'USD', rate),
+        balancePen: a.balance_pen!,
+        balanceUsd: DashboardService.convertCurrency(a.balance_pen!, 'PEN', 'USD', rate),
         color:      a.color,
         icon:       a.icon,
       })),
@@ -476,9 +513,9 @@ export class DashboardService {
 // ─── SHAPE RAW DEL RPC (interno) ─────────────────────────────────────────────
 
 interface RawDashboardRpc {
-  net_worth_pen:           number
+  net_worth_pen:           number | null
   current_month:           { income_pen: number; expense_pen: number }
-  accounts:                Array<{ id: string; name: string; type: string; currency: string; balance: number; balance_pen: number; color: string; icon: string }>
+  accounts:                Array<{ id: string; name: string; type: string; currency: string; balance: number; balance_pen: number | null; color: string; icon: string }>
   cash_flow_6m:            Array<{ month: string; month_label: string; income_pen: number; expense_pen: number; net_pen: number }>
   top_expense_categories:  Array<{ category_id: string; category_name: string; category_icon: string; category_color: string; total_pen: number; percentage: number; transaction_count?: number; count?: number }>
   credits:                 Array<{ id: string; name: string; credit_type: string; currency: string; credit_limit: number; used_amount: number; available_amount: number; utilization_pct: number; next_closing_date: string | null }>
@@ -486,5 +523,5 @@ interface RawDashboardRpc {
   receivables:             { total_pending_pen: number; count: number; items: Array<{ id: string; debtor_name: string; pending_amount: number; currency: string; due_date: string | null; urgency: string | null }> }
   payables:                { total_pending_pen: number; count: number; items: Array<{ id: string; creditor_name: string; pending_amount: number; currency: string; due_date: string | null; urgency: string | null }> }
   assets:                  { total_value_pen: number; count: number; by_type: Array<{ asset_type: string; total_pen: number; count: number }> }
-  meta:                    { exchange_rate_usd_pen: number; calculated_at: string; current_month: string }
+  meta:                    { exchange_rate_usd_pen: number | null; exchange_rate_verified?: boolean; calculated_at: string; current_month: string }
 }
