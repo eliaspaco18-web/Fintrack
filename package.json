@@ -21,8 +21,9 @@
     "gh:status": "./.tools/gh/gh-current/bin/gh auth status",
     "release:prepare": "node scripts/prepare-release-manifest.mjs",
     "release:check": "npm run build && npm run typecheck && npm run test:e2e -- tests/e2e/login-ui.spec.ts tests/e2e/auth-redirect.spec.ts",
-    "release:production": "bash scripts/release-production.sh",
-    "db:push": "supabase db push",
+    "release:preflight": "bash scripts/release/preflight.sh",
+    "test:release-guards": "node --test scripts/release/release-guards.test.mjs",
+    "db:push:local": "supabase db push --local",
     "db:types": "supabase gen types typescript --project-id $SUPABASE_PROJECT_ID > types/database.types.ts",
     "db:reset": "supabase db reset"
   },
