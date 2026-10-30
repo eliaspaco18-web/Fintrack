@@ -5,10 +5,12 @@ import { assertStagedDeployment } from './verify-staged-deployment.mjs'
 import { sanitizeBuildEnvironment } from './sanitize-build-env.mjs'
 import { assertMigrationEvidence, REQUIRED_MIGRATION_IDS } from './assert-migration-evidence.mjs'
 import { assertRemoteMigrationLedger } from './assert-migration-ledger.mjs'
-import { preparePrebuiltDeployEnv } from './prepare-prebuilt-deploy-env.mjs'
-import fs, { readFileSync } from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { spawnSync } from 'node:child_process'
+
+const require = createRequire(import.meta.url)
+const { validateSupabasePublicBuildEnvironment } = require('./validate-supabase-public-build-env.cjs')
 
 test('accepts only the exact ordered V3 migration set, regardless of dry-run order', () => {
   const dryRun = [
@@ -75,49 +77,85 @@ test('keeps public build variables, strips runtime secrets, and fixes the bridge
   assert.match(sanitizeBuildEnvironment('FINTRACK_V3_SHELL_PRODUCTION=1', 'v3'), /FINTRACK_V3_SHELL_PRODUCTION=1/)
 })
 
-test('removes pulled secrets and leaves only an empty private env path for Vercel prebuilt upload', () => {
-  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fintrack-prebuilt-env-'))
-  const vercelDir = path.join(projectRoot, '.vercel')
-  const outputDir = path.join(vercelDir, 'output')
-  fs.mkdirSync(outputDir, { recursive: true })
-  const pulledEnv = [
-    'NEXT_PUBLIC_SUPABASE_URL=https://qa.example.invalid',
+test('sanitizer preserves Vercel redaction placeholders in allowlisted public values', () => {
+  const sanitized = sanitizeBuildEnvironment([
+    'NEXT_PUBLIC_SUPABASE_URL=[SENSITIVE]',
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY=[SENSITIVE]',
     'FINTRACK_V3_SHELL_PRODUCTION=0',
-    'SUPABASE_SERVICE_ROLE_KEY=runtime-secret',
-    'RESEND_API_KEY=email-secret',
-  ].join('\n')
-  const sanitizedEnv = sanitizeBuildEnvironment(pulledEnv, 'v2-bridge')
-  fs.writeFileSync(path.join(vercelDir, '.env.production.local'), sanitizedEnv, { mode: 0o600 })
-  fs.writeFileSync(path.join(projectRoot, '.env.local'), 'VERCEL_OIDC_TOKEN=local-secret')
-  fs.writeFileSync(path.join(outputDir, 'config.json'), JSON.stringify({ version: 3, buildEnv: sanitizedEnv }))
+  ].join('\n'), 'v2-bridge')
 
-  try {
-    preparePrebuiltDeployEnv(projectRoot)
+  assert.match(sanitized, /NEXT_PUBLIC_SUPABASE_URL=\[SENSITIVE\]/)
+  assert.match(sanitized, /NEXT_PUBLIC_SUPABASE_ANON_KEY=\[SENSITIVE\]/)
+})
 
-    const envPath = path.join(projectRoot, '.env.local')
-    const envStat = fs.lstatSync(envPath)
-    assert.equal(fs.existsSync(path.join(vercelDir, '.env.production.local')), false)
-    assert.equal(envStat.isFile(), true)
-    assert.equal(envStat.isSymbolicLink(), false)
-    assert.equal(envStat.size, 0)
-    assert.equal(envStat.mode & 0o077, 0)
+const validLegacyAnonKey = `header.${Buffer.from(JSON.stringify({ role: 'anon' })).toString('base64url')}.signature`
+const validVercelBuildEnv = {
+  VERCEL_ENV: 'production',
+  NEXT_PUBLIC_SUPABASE_URL: 'https://qa.example.invalid',
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: validLegacyAnonKey,
+}
 
-    const artifactText = fs.readFileSync(path.join(outputDir, 'config.json'), 'utf8')
-    assert.doesNotMatch(artifactText, /runtime-secret|local-secret|SUPABASE_SERVICE_ROLE_KEY|VERCEL_OIDC_TOKEN/)
-  } finally {
-    fs.rmSync(projectRoot, { recursive: true, force: true })
+test('allows supported Supabase URL and anon key formats in Vercel builds', () => {
+  assert.deepEqual(validateSupabasePublicBuildEnvironment(validVercelBuildEnv), { skipped: false })
+  assert.deepEqual(validateSupabasePublicBuildEnvironment({
+    ...validVercelBuildEnv,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: 'sb_publishable_0123456789abcdefghijkl',
+  }), { skipped: false })
+})
+
+test('rejects masked or invalid Supabase public variables without printing their values', () => {
+  for (const invalidEnv of [
+    { ...validVercelBuildEnv, NEXT_PUBLIC_SUPABASE_URL: '[SENSITIVE]' },
+    { ...validVercelBuildEnv, NEXT_PUBLIC_SUPABASE_URL: 'https://[SENSITIVE]' },
+    { ...validVercelBuildEnv, NEXT_PUBLIC_SUPABASE_URL: 'file:///tmp/supabase' },
+    { ...validVercelBuildEnv, NEXT_PUBLIC_SUPABASE_ANON_KEY: '[SENSITIVE]' },
+    { ...validVercelBuildEnv, NEXT_PUBLIC_SUPABASE_ANON_KEY: 'invalid-public-key' },
+    { ...validVercelBuildEnv, NEXT_PUBLIC_SUPABASE_ANON_KEY: 'sb_publishable_...' },
+    { ...validVercelBuildEnv, NEXT_PUBLIC_SUPABASE_ANON_KEY: 'sb_secret_0123456789abcdefghijkl' },
+    {
+      ...validVercelBuildEnv,
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: `header.${Buffer.from(JSON.stringify({ role: 'service_role' })).toString('base64url')}.signature`,
+    },
+  ]) {
+    assert.throws(
+      () => validateSupabasePublicBuildEnvironment(invalidEnv),
+      error => !error.message.includes('[SENSITIVE]') && !error.message.includes('service_role'),
+    )
   }
 })
 
-test('runs secret-free prebuilt env preparation after build and before Vercel upload', () => {
+test('does not impose Vercel environment requirements on ordinary local or GitHub builds', () => {
+  assert.deepEqual(validateSupabasePublicBuildEnvironment({}), { skipped: true })
+})
+
+test('Next.js build config fails closed on Vercel placeholders without echoing values', () => {
+  const result = spawnSync(process.execPath, ['-e', "require('./next.config.js')"], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      VERCEL: '1',
+      VERCEL_ENV: 'production',
+      NEXT_PUBLIC_SUPABASE_URL: '[SENSITIVE]',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: '[SENSITIVE]',
+    },
+  })
+
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /NEXT_PUBLIC_SUPABASE_URL/)
+  assert.doesNotMatch(result.stderr, /\[SENSITIVE\]/)
+})
+
+test('stages with a Vercel remote build, no prebuilt artifact, and the exact checked-out SHA', () => {
   const workflowPath = new URL('../../.github/workflows/production-stage.yml', import.meta.url)
   const workflow = readFileSync(workflowPath, 'utf8')
-  const buildIndex = workflow.indexOf('name: Build the exact release artifact')
-  const prepareIndex = workflow.indexOf('node scripts/release/prepare-prebuilt-deploy-env.mjs')
-  const deployIndex = workflow.indexOf('vercel deploy --prebuilt --prod --skip-domain')
-
-  assert.ok(buildIndex >= 0 && prepareIndex > buildIndex && deployIndex > prepareIndex)
-  assert.doesNotMatch(workflow, /rm\s+-f\s+\.vercel\/\.env\.production\.local\s+\.env\.local/)
+  const deployCommand = workflow.match(/^\s+vercel deploy .*$/m)?.[0] ?? ''
+  assert.match(deployCommand, /--prod\s+--skip-domain/)
+  assert.match(deployCommand, /--meta\s+"githubCommitSha=\$RELEASE_SHA"/)
+  assert.doesNotMatch(deployCommand, /--prebuilt/)
+  assert.doesNotMatch(workflow, /vercel pull --yes --environment=production|vercel build --prod/)
+  assert.match(workflow, /npm run test:release-guards/)
+  assert.match(readFileSync(new URL('../../next.config.js', import.meta.url), 'utf8'), /validate-supabase-public-build-env\.cjs/)
 })
 
 test('binds a V3 stage to the exact successful migration SHA and set', () => {

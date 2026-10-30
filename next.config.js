@@ -1,4 +1,7 @@
 const { URL } = require('node:url')
+const { validateSupabasePublicBuildEnvironment } = require('./scripts/release/validate-supabase-public-build-env.cjs')
+
+validateSupabasePublicBuildEnvironment(process.env)
 
 function buildSupabaseRemotePatterns() {
   const patterns = []
