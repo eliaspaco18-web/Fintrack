@@ -169,7 +169,11 @@ test('real ReceivablesManager shares the V3 header, full-width dividers and exte
   expect(desktop.toolbarControls[0]!.right).toBeLessThanOrEqual(desktop.toolbarControls[1]!.x + 1)
 
   await page.getByTestId('receivables-sort-filter').click()
-  await expect(page.locator('.app-select-menu')).toBeVisible()
+  const sortMenu = page.locator('.app-select-menu')
+  await expect(sortMenu).toBeVisible()
+  await sortMenu.evaluate(async element => {
+    await Promise.all(element.getAnimations().map(animation => animation.finished.catch(() => undefined)))
+  })
   const menuGeometry = await page.evaluate(() => {
     const trigger = document.querySelector('[data-testid="receivables-sort-filter"]')!.getBoundingClientRect()
     const menu = document.querySelector('.app-select-menu')!.getBoundingClientRect()

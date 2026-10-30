@@ -42,6 +42,7 @@ test('V3 busy button reserves both labels, announces progress and prevents doubl
   ` })
   const button = page.getByRole('button', { name: 'Guardar', exact: true })
   await expect(button).toBeVisible()
+  await page.evaluate(() => document.fonts.ready)
   const idleWidth = await button.evaluate(element => element.getBoundingClientRect().width)
   await button.click()
   const busy = page.getByRole('button', { name: 'Guardando…' })

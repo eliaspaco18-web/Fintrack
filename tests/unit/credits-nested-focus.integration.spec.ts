@@ -550,6 +550,9 @@ for (const width of [390, 834, 1440, 1710]) {
         await monthTrigger.click()
         const monthMenu = page.getByRole('dialog', { name: 'Mes del periodo' })
         await expect(monthMenu).toBeVisible()
+        await monthMenu.evaluate(async element => {
+          await Promise.all(element.getAnimations().map(animation => animation.finished.catch(() => undefined)))
+        })
         const monthMenuGeometry = await monthMenu.evaluate(element => ({
           width: element.getBoundingClientRect().width,
           triggerWidth: document.querySelector<HTMLElement>('[data-testid^="credit-cycle-month-"]')!.getBoundingClientRect().width,

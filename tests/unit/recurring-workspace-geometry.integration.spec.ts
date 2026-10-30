@@ -216,6 +216,9 @@ test('real recurring workspace uses the approved Income workbench and AppSelect 
   await typeSelect.click()
   const typeMenu = page.locator('[data-testid="recurring-create-modal"] .app-select-menu').last()
   await expect(typeMenu).toBeVisible()
+  await typeMenu.evaluate(async menu => {
+    await Promise.all(menu.getAnimations().map(animation => animation.finished.catch(() => undefined)))
+  })
   await expect(typeMenu.locator('.app-select-search')).toBeVisible()
   const dropdownGeometry = await typeMenu.evaluate(menu => {
     const option = menu.querySelector<HTMLElement>('[role="option"]')!
