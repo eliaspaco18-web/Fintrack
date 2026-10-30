@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import useSWR from 'swr'
-import { formatCurrency } from '@/lib/contracts/ui.contracts'
+import { formatCurrency, formatCurrencyOrUnavailable } from '@/lib/contracts/ui.contracts'
 import type {
   DashboardAlertItem,
   DashboardAlertsResponse,
@@ -134,7 +134,7 @@ function buildRiskItems(
     .slice()
     .sort((a, b) => a.due_date.localeCompare(b.due_date))
     .map((item) => {
-      const amountLabel = formatCurrency(item.monto, 'PEN')
+      const amountLabel = formatCurrencyOrUnavailable(item.monto, item.currency)
       const label = dueLabel(item.due_date)
       return {
         id: `due-${item.tipo}-${item.id}`,

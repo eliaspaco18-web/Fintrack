@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient }              from '@/lib/supabase.server'
 import { getSessionUserId }          from '@/lib/api/response'
+import { formatManualAlertMessage }  from '@/modules/alerts/manual-alert-message'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,7 +22,7 @@ const zCreateAlertSchema = z.object({
 })
 
 export async function GET(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) {
     return NextResponse.json(
@@ -73,7 +74,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) {
     return NextResponse.json(
@@ -99,15 +100,11 @@ export async function POST(req: NextRequest) {
   }
 
   const payload = parsed.data
-  const message = [
-    `Regla manual para ${payload.source_module}.`,
-    payload.threshold ? `Umbral ${payload.threshold}%.` : null,
-    payload.channel === 'inbox_email'
-      ? 'Entrega esperada: inbox y correo.'
-      : payload.channel === 'digest'
-        ? 'Entrega esperada: resumen semanal.'
-        : 'Entrega esperada: solo inbox.',
-  ].filter(Boolean).join(' ')
+  const message = formatManualAlertMessage({
+    sourceModule: payload.source_module,
+    channel: payload.channel,
+    threshold: payload.threshold,
+  })
 
   const { data, error } = await supabase
     .from('app_notifications')
@@ -143,7 +140,7 @@ export async function POST(req: NextRequest) {
 
 /** DELETE /api/alerts — elimina todas las alertas leídas del usuario (bulk) */
 export async function DELETE(_req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) {
     return NextResponse.json(

@@ -1,19 +1,21 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { FormActions } from '@/components/forms/primitives'
 import { RecordModal } from '@/components/ui/RecordModal'
+import { AppSelect } from '@/components/ui/AppSelect'
+import { CreditScheduleDateField } from '@/components/credits/CreditScheduleDateField'
 import {
-  CREDIT_CARD_DATE_INPUT_MIN_WIDTH,
-  CREDIT_CARD_MONTH_SELECT_MIN_WIDTH,
-  CREDIT_CARD_YEAR_SELECT_MIN_WIDTH,
   SCHEDULE_MONTHS,
   formatBillingCycleLabel,
   formatDuplicateCycleMessage,
 } from '@/components/credits/credits-schedule.constants'
 import { formatNumber } from '@/lib/contracts/ui.contracts'
 import { getBillingCycleDateIssue } from '@/modules/credits/billing-cycle-integrity'
+import tableHeaderStyles from '@/components/credits/CreditsTableHeader.module.css'
+import workbenchStyles from '@/components/credits/CreditsWorkbench.module.css'
+import styles from '@/components/credits/CreditCardScheduleModal.module.css'
 
 export type BillingCycleRow = {
   id: string
@@ -28,6 +30,8 @@ export type BillingCycleRow = {
   movement_summary?: BillingCycleMovementSummary | null
   can_delete?: boolean
   statement_url: string | null
+  /** Client-only file staged before the billing-cycle record exists. */
+  statement_file?: File | null
 }
 
 type BillingCycleMovement = {
@@ -69,7 +73,6 @@ interface CreditCardScheduleEditorProps {
   duplicateCycleLabels: string[]
   yearOptions: YearOption[]
   disabled?: boolean
-  compact?: boolean
   onAddCycle: () => void
   onRemoveCycle: (id: string) => void
   onUpdateCycle: (id: string, patch: Partial<BillingCycleRow>) => void
@@ -82,21 +85,7 @@ interface CreditCardScheduleEditorProps {
 interface CreditCardScheduleModalProps extends CreditCardScheduleEditorProps {
   open: boolean
   onClose: () => void
-}
-
-const CREDIT_CARD_SCHEDULE_COLUMN_SHARES = {
-  period: '22%',
-  consumptionFrom: '12%',
-  consumptionTo: '12%',
-  paymentDate: '12%',
-  totalPen: '9%',
-  totalUsd: '9%',
-  statement: '14%',
-  actions: '10%',
-} as const
-
-function colWidth(value: string) {
-  return { width: value }
+  onExitComplete?: () => void
 }
 
 function UploadDocumentIcon({ className = '' }: { className?: string }) {
@@ -136,6 +125,208 @@ function TrashIcon({ className = '' }: { className?: string }) {
   )
 }
 
+function OpenDocumentIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M13 4h6v6m-.5-5.5-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function CyclePeriodFields({
+  cycle,
+  yearOptions,
+  duplicate,
+  dateIssue,
+  disabled,
+  suffix = '',
+  onUpdateCycle,
+}: {
+  cycle: BillingCycleRow
+  yearOptions: YearOption[]
+  duplicate: boolean
+  dateIssue: string | null
+  disabled: boolean
+  suffix?: string
+  onUpdateCycle: (id: string, patch: Partial<BillingCycleRow>) => void
+}) {
+  return (
+    <div className={styles.periodFields}>
+      <div className={styles.periodControls}>
+        <AppSelect
+          ariaLabel="Mes del periodo"
+          value={cycle.billing_month}
+          onChange={value => onUpdateCycle(cycle.id, { billing_month: value })}
+          className={styles.monthSelect}
+          buttonClassName="h-9 min-h-9 px-2 text-left text-[12px]"
+          searchable={false}
+          matchTriggerWidth
+          disabled={disabled}
+          options={SCHEDULE_MONTHS}
+          testId={`credit-cycle-month-${cycle.id}${suffix}`}
+        />
+        <AppSelect
+          ariaLabel="Año del periodo"
+          value={cycle.billing_year}
+          onChange={value => onUpdateCycle(cycle.id, { billing_year: value })}
+          className={styles.yearSelect}
+          buttonClassName="h-9 min-h-9 px-1.5 text-center text-[12px]"
+          searchable
+          searchPlaceholder="Buscar año…"
+          matchTriggerWidth
+          disabled={disabled}
+          options={yearOptions}
+          testId={`credit-cycle-year-${cycle.id}${suffix}`}
+        />
+      </div>
+      {duplicate || dateIssue ? (
+        <p className={styles.cycleIssue}>
+          {duplicate ? 'Periodo duplicado.' : dateIssue}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+function BillingCycleStatementControl({
+  cycle,
+  periodLabel,
+  disabled,
+  uploading,
+  onUpload,
+  onOpen,
+  suffix = '',
+}: {
+  cycle: BillingCycleRow
+  periodLabel: string
+  disabled: boolean
+  uploading: boolean
+  onUpload?: (cycleId: string, file: File) => void
+  onOpen?: (cycleId: string) => void
+  suffix?: string
+}) {
+  const inputId = `billing-cycle-statement-upload-${cycle.id}${suffix}`
+  const status = cycle.statement_url
+    ? 'Estado adjunto'
+    : cycle.statement_file
+      ? `Listo al guardar: ${cycle.statement_file.name}`
+      : onUpload
+        ? 'Sin archivo'
+        : 'Guarda para adjuntar'
+
+  return (
+    <div className={styles.statementControl}>
+      <div className={styles.statementButtons}>
+        {cycle.statement_url && onOpen ? (
+          <button
+            type="button"
+            onClick={() => onOpen(cycle.id)}
+            className={styles.iconButton}
+            aria-label={`Abrir estado de cuenta de ${periodLabel}`}
+            title={`Abrir estado de cuenta de ${periodLabel}`}
+            data-testid={`billing-cycle-statement-open-${cycle.id}${suffix}`}
+          >
+            <OpenDocumentIcon className="h-4 w-4" />
+          </button>
+        ) : null}
+        {onUpload ? (
+        <label
+          htmlFor={inputId}
+          tabIndex={disabled || uploading ? -1 : 0}
+          role="button"
+          aria-label={`${cycle.statement_url ? 'Reemplazar' : 'Adjuntar'} estado de cuenta de ${periodLabel}`}
+          onKeyDown={event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              if (!disabled && !uploading) document.getElementById(inputId)?.click()
+            }
+          }}
+          className={`${styles.iconButton} ${disabled || uploading ? styles.disabledIconButton : ''}`}
+          title={`${cycle.statement_url ? 'Reemplazar' : 'Adjuntar'} estado de cuenta de ${periodLabel}`}
+        >
+          <input
+            id={inputId}
+            type="file"
+            className="sr-only"
+            aria-hidden="true"
+            tabIndex={-1}
+            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"
+            data-testid={`billing-cycle-statement-upload-${cycle.id}${suffix}`}
+            disabled={disabled || uploading}
+            onChange={event => {
+              const file = event.target.files?.[0]
+              if (file) onUpload(cycle.id, file)
+              event.currentTarget.value = ''
+            }}
+          />
+          <UploadDocumentIcon className="h-4 w-4" />
+        </label>
+        ) : !cycle.statement_url ? (
+          <span
+            title="Guarda primero la tarjeta para adjuntar el estado de cuenta."
+            aria-label="Guarda primero la tarjeta para adjuntar el estado de cuenta"
+            className={`${styles.iconButton} ${styles.disabledIconButton}`}
+          >
+            <UploadDocumentIcon className="h-4 w-4" />
+          </span>
+        ) : null}
+      </div>
+      <span
+        aria-live="polite"
+        className={styles.statementStatus}
+        aria-label={status}
+        title={status}
+      >
+        {uploading ? 'Cargando…' : cycle.statement_url ? 'Estado adjunto' : cycle.statement_file ? 'Pendiente' : onUpload ? 'Sin archivo' : 'No disponible'}
+      </span>
+    </div>
+  )
+}
+
+function CycleActions({
+  cycle,
+  periodLabel,
+  disabled,
+  canDelete,
+  onView,
+  onDelete,
+}: {
+  cycle: BillingCycleRow
+  periodLabel: string
+  disabled: boolean
+  canDelete: boolean
+  onView: (cycleId: string) => void
+  onDelete: (cycleId: string) => void
+}) {
+  return (
+    <div className={styles.cycleActions}>
+      <button
+        type="button"
+        onClick={() => onView(cycle.id)}
+        className={styles.iconButton}
+        title={`Ver movimientos de ${periodLabel}`}
+        aria-label={`Ver movimientos de ${periodLabel}`}
+        disabled={disabled}
+      >
+        <OpenMovementsIcon className="h-4 w-4" />
+      </button>
+      {canDelete ? (
+        <button
+          type="button"
+          onClick={() => onDelete(cycle.id)}
+          className={`${styles.iconButton} ${styles.deleteButton}`}
+          title={`Eliminar ciclo ${periodLabel}`}
+          aria-label={`Eliminar ciclo ${periodLabel}`}
+          disabled={disabled}
+        >
+          <TrashIcon className="h-4 w-4" />
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
 function cycleTotalPen(cycle: BillingCycleRow) {
   return Number(cycle.total_to_pay_pen ?? cycle.total_to_pay ?? 0)
 }
@@ -160,7 +351,6 @@ export function CreditCardScheduleEditor({
   duplicateCycleLabels,
   yearOptions,
   disabled = false,
-  compact = false,
   onAddCycle,
   onRemoveCycle,
   onUpdateCycle,
@@ -196,303 +386,106 @@ export function CreditCardScheduleEditor({
     () => cycles.reduce((sum, cycle) => sum + cycleTotalUsd(cycle), 0),
     [cycles],
   )
+  const scheduleRows = useMemo(() => cycles.map(cycle => ({
+    cycle,
+    cycleKey: `${cycle.billing_year}-${cycle.billing_month}`,
+    periodLabel: formatBillingCycleLabel(cycle.billing_month, cycle.billing_year),
+    dateIssue: getBillingCycleDateIssue({
+      billing_month: Number(cycle.billing_month),
+      billing_year: Number(cycle.billing_year),
+      consumption_from: cycle.consumption_from,
+      consumption_to: cycle.consumption_to,
+      payment_date: cycle.payment_date,
+    }),
+  })), [cycles])
 
-  useEffect(() => {
-    onMovementModalOpenChange?.(Boolean(movementCycle))
-  }, [movementCycle, onMovementModalOpenChange])
+  const openMovementModal = (cycleId: string) => {
+    onMovementModalOpenChange?.(true)
+    setMovementCycleId(cycleId)
+  }
+  const finishMovementModalClose = () => onMovementModalOpenChange?.(false)
 
   return (
-    <div className="flex min-h-0 w-full flex-col gap-3">
-      <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="space-y-1">
-          <p className="text-[13px] font-semibold tracking-[-0.01em] text-[var(--ft-text)]">
-            Ciclos de facturación
-          </p>
-          <p className="max-w-[68ch] text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-            Ajusta periodos y fechas, y revisa los movimientos del periodo desde esta misma vista.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div className="grid grid-cols-3 overflow-hidden rounded-[var(--ft-form-radius-sm)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] text-center">
-            <div className="min-w-[74px] px-2.5 py-2">
-              <p className="text-[9px] font-medium uppercase tracking-[0.08em] text-[var(--ft-form-muted)]">Ciclos</p>
-              <p className="mt-1 text-[13px] font-semibold text-[var(--ft-text)] tabular-nums">{cycles.length}</p>
-            </div>
-            <div className="min-w-[92px] border-l border-[var(--ft-form-border)] px-2.5 py-2">
-              <p className="text-[9px] font-medium uppercase tracking-[0.08em] text-[var(--ft-form-muted)]">PEN</p>
-              <p className="mt-1 text-[13px] font-semibold text-[var(--ft-text)] tabular-nums">{formatNumber(totalPen)}</p>
-            </div>
-            <div className="min-w-[92px] border-l border-[var(--ft-form-border)] px-2.5 py-2">
-              <p className="text-[9px] font-medium uppercase tracking-[0.08em] text-[var(--ft-form-muted)]">USD</p>
-              <p className="mt-1 text-[13px] font-semibold text-[var(--ft-text)] tabular-nums">{formatNumber(totalUsd)}</p>
-            </div>
+    <section className={styles.scheduleEditor} data-testid="credit-card-schedule-editor">
+      <header className={styles.scheduleHeader}>
+        <div className={styles.scheduleHeading}>
+          <div>
+            <p className={styles.scheduleTitle}>Ciclos de facturación</p>
+            <p className={styles.scheduleSubtitle}>Fechas, importes y estados de cuenta registrados.</p>
           </div>
           <Button type="button" variant="secondary" size="sm" onClick={onAddCycle} disabled={disabled}>
             Agregar ciclo
           </Button>
         </div>
-      </div>
+        <dl className={styles.scheduleTotals} aria-label="Totales de los ciclos">
+          <div><dt>Ciclos</dt><dd>{cycles.length}</dd></div>
+          <div><dt>Total PEN</dt><dd>{formatNumber(totalPen)}</dd></div>
+          <div><dt>Total USD</dt><dd>{formatNumber(totalUsd)}</dd></div>
+        </dl>
+      </header>
 
-      <div className="flex min-h-0 w-full flex-col overflow-hidden rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)]">
-        <div className={`min-h-0 w-full overflow-x-auto overflow-y-auto ${compact ? 'max-h-[330px]' : 'max-h-[52vh]'}`}>
-          <table className="w-full min-w-[1180px] table-fixed text-[12px]">
-            <colgroup>
-              <col style={colWidth(CREDIT_CARD_SCHEDULE_COLUMN_SHARES.period)} />
-              <col style={colWidth(CREDIT_CARD_SCHEDULE_COLUMN_SHARES.consumptionFrom)} />
-              <col style={colWidth(CREDIT_CARD_SCHEDULE_COLUMN_SHARES.consumptionTo)} />
-              <col style={colWidth(CREDIT_CARD_SCHEDULE_COLUMN_SHARES.paymentDate)} />
-              <col style={colWidth(CREDIT_CARD_SCHEDULE_COLUMN_SHARES.totalPen)} />
-              <col style={colWidth(CREDIT_CARD_SCHEDULE_COLUMN_SHARES.totalUsd)} />
-              <col style={colWidth(CREDIT_CARD_SCHEDULE_COLUMN_SHARES.statement)} />
-              <col style={colWidth(CREDIT_CARD_SCHEDULE_COLUMN_SHARES.actions)} />
-            </colgroup>
-            <thead className="sticky top-0 z-[1] bg-[var(--ft-surface-muted)]">
-              <tr className="text-[var(--ft-form-muted)]">
-                <th rowSpan={2} className="px-3 py-2 text-center align-middle font-semibold">Periodo</th>
-                <th rowSpan={2} className="px-3 py-2 text-center align-middle font-semibold">Consumo desde</th>
-                <th rowSpan={2} className="px-3 py-2 text-center align-middle font-semibold">Consumo hasta</th>
-                <th rowSpan={2} className="px-3 py-2 text-center align-middle font-semibold">Fecha de pago</th>
-                <th colSpan={2} className="border-b border-[var(--ft-form-border)] px-3 py-2 text-center font-semibold">Total a pagar</th>
-                <th rowSpan={2} className="px-3 py-2 text-center align-middle font-semibold">Estado de cuenta</th>
-                <th rowSpan={2} className="px-3 py-2 text-center align-middle font-semibold">Acciones</th>
-              </tr>
-              <tr className="text-[10px] uppercase tracking-[0.08em] text-[var(--ft-form-muted)]">
-                <th className="px-3 py-1.5 text-right font-semibold">Soles</th>
-                <th className="px-3 py-1.5 text-right font-semibold">Dólares</th>
-              </tr>
-            </thead>
-            <tbody>
-              {cycles.map(cycle => {
-                const cycleKey = `${cycle.billing_year}-${cycle.billing_month}`
-                const isDuplicate = duplicateCycleKeys.has(cycleKey)
-                const periodLabel = formatBillingCycleLabel(cycle.billing_month, cycle.billing_year)
-                const dateIssue = getBillingCycleDateIssue({
-                  billing_month: Number(cycle.billing_month),
-                  billing_year: Number(cycle.billing_year),
-                  consumption_from: cycle.consumption_from,
-                  consumption_to: cycle.consumption_to,
-                  payment_date: cycle.payment_date,
-                })
-
-                return (
-                  <tr key={cycle.id} className="h-14 border-t border-[var(--ft-form-border)] align-top">
-                    <td className="px-3 py-3 align-middle">
-                      <div
-                        className={`
-                          rounded-[var(--ft-form-radius-sm)] border px-2 py-2
-                          ${isDuplicate
-                            ? 'border-[color:var(--ft-form-error)] bg-[var(--ft-danger-soft)]'
-                            : 'border-[var(--ft-form-border)] bg-[var(--ft-form-surface)]'}
-                        `}
-                      >
-                        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_84px] items-center gap-2">
-                          <select
-                            aria-label="Mes del periodo"
-                            value={cycle.billing_month}
-                            onChange={event => onUpdateCycle(cycle.id, { billing_month: event.target.value })}
-                            className="field-base ft-form-input h-10 w-full min-w-[128px] px-2.5 py-0 text-left text-[12px]"
-                            style={{ minWidth: `${CREDIT_CARD_MONTH_SELECT_MIN_WIDTH}px` }}
-                            disabled={disabled}
-                          >
-                            {SCHEDULE_MONTHS.map(month => (
-                              <option key={month.value} value={month.value}>
-                                {month.label}
-                              </option>
-                            ))}
-                          </select>
-                          <select
-                            aria-label="Año del periodo"
-                            value={cycle.billing_year}
-                            onChange={event => onUpdateCycle(cycle.id, { billing_year: event.target.value })}
-                            className="field-base ft-form-input h-10 w-[84px] min-w-[84px] px-2.5 py-0 text-center text-[12px]"
-                            style={{ minWidth: `${CREDIT_CARD_YEAR_SELECT_MIN_WIDTH}px` }}
-                            disabled={disabled}
-                          >
-                            {yearOptions.map(year => (
-                              <option key={year.value} value={year.value}>
-                                {year.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        {isDuplicate ? (
-                          <p className="mt-2 text-[11px] font-medium text-[var(--ft-form-error)]">
-                            Periodo duplicado.
-                          </p>
-                        ) : dateIssue ? (
-                          <p className="mt-2 text-[11px] font-medium leading-[1.35] text-[var(--ft-form-error)]">
-                            {dateIssue}
-                          </p>
-                        ) : null}
-                      </div>
-                    </td>
-
-                    <td className="px-3 py-3 align-middle">
-                      <input
-                        type="date"
-                        value={cycle.consumption_from}
-                        onChange={event => onUpdateCycle(cycle.id, { consumption_from: event.target.value })}
-                        className="field-base ft-form-input credits-date-input h-10 w-full min-w-[136px] px-2 py-2 text-[12px]"
-                        style={{ minWidth: `${CREDIT_CARD_DATE_INPUT_MIN_WIDTH}px` }}
-                        required
-                        disabled={disabled}
-                      />
-                    </td>
-
-                    <td className="px-3 py-3 align-middle">
-                      <input
-                        type="date"
-                        value={cycle.consumption_to}
-                        onChange={event => onUpdateCycle(cycle.id, { consumption_to: event.target.value })}
-                        min={cycle.consumption_from || undefined}
-                        className="field-base ft-form-input credits-date-input h-10 w-full min-w-[136px] px-2 py-2 text-[12px]"
-                        style={{ minWidth: `${CREDIT_CARD_DATE_INPUT_MIN_WIDTH}px` }}
-                        required
-                        disabled={disabled}
-                      />
-                    </td>
-
-                    <td className="px-3 py-3 align-middle">
-                      <input
-                        type="date"
-                        value={cycle.payment_date}
-                        onChange={event => onUpdateCycle(cycle.id, { payment_date: event.target.value })}
-                        min={cycle.consumption_to || undefined}
-                        className="field-base ft-form-input credits-date-input h-10 w-full min-w-[136px] px-2 py-2 text-[12px]"
-                        style={{ minWidth: `${CREDIT_CARD_DATE_INPUT_MIN_WIDTH}px` }}
-                        required
-                        disabled={disabled}
-                      />
-                    </td>
-
-                    <td className="px-3 py-3 text-right align-middle">
-                      <span className="font-semibold text-[var(--ft-text)] tabular-nums">S/ {formatNumber(cycleTotalPen(cycle))}</span>
-                    </td>
-
-                    <td className="px-3 py-3 text-right align-middle">
-                      <span className="font-semibold text-[var(--ft-text)] tabular-nums">USD {formatNumber(cycleTotalUsd(cycle))}</span>
-                    </td>
-
-                    <td className="px-3 py-3 align-middle">
-                      <div className="flex items-center gap-2">
-                        {cycle.statement_url && onStatementOpen ? (
-                          <button
-                            type="button"
-                            onClick={() => onStatementOpen(cycle.id)}
-                            className="
-                              inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[var(--ft-radius-control)]
-                              border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] px-2.5 text-[11px] font-semibold text-[var(--ft-form-muted)]
-                              transition-colors hover:border-[var(--ft-border-strong)] hover:text-[var(--ft-text)]
-                            "
-                            data-testid={`billing-cycle-statement-open-${cycle.id}`}
-                          >
-                            Ver
-                          </button>
-                        ) : onStatementUpload ? (
-                          <label
-                            className={`
-                              inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-[var(--ft-radius-control)]
-                              border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] px-2.5 text-[11px] font-semibold text-[var(--ft-form-muted)]
-                              transition-colors hover:border-[var(--ft-border-strong)] hover:text-[var(--ft-text)]
-                              ${disabled || statementUploadCycleId === cycle.id ? 'pointer-events-none opacity-60' : ''}
-                            `}
-                            title={`Adjuntar estado de cuenta de ${periodLabel}`}
-                          >
-                            <input
-                              type="file"
-                              className="sr-only"
-                              accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt"
-                              disabled={disabled || statementUploadCycleId === cycle.id}
-                              onChange={event => {
-                                const file = event.target.files?.[0]
-                                if (file) onStatementUpload(cycle.id, file)
-                                event.currentTarget.value = ''
-                              }}
-                            />
-                            <UploadDocumentIcon className="h-4 w-4" />
-                            {statementUploadCycleId === cycle.id ? 'Cargando' : 'Adjuntar'}
-                          </label>
-                        ) : (
-                          <span
-                            title="Guarda primero la tarjeta para adjuntar el estado de cuenta."
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--ft-radius-control)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] text-[var(--ft-form-muted)] opacity-60"
-                          >
-                            <UploadDocumentIcon className="h-4 w-4" />
-                          </span>
-                        )}
-                        <span className="min-w-0 text-[11px] font-medium leading-[1.35] text-[var(--ft-form-muted)]">
-                          {cycle.statement_url ? 'Estado adjunto' : onStatementUpload ? 'Un archivo por ciclo' : 'Guarda para adjuntar'}
-                        </span>
-                      </div>
-                    </td>
-
-                    <td className="px-3 py-3 text-center align-middle">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setMovementCycleId(cycle.id)}
-                          className="
-                            inline-flex h-9 w-9 items-center justify-center rounded-[var(--ft-radius-control)]
-                            border border-[var(--ft-form-border)] text-[var(--ft-form-muted)]
-                            transition-[background-color,border-color,color,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]
-                            hover:border-[var(--ft-border-strong)] hover:text-[var(--ft-text)]
-                            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ft-primary-soft)] focus-visible:ring-offset-2
-                            focus-visible:ring-offset-[var(--ft-bg)]
-                          "
-                          title={`Ver movimientos de ${periodLabel}`}
-                          aria-label={`Ver movimientos de ${periodLabel}`}
-                          disabled={disabled}
-                        >
-                          <OpenMovementsIcon className="h-4 w-4" />
-                        </button>
-                        {cycles.length > 1 && cycle.can_delete ? (
-                          <button
-                            type="button"
-                            onClick={() => onRemoveCycle(cycle.id)}
-                            className="
-                              inline-flex h-9 w-9 items-center justify-center rounded-[var(--ft-radius-control)]
-                              border border-[var(--ft-form-border)] text-[var(--ft-form-muted)]
-                              transition-[background-color,border-color,color,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)]
-                              hover:border-[rgba(184,74,74,0.22)] hover:bg-[var(--ft-danger-soft)] hover:text-[var(--ft-form-error)]
-                              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ft-primary-soft)] focus-visible:ring-offset-2
-                              focus-visible:ring-offset-[var(--ft-bg)]
-                            "
-                            title={`Eliminar ciclo ${periodLabel}`}
-                            aria-label={`Eliminar ciclo ${periodLabel}`}
-                            disabled={disabled}
-                          >
-                            <TrashIcon className="h-4 w-4" />
-                          </button>
-                        ) : null}
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-            <tfoot className="sticky bottom-0 bg-[var(--ft-surface-muted)]">
-              <tr className="border-t border-[var(--ft-form-border)]">
-                <td colSpan={4} className="px-3 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ft-form-muted)]">
-                  Total registrado
-                </td>
-                <td className="px-3 py-3 text-right text-sm font-semibold text-[var(--ft-text)] tabular-nums">
-                  S/ {formatNumber(totalPen)}
-                </td>
-                <td className="px-3 py-3 text-right text-sm font-semibold text-[var(--ft-text)] tabular-nums">
-                  USD {formatNumber(totalUsd)}
-                </td>
-                <td />
-                <td />
-              </tr>
-            </tfoot>
-          </table>
+      <div className={styles.cycleList} data-testid="credit-card-schedule-table-scroll">
+        <div className={styles.cycleTable} role="table" aria-label="Ciclos de facturación" data-testid="credit-card-schedule-table">
+          <div className={styles.cycleHeader} role="rowgroup">
+            <div className={`${styles.cycleHeaderRow} ${tableHeaderStyles.creditsTableHead}`} role="row">
+              {['Periodo', 'Consumo desde', 'Consumo hasta', 'Fecha de pago', 'Total PEN', 'Total USD', 'Estado de cuenta', 'Acciones'].map(label => (
+                <div key={label} role="columnheader" className={`${tableHeaderStyles.creditsTableHeaderGridCell} ${tableHeaderStyles.creditsTableHeaderCenter}`}>{label}</div>
+              ))}
+            </div>
+          </div>
+          <div className={styles.cycleRows} role="rowgroup" data-testid="credit-card-schedule-cycles">
+        {scheduleRows.map(({ cycle, cycleKey, periodLabel, dateIssue }) => {
+          const isDuplicate = duplicateCycleKeys.has(cycleKey)
+          return (
+            <article key={cycle.id} className={styles.cycleRow} role="row" data-testid={`credit-cycle-row-${cycle.id}`}>
+              <div className={`${styles.cycleCell} ${styles.periodCell}`} role="cell">
+                <span className={styles.cellLabel}>Periodo</span>
+                <CyclePeriodFields cycle={cycle} yearOptions={yearOptions} duplicate={isDuplicate} dateIssue={dateIssue} disabled={disabled} onUpdateCycle={onUpdateCycle} />
+              </div>
+              <div className={styles.cycleCell} role="cell">
+                <span className={styles.cellLabel}>Consumo desde</span>
+                <CreditScheduleDateField value={cycle.consumption_from} onChange={value => onUpdateCycle(cycle.id, { consumption_from: value })} label={`Consumo desde, ${periodLabel}`} testId={`credit-cycle-from-${cycle.id}`} disabled={disabled} />
+              </div>
+              <div className={styles.cycleCell} role="cell">
+                <span className={styles.cellLabel}>Consumo hasta</span>
+                <CreditScheduleDateField value={cycle.consumption_to} onChange={value => onUpdateCycle(cycle.id, { consumption_to: value })} label={`Consumo hasta, ${periodLabel}`} testId={`credit-cycle-to-${cycle.id}`} disabled={disabled} />
+              </div>
+              <div className={styles.cycleCell} role="cell">
+                <span className={styles.cellLabel}>Fecha de pago</span>
+                <CreditScheduleDateField value={cycle.payment_date} onChange={value => onUpdateCycle(cycle.id, { payment_date: value })} label={`Fecha de pago, ${periodLabel}`} testId={`credit-cycle-payment-${cycle.id}`} disabled={disabled} />
+              </div>
+              <div className={`${styles.cycleCell} ${styles.amountCell}`} role="cell">
+                <span className={styles.cellLabel}>Total PEN</span>
+                <strong title={`S/ ${formatNumber(cycleTotalPen(cycle))}`}>{formatNumber(cycleTotalPen(cycle))}</strong>
+              </div>
+              <div className={`${styles.cycleCell} ${styles.amountCell}`} role="cell">
+                <span className={styles.cellLabel}>Total USD</span>
+                <strong title={`USD ${formatNumber(cycleTotalUsd(cycle))}`}>{formatNumber(cycleTotalUsd(cycle))}</strong>
+              </div>
+              <div className={styles.cycleCell} role="cell">
+                <span className={styles.cellLabel}>Estado de cuenta</span>
+                <BillingCycleStatementControl cycle={cycle} periodLabel={periodLabel} disabled={disabled} uploading={statementUploadCycleId === cycle.id} onUpload={onStatementUpload} onOpen={onStatementOpen} />
+              </div>
+              <div className={styles.cycleCell} role="cell">
+                <span className={styles.cellLabel}>Acciones</span>
+                <CycleActions cycle={cycle} periodLabel={periodLabel} disabled={disabled} canDelete={cycles.length > 1 && Boolean(cycle.can_delete)} onView={openMovementModal} onDelete={onRemoveCycle} />
+              </div>
+            </article>
+          )
+        })}
+          </div>
         </div>
       </div>
 
+      <div className={styles.registeredTotals} data-testid="credit-card-schedule-grand-totals">
+        <span>Total registrado</span>
+        <strong title={`S/ ${formatNumber(totalPen)}`}>S/ {formatNumber(totalPen)}</strong>
+        <strong title={`USD ${formatNumber(totalUsd)}`}>USD {formatNumber(totalUsd)}</strong>
+      </div>
+
       {duplicateMessage ? (
-        <div className="rounded-[var(--ft-form-radius)] border border-[color:var(--ft-form-error)]/20 bg-[var(--ft-danger-soft)] px-3.5 py-3">
-          <p className="text-[12px] font-medium text-[var(--ft-form-error)]">
+        <div className={styles.duplicateNotice}>
+          <p>
             {duplicateMessage}
           </p>
         </div>
@@ -501,11 +494,15 @@ export function CreditCardScheduleEditor({
       <RecordModal
         open={Boolean(movementCycle)}
         onClose={() => closeMovementModal(setMovementCycleId, setMovementKindFilter, setMovementSearch)}
+        onExitComplete={finishMovementModalClose}
         eyebrow="Créditos"
         title={movementCycle ? `Movimientos de ${formatBillingCycleLabel(movementCycle.billing_month, movementCycle.billing_year)}` : 'Movimientos del periodo'}
         subtitle="Consumos y pagos vinculados a esta tarjeta dentro del rango de facturación."
         widthClassName="w-[calc(100vw-32px)] max-w-[1040px]"
         overlayClassName="z-[142]"
+        presentation="workbench"
+        workbenchKind="schedule"
+        motionSource="pointer"
         footer={(
           <FormActions
             primaryAction={null}
@@ -571,13 +568,13 @@ export function CreditCardScheduleEditor({
             </div>
             <div className="max-h-[360px] overflow-auto">
               <table className="w-full min-w-[720px] text-[12px]">
-                <thead className="sticky top-0 bg-[var(--ft-surface-muted)] text-[var(--ft-form-muted)]">
+                <thead className={`sticky top-0 z-[1] ${tableHeaderStyles.creditsTableHead}`}>
                   <tr>
-                    <th className="px-3 py-2 text-left font-semibold">Fecha</th>
-                    <th className="px-3 py-2 text-left font-semibold">Descripción</th>
-                    <th className="px-3 py-2 text-left font-semibold">Tipo</th>
-                    <th className="px-3 py-2 text-right font-semibold">PEN</th>
-                    <th className="px-3 py-2 text-right font-semibold">USD</th>
+                    <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderLeft}`}>Fecha</th>
+                    <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderLeft}`}>Descripción</th>
+                    <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderLeft}`}>Tipo</th>
+                    <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderRight}`}>PEN</th>
+                    <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderRight}`}>USD</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -612,26 +609,35 @@ export function CreditCardScheduleEditor({
           </div>
         </div>
       </RecordModal>
-    </div>
+    </section>
   )
 }
 
 export function CreditCardScheduleModal({
   open,
   onClose,
+  onExitComplete,
   ...editorProps
 }: CreditCardScheduleModalProps) {
+  const [movementModalOpen, setMovementModalOpen] = useState(false)
+
   return (
     <RecordModal
       open={open}
       onClose={onClose}
+      onExitComplete={onExitComplete}
       eyebrow="Créditos"
       title="Cronograma completo de la tarjeta"
       subtitle="Edita ciclos de facturación, estados de cuenta y movimientos del periodo en una lectura estable."
       size="full-form"
       widthClassName="w-[calc(100vw-32px)] max-w-[1240px]"
-      overlayClassName="z-[132]"
+      overlayClassName={`z-[132] ${workbenchStyles.creditCardScheduleOverlay}`}
       bodyClassName="credits-modal-body !overflow-hidden py-4"
+      presentation="workbench"
+      workbenchKind="schedule"
+      focusTrapActive={!movementModalOpen}
+      preserveFocusOnResume
+      motionSource="pointer"
       footer={(
         <FormActions
           secondaryAction={(
@@ -647,7 +653,7 @@ export function CreditCardScheduleModal({
         />
       )}
     >
-      <CreditCardScheduleEditor {...editorProps} />
+      <CreditCardScheduleEditor {...editorProps} onMovementModalOpenChange={setMovementModalOpen} />
     </RecordModal>
   )
 }

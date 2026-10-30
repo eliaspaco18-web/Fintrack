@@ -55,10 +55,10 @@ function TopCounterpartyList({
 
               <div className="flex items-center gap-2">
                 <span className="text-[11px] font-semibold tabular-nums text-[var(--ft-text)]">
-                  S/ {formatNumber(item.pending_amount_pen, {
+                  {item.pending_amount_pen === null ? 'No disponible' : `S/ ${formatNumber(item.pending_amount_pen, {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
-                  })}
+                  })}`}
                 </span>
                 <span
                   className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--ft-border)] bg-[var(--ft-surface)] text-[11px] transition-transform duration-200 ease-[var(--ease-out)] group-hover:translate-x-0.5 group-hover:-translate-y-px"
@@ -83,6 +83,7 @@ export function FlujoPendienteWidget() {
   })
 
   const flujo = data?.flujo_pendiente
+  const incomplete = !!flujo && (flujo.por_cobrar_total === null || flujo.por_pagar_total === null || flujo.neto === null)
   const porCobrar = flujo?.por_cobrar_total ?? 0
   const porPagar = flujo?.por_pagar_total ?? 0
   const neto = flujo?.neto ?? 0
@@ -106,6 +107,15 @@ export function FlujoPendienteWidget() {
           <div className="h-7 w-40 rounded bg-[var(--ft-surface-muted)]" />
           <div className="h-24 rounded bg-[var(--ft-surface-muted)]" />
         </div>
+      </PremiumCard>
+    )
+  }
+
+  if (incomplete) {
+    return (
+      <PremiumCard innerClassName="p-5">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--ft-text-subtle)]">Flujo pendiente neto</p>
+        <p className="mt-3 text-sm text-[var(--ft-text-muted)]">No disponible: falta una conversión verificada para consolidar las monedas.</p>
       </PremiumCard>
     )
   }

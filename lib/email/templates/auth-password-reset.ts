@@ -24,7 +24,7 @@ export function buildAuthPasswordResetEmailSubject(): string {
 
 export function buildAuthPasswordResetEmailHtml(data: AuthPasswordResetEmailData): string {
   const safeResetUrl = escapeHtml(data.resetUrl)
-  const logoUrl = `${data.appUrl.replace(/\/+$/, '')}/brand/fintrack-mark.png`
+  const logoUrl = `${data.appUrl.replace(/\/+$/, '')}/brand/v3/ft-ligature.png`
   const safeLogoUrl = escapeHtml(logoUrl)
   const expiresIn = Number.isFinite(data.expiresInMinutes)
     ? Math.max(1, Math.floor(data.expiresInMinutes as number))

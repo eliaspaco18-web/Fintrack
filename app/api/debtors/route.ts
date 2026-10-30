@@ -11,7 +11,7 @@ import { repairLegacyReceivableLinks } from '@/lib/server/receivable-link-repair
 import { summarizeObligationCurrencies } from '@/modules/obligations/obligation-currency-presentation'
 
 export async function GET(_req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) return NextResponse.json({ ok: false, error: { code: 'UNAUTHORIZED', message: 'No autorizado' } }, { status: 401 })
 
@@ -77,7 +77,7 @@ export async function GET(_req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) return NextResponse.json({ ok: false, error: { code: 'UNAUTHORIZED', message: 'No autorizado' } }, { status: 401 })
 

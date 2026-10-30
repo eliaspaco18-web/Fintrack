@@ -151,7 +151,7 @@ export async function resolveTransactionInitialValues(
 
   const requestedRecurringId = readQueryValue(searchParams.from_recurring)
   if (requestedRecurringId) {
-    const supabase = createClient()
+    const supabase = await createClient()
     const { data } = await supabase
       .from('recurring_transactions')
       .select('*')
@@ -318,7 +318,7 @@ export async function resolveTransactionInitialValues(
 
 export async function getTransactionFormOptions(userId: string): Promise<TransactionFormOptions> {
   return measureServerOperation('transaction-form-options', async () => {
-    const supabase = createClient()
+    const supabase = await createClient()
 
     const [
       accountsResult,

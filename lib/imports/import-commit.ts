@@ -7,6 +7,7 @@ import {
   buildReceivableImportReference,
 } from '@/lib/imports/loan-reference'
 import { resolveAccountingUsdPenExchangeRate } from '@/lib/server/exchange-rate'
+import { getVerifiedUsdPenRate } from '@/lib/finance/exchange-rate-verification'
 
 type DbClient = SupabaseClient<Database>
 type UntypedDbClient = SupabaseClient
@@ -561,12 +562,12 @@ async function resolveImportExchangeRate(
     return runtime.exchangeRateCache.get(cacheKey)
   }
 
-  const fallback = await resolveAccountingUsdPenExchangeRate({
+  const snapshot = await resolveAccountingUsdPenExchangeRate({
     date: transactionDate,
     allowPrior: true,
     ensureForToday: true,
   })
-  const resolved = fallback.rate > 0 ? fallback.rate : undefined
+  const resolved = getVerifiedUsdPenRate(snapshot) ?? undefined
   runtime.exchangeRateCache.set(cacheKey, resolved)
   return resolved
 }

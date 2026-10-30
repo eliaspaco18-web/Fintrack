@@ -6,12 +6,12 @@
     "node": "24.x"
   },
   "scripts": {
-    "dev": "next dev --hostname 0.0.0.0 --port 3000",
-    "build": "next build",
+    "dev": "next dev --webpack --hostname 0.0.0.0 --port 3000",
+    "build": "next build --webpack",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint app components lib modules middleware.ts",
     "typecheck": "tsc --noEmit",
-    "test:unit": "playwright test --config=playwright.unit.config.ts",
+    "test:unit": "NODE_PATH=./tests/unit/support/node_modules playwright test --config=playwright.unit.config.ts",
     "test:e2e": "playwright test",
     "test:e2e:authenticated:qa": "playwright test --config=playwright.authenticated.config.ts",
     "test:e2e:registrations": "playwright test --config=playwright.authenticated.config.ts tests/e2e/authenticated-transactions.spec.ts tests/e2e/authenticated-management.spec.ts tests/e2e/authenticated-quick-create.spec.ts",
@@ -21,26 +21,26 @@
     "gh:status": "./.tools/gh/gh-current/bin/gh auth status",
     "release:prepare": "node scripts/prepare-release-manifest.mjs",
     "release:check": "npm run build && npm run typecheck && npm run test:e2e -- tests/e2e/login-ui.spec.ts tests/e2e/auth-redirect.spec.ts",
+    "db:types": "supabase gen types typescript --project-id $SUPABASE_PROJECT_ID > types/database.types.ts",
+    "db:reset": "supabase db reset",
     "release:preflight": "bash scripts/release/preflight.sh",
     "test:release-guards": "node --test scripts/release/release-guards.test.mjs",
-    "db:push:local": "supabase db push --local",
-    "db:types": "supabase gen types typescript --project-id $SUPABASE_PROJECT_ID > types/database.types.ts",
-    "db:reset": "supabase db reset"
+    "db:push:local": "supabase db push --local"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.49.4",
     "exceljs": "^4.4.0",
-    "next": "14.2.29",
+    "next": "16.4.3",
     "pdf-lib": "^1.17.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.54.2",
     "recharts": "^3.8.1",
-    "resend": "^6.10.0",
+    "resend": "6.12.3",
     "swr": "^2.3.3",
-    "zod": "^3.24.2"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
@@ -48,11 +48,19 @@
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "autoprefixer": "^10.4.20",
-    "eslint": "^8.57.1",
-    "eslint-config-next": "14.2.29",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.4.3",
     "postcss": "^8.5.3",
-    "supabase": "^2.22.6",
+    "supabase": "2.120.0",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.3"
+  },
+  "overrides": {
+    "baseline-browser-mapping": "2.11.0",
+    "brace-expansion@^1.1.7": "1.1.21",
+    "brace-expansion@^2.0.0": "2.1.7",
+    "source-map-js": "1.2.2",
+    "tmp": "0.2.7",
+    "ws": "8.21.0"
   }
 }

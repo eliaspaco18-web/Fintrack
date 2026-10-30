@@ -1,0 +1,1503 @@
+.incomeForm {
+  --ft-form-label-gap: 0.25rem;
+  display: grid;
+  gap: 0.875rem;
+  min-width: 0;
+}
+
+/* Shared Astra Round 07 section rhythm for the next create-form pair.
+   This is opt-in from expense/transfer create mode only; income and edit forms
+   keep their existing layout. */
+.operationCreateForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.operationCreateFormRoot {
+  min-width: 0;
+}
+
+.operationEditFields {
+  display: contents;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.operationCreateFormRoot[data-operation-layout='expense'] :global([data-testid='transaction-submit-button']) {
+  background-color: var(--ft-danger);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--ft-danger) 20%, transparent);
+}
+
+.operationCreateFormRoot[data-operation-layout='expense'] :global([data-testid='transaction-submit-button']:hover:not(:disabled)) {
+  filter: brightness(0.94);
+}
+
+.operationCreateFormRoot[data-operation-layout='transfer'] :global([data-testid='transaction-submit-button']) {
+  background-color: #1f4f78;
+  box-shadow: 0 8px 20px rgba(31, 79, 120, 0.18);
+}
+
+.operationCreateFormRoot[data-operation-layout='transfer'] :global([data-testid='transaction-submit-button']:hover:not(:disabled)) {
+  background-color: #183d5e;
+  filter: none;
+}
+
+.operationCreateFormRoot[data-operation-layout='transfer'] :global([data-testid='transaction-submit-button']:active:not(:disabled)) {
+  background-color: #143149;
+}
+
+.operationCreateFormRoot[data-operation-layout='transfer'] :global([data-testid='transaction-submit-button']:focus-visible) {
+  outline: 2px solid rgba(31, 79, 120, 0.18);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px rgba(31, 79, 120, 0.18), 0 8px 20px rgba(31, 79, 120, 0.18);
+}
+
+.operationCreateFormRoot[data-operation-layout='asset_purchase'] :global([data-testid='transaction-submit-button']) {
+  background-color: var(--ft-primary);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--ft-primary) 20%, transparent);
+  min-width: 16rem;
+  padding-inline: 1.25rem;
+}
+
+.operationCreateFormRoot[data-operation-layout='asset_purchase'] :global([data-testid='transaction-submit-button']:hover:not(:disabled)) {
+  filter: brightness(0.94);
+}
+
+.operationCreateFormRoot[data-operation-layout='receivable_issue'] :global([data-testid='transaction-submit-button']),
+.operationCreateFormRoot[data-operation-layout='receivable_collect'] :global([data-testid='transaction-submit-button']) {
+  background-color: var(--ft-primary);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--ft-primary) 18%, transparent);
+}
+
+.operationCreateFormRoot[data-operation-layout='receivable_issue'] :global([data-testid='transaction-submit-button']:hover:not(:disabled)),
+.operationCreateFormRoot[data-operation-layout='receivable_collect'] :global([data-testid='transaction-submit-button']:hover:not(:disabled)) {
+  filter: brightness(0.94);
+}
+
+.operationCreateFormRoot[data-operation-layout='receivable_issue'] :global([data-testid='transaction-submit-button']) {
+  min-width: 12.5rem;
+  min-height: 2.875rem;
+  padding: 0.75rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.005em;
+  line-height: 1.25;
+}
+
+.operationCreateFormRoot[data-operation-layout^='payable_'] :global([data-testid='transaction-submit-button']) {
+  min-width: 14rem;
+  min-height: 2.875rem;
+  padding: 0.75rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.005em;
+  line-height: 1.25;
+}
+
+.operationCreateFormRoot[data-operation-layout^='payable_'] :global([data-testid='transaction-submit-button']:hover:not(:disabled)) {
+  filter: brightness(0.94);
+}
+
+.operationFormActions {
+  position: sticky;
+  z-index: 2;
+  bottom: calc(-1 * var(--ft-modal-padding, 1.25rem));
+  margin: 0 calc(-1 * var(--ft-modal-padding, 1.25rem)) calc(-1 * var(--ft-modal-padding, 1.25rem));
+  padding: 0.75rem var(--ft-modal-padding, 1.25rem);
+  border-top: 1px solid var(--ft-form-border);
+  background: var(--ft-modal-bg);
+}
+
+.operationCreateSection {
+  container: operation-create-section / inline-size;
+}
+
+.operationCreateFormRoot[data-operation-layout^='payable_'] .incomeAmountCurrency {
+  align-items: start;
+}
+
+.payableIssueFields,
+.payableIssueRecordFields {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.payableIssueCreditorControl,
+.payablePaySelectControl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.payableIssueCreditorControl > div:first-child,
+.payablePaySelectControl > div:first-child,
+.payableIssueCreditorControl :global(.app-select),
+.payablePaySelectControl :global(.app-select) {
+  width: 100%;
+  min-width: 0;
+}
+
+.payableIssueCreditorControl :global(.app-select-trigger),
+.payablePaySelectControl :global(.app-select-trigger),
+.payableIssueCreditorControl :global(.app-select-trigger-copy),
+.payablePaySelectControl :global(.app-select-trigger-copy),
+.payableIssueCreditorControl :global(.app-select-trigger-label),
+.payablePaySelectControl :global(.app-select-trigger-label) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.receivablePendingAmount > .payablePendingAmount {
+  color: var(--ft-danger);
+  font-variant-numeric: tabular-nums;
+}
+
+.assetPurchasePrimaryFields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.assetPurchaseDetails {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.assetPurchaseFields {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  align-items: start;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.assetPurchaseValue {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 0.625rem;
+  border-top: 1px solid var(--ft-form-border);
+  color: var(--ft-form-muted);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+}
+
+.assetPurchaseValue strong {
+  flex: 0 0 auto;
+  color: var(--ft-text-strong);
+  font-size: 0.875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.assetPurchaseOptional {
+  container: asset-purchase-options / inline-size;
+}
+
+.assetPurchaseOptional .incomeOptionPanel,
+.assetPurchaseOptional .incomeAttachmentPanel {
+  grid-column: 1 / -1;
+}
+
+.receivableIssueSourceFields,
+.receivableIssueFields,
+.receivableCollectRecordFields {
+  display: grid;
+  align-items: start;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.receivableIssueSourceFields {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.receivableIssueSourceFields > * {
+  min-width: 0;
+}
+
+.receivableIssueTransactionDate {
+  width: min(100%, 15rem);
+  min-width: 0;
+}
+
+.receivableIssueFields {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.receivableIssueDates {
+  grid-template-columns: minmax(11rem, 0.72fr) minmax(12rem, 1.28fr);
+}
+
+.receivableIssueDebtorControl,
+.receivableCollectSelectControl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.receivableIssueDescription {
+  min-width: 0;
+}
+
+.receivableCollectRecordFields {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.receivableCollectDate {
+  width: min(100%, 15rem);
+  min-width: 0;
+}
+
+.receivableCollectDescription {
+  min-width: 0;
+}
+
+.receivablePendingSummaryHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.receivableSettlementKind {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--ft-primary-border);
+  border-radius: 999px;
+  background: var(--ft-form-surface);
+  color: var(--ft-form-muted);
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.025em;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.receivablePendingAmount {
+  display: grid;
+  justify-items: end;
+  gap: 0.1rem;
+  min-width: 0;
+  text-align: right;
+}
+
+.receivablePendingAmount > small {
+  color: var(--ft-form-muted);
+  font-size: 0.625rem;
+  line-height: 1.3;
+}
+
+.receivablePendingAmount > strong {
+  color: var(--ft-text-strong);
+  font-size: 0.875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.receivablePendingCounterparty,
+.receivablePendingConcept {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.receivablePendingCounterparty {
+  color: var(--ft-text-strong);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.receivablePendingConcept {
+  color: var(--ft-form-muted);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+}
+
+.receivablePendingAllocation {
+  display: block;
+  padding-top: 0.375rem;
+  border-top: 1px solid var(--ft-form-border);
+  color: var(--ft-form-muted);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.receivablePendingSummary {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--ft-primary-border);
+  border-radius: var(--ft-form-radius);
+  background: color-mix(in srgb, var(--ft-primary-soft) 48%, var(--ft-form-surface));
+}
+
+.receivableCollectSelector {
+  min-width: 0;
+}
+
+.receivableCollectSelector > * {
+  min-width: 0;
+}
+
+.receivableOptional {
+  container: receivable-options / inline-size;
+}
+
+.receivableOptional .incomeOptionPanel[data-income-option='receipt'],
+.receivableOptional .incomeAttachmentPanel {
+  grid-column: 1 / -1;
+}
+
+.assetPurchaseIdentificationFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.operationTransferDateDescription {
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1fr);
+  align-items: start;
+}
+
+.operationTransferDateDescription > :last-child {
+  grid-column: 1 / -1;
+}
+
+.operationTransferCreditImpact {
+  font-family: inherit;
+}
+
+.operationReceivableCreditImpact {
+  font-family: inherit;
+}
+
+.operationAssetPurchaseCreditImpact {
+  font-family: inherit;
+}
+
+.operationTransferCreditImpact :global(.font-mono),
+.operationReceivableCreditImpact :global(.font-mono),
+.operationAssetPurchaseCreditImpact :global(.font-mono) {
+  font-family: inherit;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.operationTransferCreditImpact :global(p[class*='uppercase']),
+.operationReceivableCreditImpact :global(p[class*='uppercase']),
+.operationAssetPurchaseCreditImpact :global(p[class*='uppercase']) {
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.065em;
+  line-height: 1.35;
+}
+
+.operationReceivableCreditImpact :global(p.truncate),
+.operationAssetPurchaseCreditImpact :global(p.truncate) {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.operationExpenseOptional {
+  container: operation-expense-options / inline-size;
+}
+
+.operationOptionalField,
+.operationExpenseRecurrence {
+  position: relative;
+  min-width: 0;
+}
+
+.operationOptionalHint {
+  position: absolute;
+  z-index: 1;
+  top: -0.125rem;
+  right: 0;
+  display: inline-flex;
+}
+
+.operationExpenseRecurrence > :global(label) {
+  padding-right: 2rem;
+}
+
+.operationCreateClassificationFields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.72fr);
+  align-items: start;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.operationCreateFullWidth {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.operationTransferSummary {
+  border-color: var(--ft-form-border);
+  background: var(--ft-surface-muted);
+  padding: 0.75rem;
+}
+
+.operationTransferFx {
+  display: grid;
+  gap: 0.625rem;
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--ft-primary-border);
+  border-radius: var(--ft-form-radius);
+  background: color-mix(in srgb, var(--ft-primary-soft) 48%, var(--ft-form-surface));
+}
+
+.operationTransferFxIcon {
+  display: grid;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 0.5rem;
+  background: var(--ft-primary-soft);
+  color: var(--ft-primary);
+  font-size: 0.75rem;
+}
+
+.operationTransferFxHeading {
+  margin: 0;
+  color: var(--ft-primary);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.operationTransferFxIntro {
+  margin: 0;
+  color: var(--ft-form-muted);
+  font-size: 0.6875rem;
+  line-height: 1.45;
+}
+
+.operationTransferFxAmounts,
+.operationTransferFxRateGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.625rem;
+  min-width: 0;
+}
+
+.operationTransferFxAmounts > div,
+.operationTransferFxRate {
+  display: grid;
+  align-content: start;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.operationTransferFxLabel {
+  display: block;
+  min-height: 1.9em;
+  margin: 0;
+  color: var(--ft-form-muted);
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.operationTransferFxOutput,
+.operationTransferFxInput {
+  display: flex;
+  min-width: 0;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--ft-form-radius);
+  font-variant-numeric: tabular-nums;
+}
+
+.operationTransferFxOutput {
+  border: 1px solid var(--ft-form-border);
+  background: var(--ft-surface-muted);
+  color: var(--ft-text-strong);
+}
+
+.operationTransferFxInput {
+  border: 1px solid var(--ft-primary-border);
+  background: var(--ft-form-surface);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.operationTransferFxInput:focus-within {
+  border-color: var(--ft-primary);
+  box-shadow: var(--ft-form-focus-ring);
+}
+
+.operationTransferFxCurrency {
+  flex: 0 0 auto;
+  color: var(--ft-form-muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.operationTransferFxValue,
+.operationTransferFxInputValue {
+  width: 100%;
+  min-width: 0;
+  color: var(--ft-text-strong);
+  font-size: 0.875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
+.operationTransferFxInputValue {
+  border: 0;
+  outline: 0;
+  background: transparent;
+}
+
+.operationTransferFxInputValue::placeholder {
+  color: var(--ft-text-subtle);
+  opacity: 0.8;
+}
+
+.operationTransferFxRates {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+  padding-top: 0.625rem;
+  border-top: 1px solid var(--ft-form-border);
+}
+
+.operationTransferFxRate {
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--ft-form-border);
+  border-radius: calc(var(--ft-form-radius) - 2px);
+  background: var(--ft-form-surface);
+}
+
+.operationPaymentMethod {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--ft-form-border);
+  border-radius: var(--ft-form-radius);
+  background: var(--ft-form-surface);
+}
+
+.operationPaymentMethodLabel {
+  margin: 0;
+  color: var(--ft-form-muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.operationPaymentMethodOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.operationPaymentMethodOption {
+  display: inline-flex;
+  min-height: 2.125rem;
+  align-items: center;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--ft-form-border);
+  border-radius: calc(var(--ft-form-radius) - 2px);
+  background: var(--ft-surface-muted);
+  color: var(--ft-form-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease;
+}
+
+.operationPaymentMethodOption:hover,
+.operationPaymentMethodOption:focus-visible {
+  border-color: var(--ft-primary-border);
+  color: var(--ft-primary);
+}
+
+.operationPaymentMethodOption[data-active='true'] {
+  border-color: var(--ft-primary-border);
+  background: var(--ft-primary-soft);
+  color: var(--ft-primary);
+}
+
+.operationPaymentMethodOption:focus-visible {
+  outline: 2px solid var(--ft-focus-ring-color);
+  outline-offset: 2px;
+}
+
+.operationPaymentMethodOption:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@container operation-create-section (max-width: 420px) {
+  .operationCreateClassificationFields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .operationCreateFullWidth {
+    grid-column: 1;
+  }
+}
+
+@container operation-create-section (max-width: 600px) {
+  .assetPurchasePrimaryFields,
+  .assetPurchaseFields,
+  .assetPurchaseIdentificationFields,
+  .receivableIssueFields,
+  .receivableCollectRecordFields,
+  .payableIssueFields,
+  .payableIssueRecordFields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container receivable-options (max-width: 440px) {
+  .incomeOptionPanels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .incomeAttachmentPanel {
+    grid-column: 1;
+  }
+}
+
+@container operation-create-section (max-width: 560px) {
+  .operationTransferDateDescription {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container operation-expense-options (max-width: 440px) {
+  .incomeOptionPanels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .incomeOptionPanel[data-income-option='notes'],
+  .incomeOptionPanel[data-income-option='recurrence'],
+  .incomeOptionPanel[data-income-option='recurrence-name'] {
+    grid-column: 1;
+  }
+}
+
+@container asset-purchase-options (max-width: 440px) {
+  .incomeOptionPanels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .incomeAttachmentPanel {
+    grid-column: 1;
+  }
+}
+
+@media (max-width: 420px) {
+  .operationTransferFxAmounts,
+  .operationTransferFxRateGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .operationTransferFxLabel {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .operationCreateFormRoot[data-operation-layout='asset_purchase'] :global([data-testid='transaction-submit-button']) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .operationCreateFormRoot[data-operation-layout='receivable_issue'] :global([data-testid='transaction-submit-button']) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .operationCreateFormRoot[data-operation-layout^='payable_'] :global([data-testid='transaction-submit-button']) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .receivablePendingSummaryHeader {
+    align-items: flex-start;
+  }
+
+  .receivablePendingAmount > strong {
+    font-size: 0.8125rem;
+  }
+}
+
+.incomeSection {
+  display: grid;
+  gap: 0.625rem;
+  min-width: 0;
+  container: income-form-section / inline-size;
+}
+
+.incomeSectionHeading {
+  margin: 0;
+  color: var(--ft-text-strong);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.incomeSection :global(label) {
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.incomePrimaryFields {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.incomeAmountCurrency {
+  grid-template-columns: minmax(0, 1fr) minmax(9.5rem, 10rem);
+  align-items: end;
+  gap: 0.75rem;
+}
+
+.incomeAmountCurrency.operationTransferAmountCurrency {
+  align-items: start;
+}
+
+.operationCreateFormRoot[data-operation-layout='receivable_issue'] .incomeAmountCurrency,
+.operationCreateFormRoot[data-operation-layout='receivable_collect'] .incomeAmountCurrency {
+  align-items: start;
+}
+
+.operationCreateFormRoot[data-operation-layout='asset_purchase'] .incomeAmountCurrency {
+  align-items: start;
+}
+
+.incomeAmountCurrency :global(.ft-form-amount-prefix-inline) {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: stretch;
+  min-width: 0;
+  min-height: 2.875rem;
+  overflow: hidden;
+  border: 1px solid var(--ft-form-border);
+  border-radius: var(--ft-form-radius);
+  background: var(--ft-surface-muted);
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+.incomeAmountCurrency :global(.ft-form-amount-prefix-inline:focus-within) {
+  border-color: var(--ft-primary);
+  background: var(--ft-surface);
+  box-shadow: var(--ft-focus-ring);
+}
+
+.incomeAmountCurrency :global(.ft-form-amount-prefix-inline[data-error='true']) {
+  border-color: var(--ft-danger, #dc2626);
+}
+
+.incomeAmountCurrency :global(.ft-form-amount-prefix-inline[data-error='true']:focus-within) {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ft-danger, #dc2626) 16%, transparent);
+}
+
+.incomeAmountCurrency :global(.ft-form-amount-prefix-label) {
+  display: flex;
+  align-items: center;
+  padding-inline: 0.75rem 0.5rem;
+  color: var(--ft-text-strong);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.incomeAmountCurrency :global(.ft-form-amount-input-inline-prefix) {
+  min-width: 0;
+  min-height: 2.625rem;
+  padding-block: 0.3125rem;
+  padding-inline: 0.25rem 0.625rem;
+  font-size: clamp(1rem, 0.95rem + 0.45vw, 1.25rem);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.incomeAmountCurrency :global(.ft-form-amount-input-inline-prefix:focus) {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+}
+
+.incomeCurrencyControl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1.75rem;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.incomeCurrencyControl :global(.app-select-trigger) {
+  min-height: 2.875rem;
+}
+
+.incomeExchangeRate {
+  min-width: 0;
+  transition: opacity 180ms ease, max-height 180ms ease;
+}
+
+.incomeExchangeRateVisible {
+  max-height: 16rem;
+  overflow: visible;
+  opacity: 1;
+}
+
+.incomeExchangeRateHidden {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.exchangeRateHelp {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -0.25rem;
+}
+
+.incomeEquivalence {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, 0.7fr) minmax(0, 1.3fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  min-width: 0;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--ft-form-border);
+  border-radius: var(--ft-form-radius);
+  background: var(--ft-surface-muted);
+  color: var(--ft-text-strong);
+}
+
+.incomeEquivalenceHeading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.375rem;
+  min-width: 0;
+  color: var(--ft-form-muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.035em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.incomeAppliedRate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.125rem 0.5rem;
+  grid-column: 1;
+  grid-row: 2;
+  min-width: 0;
+  color: var(--ft-form-muted);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.incomeReferenceRate {
+  color: var(--ft-form-muted);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.incomeReferenceRateReserved {
+  visibility: hidden;
+}
+
+.incomeRateRefreshingReserved {
+  visibility: hidden;
+}
+
+.incomeEquivalenceValues {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.incomeEquivalenceValues > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: start;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.incomeEquivalenceValues span,
+.incomeEquivalenceEmpty {
+  margin: 0;
+  color: var(--ft-form-muted);
+  font-size: 0.6875rem;
+  line-height: 1.35;
+}
+
+.incomeEquivalenceValues span {
+  white-space: nowrap;
+}
+
+.incomeEquivalenceValues strong {
+  min-width: 0;
+  max-width: 100%;
+  color: var(--ft-text-strong);
+  font-size: clamp(0.75rem, 0.72rem + 0.2vw, 0.875rem);
+  font-weight: 700;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  text-align: left;
+}
+
+.incomeEquivalenceEmpty {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  font-size: 0.75rem;
+}
+
+@container income-form-section (max-width: 480px) {
+  .incomeEquivalence {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    gap: 0.375rem 0.75rem;
+  }
+
+  .incomeAppliedRate,
+  .incomeEquivalenceEmpty {
+    grid-column: 1;
+  }
+
+  .incomeAppliedRate {
+    grid-row: 2;
+  }
+
+  .incomeAppliedRateUsd {
+    min-height: calc(2 * 1.35em + 0.125rem);
+  }
+
+  .incomeEquivalenceValues {
+    grid-column: 1;
+    grid-row: 3;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.375rem;
+  }
+
+  .incomeEquivalenceValues > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .incomeEquivalenceEmpty {
+    grid-row: 3;
+  }
+}
+
+.incomeClassificationFields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.72fr);
+  align-items: start;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.incomeDescription {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.incomeOptionalSection {
+  display: grid;
+  gap: 0.625rem;
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--ft-form-border);
+  border-radius: var(--ft-form-radius);
+  background: var(--ft-form-surface);
+}
+
+.incomeOptionsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.incomeOptionsDescription {
+  margin: 0.125rem 0 0;
+  color: var(--ft-form-muted);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+}
+
+.incomeReviewBadge,
+.incomeOptionError {
+  color: var(--ft-form-error);
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.incomeOptionControls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.incomeOptionButton {
+  display: inline-flex;
+  min-height: 2.25rem;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--ft-form-border);
+  border-radius: 999px;
+  background: var(--ft-form-surface);
+  color: var(--ft-form-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+  transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.incomeOptionButton:hover,
+.incomeOptionButton[data-active='true'],
+.incomeOptionButton[data-has-value='true'] {
+  border-color: var(--ft-primary-border);
+  background: var(--ft-primary-soft);
+  color: var(--ft-primary);
+}
+
+.incomeOptionButton[data-has-error='true'] {
+  border-color: var(--ft-form-error);
+  color: var(--ft-form-error);
+}
+
+.incomeOptionButton:focus-visible,
+.incomeAttachmentAction:focus-within,
+.incomeAttachmentRemove:focus-visible,
+.incomeAttachmentError button:focus-visible {
+  outline: 2px solid var(--ft-focus-ring-color);
+  outline-offset: 2px;
+}
+
+.incomeOptionMark {
+  display: inline-grid;
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 1rem;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--ft-surface-muted);
+  font-size: 0.8125rem;
+  line-height: 1;
+}
+
+.incomeOptionPanels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.625rem 0.75rem;
+  min-width: 0;
+}
+
+.incomeOptionPanel,
+.incomeAttachmentPanel {
+  min-width: 0;
+}
+
+.incomeOptionPanel[hidden],
+.incomeAttachmentPanel[hidden] {
+  display: none;
+}
+
+.incomeOptionPanel[data-income-option='notes'],
+.incomeOptionPanel[data-income-option='recurrence'],
+.incomeAttachmentPanel {
+  grid-column: 1 / -1;
+}
+
+.incomeRecurringName {
+  margin-top: 0.625rem;
+}
+
+@container operation-expense-options (min-width: 441px) {
+  .incomeOptionPanel[data-income-option='notes'] {
+    grid-column: 1;
+  }
+
+  .incomeOptionPanel[data-income-option='recurrence-name'] {
+    grid-column: 2;
+  }
+
+  .incomeRecurringName {
+    margin-top: 0;
+  }
+}
+
+.incomeAttachmentPanel {
+  display: grid;
+  gap: 0.375rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--ft-form-border);
+}
+
+.incomeAttachmentAction {
+  position: relative;
+  display: inline-flex;
+  width: fit-content;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--ft-form-border);
+  border-radius: calc(var(--ft-form-radius) - 2px);
+  background: var(--ft-form-surface);
+  color: var(--ft-primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.incomeAttachmentAction:hover {
+  border-color: var(--ft-primary-border);
+  background: var(--ft-primary-soft);
+}
+
+.incomeAttachmentAction svg {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 1rem;
+}
+
+.incomeAttachmentFile {
+  display: grid;
+  grid-template-columns: 1.75rem minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--ft-form-border);
+  border-radius: calc(var(--ft-form-radius) - 2px);
+  background: var(--ft-surface-muted);
+}
+
+.incomeAttachmentFileIcon {
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  place-items: center;
+  border-radius: 0.375rem;
+  background: var(--ft-primary-soft);
+  color: var(--ft-primary);
+}
+
+.incomeAttachmentFileIcon svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.incomeAttachmentFileName {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ft-text-strong);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.incomeAttachmentFileSize,
+.incomeAttachmentHint,
+.incomeAttachmentStatus,
+.incomeAttachmentSuccess {
+  margin: 0;
+  color: var(--ft-form-muted);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+}
+
+.incomeAttachmentRemove,
+.incomeAttachmentError button {
+  min-height: 2rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--ft-form-border);
+  border-radius: calc(var(--ft-form-radius) - 4px);
+  background: var(--ft-form-surface);
+  color: var(--ft-form-muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.incomeAttachmentRemove:hover {
+  border-color: var(--ft-danger);
+  color: var(--ft-danger);
+}
+
+.incomeAttachmentSuccess a {
+  color: var(--ft-primary);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.incomeAttachmentError {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--ft-form-error);
+  font-size: 0.75rem;
+}
+
+.incomeAttachmentError p {
+  margin: 0;
+}
+
+.infoHint {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.infoHintTrigger {
+  display: grid;
+  width: 1.5rem;
+  height: 1.5rem;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ft-form-muted);
+  cursor: help;
+  outline: none;
+  transition: color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.infoHintTrigger:hover,
+.infoHintTrigger[aria-expanded='true'] {
+  background: var(--ft-primary-soft);
+  color: var(--ft-primary);
+}
+
+.infoHintTrigger:focus-visible {
+  background: var(--ft-primary-soft);
+  color: var(--ft-primary);
+  box-shadow: 0 0 0 2px var(--ft-focus-ring-color);
+}
+
+.infoHintTrigger svg {
+  width: 0.875rem;
+  height: 0.875rem;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.35;
+}
+
+.infoTooltip {
+  position: fixed;
+  z-index: calc(var(--ft-z-modal, 120) + 1);
+  width: min(16rem, calc(100vw - 1.5rem));
+  max-height: calc(100vh - 1.5rem);
+  overflow: auto;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--ft-border);
+  border-radius: 0.625rem;
+  background: var(--ft-surface);
+  color: var(--ft-text-strong);
+  box-shadow: var(--ft-shadow-md, 0 8px 24px rgb(0 0 0 / 0.12));
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: 0;
+  pointer-events: none;
+  animation: incomeTooltipIn 120ms ease-out both;
+}
+
+.infoTooltip[data-state='closing'] {
+  animation: incomeTooltipOut 120ms ease-in both;
+}
+
+@keyframes incomeTooltipIn {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes incomeTooltipOut {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(2px); }
+}
+
+@media (max-width: 640px) {
+  .operationCreateFormRoot[data-operation-layout='expense'] .operationCreateClassificationFields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .operationCreateFormRoot[data-operation-layout='expense'] .incomeDescription {
+    grid-column: 1 / -1;
+  }
+
+  .incomeForm {
+    gap: 0.75rem;
+  }
+
+  .incomeAmountCurrency {
+    grid-template-columns: minmax(0, 1fr) minmax(9.5rem, 10rem);
+    gap: 0.5rem;
+  }
+
+  .incomeCurrencyControl {
+    grid-template-columns: minmax(0, 1fr) 2.75rem;
+  }
+
+  .incomeClassificationFields {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.625rem;
+  }
+
+  .incomeDescription {
+    grid-column: auto;
+  }
+
+  .incomeEquivalence {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    gap: 0.375rem;
+    padding: 0.625rem 0.75rem;
+  }
+
+  .incomeAppliedRate,
+  .incomeEquivalenceEmpty {
+    grid-column: auto;
+  }
+
+  .incomeAppliedRate {
+    margin-left: auto;
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .incomeEquivalenceValues {
+    grid-column: 1;
+    grid-row: 3;
+    gap: 0.5rem;
+  }
+
+  .incomeEquivalenceEmpty {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .incomeEquivalenceValues > div {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .incomeOptionPanels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .incomeOptionPanel[data-income-option='notes'],
+  .incomeOptionPanel[data-income-option='recurrence'],
+  .incomeOptionPanel[data-income-option='recurrence-name'],
+  .incomeAttachmentPanel {
+    grid-column: auto;
+  }
+
+  .incomeOptionButton {
+    min-height: 2.75rem;
+    padding-inline: 0.75rem;
+  }
+
+  .incomeAttachmentAction {
+    min-height: 2.75rem;
+  }
+
+  .infoHintTrigger {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .incomeAttachmentFile {
+    grid-template-columns: 1.75rem minmax(0, 1fr) auto;
+  }
+
+  .incomeAttachmentFileSize {
+    grid-column: 2;
+  }
+
+  .incomeAttachmentRemove {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    min-height: 2.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .incomeExchangeRate,
+  .incomeOptionButton,
+  .incomeAttachmentAction,
+  .infoHintTrigger,
+  .infoTooltip {
+    transition: none;
+    animation: none;
+  }
+}

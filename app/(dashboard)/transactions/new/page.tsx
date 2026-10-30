@@ -31,11 +31,12 @@ function buildTransactionModalQuery(
   return params
 }
 
-export default function NewTransactionPage({
-  searchParams,
-}: {
-  searchParams?: TransactionSearchParamMap
-}) {
+export default async function NewTransactionPage(
+  props: {
+    searchParams?: Promise<TransactionSearchParamMap>
+  }
+) {
+  const searchParams = await props.searchParams;
   const params = buildTransactionModalQuery(searchParams)
   redirect(`/transactions?${params.toString()}`)
 }

@@ -1,0 +1,270 @@
+.detailOverlay:global([data-ft-v3][data-ft-workbench-overlay]) {
+  align-items: stretch;
+  justify-content: flex-end;
+}
+
+.detailOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
+  width: min(1220px, calc(100vw - 48px));
+  height: calc(100dvh - 24px);
+  max-height: calc(100dvh - 24px);
+  margin: 12px;
+}
+
+.detailModalBody {
+  display: flex !important;
+  min-height: 0 !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  padding: 16px 24px !important;
+}
+
+.detailLayout {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--ft-text-strong);
+  font-family: Manrope, system-ui, sans-serif;
+}
+
+.recoveryPanel,
+.historyPanel {
+  min-width: 0;
+  border: 1px solid var(--ft-border);
+  border-radius: 12px;
+  background: var(--ft-surface);
+}
+
+.recoveryPanel {
+  flex: 0 0 auto;
+  padding: 10px 16px;
+}
+
+.panelHeading,
+.historyHeading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.panelHeading h3,
+.historyHeading h3,
+.obligationsHeading h3 {
+  margin: 0;
+  color: var(--ft-text-strong);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 20px;
+  letter-spacing: -0.015em;
+}
+
+.panelHeading p,
+.historyHeading p,
+.obligationsHeading p {
+  margin: 2px 0 0;
+  color: var(--ft-text-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.stateBadge,
+.typeBadge {
+  display: inline-flex;
+  min-height: 22px;
+  flex: 0 0 auto;
+  align-items: center;
+  border: 1px solid var(--ft-border);
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+.stateSuccess { border-color: color-mix(in srgb, var(--ft-success) 22%, transparent); background: var(--ft-success-soft); color: var(--ft-success); }
+.stateWarning { border-color: color-mix(in srgb, var(--ft-warning) 22%, transparent); background: var(--ft-warning-soft); color: var(--ft-warning); }
+.stateMuted { background: var(--ft-surface-muted); color: var(--ft-text-muted); }
+
+.currencySummaries {
+  display: grid;
+  gap: 0;
+  margin-top: 6px;
+}
+
+.currencySummary {
+  min-width: 0;
+  padding: 4px 0;
+}
+
+.currencySummary + .currencySummary { border-top: 1px solid var(--ft-border); }
+
+.currencyMetrics {
+  display: grid;
+  grid-template-columns: 42px repeat(3, minmax(130px, 1fr)) minmax(150px, 1.1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.currencyMetrics > div { min-width: 0; }
+.currencyMetrics span { display: block; color: var(--ft-text-muted); font-size: 10px; line-height: 14px; }
+.currencyMetrics strong { display: block; margin-top: 1px; overflow-wrap: anywhere; color: var(--ft-text-strong); font-size: 13px; font-weight: 650; line-height: 18px; font-variant-numeric: tabular-nums; }
+.currencyMetrics .settledAmount { color: var(--ft-success); }
+.currencyMetrics .pendingAmount { color: var(--ft-warning); }
+.currencyLabel { color: var(--ft-text-strong) !important; font-size: 11px !important; font-weight: 700; letter-spacing: .02em; }
+.recoveryMeter { display: grid; gap: 5px; }
+.recoveryMeterLabel { display: flex; min-width: 0; justify-content: space-between; align-items: baseline; gap: 8px; }
+.recoveryMeterLabel strong { flex: none; color: var(--ft-text-strong); font-size: 11px; font-weight: 600; line-height: 15px; }
+.progressTrack { height: 5px; overflow: hidden; border-radius: 999px; background: var(--ft-surface-muted); }
+.progressTrack > span { display: block; height: 100%; border-radius: inherit; background: var(--ft-primary); }
+.noSummary,
+.unverifiedNote { margin: 6px 0 0; color: var(--ft-text-muted); font-size: 11px; line-height: 16px; }
+.unverifiedNote { color: var(--ft-warning); }
+
+.historyPanel {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.historyHeading { flex: 0 0 auto; padding: 11px 16px; }
+.historyHeading p { font-size: 11px; line-height: 16px; }
+
+.detailToolbar {
+  display: grid;
+  flex: 0 0 auto;
+  min-height: 0;
+  grid-template-columns: minmax(230px, 1.45fr) minmax(150px, .95fr) minmax(170px, 1.05fr) minmax(150px, .95fr) minmax(150px, .95fr) auto;
+  grid-auto-rows: 46px;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--ft-border);
+  border-bottom: 1px solid var(--ft-border);
+  background: var(--ft-surface-muted);
+  padding: 8px 14px;
+}
+
+/* The shared Cuentas/Movimientos toolbar is flex-based. Keep this detail
+   toolbar in its own six-control grid even though it reuses the same classes. */
+.detailToolbar.detailToolbar { display: grid; }
+
+.detailSearch {
+  width: 100%;
+  min-width: 0;
+}
+
+.detailToolbar.detailToolbar > .detailSearch {
+  width: 100%;
+  min-width: 0;
+}
+
+.detailSearch :global(input[data-testid='debtor-detail-search']) {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+}
+.detailFilter { width: 100%; min-width: 0; }
+.detailAccountFilter { min-width: 0; }
+.detailMovementFilter { min-width: 0; }
+.detailDateControl { min-width: 0; width: 100%; }
+.detailClear { justify-self: end; white-space: nowrap; }
+.dateError { flex: 0 0 auto; margin: 0; padding: 6px 14px; color: var(--ft-danger); font-size: 11px; }
+
+.ledgerScroll {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.ledgerList { min-width: 0; }
+.ledgerHead,
+.ledgerRow { display: grid; grid-template-columns: 126px minmax(210px, 1.6fr) minmax(140px, 1fr) 112px minmax(135px, 1fr) 126px; align-items: center; gap: 10px; padding-right: 14px; padding-left: 14px; }
+.ledgerHead { position: sticky; top: 0; z-index: 1; min-height: 32px; border-bottom: 1px solid var(--ft-border); background: var(--ft-surface-muted); }
+.ledgerHead span { color: var(--ft-text-subtle); font-size: 10px; font-weight: 650; letter-spacing: .055em; text-transform: uppercase; }
+.ledgerRow { min-height: 58px; border-bottom: 1px solid var(--ft-border); padding-top: 7px; padding-bottom: 7px; }
+.ledgerRow:last-child { border-bottom: 0; }
+.ledgerDescription { display: grid; min-width: 0; gap: 2px; }
+.ledgerDescription strong { overflow: hidden; color: var(--ft-text-strong); font-size: 12px; font-weight: 600; line-height: 17px; text-overflow: ellipsis; white-space: nowrap; }
+.ledgerDescription span,
+.ledgerCell { overflow: hidden; color: var(--ft-text-muted); font-size: 12px; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.ledgerDescription > a { width: fit-content; color: var(--ft-primary); font-size: 11px; font-weight: 600; line-height: 15px; text-decoration: underline; text-underline-offset: 2px; }
+.ledgerDate { color: var(--ft-text-muted); font-size: 12px; line-height: 18px; white-space: nowrap; }
+.ledgerAmount { min-width: 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 650; line-height: 17px; font-variant-numeric: tabular-nums; text-align: right; }
+.incomeAmount { color: var(--ft-success); }
+.expenseAmount { color: var(--ft-warning); }
+.income { border-color: color-mix(in srgb, var(--ft-success) 24%, transparent); background: var(--ft-success-soft); color: var(--ft-success); }
+.expense { border-color: color-mix(in srgb, var(--ft-warning) 24%, transparent); background: var(--ft-warning-soft); color: var(--ft-warning); }
+.loadingList { display: grid; }
+.loadingLine { display: grid; min-height: 52px; grid-template-columns: 72px minmax(0, 1fr) 160px; align-items: center; gap: 14px; border-bottom: 1px solid var(--ft-border); padding: 0 14px; }
+.loadingLine span { height: 10px; border-radius: 999px; background: var(--ft-surface-muted); animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .55; } }
+
+@media (max-width: 1100px) {
+  .detailToolbar.detailToolbar { grid-template-columns: minmax(210px, 1.35fr) minmax(150px, 1fr) minmax(160px, 1fr); }
+  .detailDateControl { min-width: 0; }
+  .detailClear { justify-self: start; }
+}
+
+@media (max-width: 700px) {
+  .detailToolbar.detailToolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .detailSearch { grid-column: 1 / -1; }
+  .detailClear { justify-self: end; }
+}
+
+@media (max-width: 479px) {
+  .detailToolbar.detailToolbar { grid-template-columns: minmax(0, 1fr); }
+  .detailSearch,
+  .detailAccountFilter,
+  .detailMovementFilter,
+  .detailDateControl,
+  .detailClear { grid-column: auto; width: 100%; justify-self: stretch; }
+}
+
+@media (max-width: 1080px) {
+  .ledgerHead { display: none; }
+  .ledgerRow { grid-template-columns: 74px minmax(0, 1fr) minmax(116px, auto); }
+  .ledgerRow > :nth-child(3) { display: none; }
+  .ledgerRow > :nth-child(4) { grid-column: 2; }
+  .ledgerRow > :nth-child(5) { grid-column: 3; grid-row: 1 / span 2; }
+  .ledgerRow > :nth-child(6) { grid-column: 1 / 3; grid-row: 3; }
+}
+
+@media (max-width: 767px) {
+  .detailOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) { width: calc(100vw - 16px); height: calc(100dvh - 16px); max-height: calc(100dvh - 16px); margin: 8px; }
+  .detailModalBody { padding: 12px !important; }
+  .panelHeading,
+  .historyHeading { align-items: flex-start; flex-direction: column; }
+  .recoveryPanel { padding: 11px 12px; }
+  .currencyMetrics { grid-template-columns: 34px repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .recoveryMeter { grid-column: 2 / -1; }
+  .currencyMetrics strong { font-size: 12px; line-height: 17px; }
+  .historyHeading { padding: 11px 12px; }
+  .detailToolbar { padding: 9px 10px; }
+  .detailSearch :global(input[data-testid='debtor-detail-search']) { height: 44px; font-size: 16px; }
+  .detailFilter { width: 100%; }
+  .ledgerRow { grid-template-columns: minmax(0, 1fr) auto; gap: 5px 10px; padding: 10px; }
+  .ledgerRow > :first-child { grid-column: 1; }
+  .ledgerRow > :nth-child(2) { grid-column: 1; grid-row: 2; }
+  .ledgerRow > :nth-child(3) { display: block; grid-column: 1; grid-row: 4; }
+  .ledgerRow > :nth-child(4) { grid-column: 1; grid-row: 3; }
+  .ledgerRow > :nth-child(5) { grid-column: 2; grid-row: 1 / span 2; }
+  .ledgerRow > :nth-child(6) { grid-column: 1; grid-row: 5; }
+}
+
+@media (max-width: 420px) {
+  .currencyMetrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .currencyLabel { grid-column: 1 / -1; }
+  .recoveryMeter { grid-column: 1 / -1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loadingLine span { animation: none; }
+}

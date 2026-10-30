@@ -1,0 +1,127 @@
+// =============================================================================
+// components/layout/NavItem.tsx — Redesign v3
+// Active: tinted bg + teal text + left border indicator (no full-green fill)
+// Hover: surface-2 bg, text transition
+// Collapsed: icon centered + tooltip via CSS tokens
+// =============================================================================
+
+'use client'
+
+import Link                           from 'next/link'
+import { usePathname }                from 'next/navigation'
+import { useCallback }                from 'react'
+import type { NavItem as NavItemType } from './nav'
+import { getActiveNavItem }           from './nav'
+import { findControlledModuleByKey }   from '@/lib/constants/app-control'
+import { NavIcon }                    from '../LayoutIcons'
+import type { SidebarMode }           from './useLayout'
+
+interface NavItemProps {
+  item:     NavItemType
+  mode:     SidebarMode | 'drawer'
+  badge?:   number
+  onClick?: () => void
+}
+
+function SidebarBadge({ value, active }: { value: number; active: boolean }) {
+  if (value <= 0) return null
+
+  return (
+    <span
+      className="sidebar-badge"
+      data-active={active ? 'true' : 'false'}
+      aria-label={`${value} notificaciones`}
+    >
+      {value > 99 ? '99+' : value}
+    </span>
+  )
+}
+
+function CollapsedNavItem({
+  item,
+  badge,
+  isActive,
+  onClick,
+}: {
+  item: NavItemType
+  badge: number
+  isActive: boolean
+  onClick: () => void
+}) {
+  const tooltipLabel = item.description
+    ? `${item.label}: ${item.description}`
+    : item.label
+  const moduleStatus = findControlledModuleByKey(item.key)?.status
+  const isLaunch = moduleStatus === 'launch'
+
+  return (
+    <li>
+      <Link
+        href={item.href}
+        prefetch={false}
+        onClick={onClick}
+        aria-label={tooltipLabel}
+        aria-current={isActive ? 'page' : undefined}
+        title={item.label}
+        className="group sidebar-nav-link sidebar-nav-link-collapsed"
+        data-active={isActive ? 'true' : 'false'}
+        data-developer={item.key === 'developer' ? 'true' : undefined}
+      >
+        <NavIcon name={item.icon} size={18} strokeWidth={1.7} />
+        {isLaunch ? <span className="sidebar-collapsed-new-badge">NEW</span> : null}
+        {badge > 0 && (
+          <span className="sidebar-collapsed-badge">
+            {badge > 9 ? '9+' : badge}
+          </span>
+        )}
+        <span className="sidebar-tooltip">{item.label}</span>
+      </Link>
+    </li>
+  )
+}
+
+export function NavItem({ item, mode, badge = 0, onClick }: NavItemProps) {
+  const pathname = usePathname()
+  const activeItem = getActiveNavItem(pathname)
+  const isActive = activeItem?.key === item.key
+  const isDeveloper = item.key === 'developer'
+  const moduleStatus = findControlledModuleByKey(item.key)?.status
+  const isLaunch = moduleStatus === 'launch'
+
+  const handleClick = useCallback(() => { onClick?.() }, [onClick])
+
+  if (mode === 'collapsed') {
+    return (
+      <CollapsedNavItem
+        item={item}
+        badge={badge}
+        isActive={isActive}
+        onClick={handleClick}
+      />
+    )
+  }
+
+  return (
+    <li>
+      <Link
+        href={item.href}
+        prefetch={false}
+        onClick={handleClick}
+        className="sidebar-nav-link"
+        data-active={isActive ? 'true' : 'false'}
+        data-developer={isDeveloper ? 'true' : undefined}
+        aria-current={isActive ? 'page' : undefined}
+      >
+        <span className="sidebar-nav-icon">
+          <NavIcon name={item.icon} size={18} strokeWidth={1.7} />
+        </span>
+        <span className="text-[13px] font-medium tracking-[-0.01em] flex-1 min-w-0 truncate">
+          {item.label}
+        </span>
+        {isDeveloper ? <span className="sidebar-dev-badge">DEV</span> : null}
+        {isLaunch ? <span className="sidebar-new-badge">Nuevo</span> : null}
+        <SidebarBadge value={badge} active={isActive} />
+      </Link>
+    </li>
+  )
+}

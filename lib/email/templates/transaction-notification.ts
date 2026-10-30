@@ -131,7 +131,7 @@ export function buildTransactionEmailHtml(data: TransactionEmailData): string {
   const displayName = data.userName || data.userEmail.split('@')[0] || 'Usuario'
   const safeAppUrl = data.appUrl.replace(/\/+$/, '')
   const txLink     = `${safeAppUrl}/transactions?highlight=${data.transactionId}`
-  const logoUrl    = `${safeAppUrl}/brand/fintrack-mark.png`
+  const logoUrl    = `${safeAppUrl}/brand/v3/ft-ligature.png`
 
   // Friendly opening sentence
   const accountRef = data.type === 'TRANSFER' && data.destinationAccountName
@@ -252,7 +252,7 @@ export function buildTransactionEmailHtml(data: TransactionEmailData): string {
                           <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
                             <tr>
                               <td style="font-size:13px;color:#64748b;">Equivalente en soles</td>
-                              <td style="font-size:13px;color:#111827;font-weight:600;text-align:right;">≈ ${formatCurrency(data.amount * (data.exchangeRate ?? 1), 'PEN')} (T/C ${(data.exchangeRate ?? 1).toFixed(3)})</td>
+                              <td style="font-size:13px;color:#111827;font-weight:600;text-align:right;">≈ ${formatCurrency(data.amount * data.exchangeRate!, 'PEN')} (T/C ${data.exchangeRate!.toFixed(3)})</td>
                             </tr>
                           </table>
                         </td></tr>` : ''}

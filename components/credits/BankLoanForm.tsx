@@ -7,6 +7,9 @@ import { NumericInput } from '@/components/ui/NumericInput'
 import { FormActions, FormField, FormSection } from '@/components/forms/primitives'
 import { RecordModalFooter } from '@/components/ui/RecordModal'
 import { BankLoanScheduleModal } from '@/components/credits/BankLoanScheduleModal'
+import { CreditInfoHint } from '@/components/credits/CreditInfoHint'
+import incomeStyles from '@/components/forms/TransactionForm/IncomeTransactionForm.module.css'
+import { IncomeDatePicker } from '@/components/forms/TransactionForm/IncomeDatePicker'
 import { formatScheduleDateLabel } from '@/components/credits/credits-schedule.constants'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { requestAttachmentUpload } from '@/modules/attachments/attachment-client'
@@ -164,6 +167,7 @@ export function BankLoanForm({
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [dateErrors, setDateErrors] = useState<{ disbursement: string | null; firstInstallment: string | null }>({ disbursement: null, firstInstallment: null })
 
   const [form, setForm] = useState<LoanFormState>({
     name: '',
@@ -201,14 +205,6 @@ export function BankLoanForm({
   useEffect(() => {
     onLayoutPreferenceChange?.('xl')
   }, [onLayoutPreferenceChange])
-
-  useEffect(() => {
-    onNestedModalOpenChange?.(isScheduleModalOpen)
-
-    return () => {
-      onNestedModalOpenChange?.(false)
-    }
-  }, [isScheduleModalOpen, onNestedModalOpenChange])
 
   useEffect(() => {
     if (totalInstallmentsNum < 1) return
@@ -491,12 +487,17 @@ export function BankLoanForm({
   }, [bankEntities, creditId, form, installments, mode, officialScheduleFile, onSuccess, saving, selectedAccount, totalInstallmentsNum, validateDetailsStep])
 
   const isDisabled = saving
+  const openScheduleModal = useCallback(() => {
+    onNestedModalOpenChange?.(true)
+    setIsScheduleModalOpen(true)
+  }, [onNestedModalOpenChange])
   const closeScheduleModal = useCallback(() => {
     setIsScheduleModalOpen(false)
-    requestAnimationFrame(() => {
-      document.getElementById('bank-loan-schedule-trigger')?.focus()
-    })
   }, [])
+  const finishScheduleClose = useCallback(() => {
+    onNestedModalOpenChange?.(false)
+    document.getElementById('bank-loan-schedule-trigger')?.focus({ preventScroll: true })
+  }, [onNestedModalOpenChange])
 
   return (
     <form
@@ -511,10 +512,10 @@ export function BankLoanForm({
         </div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto pr-1 xl:grid-cols-[minmax(0,0.98fr)_minmax(0,1.02fr)] xl:overflow-visible xl:pr-0">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto pr-1 xl:grid-cols-[minmax(0,0.98fr)_minmax(0,1.02fr)] xl:pr-0" data-testid="bank-loan-form-content">
         <FormSection
           title="Datos del préstamo"
-          description="Primero registra la entidad, el destino del desembolso y el nombre operativo del crédito."
+          description="Entidad, desembolso y nombre del préstamo."
           columns="2"
           className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
         >
@@ -535,6 +536,7 @@ export function BankLoanForm({
                       label: entity.name,
                     }))}
                 searchPlaceholder="Buscar entidad..."
+                matchTriggerWidth
               />
             )}
           </FormField>
@@ -556,6 +558,7 @@ export function BankLoanForm({
                       label: `${account.name} · ${account.currency}`,
                     }))}
                 searchPlaceholder="Buscar cuenta..."
+                matchTriggerWidth
               />
             )}
           </FormField>
@@ -575,7 +578,7 @@ export function BankLoanForm({
 
           <FormField
             label="Tipo de préstamo"
-            description="Se usará para compararlo con la tasa de mercado correspondiente."
+            labelAdornment={<CreditInfoHint label="Ayuda sobre el tipo de préstamo">Esta clasificación se usa para comparar la tasa con referencias del mismo tipo.</CreditInfoHint>}
             className="md:col-span-2"
           >
             <AppSelect
@@ -584,6 +587,7 @@ export function BankLoanForm({
               disabled={isDisabled}
               testId="bank-loan-type-select"
               searchable={false}
+              matchTriggerWidth
               options={LOAN_TYPE_VALUES.map(value => ({ value, label: getLoanTypeLabel(value) }))}
             />
           </FormField>
@@ -596,7 +600,7 @@ export function BankLoanForm({
 
         <FormSection
           title="Condiciones iniciales"
-          description="Define las fechas y el número de cuotas; el capital se obtiene del cronograma registrado."
+          description="Moneda, cuotas y fechas."
           columns="2"
           className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
         >
@@ -611,7 +615,7 @@ export function BankLoanForm({
           </div>
 
           {currency === 'USD' ? (
-            <FormField label="Tipo de cambio USD → PEN">
+            <FormField label="Tipo de cambio USD → PEN" labelAdornment={<CreditInfoHint label="Ayuda sobre el tipo de cambio">Se utiliza para registrar el desembolso en PEN equivalente, sin cambiar la moneda original del préstamo.</CreditInfoHint>}>
               <NumericInput
                 step="0.001"
                 decimals={3}
@@ -645,26 +649,32 @@ export function BankLoanForm({
             />
           </FormField>
 
-          <FormField label="Fecha de desembolso">
-            <input
-              type="date"
-              value={form.disbursement_date}
-              onChange={event => setForm(prev => ({ ...prev, disbursement_date: event.target.value }))}
-              required
-              disabled={isDisabled}
-              className="field-base ft-form-input w-full"
-            />
+          <FormField label="Fecha de desembolso" error={dateErrors.disbursement ?? undefined}>
+            {isDisabled ? (
+              <div className="field-base ft-form-input w-full" aria-label="Fecha de desembolso">{formatScheduleDateLabel(form.disbursement_date)}</div>
+            ) : (
+              <IncomeDatePicker
+                value={form.disbursement_date}
+                onChange={value => { setForm(prev => ({ ...prev, disbursement_date: value })); setDateErrors(prev => ({ ...prev, disbursement: null })) }}
+                onInvalidInput={message => setDateErrors(prev => ({ ...prev, disbursement: message }))}
+                inputLabel="Fecha de desembolso, día, mes y año"
+                inputTestId="bank-loan-disbursement-date-input"
+              />
+            )}
           </FormField>
 
-          <FormField label="Fecha de primera cuota">
-            <input
-              type="date"
-              value={form.start_date}
-              onChange={event => setForm(prev => ({ ...prev, start_date: event.target.value }))}
-              required
-              disabled={isDisabled}
-              className="field-base ft-form-input w-full"
-            />
+          <FormField label="Fecha de primera cuota" error={dateErrors.firstInstallment ?? undefined}>
+            {isDisabled ? (
+              <div className="field-base ft-form-input w-full" aria-label="Fecha de primera cuota">{formatScheduleDateLabel(form.start_date)}</div>
+            ) : (
+              <IncomeDatePicker
+                value={form.start_date}
+                onChange={value => { setForm(prev => ({ ...prev, start_date: value })); setDateErrors(prev => ({ ...prev, firstInstallment: null })) }}
+                onInvalidInput={message => setDateErrors(prev => ({ ...prev, firstInstallment: message }))}
+                inputLabel="Fecha de primera cuota, día, mes y año"
+                inputTestId="bank-loan-first-installment-date-input"
+              />
+            )}
           </FormField>
 
           <FormField label="Descripción" optional className="md:col-span-2">
@@ -698,38 +708,40 @@ export function BankLoanForm({
 
         <FormSection
           title="Cronograma"
-          description="Revisa el alcance registrado del cronograma y abre el editor completo solo cuando quieras ajustar cada cuota."
+          description="Importes por cuota y fechas de pago."
           className="flex min-h-0 flex-col rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-section-gap:12px] xl:col-span-2"
         >
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-[1fr_0.7fr_1fr_1fr_1.1fr_1fr_auto]">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
             <SummaryStat label="Capital total" value={formatNumber(scheduleTotal.principal)} numeric />
             <SummaryStat label="Cuotas" value={installments.length} numeric />
             <SummaryStat label="Primera cuota" value={firstInstallmentDate} />
             <SummaryStat label="Última cuota" value={lastInstallmentDate} />
             <SummaryStat label="Total estimado" value={formatNumber(scheduleTotal.installmentTotal)} numeric emphasized />
             <SummaryStat label="Seguro + otros" value={formatNumber(scheduleTotal.insurance + scheduleTotal.others)} numeric />
+          </div>
+          <div className="flex flex-col gap-3 border-t border-[var(--ft-form-border)] pt-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="max-w-[60ch] text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
+              El capital se calcula desde las cuotas. Los comprobantes se adjuntan al registrar cada pago.
+            </p>
             <Button
               id="bank-loan-schedule-trigger"
               type="button"
               variant="secondary"
               size="md"
-              onClick={() => setIsScheduleModalOpen(true)}
+              onClick={openScheduleModal}
               disabled={isDisabled}
-              className="h-full min-h-[76px] w-full lg:w-auto"
+              className="shrink-0"
             >
-              Ver/editar →
+              Abrir cronograma completo
             </Button>
           </div>
-
-          <p className="text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-            El capital se calcula desde el cronograma. Los comprobantes de pago se adjuntan al registrar cada cuota.
-          </p>
         </FormSection>
       </div>
 
       <BankLoanScheduleModal
         open={isScheduleModalOpen}
         onClose={closeScheduleModal}
+        onExitComplete={finishScheduleClose}
         installments={installments}
         totalInstallmentsNum={totalInstallmentsNum}
         scheduleTotal={scheduleTotal}
@@ -739,6 +751,7 @@ export function BankLoanForm({
 
       <RecordModalFooter>
         <FormActions
+          className={incomeStyles.operationFormActions}
           secondaryAction={(
             <Button type="button" variant="secondary" size="lg" onClick={onCancel} disabled={saving}>
               Cancelar

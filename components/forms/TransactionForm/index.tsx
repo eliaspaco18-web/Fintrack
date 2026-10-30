@@ -14,7 +14,9 @@
 // Los datos del servidor (options) se pasan como props desde el Server Component.
 // =============================================================================
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Controller } from 'react-hook-form'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { useRouter }                  from 'next/navigation'
 import type {
@@ -58,19 +60,29 @@ import { Button } from '@/components/ui/Button'
 import { FormActions, OptionalSection } from '@/components/forms/primitives'
 import { RecordModalFooter } from '@/components/ui/RecordModal'
 import type { OperationType } from '@/components/transactions/OperationTypeSelector'
+import { getTransactionEditPresentation } from '@/components/forms/transaction-edit-presentation'
 import {
   NestedAccountCreateModal,
   NestedCategoryCreateModal,
 } from './NestedRecordCreationModals'
 import { StatusBadge } from '@/components/finance'
+import incomeStyles from './IncomeTransactionForm.module.css'
+import { IncomeDatePicker } from './IncomeDatePicker'
 import {
   getAttachmentAvailabilityOutcome,
   requestAttachmentUpload,
   type AttachmentUploadResponse,
 } from '@/modules/attachments/attachment-client'
+import { MAX_FINANCIAL_ATTACHMENT_BYTES } from '@/modules/attachments/attachment-integrity'
+import { getVerifiedUsdPenRate } from '@/lib/finance/exchange-rate-verification'
 
 const ATTACHMENT_ACCEPT =
   'image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt'
+
+function formatAttachmentSize(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
 
 const CATEGORY_ICON_PREFIXES = [
   'wallet',
@@ -146,6 +158,179 @@ function cardAvailableFor(option: FormSelectOption | null, currency: CreditCurre
   return Math.max(cardLimitFor(option, currency) - cardUsedFor(option, currency), 0)
 }
 
+function IncomeInfoHint({ label, children }: { label: string; children: string }) {
+  const tooltipId = useId()
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const tooltipRef = useRef<HTMLSpanElement>(null)
+  const lastInputRef = useRef<'mouse' | 'touch' | 'keyboard'>('mouse')
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [mounted, setMounted] = useState(false)
+  const [open, setOpen] = useState(false)
+  const [closing, setClosing] = useState(false)
+  const [position, setPosition] = useState<{ left: number; top: number } | null>(null)
+
+  useEffect(() => setMounted(true), [])
+
+  const showTooltip = useCallback(() => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    closeTimerRef.current = null
+    setClosing(false)
+    setOpen(true)
+  }, [])
+
+  const closeTooltip = useCallback((immediate = false) => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    closeTimerRef.current = null
+    if (immediate) {
+      setOpen(false)
+      setClosing(false)
+      return
+    }
+    setClosing(true)
+    closeTimerRef.current = setTimeout(() => {
+      setOpen(false)
+      setClosing(false)
+      closeTimerRef.current = null
+    }, 120)
+  }, [])
+
+  useEffect(() => () => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+  }, [])
+
+  const updatePosition = useCallback(() => {
+    const trigger = triggerRef.current
+    const tooltip = tooltipRef.current
+    if (!trigger || !tooltip) return
+
+    const margin = 12
+    const gap = 8
+    const triggerRect = trigger.getBoundingClientRect()
+    const tooltipRect = tooltip.getBoundingClientRect()
+    const maxLeft = Math.max(margin, window.innerWidth - tooltipRect.width - margin)
+    const left = Math.min(
+      maxLeft,
+      Math.max(margin, triggerRect.left + triggerRect.width / 2 - tooltipRect.width / 2),
+    )
+    const spaceAbove = triggerRect.top - margin
+    const spaceBelow = window.innerHeight - triggerRect.bottom - margin
+    const fitsAbove = spaceAbove >= tooltipRect.height + gap
+    const fitsBelow = spaceBelow >= tooltipRect.height + gap
+    const placeAbove = fitsAbove || (!fitsBelow && spaceAbove > spaceBelow)
+    const top = placeAbove
+      ? Math.max(margin, triggerRect.top - tooltipRect.height - gap)
+      : Math.min(window.innerHeight - tooltipRect.height - margin, triggerRect.bottom + gap)
+
+    setPosition(previous => previous?.left === left && previous.top === top ? previous : { left, top })
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!open || !mounted) return
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [mounted, open, updatePosition])
+
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        const restoreFocus = document.activeElement === triggerRef.current
+        closeTooltip(true)
+        if (restoreFocus) triggerRef.current?.focus()
+      }
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (!triggerRef.current?.contains(event.target as Node)) closeTooltip()
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    document.addEventListener('pointerdown', onPointerDown, true)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, true)
+      document.removeEventListener('pointerdown', onPointerDown, true)
+    }
+  }, [closeTooltip, open])
+
+  const triggerIsV3 = Boolean(triggerRef.current?.closest('[data-ft-v3], [data-ft-v3-shell]'))
+
+  return (
+    <span className={incomeStyles.infoHint}>
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-label={label}
+        aria-describedby={open ? tooltipId : undefined}
+        aria-expanded={open && !closing}
+        className={incomeStyles.infoHintTrigger}
+        onPointerDown={event => {
+          lastInputRef.current = event.pointerType === 'touch' ? 'touch' : 'mouse'
+        }}
+        onPointerEnter={event => {
+          if (event.pointerType === 'mouse') {
+            lastInputRef.current = 'mouse'
+            showTooltip()
+          }
+        }}
+        onPointerLeave={event => {
+          if (event.pointerType === 'mouse' && lastInputRef.current === 'mouse') closeTooltip()
+        }}
+        onFocus={event => {
+          if (lastInputRef.current !== 'touch') {
+            lastInputRef.current = event.currentTarget.matches(':focus-visible') ? 'keyboard' : 'mouse'
+            showTooltip()
+          }
+        }}
+        onBlur={() => {
+          if (lastInputRef.current === 'keyboard') closeTooltip()
+        }}
+        onKeyDown={event => {
+          if (event.key !== 'Escape') lastInputRef.current = 'keyboard'
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            event.stopPropagation()
+            closeTooltip(true)
+          }
+        }}
+        onClick={event => {
+          if (event.detail > 0 && lastInputRef.current === 'touch') {
+            if (open && !closing) closeTooltip()
+            else showTooltip()
+          }
+        }}
+      >
+        <svg aria-hidden="true" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="6.25" />
+          <path d="M8 7.1v3.7M8 5.2h.01" />
+        </svg>
+      </button>
+      {open && mounted && typeof document !== 'undefined' ? createPortal(
+        <span
+          ref={tooltipRef}
+          id={tooltipId}
+          role="tooltip"
+          className={incomeStyles.infoTooltip}
+          data-ft-v3={triggerIsV3 ? '' : undefined}
+          data-state={closing ? 'closing' : 'open'}
+          style={{
+            left: position?.left ?? 12,
+            top: position?.top ?? 12,
+            visibility: position ? 'visible' : 'hidden',
+          }}
+        >
+          {children}
+        </span>,
+        document.body,
+      ) : null}
+    </span>
+  )
+}
+
 // ─── PROPS ────────────────────────────────────────────────────────────────────
 
 interface TransactionFormProps {
@@ -174,6 +359,12 @@ interface TransactionFormProps {
   transactionId?: string
   /** Callback tras actualizar en modo edición */
   onEditSuccess?: (transaction: TransactionWithRelations) => void
+  /** Datos de solo lectura que la API actual expone para una edición */
+  editContext?: {
+    hasExistingAttachment: boolean
+    receivableCollectedAmount: number
+    payablePaidAmount: number
+  }
 }
 
 // ─── COMPONENTE ───────────────────────────────────────────────────────────────
@@ -191,11 +382,16 @@ export function TransactionForm({
   mode = 'create',
   transactionId,
   onEditSuccess,
+  editContext,
 }: TransactionFormProps) {
   const router = useRouter()
   const { exchangeRate: liveExchangeRate } = useCurrency()
   const { toast } = useToast()
   const isEditMode = mode === 'edit'
+  const receivableHasCollections = isEditMode && (editContext?.receivableCollectedAmount ?? 0) > 0
+  const payableHasPayments = isEditMode && (editContext?.payablePaidAmount ?? 0) > 0
+  const isPayableIssueCreate = operationType === 'payable_issue' && !isEditMode
+  const isPayablePayCreate = operationType === 'payable_pay' && !isEditMode
   const initialEditCurrency = initialValues?.currency === 'USD' ? 'USD' : 'PEN'
   const initialEditExchangeRate = (
     isEditMode
@@ -209,10 +405,11 @@ export function TransactionForm({
   const initialEditDate = isEditMode && typeof initialValues?.transaction_date === 'string'
     ? initialValues.transaction_date
     : null
-  const [currentLiveRate, setCurrentLiveRate] = useState<number>(() => {
+  const [currentLiveRate, setCurrentLiveRate] = useState<number | null>(() => {
     if (initialEditExchangeRate) return initialEditExchangeRate
-    return Number.isFinite(liveExchangeRate) && liveExchangeRate > 0 ? liveExchangeRate : 3.7
+    return Number.isFinite(liveExchangeRate) && liveExchangeRate !== null && liveExchangeRate > 0 ? liveExchangeRate : null
   })
+  const [currentRateVerified, setCurrentRateVerified] = useState(Boolean(initialEditExchangeRate))
   const [currentRateEffectiveDate, setCurrentRateEffectiveDate] = useState<string | null>(initialEditDate)
   const [refreshingLiveRate, setRefreshingLiveRate] = useState(false)
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
@@ -229,10 +426,31 @@ export function TransactionForm({
   const [inlineCategoryModalOpen, setInlineCategoryModalOpen] = useState(false)
   const [inlineCategoryScope, setInlineCategoryScope] = useState<'INCOME' | 'EXPENSE'>('EXPENSE')
   const [advancedSectionOpen, setAdvancedSectionOpen] = useState(false)
+  const incomeOptionsId = useId()
+  const [incomeAdditionalOptionsOpen, setIncomeAdditionalOptionsOpen] = useState({
+    sender: false,
+    notes: false,
+    recurrence: false,
+    receipt: false,
+  })
+  const [operationAdditionalOptionsOpen, setOperationAdditionalOptionsOpen] = useState({
+    recipient: false,
+    budget: false,
+    notes: false,
+    recurrence: false,
+    receipt: false,
+  })
+  const [assetAdditionalOptionsOpen, setAssetAdditionalOptionsOpen] = useState({
+    identification: false,
+    supplier: false,
+    notes: false,
+    receipt: false,
+  })
   const [crossCurrencyDestAmount, setCrossCurrencyDestAmount] = useState<string>('')
   const [targetDebtCurrency, setTargetDebtCurrency] = useState<CreditCurrency | null>(null)
   const [formOptions, setFormOptions] = useState<TransactionFormOptions>(options)
   const lastAutoUploadTxId = useRef<string | null>(null)
+  const incomeAttachmentInputRef = useRef<HTMLInputElement | null>(null)
   const [editSubmitState, setEditSubmitState] =
     useState<ActionState<unknown>>({ status: 'idle' })
 
@@ -248,13 +466,14 @@ export function TransactionForm({
     form,
     sections,
     submitState,
+    resetVersion,
     categoryOptions,
     submit,
     resetForm,
     setType,
   } = useFormOrchestrator(formOptions, onSuccess, initialValues, operationType)
 
-  const { register, watch, setValue, formState: { errors } } = form
+  const { register, watch, setValue, setError, clearErrors, formState: { errors } } = form
   const activeSubmitState = isEditMode ? editSubmitState : submitState
 
   const type        = watch('type')
@@ -276,31 +495,31 @@ export function TransactionForm({
   const transactionDate = watch('transaction_date')
   const destinationAccountId = watch('destination_account_id')
   const accentColor = TYPE_CONFIG[type].accentColor
-  const safeLiveRate = Number.isFinite(currentLiveRate) && currentLiveRate > 0
+  const safeLiveRate = currentRateVerified && currentLiveRate !== null && Number.isFinite(currentLiveRate) && currentLiveRate > 0
     ? currentLiveRate
-    : 3.7
+    : 0
   const manualRate = typeof exchangeRateInput === 'number'
     ? exchangeRateInput
     : Number(exchangeRateInput)
   const hasManualRate = Number.isFinite(manualRate) && manualRate > 0
   const appliedRate = currency === 'USD'
-    ? (hasManualRate ? manualRate : safeLiveRate)
+    ? (hasManualRate ? manualRate : safeLiveRate > 0 ? safeLiveRate : null)
     : safeLiveRate
   const numericAmount = typeof amount === 'number' ? amount : Number(amount)
   const hasAmount = Number.isFinite(numericAmount) && numericAmount > 0
   const equivalentPen = hasAmount
-    ? (currency === 'USD' ? numericAmount * appliedRate : numericAmount)
-    : 0
+    ? (currency === 'USD' ? (appliedRate !== null && appliedRate > 0 ? numericAmount * appliedRate : null) : numericAmount)
+    : null
   const equivalentUsd = hasAmount
-    ? (currency === 'PEN' ? numericAmount / appliedRate : numericAmount)
-    : 0
+    ? (currency === 'PEN' ? (appliedRate !== null && appliedRate > 0 ? numericAmount / appliedRate : null) : numericAmount)
+    : null
   const rateDateLabel = currentRateEffectiveDate
     ? `fecha ${currentRateEffectiveDate}`
     : 'fecha seleccionada'
 
   useEffect(() => {
     if (transactionDate) return
-    if (!Number.isFinite(liveExchangeRate) || liveExchangeRate <= 0) return
+    if (liveExchangeRate === null || !Number.isFinite(liveExchangeRate) || liveExchangeRate <= 0) return
     setCurrentLiveRate(liveExchangeRate)
   }, [liveExchangeRate, transactionDate])
 
@@ -486,9 +705,11 @@ export function TransactionForm({
       ) {
         setCurrentLiveRate(initialEditExchangeRate)
         setCurrentRateEffectiveDate(initialEditDate)
+        setCurrentRateVerified(true)
         return
       }
 
+      setCurrentRateVerified(false)
       setRefreshingLiveRate(true)
       try {
         const params = new URLSearchParams({ mode: 'accounting', ensure: '1' })
@@ -502,6 +723,7 @@ export function TransactionForm({
         if (!Number.isFinite(incomingRate) || incomingRate <= 0) return
 
         setCurrentLiveRate(incomingRate)
+        setCurrentRateVerified(getVerifiedUsdPenRate(json.data) !== null)
         setCurrentRateEffectiveDate(
           typeof json.data?.effective_date === 'string'
             ? json.data.effective_date
@@ -524,6 +746,14 @@ export function TransactionForm({
       && initialEditDate
       && transactionDate === initialEditDate
     ) {
+      return
+    }
+    if (!safeLiveRate) {
+      const lastAutoRate = lastAutoExchangeRateRef.current
+      if (lastAutoRate !== null && hasManualRate && Math.abs(manualRate - lastAutoRate) < 0.0005) {
+        setValue('exchange_rate', '', { shouldValidate: false })
+        lastAutoExchangeRateRef.current = null
+      }
       return
     }
     const roundedRate = Math.round(safeLiveRate * 1000) / 1000
@@ -629,6 +859,25 @@ export function TransactionForm({
       return !getCreditCardTransferPolicy(sourceType, destinationType).violation
     })
   }, [formOptions.accounts, sourceAccountId, sourceAccountOption])
+  const transferDestinationAccounts = useMemo(() => {
+    const sourceType = typeof sourceAccountOption?.meta?.type === 'string'
+      ? sourceAccountOption.meta.type
+      : null
+
+    return formOptions.accounts
+      .map(account => {
+        const destinationType = typeof account.meta?.type === 'string'
+          ? account.meta.type
+          : null
+        const disabled = account.value === sourceAccountId
+          || Boolean(getCreditCardTransferPolicy(sourceType, destinationType).violation)
+
+        return { ...account, disabled }
+      })
+      // Retain an existing, now-invalid selection so the selector remains
+      // truthful while validation guides the user to choose another account.
+      .filter(account => !account.disabled || account.value === destinationAccountId)
+  }, [destinationAccountId, formOptions.accounts, sourceAccountId, sourceAccountOption])
   const creditCardOptions = useMemo(
     () => formOptions.creditCards ?? [],
     [formOptions.creditCards]
@@ -687,7 +936,6 @@ export function TransactionForm({
       : formOptions.accounts
 
     if (operationType === 'receivable_collect') return currencyFilteredAccounts
-    if (operationType === 'payable_pay' && paymentMethod === 'CREDIT') return currencyFilteredAccounts
 
     const debitEligibleTypes = new Set([
       'CHECKING',
@@ -699,10 +947,25 @@ export function TransactionForm({
       'CRYPTO',
     ])
 
-    if (operationType === 'receivable_issue') {
+    // Payable settlement is handled by payPayableAction, which accepts only a
+    // source account and does not process card-credit fields. Keep its picker
+    // aligned with the eligible cash/debit accounts regardless of stale form
+    // state left by a previous operation.
+    if (operationType === 'payable_pay' && isPayablePayCreate) {
       return currencyFilteredAccounts.filter(account => {
         const accountType = typeof account.meta?.type === 'string' ? account.meta.type : ''
-        return debitEligibleTypes.has(accountType) || accountType === 'CREDIT_CARD'
+        return debitEligibleTypes.has(accountType)
+      })
+    }
+
+    if (operationType === 'payable_pay' && paymentMethod === 'CREDIT') return currencyFilteredAccounts
+
+    if (operationType === 'receivable_issue' && !isEditMode) {
+      return currencyFilteredAccounts.filter(account => {
+        const accountType = typeof account.meta?.type === 'string' ? account.meta.type : ''
+        return paymentMethod === 'CREDIT'
+          ? accountType === 'CREDIT_CARD'
+          : debitEligibleTypes.has(accountType)
       })
     }
 
@@ -712,7 +975,7 @@ export function TransactionForm({
       const accountType = typeof account.meta?.type === 'string' ? account.meta.type : ''
       return debitEligibleTypes.has(accountType)
     })
-  }, [formOptions.accounts, operationType, paymentMethod, selectedSettlementCurrency, type])
+  }, [formOptions.accounts, isEditMode, isPayablePayCreate, operationType, paymentMethod, selectedSettlementCurrency, type])
   const visibleCategoryOptions = useMemo(
     () =>
       (type === 'INCOME' ? categoryOptions.income : categoryOptions.expense)
@@ -769,7 +1032,10 @@ export function TransactionForm({
     if (autoModule === 'payable') return 'payable'
     return createsPayable ? 'payable' : null
   }, [autoModule, createsPayable])
-  const isExpenseCreditPayment = type === 'EXPENSE' && paymentMethod === 'CREDIT'
+  const isExpenseCreditPayment =
+    type === 'EXPENSE' &&
+    paymentMethod === 'CREDIT' &&
+    !isPayablePayCreate
   const selectedCreditCardOption = useMemo(
     () => creditCardOptions.find(option => option.value === selectedCreditCardId) ?? null,
     [creditCardOptions, selectedCreditCardId]
@@ -805,7 +1071,9 @@ export function TransactionForm({
   const otherCreditAvailable = cardAvailableFor(activeCreditCardOption, otherCreditCurrency)
   const hasDualCurrencyDebt = otherCreditUsed > 0 || selectedCreditCardUsed > 0
   const creditMovementKind: 'CONSUMPTION' | 'PAYMENT' | null =
-    isExpenseCreditPayment
+    isPayablePayCreate
+      ? null
+      : isExpenseCreditPayment
       ? 'CONSUMPTION'
       : type === 'TRANSFER' && transferSourceCreditCardOption
         ? 'CONSUMPTION'
@@ -827,7 +1095,7 @@ export function TransactionForm({
       : Math.min(selectedCreditCardLimit, selectedCreditCardAvailable + (hasAmount ? numericAmount : 0))
     : selectedCreditCardAvailable
   const projectedCreditUtilization = selectedCreditCardLimit > 0
-    ? Math.min((projectedCreditUsed / selectedCreditCardLimit) * 100, 100)
+    ? (projectedCreditUsed / selectedCreditCardLimit) * 100
     : 0
   const creditAmountExceedsAvailable =
     creditMovementKind === 'CONSUMPTION' &&
@@ -866,6 +1134,26 @@ export function TransactionForm({
     if (createsReceivable) return 'receivable_issue'
     return 'expense'
   }, [createsAsset, createsPayable, createsReceivable, operationType, type])
+  const isIncomeCreate = layoutMode === 'income' && !isEditMode
+  const isAssetPurchaseCreate = layoutMode === 'asset_purchase' && !isEditMode
+  const isReceivableIssueCreate = layoutMode === 'receivable_issue' && !isEditMode
+  const isReceivableCollectCreate = layoutMode === 'receivable_collect' && !isEditMode
+  const isReceivableCreate = isReceivableIssueCreate || isReceivableCollectCreate
+  const isPayableCreate = isPayableIssueCreate || isPayablePayCreate
+  const isIncomeLayout = layoutMode === 'income'
+  const isStageALayout = layoutMode === 'expense' || layoutMode === 'transfer'
+  const isAssetPurchaseLayout = layoutMode === 'asset_purchase'
+  const isReceivableIssueLayout = layoutMode === 'receivable_issue'
+  const isReceivableCollectLayout = layoutMode === 'receivable_collect'
+  const isReceivableLayout = isReceivableIssueLayout || isReceivableCollectLayout
+  const isPayableIssueLayout = layoutMode === 'payable_issue'
+  const isPayablePayLayout = layoutMode === 'payable_pay'
+  const isPayableLayout = isPayableIssueLayout || isPayablePayLayout
+  const isTransferLayout = layoutMode === 'transfer'
+  const isStageACreate = !isEditMode && (layoutMode === 'expense' || layoutMode === 'transfer')
+  const usesApprovedRatePresentation = isIncomeLayout || layoutMode === 'expense' || isAssetPurchaseLayout || isReceivableLayout || isPayableLayout
+  const usesApprovedFormControls = isIncomeLayout || isStageALayout || isAssetPurchaseLayout || isReceivableLayout || isPayableLayout
+  const usesApprovedDatePicker = usesApprovedFormControls
 
   // ── Cross-currency transfer detection ────────────────────────────────────
   const isCrossCurrencyTransfer = layoutMode === 'transfer'
@@ -882,7 +1170,19 @@ export function TransactionForm({
     : 0
   const crossRateDiffPercent = safeLiveRate > 0 && implicitCrossRate > 0
     ? ((implicitCrossRate - safeLiveRate) / safeLiveRate) * 100
-    : 0
+    : null
+  const crossRateComparisonClass = crossRateDiffPercent === null
+    ? 'bg-[var(--c-surface)] text-[var(--c-text-muted)]'
+    : Math.abs(crossRateDiffPercent) <= 1
+      ? 'bg-emerald-500/10 text-emerald-300'
+      : Math.abs(crossRateDiffPercent) <= 3
+        ? 'bg-amber-500/10 text-amber-300'
+        : 'bg-red-500/10 text-red-300'
+  const crossRateComparisonMessage = crossRateDiffPercent === null
+    ? 'No hay una tasa de referencia verificada para comparar.'
+    : Math.abs(crossRateDiffPercent) <= 0.5
+      ? 'El tipo de cambio implícito es muy similar al del sistema. Sin observaciones.'
+      : `Tu TC implícito (${formatNumber(implicitCrossRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}) está ${formatNumber(Math.abs(crossRateDiffPercent), { maximumFractionDigits: 1 })}% ${crossRateDiffPercent > 0 ? 'por encima' : 'por debajo'} del TC del sistema.${Math.abs(crossRateDiffPercent) > 3 ? ' Verifica los importes.' : ' Solo informativo.'}`
 
   // Reset destination amount and debt target when transfer accounts change
   useEffect(() => {
@@ -891,15 +1191,16 @@ export function TransactionForm({
   }, [sourceAccountId, destinationAccountId])
 
   const lockSettlementEdit = isEditMode && (
-    operationType === 'receivable_collect'
-    || operationType === 'payable_pay'
+    getTransactionEditPresentation(layoutMode).blocked
   )
   const usesProgressiveOptionalSection =
     layoutMode === 'income' ||
     layoutMode === 'expense' ||
     layoutMode === 'transfer' ||
     layoutMode === 'asset_purchase' ||
+    layoutMode === 'receivable_issue' ||
     layoutMode === 'receivable_collect' ||
+    layoutMode === 'payable_issue' ||
     layoutMode === 'payable_pay'
   const optionalSummary = useMemo(() => {
     switch (layoutMode) {
@@ -908,9 +1209,13 @@ export function TransactionForm({
       case 'expense':
         return ['Destinatario', 'Presupuesto', 'Notas', 'Recurrencia', 'Comprobante']
       case 'asset_purchase':
-        return ['Proveedor', 'Notas', 'Comprobante']
+        return ['Identificación del activo', 'Proveedor', 'Notas', 'Comprobante']
       case 'receivable_collect':
         return ['Notas', 'Comprobante']
+      case 'receivable_issue':
+        return ['Notas', 'Recurrencia', 'Comprobante']
+      case 'payable_issue':
+        return ['Notas', 'Recurrencia', 'Comprobante']
       case 'payable_pay':
         return ['Notas', 'Comprobante']
       case 'transfer':
@@ -931,8 +1236,11 @@ export function TransactionForm({
       case 'income':
       case 'receivable_collect':
         return 'Cuenta destino'
+      case 'payable_issue':
+        return 'Cuenta destino'
       case 'expense':
       case 'asset_purchase':
+      case 'receivable_issue':
       case 'payable_pay':
         return 'Cuenta origen'
       default:
@@ -1099,6 +1407,19 @@ export function TransactionForm({
   ])
 
   useEffect(() => {
+    if (isPayablePayCreate) {
+      if (paymentMethod !== 'DEBIT') {
+        setValue('payment_method', 'DEBIT', { shouldDirty: false, shouldValidate: false })
+      }
+      if (selectedCreditCardId) {
+        setValue('credit_card_id', undefined, { shouldDirty: false, shouldValidate: false })
+      }
+      if (creditOperation) {
+        setValue('credit_operation', undefined, { shouldDirty: false, shouldValidate: false })
+      }
+      return
+    }
+
     if (type === 'EXPENSE') {
       if (!paymentMethod) {
         setValue('payment_method', 'DEBIT', { shouldDirty: false, shouldValidate: false })
@@ -1108,17 +1429,17 @@ export function TransactionForm({
     setValue('payment_method', 'DEBIT', { shouldDirty: false, shouldValidate: false })
     setValue('credit_card_id', undefined, { shouldDirty: false, shouldValidate: false })
     setValue('credit_operation', undefined, { shouldDirty: false, shouldValidate: false })
-  }, [paymentMethod, setValue, type])
+  }, [creditOperation, isPayablePayCreate, paymentMethod, selectedCreditCardId, setValue, type])
 
   useEffect(() => {
-    if (!sourceAccountId || paymentMethod === 'CREDIT') return
+    if (!sourceAccountId || (paymentMethod === 'CREDIT' && !isPayablePayCreate)) return
     if (filteredSourceAccounts.some(account => account.value === sourceAccountId)) return
 
     setValue('source_account_id', '' as TransactionFormValues['source_account_id'], {
       shouldDirty: true,
       shouldValidate: true,
     })
-  }, [filteredSourceAccounts, paymentMethod, setValue, sourceAccountId])
+  }, [filteredSourceAccounts, isPayablePayCreate, operationType, paymentMethod, setValue, sourceAccountId])
 
   useEffect(() => {
     if (isEditMode) return
@@ -1234,6 +1555,9 @@ export function TransactionForm({
         file,
       )
       setAttachmentFile(null)
+      if (isIncomeCreate && incomeAttachmentInputRef.current) {
+        incomeAttachmentInputRef.current.value = ''
+      }
       setAttachmentError(null)
       setLastAttachmentTxId(transactionId)
       setLastUploadedAttachment(result)
@@ -1257,7 +1581,7 @@ export function TransactionForm({
     } finally {
       setAttachmentUploading(false)
     }
-  }, [toast])
+  }, [isIncomeCreate, toast])
 
   const retryAttachmentUpload = useCallback(() => {
     if (!lastAttachmentTxId || !attachmentFile || attachmentUploading) return
@@ -1279,7 +1603,33 @@ export function TransactionForm({
     if (isEditMode) return
     if (!attachmentFile && !attachmentUploading && !attachmentError && !lastUploadedAttachment) return
     setAttachmentSectionOpen(true)
-  }, [attachmentError, attachmentFile, attachmentUploading, isEditMode, lastUploadedAttachment])
+    if (isIncomeCreate) {
+      setIncomeAdditionalOptionsOpen(current => ({ ...current, receipt: true }))
+    }
+    if (isReceivableCreate || isPayableCreate) {
+      setOperationAdditionalOptionsOpen(current => ({ ...current, receipt: true }))
+    }
+  }, [attachmentError, attachmentFile, attachmentUploading, isEditMode, isIncomeCreate, isPayableCreate, isReceivableCreate, lastUploadedAttachment])
+
+  useEffect(() => {
+    if (!isIncomeCreate) return
+    setIncomeAdditionalOptionsOpen(current => ({
+      ...current,
+      sender: current.sender || Boolean(errors.sender?.message),
+      notes: current.notes || Boolean(errors.notes?.message),
+      recurrence: current.recurrence || Boolean(errors.recurring_name?.message),
+      receipt: current.receipt || Boolean(attachmentError) || Boolean(attachmentFile) || attachmentUploading || Boolean(lastUploadedAttachment),
+    }))
+  }, [
+    attachmentError,
+    attachmentFile,
+    attachmentUploading,
+    errors.notes?.message,
+    errors.recurring_name?.message,
+    errors.sender?.message,
+    isIncomeCreate,
+    lastUploadedAttachment,
+  ])
 
   useEffect(() => {
     if (!usesProgressiveOptionalSection) return
@@ -1310,7 +1660,17 @@ export function TransactionForm({
     const syncOverflow = () => {
       const isDesktop = window.matchMedia('(min-width: 860px)').matches
       const isShortViewport = window.innerHeight < 720
-      const shouldForceAuto = !usesProgressiveOptionalSection || advancedSectionOpen || !isDesktop || isShortViewport
+      const receivableOptionsExpanded = isReceivableCreate && (
+        operationAdditionalOptionsOpen.notes ||
+        operationAdditionalOptionsOpen.receipt ||
+        (isReceivableIssueCreate && operationAdditionalOptionsOpen.recurrence)
+      )
+      const payableOptionsExpanded = isPayableCreate && (
+        operationAdditionalOptionsOpen.notes ||
+        operationAdditionalOptionsOpen.receipt ||
+        (isPayableIssueCreate && operationAdditionalOptionsOpen.recurrence)
+      )
+      const shouldForceAuto = !usesProgressiveOptionalSection || advancedSectionOpen || receivableOptionsExpanded || payableOptionsExpanded || !isDesktop || isShortViewport
 
       if (shouldForceAuto) {
         modalBody.style.overflowY = ''
@@ -1336,7 +1696,17 @@ export function TransactionForm({
       window.removeEventListener('resize', syncOverflow)
       modalBody.style.overflowY = ''
     }
-  }, [advancedSectionOpen, usesProgressiveOptionalSection])
+  }, [
+    advancedSectionOpen,
+    isReceivableCreate,
+    isReceivableIssueCreate,
+    isPayableCreate,
+    isPayableIssueCreate,
+    operationAdditionalOptionsOpen.notes,
+    operationAdditionalOptionsOpen.receipt,
+    operationAdditionalOptionsOpen.recurrence,
+    usesProgressiveOptionalSection,
+  ])
 
   // ── Si hay éxito y showSuccessSummary, mostrar summary en lugar del form ──
 
@@ -1353,24 +1723,29 @@ export function TransactionForm({
   }
 
   const amountCurrencyField = (
-    <div className={isCompactLayout ? 'grid grid-cols-[1fr_100px] gap-2' : 'grid grid-cols-[1fr_110px] gap-3'}>
+    <div className={`${isCompactLayout ? 'grid grid-cols-[1fr_100px] gap-2' : 'grid grid-cols-[1fr_110px] gap-3'} ${usesApprovedFormControls ? incomeStyles.incomeAmountCurrency : ''} ${isTransferLayout ? incomeStyles.operationTransferAmountCurrency : ''}`}>
       <FieldWrapper
-        label={layoutMode === 'asset_purchase' ? 'Valor de compra' : 'Monto'}
+        label={layoutMode === 'asset_purchase'
+          ? 'Valor de compra'
+          : isTransferLayout
+            ? 'Monto enviado'
+            : isReceivableIssueLayout
+              ? 'Monto prestado'
+              : isReceivableCollectLayout
+                ? 'Monto que recibirás'
+                : isPayableIssueLayout
+                  ? 'Monto recibido'
+                  : isPayablePayLayout
+                    ? 'Monto a pagar'
+                : 'Monto'}
         required
         error={errors.amount?.message}
       >
-        <AmountInput
-          currency={currency as 'PEN' | 'USD'}
-          error={errors.amount?.message}
-          data-testid="transaction-amount-input"
-          disabled={lockSettlementEdit}
-          {...register('amount', {
+        <Controller
+          control={form.control}
+          name="amount"
+          rules={{
             required: 'El monto es requerido',
-            setValueAs: value => {
-              const parsed = parseNumericInput(value, Number.NaN)
-              if (!Number.isFinite(parsed)) return undefined
-              return roundToDecimals(parsed, 2)
-            },
             validate: {
               positive: v => Number(v) > 0 || 'El monto debe ser mayor a cero',
               twoDecimals: v => {
@@ -1391,39 +1766,87 @@ export function TransactionForm({
                 return n <= selectedCreditCardAvailable || 'El monto supera la línea disponible de la tarjeta'
               },
             },
-          })}
+          }}
+          render={({ field }) => (
+            <AmountInput
+              key={`transaction-amount-${resetVersion}`}
+              currency={currency as 'PEN' | 'USD'}
+              prefixLayout={usesApprovedFormControls ? 'inline' : 'overlay'}
+              error={errors.amount?.message}
+              data-testid="transaction-amount-input"
+              disabled={lockSettlementEdit}
+              name={field.name}
+              ref={field.ref}
+              value={field.value ?? ''}
+              onBlur={field.onBlur}
+              onChange={event => {
+                const parsed = parseNumericInput(event.target.value, Number.NaN)
+                field.onChange(Number.isFinite(parsed) ? roundToDecimals(parsed, 2) : '')
+              }}
+            />
+          )}
         />
       </FieldWrapper>
 
       <FieldWrapper
-        label="Moneda"
-        hint={isExpenseCreditPayment
-          ? 'Puedes registrar consumos de tarjeta en soles o dólares.'
-          : 'Se sincroniza con el portafolio seleccionado.'}
+        label={isTransferLayout
+          ? 'Moneda de origen'
+          : isReceivableCollectLayout || isPayablePayLayout ? 'Moneda de la obligación' : 'Moneda'}
+        hint={usesApprovedFormControls
+          ? undefined
+          : isExpenseCreditPayment
+            ? 'Puedes registrar consumos de tarjeta en soles o dólares.'
+            : 'Se sincroniza con el portafolio seleccionado.'}
       >
-        <Select
-          {...register('currency')}
-          compact
-          data-testid="transaction-currency-select"
-          disabled={lockSettlementEdit || !isExpenseCreditPayment}
-        >
-          <option value="PEN">PEN (S/)</option>
-          <option value="USD">USD ($)</option>
-        </Select>
+        <div className={usesApprovedFormControls ? incomeStyles.incomeCurrencyControl : undefined}>
+          <Select
+            {...register('currency')}
+            value={usesApprovedFormControls ? currency : undefined}
+            compact={!usesApprovedFormControls}
+            matchTriggerWidth={usesApprovedFormControls}
+            data-testid="transaction-currency-select"
+            disabled={lockSettlementEdit || !isExpenseCreditPayment || (isReceivableIssueLayout && receivableHasCollections) || (isPayableIssueLayout && payableHasPayments)}
+          >
+            <option value="PEN">PEN (S/)</option>
+            <option value="USD">USD ($)</option>
+          </Select>
+          {usesApprovedFormControls ? (
+            <IncomeInfoHint label="Ayuda sobre la moneda">
+              {isIncomeLayout
+                ? 'La moneda del ingreso se sincroniza con la cuenta destino seleccionada.'
+                : isExpenseCreditPayment
+                  ? 'Puedes registrar consumos de tarjeta en soles o dólares.'
+                  : isTransferLayout
+                    ? 'La moneda del importe se sincroniza con la cuenta origen. El resumen muestra la moneda de destino cuando son distintas.'
+                    : isAssetPurchaseLayout
+                      ? 'La moneda de la compra se sincroniza con la cuenta de origen seleccionada.'
+                      : isReceivableCollectLayout
+                        ? 'La moneda corresponde al pendiente seleccionado y solo se muestran cuentas compatibles.'
+                        : isReceivableIssueLayout
+                          ? 'La moneda del préstamo se sincroniza con la cuenta de origen seleccionada.'
+                          : isPayableIssueLayout
+                            ? 'La moneda se sincroniza con la cuenta destino seleccionada.'
+                            : isPayablePayLayout
+                              ? 'La moneda corresponde a la obligación seleccionada y solo se muestran cuentas compatibles.'
+                      : 'La moneda del egreso se sincroniza con la cuenta origen seleccionada.'}
+            </IncomeInfoHint>
+          ) : null}
+        </div>
       </FieldWrapper>
     </div>
   )
 
   const exchangeRateField = (
     <div
-      className={`
-        overflow-hidden transition-all duration-300 ease-out
-        ${sections.exchangeRate ? 'max-h-24 opacity-100' : 'max-h-0 opacity-0'}
-      `}
+      className={usesApprovedRatePresentation
+        ? `${incomeStyles.incomeExchangeRate} ${sections.exchangeRate ? incomeStyles.incomeExchangeRateVisible : incomeStyles.incomeExchangeRateHidden}`
+        : `overflow-hidden transition-all duration-300 ease-out ${sections.exchangeRate ? 'max-h-24 opacity-100' : 'max-h-0 opacity-0'}`}
     >
       <FieldWrapper
         label="Tipo de cambio"
-        hint={`1 USD = ${formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN (${refreshingLiveRate ? 'actualizando…' : rateDateLabel})`}
+        hint={safeLiveRate > 0
+          ? `${usesApprovedRatePresentation ? 'Referencia diaria: ' : ''}1 USD = ${formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN (${refreshingLiveRate ? 'actualizando…' : rateDateLabel})`
+          : `No hay una tasa verificada para la fecha seleccionada${refreshingLiveRate ? ' · actualizando…' : ''}. Ingresa el tipo de cambio aplicado.`}
         required
         error={errors.exchange_rate?.message}
       >
@@ -1450,10 +1873,63 @@ export function TransactionForm({
           })}
         />
       </FieldWrapper>
+      {usesApprovedRatePresentation ? (
+        <span className={incomeStyles.exchangeRateHelp}>
+          <IncomeInfoHint label="Ayuda sobre el tipo de cambio">
+            {isAssetPurchaseLayout
+              ? 'La referencia diaria corresponde a la fecha de la operación. Si la cuenta es en dólares, el valor editable del campo es el que se aplica a la compra del activo y puede diferir de esa referencia.'
+              : 'La referencia diaria corresponde a la fecha de la operación. Si la cuenta es en dólares, el valor editable del campo es el que se aplica a la operación y puede diferir de esa referencia.'}
+          </IncomeInfoHint>
+        </span>
+      ) : null}
     </div>
   )
 
-  const equivalenceField = isCompactLayout ? (
+  const usesApprovedEquivalence = isIncomeLayout || layoutMode === 'expense' || isAssetPurchaseLayout || isReceivableLayout || isPayableLayout || (isTransferLayout && !isCrossCurrencyTransfer)
+  const equivalenceField = usesApprovedEquivalence ? (
+    <div className={incomeStyles.incomeEquivalence}>
+      <div className={incomeStyles.incomeEquivalenceHeading}>
+        <span>Equivalencia estimada</span>
+        <IncomeInfoHint label="Ayuda sobre la equivalencia">
+          La equivalencia es informativa y se calcula con el tipo de cambio aplicado a la operación.
+        </IncomeInfoHint>
+      </div>
+      <span className={`${incomeStyles.incomeAppliedRate} ${currency === 'USD' ? incomeStyles.incomeAppliedRateUsd : ''}`}>
+        <span>
+          {currency === 'USD' && hasManualRate
+            ? <>TC aplicado {formatNumber(manualRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN</>
+            : safeLiveRate > 0
+              ? <>TC referencia {formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN</>
+              : 'Tipo de cambio no disponible'}
+          <span
+            className={refreshingLiveRate ? undefined : incomeStyles.incomeRateRefreshingReserved}
+            aria-hidden={!refreshingLiveRate}
+          >
+            {' · actualizando…'}
+          </span>
+        </span>
+        {currency === 'USD' && safeLiveRate > 0 && appliedRate !== null ? (
+          <span
+            className={`${incomeStyles.incomeReferenceRate} ${Math.abs(appliedRate - safeLiveRate) < 0.0005 ? incomeStyles.incomeReferenceRateReserved : ''}`}
+            aria-hidden={Math.abs(appliedRate - safeLiveRate) < 0.0005}
+          >
+            Referencia diaria {formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN
+          </span>
+        ) : null}
+      </span>
+      <div className={incomeStyles.incomeEquivalenceValues} aria-live="polite">
+        <div>
+          <span>En soles</span>
+          <strong>{!hasAmount ? '—' : equivalentPen === null ? 'No disponible' : formatCurrency(equivalentPen, 'PEN')}</strong>
+        </div>
+        <div>
+          <span>En dólares</span>
+          <strong>{!hasAmount ? '—' : equivalentUsd === null ? 'No disponible' : formatCurrency(equivalentUsd, 'USD')}</strong>
+        </div>
+        {!hasAmount ? <span className="sr-only">Ingresa un monto para ver su equivalencia.</span> : null}
+      </div>
+    </div>
+  ) : isCompactLayout ? (
     <div className="flex items-center justify-between gap-2 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-1.5">
       <span className="text-[10px] uppercase tracking-[0.06em] text-[var(--c-text-muted)]">
         Equiv.
@@ -1461,10 +1937,10 @@ export function TransactionForm({
       {hasAmount ? (
         <div className="flex items-center gap-3 text-[11px]">
           <span className="tabular-nums text-[var(--c-primary)] font-semibold">
-            {formatCurrency(equivalentPen, 'PEN')}
+          {equivalentPen === null ? 'No disponible' : formatCurrency(equivalentPen, 'PEN')}
           </span>
           <span className="tabular-nums text-cyan-300 font-semibold">
-            {formatCurrency(equivalentUsd, 'USD')}
+          {equivalentUsd === null ? 'No disponible' : formatCurrency(equivalentUsd, 'USD')}
           </span>
         </div>
       ) : (
@@ -1473,7 +1949,7 @@ export function TransactionForm({
         </span>
       )}
       <span className="text-[9px] text-[var(--c-text-faint)] tabular-nums">
-        TC {formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+        TC {appliedRate !== null && appliedRate > 0 ? formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : 'no disponible'}
       </span>
     </div>
   ) : (
@@ -1483,7 +1959,7 @@ export function TransactionForm({
           Equivalente estimado
         </p>
         <span className="text-[10px] text-[var(--c-text-faint)] tabular-nums">
-          TC {formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN {refreshingLiveRate ? '· actualizando…' : ''}
+          TC {appliedRate !== null && appliedRate > 0 ? `${formatNumber(appliedRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} PEN` : 'no disponible'} {refreshingLiveRate ? '· actualizando…' : ''}
         </span>
       </div>
       {!hasAmount ? (
@@ -1495,13 +1971,13 @@ export function TransactionForm({
           <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
             <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">En soles</p>
             <p className="mt-1 text-[15px] font-bold tabular-nums text-[var(--c-primary)]">
-              {formatCurrency(equivalentPen, 'PEN')}
+          {equivalentPen === null ? 'No disponible' : formatCurrency(equivalentPen, 'PEN')}
             </p>
           </div>
           <div className="rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
             <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">En dólares</p>
             <p className="mt-1 text-[15px] font-bold tabular-nums text-cyan-300">
-              {formatCurrency(equivalentUsd, 'USD')}
+          {equivalentUsd === null ? 'No disponible' : formatCurrency(equivalentUsd, 'USD')}
             </p>
           </div>
         </div>
@@ -1509,45 +1985,79 @@ export function TransactionForm({
     </div>
   )
 
-  const paymentMethodField = type === 'EXPENSE' && operationType !== 'transfer' && operationType !== 'asset_purchase' && operationType !== 'payable_issue' && operationType !== 'receivable_issue' && operationType !== 'receivable_collect' ? (
-    <div className={`rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] ${isCompactLayout ? 'px-3 py-2' : 'px-3.5 py-3'}`}>
-      <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">
-        Forma de pago
-      </p>
-      <div className="mt-1.5 flex flex-wrap gap-1.5">
+  const usesCashCreditPaymentMethod = isReceivableIssueLayout || isAssetPurchaseLayout
+  const usesApprovedPaymentMethod = layoutMode === 'expense' || usesCashCreditPaymentMethod
+  const shouldShowPaymentMethodField = type === 'EXPENSE'
+    && operationType !== 'transfer'
+    && operationType !== 'asset_purchase'
+    && operationType !== 'payable_issue'
+    && !isPayablePayLayout
+    && operationType !== 'receivable_collect'
+    && (isReceivableIssueLayout || operationType !== 'receivable_issue')
+  const showPaymentMethodField = shouldShowPaymentMethodField || isAssetPurchaseLayout
+  const paymentMethodField = showPaymentMethodField ? (
+    <div
+      className={usesApprovedPaymentMethod ? incomeStyles.operationPaymentMethod : `rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] ${isCompactLayout ? 'px-3 py-2' : 'px-3.5 py-3'}`}
+      data-receivable-payment-method={isReceivableIssueLayout ? 'true' : undefined}
+      data-asset-purchase-payment-method={isAssetPurchaseLayout ? 'true' : undefined}
+    >
+      <div className="flex items-center gap-1.5">
+        <p className={usesApprovedPaymentMethod ? incomeStyles.operationPaymentMethodLabel : 'text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]'}>
+          {isReceivableIssueLayout ? 'Forma de salida' : 'Forma de pago'}
+        </p>
+        {usesCashCreditPaymentMethod ? (
+          <IncomeInfoHint label="Ayuda sobre la forma de salida">
+            {isAssetPurchaseLayout
+              ? 'Contado usa una cuenta propia. Crédito registra la compra como consumo en una tarjeta disponible.'
+              : 'Contado usa una cuenta propia. Crédito registra el préstamo como consumo en una tarjeta disponible.'}
+          </IncomeInfoHint>
+        ) : null}
+      </div>
+      <div className={usesApprovedPaymentMethod ? incomeStyles.operationPaymentMethodOptions : 'mt-1.5 flex flex-wrap gap-1.5'}>
         <button
           type="button"
+          aria-pressed={usesApprovedPaymentMethod ? !isExpenseCreditPayment : undefined}
           disabled={lockSettlementEdit}
           onClick={() => {
+            if (usesCashCreditPaymentMethod && isExpenseCreditPayment) {
+              setValue('source_account_id', '' as TransactionFormValues['source_account_id'], { shouldDirty: true, shouldValidate: false })
+            }
             setValue('payment_method', 'DEBIT', { shouldDirty: true, shouldValidate: false })
             setValue('credit_card_id', undefined, { shouldDirty: true, shouldValidate: false })
             setValue('credit_operation', undefined, { shouldDirty: true, shouldValidate: false })
           }}
-          className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+          data-active={usesApprovedPaymentMethod ? (!isExpenseCreditPayment ? 'true' : 'false') : undefined}
+          className={usesApprovedPaymentMethod ? incomeStyles.operationPaymentMethodOption : `rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
             !isExpenseCreditPayment
               ? 'border-[var(--c-primary-border)] bg-[var(--c-primary-soft)] text-[var(--c-primary)]'
               : 'border-[var(--c-border)] bg-[var(--c-surface)] text-[var(--c-text-muted)] hover:text-[var(--c-text)]'
           }`}
         >
-          Cuenta propia
+          {usesCashCreditPaymentMethod ? 'Contado' : 'Cuenta propia'}
         </button>
         <button
           type="button"
+          aria-pressed={usesApprovedPaymentMethod ? isExpenseCreditPayment : undefined}
           disabled={lockSettlementEdit}
           onClick={() => {
+            if (usesCashCreditPaymentMethod && !isExpenseCreditPayment) {
+              setValue('source_account_id', '' as TransactionFormValues['source_account_id'], { shouldDirty: true, shouldValidate: false })
+              setValue('credit_card_id', undefined, { shouldDirty: true, shouldValidate: false })
+            }
             setValue('payment_method', 'CREDIT', { shouldDirty: true, shouldValidate: false })
             setValue('credit_operation', 'CONSUMPTION', { shouldDirty: true, shouldValidate: false })
           }}
-          className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+          data-active={usesApprovedPaymentMethod ? (isExpenseCreditPayment ? 'true' : 'false') : undefined}
+          className={usesApprovedPaymentMethod ? incomeStyles.operationPaymentMethodOption : `rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
             isExpenseCreditPayment
               ? 'border-sky-400/35 bg-sky-500/15 text-sky-300'
               : 'border-[var(--c-border)] bg-[var(--c-surface)] text-[var(--c-text-muted)] hover:text-[var(--c-text)]'
           }`}
         >
-          Tarjeta
+          {usesCashCreditPaymentMethod ? 'Crédito' : 'Tarjeta'}
         </button>
       </div>
-      {!isCompactLayout && (
+      {!isCompactLayout && !isReceivableIssueLayout && (
         isExpenseCreditPayment ? (
           <p className="mt-2 text-[11px] text-sky-200/80">
             Registra un consumo: aumenta la deuda usada de la tarjeta y no descuenta liquidez propia hoy.
@@ -1571,6 +2081,7 @@ export function TransactionForm({
         <Select
           placeholder="Cuenta origen…"
           error={errors.source_account_id?.message}
+          matchTriggerWidth={isStageALayout}
           data-testid="transaction-source-account-select"
           disabled={lockSettlementEdit}
           {...register('source_account_id', { required: 'La cuenta origen es requerida' })}
@@ -1599,6 +2110,7 @@ export function TransactionForm({
         <Select
           placeholder="Cuenta destino…"
           error={(errors as Record<string, { message?: string }>).destination_account_id?.message}
+          matchTriggerWidth={isStageALayout}
           data-testid="transaction-destination-account-select"
           disabled={lockSettlementEdit}
           {...register('destination_account_id', {
@@ -1606,8 +2118,8 @@ export function TransactionForm({
             validate: v => v !== sourceAccountId || 'No puede ser la misma cuenta',
           })}
         >
-          {destinationAccounts.map(a => (
-            <option key={a.value} value={a.value}>{a.label}</option>
+          {transferDestinationAccounts.map(a => (
+            <option key={a.value} value={a.value} disabled={a.disabled}>{a.label}</option>
           ))}
         </Select>
       </FieldWrapper>
@@ -1615,7 +2127,7 @@ export function TransactionForm({
   ) : null
 
   const accountField = operationType !== 'transfer' ? (
-    <div className={`grid gap-3 ${sections.destinationAccount ? 'grid-cols-2' : 'grid-cols-1'}`}>
+    <div className={`grid min-w-0 gap-3 ${sections.destinationAccount && !isReceivableCreate ? 'grid-cols-2' : 'grid-cols-1'}`}>
       {isExpenseCreditPayment ? (
         <FieldWrapper
           label="Tarjeta de crédito"
@@ -1625,6 +2137,7 @@ export function TransactionForm({
           <Select
             placeholder="Seleccionar tarjeta…"
             error={errors.credit_card_id?.message || errors.source_account_id?.message}
+            matchTriggerWidth={isStageALayout || isReceivableIssueLayout || isAssetPurchaseLayout}
             data-testid="transaction-credit-card-select"
             value={selectedCreditCardId ?? ''}
             disabled={lockSettlementEdit}
@@ -1674,6 +2187,8 @@ export function TransactionForm({
           <Select
             placeholder="Seleccionar cuenta…"
             error={errors.source_account_id?.message}
+            matchTriggerWidth={usesApprovedFormControls}
+            value={usesApprovedFormControls ? sourceAccountId ?? '' : undefined}
             data-testid="transaction-source-account-select"
             disabled={lockSettlementEdit}
             {...register('source_account_id', { required: 'La cuenta es requerida' })}
@@ -1707,7 +2222,7 @@ export function TransactionForm({
         </FieldWrapper>
       )}
 
-      <div className={`
+      {!isReceivableCreate ? <div className={`
         overflow-hidden transition-all duration-300 ease-out
         ${sections.destinationAccount ? 'max-h-24 opacity-100' : 'max-h-0 opacity-0 w-0'}
       `}>
@@ -1734,12 +2249,12 @@ export function TransactionForm({
             ))}
           </Select>
         </FieldWrapper>
-      </div>
+      </div> : null}
     </div>
   ) : null
 
   const creditCardImpactField = creditMovementKind && activeCreditCardOption ? (
-    <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3.5 py-3">
+    <div className={`${isTransferLayout ? incomeStyles.operationTransferCreditImpact : isReceivableIssueLayout ? incomeStyles.operationReceivableCreditImpact : isAssetPurchaseLayout ? incomeStyles.operationAssetPurchaseCreditImpact : ''} rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3.5 py-3`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
@@ -1905,26 +2420,13 @@ export function TransactionForm({
                     <div className="rounded-lg bg-[var(--c-surface)] px-2.5 py-2">
                       <p className="text-[9px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">TC del sistema</p>
                       <p className="mt-0.5 text-[14px] font-bold tabular-nums text-[var(--c-text-muted)]">
-                        {formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                        {safeLiveRate > 0 ? formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : 'No disponible'}
                       </p>
                     </div>
                   </div>
-                  <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-[11px] leading-[1.5] ${
-                    Math.abs(crossRateDiffPercent) <= 1
-                      ? 'bg-emerald-500/10 text-emerald-300'
-                      : Math.abs(crossRateDiffPercent) <= 3
-                        ? 'bg-amber-500/10 text-amber-300'
-                        : 'bg-red-500/10 text-red-300'
-                  }`}>
+                  <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-[11px] leading-[1.5] ${crossRateComparisonClass}`}>
                     <span className="mt-px shrink-0">ℹ️</span>
-                    <span>
-                      {Math.abs(crossRateDiffPercent) <= 0.5
-                        ? 'El tipo de cambio implícito es muy similar al del sistema. Sin observaciones.'
-                        : crossRateDiffPercent > 0
-                          ? `Tu TC implícito (${formatNumber(implicitCrossRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}) está ${formatNumber(Math.abs(crossRateDiffPercent), { maximumFractionDigits: 1 })}% por encima del TC del sistema.${Math.abs(crossRateDiffPercent) > 3 ? ' Verifica los montos.' : ' Solo informativo.'}`
-                          : `Tu TC implícito (${formatNumber(implicitCrossRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}) está ${formatNumber(Math.abs(crossRateDiffPercent), { maximumFractionDigits: 1 })}% por debajo del TC del sistema.${Math.abs(crossRateDiffPercent) > 3 ? ' Verifica los montos.' : ' Solo informativo.'}`
-                      }
-                    </span>
+                    <span>{crossRateComparisonMessage}</span>
                   </div>
                 </div>
               )}
@@ -2003,7 +2505,7 @@ export function TransactionForm({
 
   const transferSummaryField = layoutMode === 'transfer' ? (
     <>
-    <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3.5 py-3">
+    <div className={`${isTransferLayout ? incomeStyles.operationTransferSummary : ''} rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3.5 py-3`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
@@ -2031,42 +2533,45 @@ export function TransactionForm({
 
       {/* ── Sección cambio de moneda (cross-currency) ─────────────────────── */}
       {isCrossCurrencyTransfer && (
-        <div className="rounded-xl border border-dashed border-amber-500/30 bg-amber-500/[0.04] px-3.5 py-3">
+        <section className={isTransferLayout ? incomeStyles.operationTransferFx : 'rounded-xl border border-dashed border-amber-500/30 bg-amber-500/[0.04] px-3.5 py-3'} aria-label="Cambio de moneda">
           <div className="flex items-center gap-2">
-            <div className="flex h-5 w-5 items-center justify-center rounded-md bg-amber-500/15 text-[11px]">
+            <div className={isTransferLayout ? incomeStyles.operationTransferFxIcon : 'flex h-5 w-5 items-center justify-center rounded-md bg-amber-500/15 text-[11px]'} aria-hidden="true">
               ⇄
             </div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-amber-400/90">
-              Cambio de moneda
+            <p className={isTransferLayout ? incomeStyles.operationTransferFxHeading : 'text-[10px] font-semibold uppercase tracking-[0.08em] text-amber-400/90'}>
+              Conversión entre cuentas
             </p>
           </div>
-          <p className="mt-1.5 text-[11px] leading-[1.5] text-[var(--c-text-muted)]">
-            Ingresa cuánto sale de la cuenta origen y cuánto ingresa en la cuenta destino para calcular el tipo de cambio implícito.
+          <p className={isTransferLayout ? incomeStyles.operationTransferFxIntro : 'mt-1.5 text-[11px] leading-[1.5] text-[var(--c-text-muted)]'}>
+            {isEditMode
+              ? 'El importe de destino original no está disponible en los datos de edición; se conserva la información financiera soportada por el registro.'
+              : 'Ingresa el importe que recibirás. El tipo de cambio implícito se calcula con ambos importes.'}
           </p>
 
-          <div className="mt-3 grid grid-cols-2 gap-2.5">
+          {!isEditMode ? <div className={isTransferLayout ? incomeStyles.operationTransferFxAmounts : 'mt-3 grid grid-cols-2 gap-2.5'}>
             <div>
-              <p className="mb-1 text-[10px] font-medium text-[var(--c-text-faint)]">
-                Sale ({sourceAccountCurrency})
+              <p className={isTransferLayout ? incomeStyles.operationTransferFxLabel : 'mb-1 text-[10px] font-medium text-[var(--c-text-faint)]'}>
+                {`Sale · monto enviado (${sourceAccountCurrency})`}
               </p>
-              <div className="flex items-center gap-1.5 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-1.5">
-                <span className="text-[11px] text-[var(--c-text-faint)]">
+              <div className={isTransferLayout ? incomeStyles.operationTransferFxOutput : 'flex items-center gap-1.5 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-2.5 py-1.5'}>
+                <span className={isTransferLayout ? incomeStyles.operationTransferFxCurrency : 'text-[11px] text-[var(--c-text-faint)]'}>
                   {sourceAccountCurrency === 'PEN' ? 'S/' : '$'}
                 </span>
-                <span className="text-[13px] font-semibold tabular-nums text-[var(--c-text)]">
+                <span className={isTransferLayout ? incomeStyles.operationTransferFxValue : 'text-[13px] font-semibold tabular-nums text-[var(--c-text)]'}>
                   {hasAmount ? formatNumber(numericAmount, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
                 </span>
               </div>
             </div>
             <div>
-              <p className="mb-1 text-[10px] font-medium text-[var(--c-text-faint)]">
-                Ingresa ({destinationAccountCurrency})
-              </p>
-              <div className="flex items-center gap-1.5 rounded-lg border border-[var(--c-primary-border)] bg-[var(--c-surface-2)] px-2.5 py-0">
-                <span className="text-[11px] text-[var(--c-text-faint)]">
+              <label className={isTransferLayout ? incomeStyles.operationTransferFxLabel : 'mb-1 text-[10px] font-medium text-[var(--c-text-faint)]'} htmlFor="transfer-destination-amount">
+                {`Recibe · importe editable (${destinationAccountCurrency})`}
+              </label>
+              <div className={isTransferLayout ? incomeStyles.operationTransferFxInput : 'flex items-center gap-1.5 rounded-lg border border-[var(--c-primary-border)] bg-[var(--c-surface-2)] px-2.5 py-0'}>
+                <span className={isTransferLayout ? incomeStyles.operationTransferFxCurrency : 'text-[11px] text-[var(--c-text-faint)]'}>
                   {destinationAccountCurrency === 'PEN' ? 'S/' : '$'}
                 </span>
                 <input
+                  id="transfer-destination-amount"
                   type="number"
                   inputMode="decimal"
                   step="0.01"
@@ -2074,54 +2579,42 @@ export function TransactionForm({
                   placeholder="0.00"
                   value={crossCurrencyDestAmount}
                   onChange={e => setCrossCurrencyDestAmount(e.target.value)}
-                  className="w-full bg-transparent py-1.5 text-[13px] font-semibold tabular-nums text-[var(--c-text)] outline-none placeholder:text-[var(--c-text-faint)]/40"
+                  aria-label={`Importe recibido en ${destinationAccountCurrency}`}
+                  className={isTransferLayout ? incomeStyles.operationTransferFxInputValue : 'w-full bg-transparent py-1.5 text-[13px] font-semibold tabular-nums text-[var(--c-text)] outline-none placeholder:text-[var(--c-text-faint)]/40'}
                 />
               </div>
             </div>
-          </div>
+          </div> : null}
 
           {hasAmount && hasCrossDestAmount && (
-            <div className="mt-3 space-y-2">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-lg bg-[var(--c-surface)] px-2.5 py-2">
-                  <p className="text-[9px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">TC implícito</p>
+            <div className={isTransferLayout ? incomeStyles.operationTransferFxRates : 'mt-3 space-y-2'}>
+              <div className={isTransferLayout ? incomeStyles.operationTransferFxRateGrid : 'grid grid-cols-2 gap-2'}>
+                <div className={isTransferLayout ? incomeStyles.operationTransferFxRate : 'rounded-lg bg-[var(--c-surface)] px-2.5 py-2'}>
+                  <p className="text-[9px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">TC implícito · calculado</p>
                   <p className="mt-0.5 text-[14px] font-bold tabular-nums text-[var(--c-text)]">
                     {formatNumber(implicitCrossRate, { minimumFractionDigits: 3, maximumFractionDigits: 4 })}
                   </p>
                 </div>
-                <div className="rounded-lg bg-[var(--c-surface)] px-2.5 py-2">
-                  <p className="text-[9px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">TC del sistema</p>
+                <div className={isTransferLayout ? incomeStyles.operationTransferFxRate : 'rounded-lg bg-[var(--c-surface)] px-2.5 py-2'}>
+                  <p className="text-[9px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">TC del sistema · referencia</p>
                   <p className="mt-0.5 text-[14px] font-bold tabular-nums text-[var(--c-text-muted)]">
-                    {formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                    {safeLiveRate > 0 ? formatNumber(safeLiveRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : 'No disponible'}
                   </p>
                 </div>
               </div>
 
-              <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-[11px] leading-[1.5] ${
-                Math.abs(crossRateDiffPercent) <= 1
-                  ? 'bg-emerald-500/10 text-emerald-300'
-                  : Math.abs(crossRateDiffPercent) <= 3
-                    ? 'bg-amber-500/10 text-amber-300'
-                    : 'bg-red-500/10 text-red-300'
-              }`}>
+              <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-[11px] leading-[1.5] ${crossRateComparisonClass}`}>
                 <span className="mt-px shrink-0">ℹ️</span>
-                <span>
-                  {Math.abs(crossRateDiffPercent) <= 0.5
-                    ? 'El tipo de cambio implícito es muy similar al del sistema. Sin observaciones.'
-                    : crossRateDiffPercent > 0
-                      ? `Tu TC implícito (${formatNumber(implicitCrossRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}) está ${formatNumber(Math.abs(crossRateDiffPercent), { maximumFractionDigits: 1 })}% por encima del TC del sistema.${Math.abs(crossRateDiffPercent) > 3 ? ' Verifica los montos ingresados.' : ' Solo informativo.'}`
-                      : `Tu TC implícito (${formatNumber(implicitCrossRate, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}) está ${formatNumber(Math.abs(crossRateDiffPercent), { maximumFractionDigits: 1 })}% por debajo del TC del sistema.${Math.abs(crossRateDiffPercent) > 3 ? ' Verifica los montos ingresados.' : ' Solo informativo.'}`
-                  }
-                </span>
+                <span>{crossRateComparisonMessage}</span>
               </div>
             </div>
           )}
-        </div>
+        </section>
       )}
     </>
   ) : null
 
-  const categoryField = operationType !== 'transfer' && type !== 'TRANSFER' && operationType !== 'asset_purchase' && operationType !== 'payable_issue' && operationType !== 'payable_pay' && operationType !== 'receivable_issue' && operationType !== 'receivable_collect' ? (
+  const categoryField = operationType !== 'transfer' && type !== 'TRANSFER' && (operationType !== 'asset_purchase' || isAssetPurchaseLayout) && operationType !== 'payable_issue' && operationType !== 'payable_pay' && operationType !== 'receivable_issue' && operationType !== 'receivable_collect' ? (
     <FieldWrapper
       label="Categoría"
       required
@@ -2129,8 +2622,9 @@ export function TransactionForm({
       className=""
     >
       <Select
-        placeholder="Sin categoría"
+        placeholder={isAssetPurchaseLayout ? 'Seleccionar categoría...' : 'Sin categoría'}
         data-testid="transaction-category-select"
+        matchTriggerWidth={usesApprovedFormControls}
         {...register('category_id', {
           required: 'La categoría es requerida',
           validate: value => !!value || 'La categoría es requerida',
@@ -2169,7 +2663,7 @@ export function TransactionForm({
         </button>
       </div>
 
-      {type === 'EXPENSE' && !hideTypeSelector && (
+      {type === 'EXPENSE' && operationType !== 'asset_purchase' && !hideTypeSelector && (
         <div className="mt-3 space-y-1.5">
           <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">
             Relacionar egreso con
@@ -2207,7 +2701,7 @@ export function TransactionForm({
         </div>
       )}
 
-      {type === 'INCOME' && !hideTypeSelector && (
+      {type === 'INCOME' && operationType !== 'asset_purchase' && !hideTypeSelector && (
         <div className="mt-3 space-y-1.5">
           <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-muted)]">
             Relacionar ingreso con
@@ -2242,7 +2736,7 @@ export function TransactionForm({
         </div>
       )}
 
-      {!isEditMode && sections.assetModule && (
+      {!isEditMode && operationType !== 'asset_purchase' && sections.assetModule && (
         <div className="mt-2">
           <ModuleTriggerHint
             moduleName="Módulo de activo activado"
@@ -2251,7 +2745,7 @@ export function TransactionForm({
           />
         </div>
       )}
-      {!isEditMode && sections.receivableModule && (
+      {!isEditMode && operationType !== 'asset_purchase' && sections.receivableModule && (
         <div className="mt-2">
           <ModuleTriggerHint
             moduleName="Cuenta por cobrar"
@@ -2260,7 +2754,7 @@ export function TransactionForm({
           />
         </div>
       )}
-      {!isEditMode && sections.payableModule && (
+      {!isEditMode && operationType !== 'asset_purchase' && sections.payableModule && (
         <div className="mt-2">
           <ModuleTriggerHint
             moduleName="Cuenta por pagar"
@@ -2273,22 +2767,24 @@ export function TransactionForm({
   ) : null
 
   const assetPurchaseField = operationType === 'asset_purchase' ? (
-    <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-3.5">
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-            Activo
-          </p>
-          <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">
-            Define primero el activo y usa el mismo monto de la transacción como valor de compra.
-          </p>
+    <div className={isAssetPurchaseLayout ? incomeStyles.assetPurchaseDetails : 'rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-3.5'}>
+      {!isAssetPurchaseLayout ? (
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+              Activo
+            </p>
+            <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">
+              Define primero el activo y usa el mismo monto de la transacción como valor de compra.
+            </p>
+          </div>
+          <StatusBadge tone="primary" dot={false}>
+            Mismo monto
+          </StatusBadge>
         </div>
-        <StatusBadge tone="primary" dot={false}>
-          Mismo monto
-        </StatusBadge>
-      </div>
+      ) : null}
 
-      <div className="grid gap-3 md:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+      <div className={isAssetPurchaseLayout ? incomeStyles.assetPurchaseFields : 'grid gap-3 md:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]'}>
         <input
           type="hidden"
           {...register('asset_type_id', { required: 'Selecciona el tipo de activo' })}
@@ -2350,7 +2846,7 @@ export function TransactionForm({
         </FieldWrapper>
       </div>
 
-      {selectedAssetTypeOption ? (
+      {!isAssetPurchaseLayout && selectedAssetTypeOption ? (
         <div className="mt-3 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
           <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
             Tipo seleccionado
@@ -2361,53 +2857,911 @@ export function TransactionForm({
         </div>
       ) : null}
 
-      <div className="mt-3 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
-        <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-          Valor del activo
-        </p>
-        <p className="mt-1 text-[15px] font-semibold tabular-nums text-[var(--c-text)]">
-          {hasAmount ? formatCurrency(numericAmount, currency as 'PEN' | 'USD') : 'Ingresa el monto para fijar el valor'}
-        </p>
-      </div>
+      {isAssetPurchaseLayout ? (
+        <div className={incomeStyles.assetPurchaseValue}>
+          <span>Valor del activo · mismo importe de compra</span>
+          <strong>
+            {hasAmount ? formatCurrency(numericAmount, currency as 'PEN' | 'USD') : 'Se completa con el monto'}
+          </strong>
+        </div>
+      ) : (
+        <div className="mt-3 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
+          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
+            Valor del activo
+          </p>
+          <p className="mt-1 text-[15px] font-semibold tabular-nums text-[var(--c-text)]">
+            {hasAmount ? formatCurrency(numericAmount, currency as 'PEN' | 'USD') : 'Ingresa el monto para fijar el valor'}
+          </p>
+        </div>
+      )}
     </div>
   ) : null
 
-  const dateDescriptionField = (
-    <div className="grid grid-cols-1 gap-3">
-      <FieldWrapper label="Fecha" required error={errors.transaction_date?.message}>
-        <Input
-          type="date"
-          className="w-full"
-          error={errors.transaction_date?.message}
-          data-testid="transaction-date-input"
-          {...register('transaction_date', { required: 'La fecha es requerida' })}
-        />
-      </FieldWrapper>
+  const transactionDateField = usesApprovedDatePicker ? (
+    <FieldWrapper label="Fecha" required error={errors.transaction_date?.message}>
+      <input type="hidden" {...register('transaction_date', { required: 'La fecha es requerida' })} />
+      <IncomeDatePicker
+        value={transactionDate ?? ''}
+        error={errors.transaction_date?.message}
+        onChange={nextDate => {
+          setValue('transaction_date', nextDate, { shouldDirty: true, shouldValidate: Boolean(nextDate) })
+          if (nextDate) clearErrors('transaction_date')
+        }}
+        onInvalidInput={message => {
+          if (message) setError('transaction_date', { type: 'validate', message })
+          else clearErrors('transaction_date')
+        }}
+      />
+    </FieldWrapper>
+  ) : (
+    <FieldWrapper label="Fecha" required error={errors.transaction_date?.message}>
+      <Input
+        type="date"
+        className="w-full"
+        error={errors.transaction_date?.message}
+        data-testid="transaction-date-input"
+        {...register('transaction_date', { required: 'La fecha es requerida' })}
+      />
+    </FieldWrapper>
+  )
 
-      <FieldWrapper
-        label="Descripción"
-        optional={layoutMode === 'transfer'}
-        required={layoutMode !== 'transfer'}
-        hint={layoutMode === 'transfer' && !isEditMode ? 'Se completa automáticamente según las cuentas elegidas.' : undefined}
+  const receivableDueField = isReceivableIssueLayout ? (
+    <FieldWrapper label="Vencimiento" optional error={errors.receivable_due?.message}>
+      <input type="hidden" {...register('receivable_due')} />
+      <IncomeDatePicker
+        value={watch('receivable_due') ?? ''}
+        error={errors.receivable_due?.message}
+        inputLabel="Fecha de vencimiento, día, mes y año"
+        inputTestId="transaction-receivable-due-input"
+        onChange={nextDate => {
+          setValue('receivable_due', nextDate || undefined, { shouldDirty: true, shouldValidate: true })
+          if (nextDate) clearErrors('receivable_due')
+        }}
+        onInvalidInput={message => {
+          if (message) setError('receivable_due', { type: 'validate', message })
+          else clearErrors('receivable_due')
+        }}
+      />
+    </FieldWrapper>
+  ) : null
+
+  const payableDueField = isPayableIssueLayout ? (
+    <FieldWrapper label="Vencimiento" optional error={errors.payable_due?.message}>
+      <input type="hidden" {...register('payable_due')} />
+      <IncomeDatePicker
+        value={watch('payable_due') ?? ''}
+        error={errors.payable_due?.message}
+        inputLabel="Fecha de vencimiento de la obligación"
+        inputTestId="transaction-payable-due-input"
+        onChange={nextDate => {
+          setValue('payable_due', nextDate || undefined, { shouldDirty: true, shouldValidate: true })
+          if (nextDate) clearErrors('payable_due')
+        }}
+        onInvalidInput={message => {
+          if (message) setError('payable_due', { type: 'validate', message })
+          else clearErrors('payable_due')
+        }}
+      />
+    </FieldWrapper>
+  ) : null
+
+  const descriptionField = (
+    <FieldWrapper
+      label="Descripción"
+      optional={layoutMode === 'transfer'}
+      required={layoutMode !== 'transfer'}
+      hint={layoutMode === 'transfer' && !isEditMode ? 'Se completa automáticamente según las cuentas elegidas.' : undefined}
+      error={errors.description?.message}
+    >
+      <Input
+        type="text"
+        placeholder={descriptionPlaceholder}
         error={errors.description?.message}
-      >
-        <Input
-          type="text"
-          placeholder={descriptionPlaceholder}
-          error={errors.description?.message}
-          data-testid="transaction-description-input"
-          readOnly={layoutMode === 'transfer' && !isEditMode}
-          {...register('description', {
-            maxLength: { value: 255, message: 'Máximo 255 caracteres' },
-            validate: v =>
-              type === 'TRANSFER' || v.trim().length > 0 || 'La descripción no puede estar vacía',
-          })}
-        />
-      </FieldWrapper>
+        data-testid="transaction-description-input"
+        readOnly={layoutMode === 'transfer' && !isEditMode}
+        {...register('description', {
+          maxLength: { value: 255, message: 'Máximo 255 caracteres' },
+          validate: v =>
+            type === 'TRANSFER' || v.trim().length > 0 || 'La descripción no puede estar vacía',
+        })}
+      />
+    </FieldWrapper>
+  )
+
+  const dateDescriptionField = (
+    <div className={`grid grid-cols-1 gap-3 ${isTransferLayout ? incomeStyles.operationTransferDateDescription : ''}`}>
+      {transactionDateField}
+      {descriptionField}
     </div>
   )
 
+  const stageAOptionalItems = isStageALayout ? (
+    layoutMode === 'expense' ? ([
+      { key: 'recipient' as const, label: 'Destinatario', hasValue: Boolean(watch('recipient')?.trim()), hasError: Boolean(errors.recipient?.message) },
+      { key: 'budget' as const, label: 'Presupuesto', hasValue: Boolean(watch('budget_id')), hasError: Boolean(errors.budget_id?.message) },
+      { key: 'notes' as const, label: 'Notas', hasValue: Boolean(watch('notes')?.trim()), hasError: Boolean(errors.notes?.message) },
+      { key: 'recurrence' as const, label: 'Recurrencia', hasValue: Boolean(watch('is_recurring') || watch('recurring_name')?.trim()), hasError: Boolean(errors.recurring_name?.message) },
+      { key: 'receipt' as const, label: 'Comprobante', hasValue: Boolean(attachmentFile || lastUploadedAttachment || (isEditMode && editContext?.hasExistingAttachment)), hasError: Boolean(attachmentError) },
+    ]) : ([
+      { key: 'notes' as const, label: 'Notas', hasValue: Boolean(watch('notes')?.trim()), hasError: Boolean(errors.notes?.message) },
+      { key: 'receipt' as const, label: 'Comprobante', hasValue: Boolean(attachmentFile || lastUploadedAttachment || (isEditMode && editContext?.hasExistingAttachment)), hasError: Boolean(attachmentError) },
+    ])
+  ) : []
+
+  const assetOptionalItems = isAssetPurchaseLayout ? [
+    {
+      key: 'identification' as const,
+      label: 'Identificación del activo',
+      hasValue: Boolean(watch('asset_serial')?.trim() || watch('asset_location')?.trim()),
+      hasError: Boolean(errors.asset_serial?.message || errors.asset_location?.message),
+    },
+    { key: 'supplier' as const, label: 'Proveedor', hasValue: Boolean(watch('recipient')?.trim()), hasError: Boolean(errors.recipient?.message) },
+    { key: 'notes' as const, label: 'Notas', hasValue: Boolean(watch('notes')?.trim()), hasError: Boolean(errors.notes?.message) },
+    { key: 'receipt' as const, label: 'Comprobante', hasValue: Boolean(attachmentFile || lastUploadedAttachment || (isEditMode && editContext?.hasExistingAttachment)), hasError: Boolean(attachmentError) },
+  ] : []
+
+  const receivableOptionalItems = isReceivableLayout ? [
+    { key: 'notes' as const, label: 'Notas', hasValue: Boolean(watch('notes')?.trim()), hasError: Boolean(errors.notes?.message) },
+    ...(isReceivableIssueLayout
+      ? [{ key: 'recurrence' as const, label: 'Recurrencia', hasValue: Boolean(watch('is_recurring') || watch('recurring_name')?.trim()), hasError: Boolean(errors.recurring_name?.message) }]
+      : []),
+    { key: 'receipt' as const, label: 'Comprobante', hasValue: Boolean(attachmentFile || lastUploadedAttachment || (isEditMode && editContext?.hasExistingAttachment)), hasError: Boolean(attachmentError) },
+  ] : []
+  const payableOptionalItems = isPayableLayout ? [
+    { key: 'notes' as const, label: 'Notas', hasValue: Boolean(watch('notes')?.trim()), hasError: Boolean(errors.notes?.message) },
+    ...(isPayableIssueLayout
+      ? [{ key: 'recurrence' as const, label: 'Recurrencia', hasValue: Boolean(watch('is_recurring') || watch('recurring_name')?.trim()), hasError: Boolean(errors.recurring_name?.message) }]
+      : []),
+    { key: 'receipt' as const, label: 'Comprobante', hasValue: Boolean(attachmentFile || lastUploadedAttachment || (isEditMode && editContext?.hasExistingAttachment)), hasError: Boolean(attachmentError) },
+  ] : []
+  const obligationOptionalItems = isReceivableLayout ? receivableOptionalItems : payableOptionalItems
+
   const progressiveOptionalField = usesProgressiveOptionalSection ? (
+    isIncomeLayout ? (
+      <section className={incomeStyles.incomeOptionalSection} aria-label="Información adicional">
+        <div className={incomeStyles.incomeOptionsHeader}>
+          <div>
+            <h3 className={incomeStyles.incomeSectionHeading}>Información adicional</h3>
+            <p className={incomeStyles.incomeOptionsDescription}>Opcional · agrega contexto cuando lo necesites</p>
+          </div>
+          {hasOptionalSectionError || attachmentError ? (
+            <span className={incomeStyles.incomeReviewBadge}>Revisar</span>
+          ) : null}
+        </div>
+
+        <div className={incomeStyles.incomeOptionControls} role="group" aria-label="Opciones de ingreso">
+          {([
+            { key: 'sender', label: 'Remitente', hasValue: Boolean(watch('sender')?.trim()), hasError: Boolean(errors.sender?.message) },
+            { key: 'notes', label: 'Notas', hasValue: Boolean(watch('notes')?.trim()), hasError: Boolean(errors.notes?.message) },
+            { key: 'recurrence', label: 'Recurrencia', hasValue: Boolean(watch('is_recurring') || watch('recurring_name')?.trim()), hasError: Boolean(errors.recurring_name?.message) },
+            { key: 'receipt', label: 'Comprobante', hasValue: Boolean(attachmentFile || lastUploadedAttachment || (isEditMode && editContext?.hasExistingAttachment)), hasError: Boolean(attachmentError) },
+          ] as const).map(option => {
+            const isOpen = incomeAdditionalOptionsOpen[option.key] || option.hasError
+            const panelId = `${incomeOptionsId}-${option.key}`
+            return (
+              <button
+                key={option.key}
+                type="button"
+                aria-expanded={isOpen}
+                aria-controls={panelId}
+                data-active={isOpen ? 'true' : 'false'}
+                data-has-value={option.hasValue ? 'true' : 'false'}
+                data-has-error={option.hasError ? 'true' : 'false'}
+                className={incomeStyles.incomeOptionButton}
+                onClick={() => setIncomeAdditionalOptionsOpen(current => ({
+                  ...current,
+                  [option.key]: !current[option.key],
+                }))}
+              >
+                <span aria-hidden="true" className={incomeStyles.incomeOptionMark}>{isOpen ? '−' : '+'}</span>
+                <span>{option.label}</span>
+                {option.hasError ? <span className={incomeStyles.incomeOptionError}>Revisar</span> : null}
+              </button>
+            )
+          })}
+        </div>
+
+        <div className={incomeStyles.incomeOptionPanels}>
+          <div
+            id={`${incomeOptionsId}-sender`}
+            data-income-option="sender"
+            hidden={!incomeAdditionalOptionsOpen.sender && !errors.sender?.message}
+            className={incomeStyles.incomeOptionPanel}
+          >
+              <FieldWrapper label="Remitente" optional>
+                <Input
+                  type="text"
+                  placeholder="Ej: ACME SAC"
+                  data-testid="transaction-sender-input"
+                  disabled={lockSettlementEdit}
+                  {...register('sender')}
+                />
+              </FieldWrapper>
+          </div>
+
+          <div
+            id={`${incomeOptionsId}-notes`}
+            data-income-option="notes"
+            hidden={!incomeAdditionalOptionsOpen.notes && !errors.notes?.message}
+            className={incomeStyles.incomeOptionPanel}
+          >
+              <FieldWrapper label="Notas" optional>
+                <Textarea
+                  rows={2}
+                  placeholder="Ej: Factura F001-238"
+                  data-testid="transaction-notes-input"
+                  disabled={lockSettlementEdit}
+                  {...register('notes')}
+                />
+              </FieldWrapper>
+          </div>
+
+          <div
+            id={`${incomeOptionsId}-recurrence`}
+            data-income-option="recurrence"
+            hidden={!incomeAdditionalOptionsOpen.recurrence && !errors.recurring_name?.message}
+            className={incomeStyles.incomeOptionPanel}
+          >
+              {isEditMode ? (
+                <p className={incomeStyles.incomeAttachmentHint}>
+                  {watch('is_recurring')
+                    ? 'Movimiento marcado como recurrente. La plantilla y su nombre se administran desde Recurrentes.'
+                    : 'Este movimiento no está marcado como recurrente.'}
+                </p>
+              ) : (
+                <CheckboxToggle
+                  label="Transacción recurrente"
+                  description="Guarda esta configuración como plantilla reutilizable."
+                  checked={!!watch('is_recurring')}
+                  onChange={value => {
+                    setValue('is_recurring', value)
+                    if (value) setIncomeAdditionalOptionsOpen(current => ({ ...current, recurrence: true }))
+                  }}
+                />
+              )}
+              {watch('is_recurring') && !isEditMode ? (
+                <div className={incomeStyles.incomeRecurringName}>
+                  <FieldWrapper
+                    label="Nombre de la recurrente"
+                    required
+                    error={errors.recurring_name?.message}
+                    hint="Será el nombre visible dentro del módulo de recurrentes."
+                  >
+                    <Input
+                      type="text"
+                      placeholder="Ej. Ingreso recurrente por cliente"
+                      data-testid="transaction-recurring-name-input"
+                      error={errors.recurring_name?.message}
+                      {...register('recurring_name', {
+                        maxLength: { value: 150, message: 'Máximo 150 caracteres' },
+                        validate: value =>
+                          !watch('is_recurring') || (value ?? '').trim().length > 0 || 'Ingresa un nombre para la plantilla recurrente',
+                      })}
+                    />
+                  </FieldWrapper>
+                </div>
+              ) : null}
+          </div>
+
+          <div
+            id={`${incomeOptionsId}-receipt`}
+            data-income-option="receipt"
+            hidden={!incomeAdditionalOptionsOpen.receipt && !attachmentError && !attachmentUploading && !(isEditMode && editContext?.hasExistingAttachment)}
+            className={incomeStyles.incomeAttachmentPanel}
+          >
+              {!isEditMode ? (
+                <>
+                  <label className={incomeStyles.incomeAttachmentAction}>
+                    <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
+                      <path d="M7.5 10.8 12.9 5.4a2.5 2.5 0 0 1 3.5 3.5L9.6 15.7a4 4 0 0 1-5.7-5.7l7.2-7.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                    <span>{attachmentFile || lastUploadedAttachment ? 'Reemplazar comprobante' : 'Adjuntar comprobante'}</span>
+                    <input
+                      ref={incomeAttachmentInputRef}
+                      type="file"
+                      accept={ATTACHMENT_ACCEPT}
+                      data-testid="transaction-attachment-input"
+                      className="sr-only"
+                      onChange={event => {
+                        const nextFile = event.target.files?.[0] ?? null
+                        setAttachmentFile(nextFile)
+                        setAttachmentError(null)
+                        setLastAttachmentTxId(null)
+                        setLastUploadedAttachment(null)
+                        lastAutoUploadTxId.current = null
+                      }}
+                    />
+                  </label>
+
+                  {attachmentFile ? (
+                    <div className={incomeStyles.incomeAttachmentFile}>
+                      <span aria-hidden="true" className={incomeStyles.incomeAttachmentFileIcon}>
+                        <svg viewBox="0 0 20 20" fill="none">
+                          <path d="M7.5 10.8 12.9 5.4a2.5 2.5 0 0 1 3.5 3.5L9.6 15.7a4 4 0 0 1-5.7-5.7l7.2-7.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                        </svg>
+                      </span>
+                      <span className={incomeStyles.incomeAttachmentFileName} title={attachmentFile.name}>
+                        {attachmentFile.name}
+                      </span>
+                      <span className={incomeStyles.incomeAttachmentFileSize}>{formatAttachmentSize(attachmentFile.size)}</span>
+                      <button
+                        type="button"
+                        className={incomeStyles.incomeAttachmentRemove}
+                        onClick={() => {
+                          setAttachmentFile(null)
+                          setAttachmentError(null)
+                          setLastAttachmentTxId(null)
+                          setLastUploadedAttachment(null)
+                          lastAutoUploadTxId.current = null
+                          if (incomeAttachmentInputRef.current) incomeAttachmentInputRef.current.value = ''
+                        }}
+                      >
+                        Quitar
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {!isEditMode && !attachmentFile && !lastUploadedAttachment ? (
+                    <p className={incomeStyles.incomeAttachmentHint}>
+                      Imagen, PDF o documento · máximo {formatAttachmentSize(MAX_FINANCIAL_ATTACHMENT_BYTES)}.
+                    </p>
+                  ) : null}
+                  {!isEditMode ? <p className={incomeStyles.incomeAttachmentHint}>
+                    Se subirá después de registrar el ingreso.
+                  </p> : null}
+                </>
+              ) : null}
+
+              {isEditMode && editContext?.hasExistingAttachment ? (
+                <p className={incomeStyles.incomeAttachmentSuccess}>Este movimiento tiene un comprobante asociado. La edición no cambia el archivo.</p>
+              ) : null}
+
+              {attachmentUploading ? <p role="status" className={incomeStyles.incomeAttachmentStatus}>Subiendo comprobante…</p> : null}
+              {lastUploadedAttachment && !attachmentUploading && !attachmentError ? (
+                <p role="status" className={incomeStyles.incomeAttachmentSuccess}>
+                  {lastUploadedAttachment.availability === 'AVAILABLE'
+                    ? `Comprobante asociado: ${lastUploadedAttachment.file_name}`
+                    : `Comprobante asociado sin vista verificada: ${lastUploadedAttachment.file_name}`}
+                  {lastUploadedAttachment.signed_url ? (
+                    <>
+                      {' · '}
+                      <a href={lastUploadedAttachment.signed_url} target="_blank" rel="noreferrer">Ver</a>
+                    </>
+                  ) : null}
+                </p>
+              ) : null}
+              {attachmentError ? (
+                <div className={incomeStyles.incomeAttachmentError}>
+                  <p role="alert">{attachmentError}</p>
+                  {attachmentFile && lastAttachmentTxId ? (
+                    <button type="button" onClick={retryAttachmentUpload} disabled={attachmentUploading}>
+                      Reintentar
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+          </div>
+        </div>
+      </section>
+    ) : isAssetPurchaseLayout ? (
+      <section className={`${incomeStyles.incomeOptionalSection} ${incomeStyles.assetPurchaseOptional}`} aria-label="Información adicional">
+        <div className={incomeStyles.incomeOptionsHeader}>
+          <div>
+            <h3 className={incomeStyles.incomeSectionHeading}>Información adicional</h3>
+            <p className={incomeStyles.incomeOptionsDescription}>Opcional · muestra solo los datos que necesitas</p>
+          </div>
+          {assetOptionalItems.some(option => option.hasError) ? (
+            <span className={incomeStyles.incomeReviewBadge}>Revisar</span>
+          ) : null}
+        </div>
+
+        <div className={incomeStyles.incomeOptionControls} role="group" aria-label="Opciones de compra de activo">
+          {assetOptionalItems.map(option => {
+            const isOpen = assetAdditionalOptionsOpen[option.key] || option.hasError
+            const panelId = `${incomeOptionsId}-asset-${option.key}`
+            return (
+              <button
+                key={option.key}
+                type="button"
+                aria-expanded={isOpen}
+                aria-controls={panelId}
+                data-active={isOpen ? 'true' : 'false'}
+                data-has-value={option.hasValue ? 'true' : 'false'}
+                data-has-error={option.hasError ? 'true' : 'false'}
+                className={incomeStyles.incomeOptionButton}
+                onClick={() => setAssetAdditionalOptionsOpen(current => ({
+                  ...current,
+                  [option.key]: !current[option.key],
+                }))}
+              >
+                <span aria-hidden="true" className={incomeStyles.incomeOptionMark}>{isOpen ? '−' : '+'}</span>
+                <span>{option.label}</span>
+                {option.hasError ? <span className={incomeStyles.incomeOptionError}>Revisar</span> : null}
+              </button>
+            )
+          })}
+        </div>
+
+        <div className={incomeStyles.incomeOptionPanels}>
+          <div
+            id={`${incomeOptionsId}-asset-identification`}
+            data-income-option="asset-identification"
+            hidden={!assetAdditionalOptionsOpen.identification && !errors.asset_serial?.message && !errors.asset_location?.message}
+            className={incomeStyles.incomeOptionPanel}
+          >
+            <div className={incomeStyles.assetPurchaseIdentificationFields}>
+              <FieldWrapper label="Número de serie" optional error={errors.asset_serial?.message}>
+                <Input
+                  placeholder="SN-000000"
+                  error={errors.asset_serial?.message}
+                  data-testid="transaction-asset-serial-input"
+                  {...register('asset_serial')}
+                />
+              </FieldWrapper>
+              <FieldWrapper label="Ubicación" optional error={errors.asset_location?.message}>
+                <Input
+                  placeholder="Ej: Oficina principal"
+                  error={errors.asset_location?.message}
+                  data-testid="transaction-asset-location-input"
+                  {...register('asset_location')}
+                />
+              </FieldWrapper>
+            </div>
+          </div>
+
+          <div
+            id={`${incomeOptionsId}-asset-supplier`}
+            data-income-option="asset-supplier"
+            hidden={!assetAdditionalOptionsOpen.supplier && !errors.recipient?.message}
+            className={incomeStyles.incomeOptionPanel}
+          >
+            <FieldWrapper label="Proveedor" optional error={errors.recipient?.message}>
+              <Input
+                type="text"
+                placeholder="Ej: iShop Peru"
+                data-testid="transaction-recipient-input"
+                {...register('recipient')}
+              />
+            </FieldWrapper>
+          </div>
+
+          <div
+            id={`${incomeOptionsId}-asset-notes`}
+            data-income-option="asset-notes"
+            hidden={!assetAdditionalOptionsOpen.notes && !errors.notes?.message}
+            className={incomeStyles.incomeOptionPanel}
+          >
+            <FieldWrapper label="Notas" optional error={errors.notes?.message}>
+              <Textarea rows={2} placeholder="Observaciones de la compra…" data-testid="transaction-notes-input" disabled={lockSettlementEdit} {...register('notes')} />
+            </FieldWrapper>
+          </div>
+
+          {isEditMode && editContext?.hasExistingAttachment ? (
+            <div
+              id={`${incomeOptionsId}-asset-receipt`}
+              data-income-option="asset-receipt"
+              hidden={!assetAdditionalOptionsOpen.receipt}
+              className={incomeStyles.incomeAttachmentPanel}
+            >
+              <p className={incomeStyles.incomeAttachmentSuccess}>Esta compra tiene un comprobante asociado. La edición no cambia el archivo.</p>
+            </div>
+          ) : null}
+
+          {!isEditMode ? (
+            <div
+              id={`${incomeOptionsId}-asset-receipt`}
+              data-income-option="asset-receipt"
+              hidden={!assetAdditionalOptionsOpen.receipt && !attachmentError && !attachmentUploading}
+              className={incomeStyles.incomeAttachmentPanel}
+            >
+              <label className={incomeStyles.incomeAttachmentAction}>
+                <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
+                  <path d="M7.5 10.8 12.9 5.4a2.5 2.5 0 0 1 3.5 3.5L9.6 15.7a4 4 0 0 1-5.7-5.7l7.2-7.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+                <span>{attachmentFile || lastUploadedAttachment ? 'Reemplazar comprobante' : 'Adjuntar comprobante'}</span>
+                <input
+                  ref={incomeAttachmentInputRef}
+                  type="file"
+                  accept={ATTACHMENT_ACCEPT}
+                  data-testid="transaction-attachment-input"
+                  className="sr-only"
+                  onChange={event => {
+                    const nextFile = event.target.files?.[0] ?? null
+                    setAttachmentFile(nextFile)
+                    setAttachmentError(null)
+                    setLastAttachmentTxId(null)
+                    setLastUploadedAttachment(null)
+                    lastAutoUploadTxId.current = null
+                  }}
+                />
+              </label>
+              {attachmentFile ? (
+                <div className={incomeStyles.incomeAttachmentFile}>
+                  <span aria-hidden="true" className={incomeStyles.incomeAttachmentFileIcon}>
+                    <svg viewBox="0 0 20 20" fill="none">
+                      <path d="M7.5 10.8 12.9 5.4a2.5 2.5 0 0 1 3.5 3.5L9.6 15.7a4 4 0 0 1-5.7-5.7l7.2-7.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  </span>
+                  <span className={incomeStyles.incomeAttachmentFileName} title={attachmentFile.name}>{attachmentFile.name}</span>
+                  <span className={incomeStyles.incomeAttachmentFileSize}>{formatAttachmentSize(attachmentFile.size)}</span>
+                  <button
+                    type="button"
+                    className={incomeStyles.incomeAttachmentRemove}
+                    onClick={() => {
+                      setAttachmentFile(null)
+                      setAttachmentError(null)
+                      setLastAttachmentTxId(null)
+                      setLastUploadedAttachment(null)
+                      lastAutoUploadTxId.current = null
+                      if (incomeAttachmentInputRef.current) incomeAttachmentInputRef.current.value = ''
+                    }}
+                  >
+                    Quitar
+                  </button>
+                </div>
+              ) : null}
+              {!attachmentFile && !lastUploadedAttachment ? (
+                <p className={incomeStyles.incomeAttachmentHint}>
+                  Imagen, PDF o documento · máximo {formatAttachmentSize(MAX_FINANCIAL_ATTACHMENT_BYTES)}.
+                </p>
+              ) : null}
+              <p className={incomeStyles.incomeAttachmentHint}>Se subirá después de registrar la compra.</p>
+              {attachmentUploading ? <p role="status" className={incomeStyles.incomeAttachmentStatus}>Subiendo comprobante…</p> : null}
+              {lastUploadedAttachment && !attachmentUploading && !attachmentError ? (
+                <p role="status" className={incomeStyles.incomeAttachmentSuccess}>
+                  {lastUploadedAttachment.availability === 'AVAILABLE' ? 'Comprobante asociado:' : 'Comprobante asociado sin vista verificada:'} {lastUploadedAttachment.file_name}
+                  {lastUploadedAttachment.signed_url ? <>{' · '}<a href={lastUploadedAttachment.signed_url} target="_blank" rel="noreferrer">Ver</a></> : null}
+                </p>
+              ) : null}
+              {attachmentError ? (
+                <div className={incomeStyles.incomeAttachmentError}>
+                  <p role="alert">{attachmentError}</p>
+                  {attachmentFile && lastAttachmentTxId ? (
+                    <button type="button" onClick={retryAttachmentUpload} disabled={attachmentUploading}>Reintentar</button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </section>
+    ) : isReceivableLayout || isPayableLayout ? (
+      <section className={`${incomeStyles.incomeOptionalSection} ${incomeStyles.receivableOptional}`} aria-label="Información adicional">
+        <div className={incomeStyles.incomeOptionsHeader}>
+          <div>
+            <h3 className={incomeStyles.incomeSectionHeading}>Información adicional</h3>
+            <p className={incomeStyles.incomeOptionsDescription}>Opcional · conserva el contexto de la operación</p>
+          </div>
+          {hasOptionalSectionError || attachmentError ? <span className={incomeStyles.incomeReviewBadge}>Revisar</span> : null}
+        </div>
+
+        <div className={incomeStyles.incomeOptionControls} role="group" aria-label={`Opciones de ${isReceivableIssueLayout ? 'préstamo' : isReceivableCollectLayout ? 'cobro' : isPayableIssueLayout ? 'dinero recibido a devolver' : 'pago'}`}>
+          {obligationOptionalItems.map(option => {
+            const isOpen = operationAdditionalOptionsOpen[option.key] || option.hasError
+            const panelId = `${incomeOptionsId}-receivable-${option.key}`
+            return (
+              <button
+                key={option.key}
+                type="button"
+                aria-expanded={isOpen}
+                aria-controls={panelId}
+                data-active={isOpen ? 'true' : 'false'}
+                data-has-value={option.hasValue ? 'true' : 'false'}
+                data-has-error={option.hasError ? 'true' : 'false'}
+                className={incomeStyles.incomeOptionButton}
+                onClick={() => setOperationAdditionalOptionsOpen(current => ({ ...current, [option.key]: !current[option.key] }))}
+              >
+                <span aria-hidden="true" className={incomeStyles.incomeOptionMark}>{isOpen ? '−' : '+'}</span>
+                <span>{option.label}</span>
+                {option.hasError ? <span className={incomeStyles.incomeOptionError}>Revisar</span> : null}
+              </button>
+            )
+          })}
+        </div>
+
+        <div className={incomeStyles.incomeOptionPanels}>
+          <div
+            id={`${incomeOptionsId}-receivable-notes`}
+            data-income-option="notes"
+            hidden={!operationAdditionalOptionsOpen.notes && !errors.notes?.message}
+            className={incomeStyles.incomeOptionPanel}
+          >
+            <FieldWrapper label="Notas" optional>
+              <Textarea rows={2} placeholder="Observaciones adicionales…" data-testid="transaction-notes-input" disabled={lockSettlementEdit} {...register('notes')} />
+            </FieldWrapper>
+          </div>
+
+          {isReceivableIssueLayout || isPayableIssueLayout ? (
+            <div
+              id={`${incomeOptionsId}-receivable-recurrence`}
+              data-income-option="recurrence"
+              hidden={!operationAdditionalOptionsOpen.recurrence && !errors.recurring_name?.message}
+              className={incomeStyles.incomeOptionPanel}
+            >
+              {isEditMode ? (
+                <p className={incomeStyles.incomeAttachmentHint}>
+                  {watch('is_recurring')
+                    ? 'Esta operación pertenece a una plantilla recurrente. Adminístrala desde Recurrentes.'
+                    : 'Esta operación no está marcada como recurrente.'}
+                </p>
+              ) : (
+                <CheckboxToggle
+                  label="Transacción recurrente"
+                  description="Guarda esta configuración como plantilla reutilizable."
+                  checked={!!watch('is_recurring')}
+                  onChange={value => {
+                    setValue('is_recurring', value)
+                    if (value) setOperationAdditionalOptionsOpen(current => ({ ...current, recurrence: true }))
+                  }}
+                />
+              )}
+              {watch('is_recurring') && !isEditMode ? (
+                <div className={incomeStyles.incomeRecurringName}>
+                  <FieldWrapper label="Nombre de la recurrente" required error={errors.recurring_name?.message}>
+                    <Input
+                      type="text"
+                      placeholder={isPayableIssueCreate ? 'Ej. Dinero recibido mensual' : 'Ej. Préstamo recurrente'}
+                      data-testid="transaction-recurring-name-input"
+                      error={errors.recurring_name?.message}
+                      {...register('recurring_name', {
+                        maxLength: { value: 150, message: 'Máximo 150 caracteres' },
+                        validate: value => !watch('is_recurring') || (value ?? '').trim().length > 0 || 'Ingresa un nombre para la plantilla recurrente',
+                      })}
+                    />
+                  </FieldWrapper>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {!isEditMode || (isEditMode && editContext?.hasExistingAttachment) ? (
+            <div
+              id={`${incomeOptionsId}-receivable-receipt`}
+              data-income-option="receipt"
+              hidden={!operationAdditionalOptionsOpen.receipt && !attachmentError && !attachmentUploading && !(isEditMode && editContext?.hasExistingAttachment)}
+              className={incomeStyles.incomeAttachmentPanel}
+            >
+              {!isEditMode ? <label className={incomeStyles.incomeAttachmentAction}>
+                <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
+                  <path d="M7.5 10.8 12.9 5.4a2.5 2.5 0 0 1 3.5 3.5L9.6 15.7a4 4 0 0 1-5.7-5.7l7.2-7.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+                <span>{attachmentFile || lastUploadedAttachment ? 'Reemplazar comprobante' : 'Adjuntar comprobante'}</span>
+                <input
+                  ref={incomeAttachmentInputRef}
+                  type="file"
+                  accept={ATTACHMENT_ACCEPT}
+                  data-testid="transaction-attachment-input"
+                  className="sr-only"
+                  onChange={event => {
+                    const nextFile = event.target.files?.[0] ?? null
+                    setAttachmentFile(nextFile)
+                    setAttachmentError(null)
+                    setLastAttachmentTxId(null)
+                    setLastUploadedAttachment(null)
+                    lastAutoUploadTxId.current = null
+                  }}
+                />
+              </label> : null}
+              {attachmentFile ? (
+                <div className={incomeStyles.incomeAttachmentFile}>
+                  <span aria-hidden="true" className={incomeStyles.incomeAttachmentFileIcon}>
+                    <svg viewBox="0 0 20 20" fill="none"><path d="M7.5 10.8 12.9 5.4a2.5 2.5 0 0 1 3.5 3.5L9.6 15.7a4 4 0 0 1-5.7-5.7l7.2-7.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+                  </span>
+                  <span className={incomeStyles.incomeAttachmentFileName} title={attachmentFile.name}>{attachmentFile.name}</span>
+                  <span className={incomeStyles.incomeAttachmentFileSize}>{formatAttachmentSize(attachmentFile.size)}</span>
+                  <button
+                    type="button"
+                    className={incomeStyles.incomeAttachmentRemove}
+                    onClick={() => {
+                      setAttachmentFile(null)
+                      setAttachmentError(null)
+                      setLastAttachmentTxId(null)
+                      setLastUploadedAttachment(null)
+                      lastAutoUploadTxId.current = null
+                      if (incomeAttachmentInputRef.current) incomeAttachmentInputRef.current.value = ''
+                    }}
+                  >
+                    Quitar
+                  </button>
+                </div>
+              ) : null}
+              {!attachmentFile && !lastUploadedAttachment ? (
+                <p className={incomeStyles.incomeAttachmentHint}>Imagen, PDF o documento · máximo {formatAttachmentSize(MAX_FINANCIAL_ATTACHMENT_BYTES)}.</p>
+              ) : null}
+              {isEditMode && editContext?.hasExistingAttachment ? (
+                <p className={incomeStyles.incomeAttachmentSuccess}>Este movimiento tiene un comprobante asociado. La edición no cambia el archivo.</p>
+              ) : !isEditMode ? <p className={incomeStyles.incomeAttachmentHint}>Se subirá después de registrar el movimiento.</p> : null}
+              {attachmentUploading ? <p role="status" className={incomeStyles.incomeAttachmentStatus}>Subiendo comprobante…</p> : null}
+              {lastUploadedAttachment && !attachmentUploading && !attachmentError ? (
+                <p role="status" className={incomeStyles.incomeAttachmentSuccess}>
+                  {lastUploadedAttachment.availability === 'AVAILABLE' ? 'Comprobante asociado:' : 'Comprobante asociado sin vista verificada:'} {lastUploadedAttachment.file_name}
+                  {lastUploadedAttachment.signed_url ? <>{' · '}<a href={lastUploadedAttachment.signed_url} target="_blank" rel="noreferrer">Ver</a></> : null}
+                </p>
+              ) : null}
+              {attachmentError ? <div className={incomeStyles.incomeAttachmentError}><p role="alert">{attachmentError}</p></div> : null}
+            </div>
+          ) : null}
+        </div>
+      </section>
+    ) : isStageALayout ? (
+      <section className={`${incomeStyles.incomeOptionalSection} ${layoutMode === 'expense' ? incomeStyles.operationExpenseOptional : ''}`} aria-label="Información adicional">
+        <div className={incomeStyles.incomeOptionsHeader}>
+          <div>
+            <h3 className={incomeStyles.incomeSectionHeading}>Información adicional</h3>
+            <p className={incomeStyles.incomeOptionsDescription}>Opcional · abre solo lo que necesitas</p>
+          </div>
+          {hasOptionalSectionError || attachmentError ? (
+            <span className={incomeStyles.incomeReviewBadge}>Revisar</span>
+          ) : null}
+        </div>
+
+        <div className={incomeStyles.incomeOptionControls} role="group" aria-label={`Opciones de ${layoutMode === 'expense' ? 'egreso' : 'transferencia'}`}>
+          {stageAOptionalItems.map(option => {
+            const isOpen = operationAdditionalOptionsOpen[option.key] || option.hasError
+            const panelId = `${incomeOptionsId}-${option.key}`
+            return (
+              <button
+                key={option.key}
+                type="button"
+                aria-expanded={isOpen}
+                aria-controls={panelId}
+                data-active={isOpen ? 'true' : 'false'}
+                data-has-value={option.hasValue ? 'true' : 'false'}
+                data-has-error={option.hasError ? 'true' : 'false'}
+                className={incomeStyles.incomeOptionButton}
+                onClick={() => setOperationAdditionalOptionsOpen(current => ({
+                  ...current,
+                  [option.key]: !current[option.key],
+                }))}
+              >
+                <span aria-hidden="true" className={incomeStyles.incomeOptionMark}>{isOpen ? '−' : '+'}</span>
+                <span>{option.label}</span>
+                {option.hasError ? <span className={incomeStyles.incomeOptionError}>Revisar</span> : null}
+              </button>
+            )
+          })}
+        </div>
+
+        <div className={incomeStyles.incomeOptionPanels}>
+          {layoutMode === 'expense' ? (
+            <>
+              <div id={`${incomeOptionsId}-recipient`} data-income-option="recipient" hidden={!operationAdditionalOptionsOpen.recipient && !errors.recipient?.message} className={incomeStyles.incomeOptionPanel}>
+                <FieldWrapper label="Destinatario" optional>
+                  <Input type="text" placeholder="Ej: Inmobiliaria Norte" data-testid="transaction-recipient-input" disabled={lockSettlementEdit} {...register('recipient')} />
+                </FieldWrapper>
+              </div>
+              <div id={`${incomeOptionsId}-budget`} data-income-option="budget" hidden={!operationAdditionalOptionsOpen.budget && !errors.budget_id?.message} className={incomeStyles.incomeOptionPanel}>
+                <div className={incomeStyles.operationOptionalField}>
+                  <FieldWrapper label="Presupuesto" optional error={errors.budget_id?.message}>
+                    <Select placeholder="Sin presupuesto" data-testid="transaction-budget-select" matchTriggerWidth disabled={lockSettlementEdit || !categoryId || budgetsLoading || filteredBudgets.length === 0} {...register('budget_id')}>
+                      <option value="">Sin presupuesto</option>
+                      {filteredBudgets.map(budget => <option key={budget.value} value={budget.value}>{budget.label}</option>)}
+                    </Select>
+                    {budgetsLoading ? <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">Buscando presupuestos compatibles…</p> : null}
+                    {!budgetsLoading && !categoryId ? <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">Elige una categoría para consultar presupuestos.</p> : null}
+                    {!budgetsLoading && categoryId && filteredBudgets.length === 0 ? <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">No hay presupuestos activos para esta categoría y fecha.</p> : null}
+                  </FieldWrapper>
+                  <span className={incomeStyles.operationOptionalHint}>
+                    <IncomeInfoHint label="Ayuda sobre presupuestos">
+                      Solo se muestran presupuestos activos compatibles con la categoría y la fecha de este egreso.
+                    </IncomeInfoHint>
+                  </span>
+                </div>
+              </div>
+            </>
+          ) : null}
+
+          {layoutMode === 'expense' ? (
+            <div id={`${incomeOptionsId}-recurrence`} data-income-option="recurrence" hidden={!operationAdditionalOptionsOpen.recurrence && !errors.recurring_name?.message} className={incomeStyles.incomeOptionPanel}>
+              {isEditMode ? (
+                <p className={incomeStyles.incomeAttachmentHint}>
+                  {watch('is_recurring')
+                    ? 'Egreso marcado como recurrente. La plantilla se administra desde Recurrentes.'
+                    : 'Este egreso no está marcado como recurrente.'}
+                </p>
+              ) : (
+                <div className={incomeStyles.operationExpenseRecurrence}>
+                  <CheckboxToggle
+                    label="Transacción recurrente"
+                    checked={!!watch('is_recurring')}
+                    onChange={value => setValue('is_recurring', value)}
+                  />
+                  <span className={incomeStyles.operationOptionalHint}>
+                    <IncomeInfoHint label="Ayuda sobre recurrencia">
+                      Guarda esta configuración como plantilla reutilizable para futuras operaciones.
+                    </IncomeInfoHint>
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          <div id={`${incomeOptionsId}-notes`} data-income-option="notes" hidden={!operationAdditionalOptionsOpen.notes && !errors.notes?.message} className={incomeStyles.incomeOptionPanel}>
+            <FieldWrapper label="Notas" optional>
+              <Textarea rows={2} placeholder={layoutMode === 'expense' ? 'Observaciones adicionales…' : 'Observaciones de la transferencia…'} data-testid="transaction-notes-input" disabled={lockSettlementEdit} {...register('notes')} />
+            </FieldWrapper>
+          </div>
+
+          {layoutMode === 'expense' && watch('is_recurring') && !isEditMode ? (
+            <div id={`${incomeOptionsId}-recurrence-name`} data-income-option="recurrence-name" hidden={!operationAdditionalOptionsOpen.recurrence && !errors.recurring_name?.message} className={incomeStyles.incomeOptionPanel}>
+              <div className={incomeStyles.incomeRecurringName}>
+                <div className={incomeStyles.operationOptionalField}>
+                  <FieldWrapper label="Nombre de la recurrente" required error={errors.recurring_name?.message}>
+                    <Input type="text" placeholder="Ej. Pago mensual de internet" data-testid="transaction-recurring-name-input" error={errors.recurring_name?.message} {...register('recurring_name', {
+                      maxLength: { value: 150, message: 'Máximo 150 caracteres' },
+                      validate: value => !watch('is_recurring') || (value ?? '').trim().length > 0 || 'Ingresa un nombre para la plantilla recurrente',
+                    })} />
+                  </FieldWrapper>
+                  <span className={incomeStyles.operationOptionalHint}>
+                    <IncomeInfoHint label="Ayuda sobre el nombre recurrente">
+                      Este será el nombre visible de la plantilla en el módulo de recurrentes.
+                    </IncomeInfoHint>
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {!isEditMode || (isEditMode && editContext?.hasExistingAttachment) ? (
+            <div id={`${incomeOptionsId}-receipt`} data-income-option="receipt" hidden={!operationAdditionalOptionsOpen.receipt && !attachmentError && !attachmentUploading && !(isEditMode && editContext?.hasExistingAttachment)} className={incomeStyles.incomeAttachmentPanel}>
+              {isEditMode ? <p className={incomeStyles.incomeAttachmentSuccess}>Este movimiento tiene un comprobante asociado. La edición no cambia el archivo.</p> : null}
+              {!isEditMode ? (
+              <label className={incomeStyles.incomeAttachmentAction}>
+                <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
+                  <path d="M7.5 10.8 12.9 5.4a2.5 2.5 0 0 1 3.5 3.5L9.6 15.7a4 4 0 0 1-5.7-5.7l7.2-7.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+                <span>{attachmentFile || lastUploadedAttachment ? 'Reemplazar comprobante' : 'Adjuntar comprobante'}</span>
+                <input
+                  ref={incomeAttachmentInputRef}
+                  type="file"
+                  accept={ATTACHMENT_ACCEPT}
+                  data-testid="transaction-attachment-input"
+                  className="sr-only"
+                  onChange={event => {
+                    const nextFile = event.target.files?.[0] ?? null
+                    setAttachmentFile(nextFile)
+                    setAttachmentError(null)
+                    setLastAttachmentTxId(null)
+                    setLastUploadedAttachment(null)
+                    lastAutoUploadTxId.current = null
+                  }}
+                />
+              </label>
+              ) : null}
+              {attachmentFile ? (
+                <div className={incomeStyles.incomeAttachmentFile}>
+                  <span aria-hidden="true" className={incomeStyles.incomeAttachmentFileIcon}>
+                    <svg viewBox="0 0 20 20" fill="none">
+                      <path d="M7.5 10.8 12.9 5.4a2.5 2.5 0 0 1 3.5 3.5L9.6 15.7a4 4 0 0 1-5.7-5.7l7.2-7.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  </span>
+                  <span className={incomeStyles.incomeAttachmentFileName} title={attachmentFile.name}>{attachmentFile.name}</span>
+                  <span className={incomeStyles.incomeAttachmentFileSize}>{formatAttachmentSize(attachmentFile.size)}</span>
+                  <button type="button" className={incomeStyles.incomeAttachmentRemove} onClick={() => {
+                    setAttachmentFile(null)
+                    setAttachmentError(null)
+                    setLastAttachmentTxId(null)
+                    setLastUploadedAttachment(null)
+                    lastAutoUploadTxId.current = null
+                    if (incomeAttachmentInputRef.current) incomeAttachmentInputRef.current.value = ''
+                  }}>Quitar</button>
+                </div>
+              ) : null}
+              {!isEditMode && !attachmentFile && !lastUploadedAttachment ? <p className={incomeStyles.incomeAttachmentHint}>Imagen, PDF o documento · máximo {formatAttachmentSize(MAX_FINANCIAL_ATTACHMENT_BYTES)}.</p> : null}
+              {!isEditMode ? <p className={incomeStyles.incomeAttachmentHint}>Se subirá después de registrar la operación.</p> : null}
+              {attachmentUploading ? <p role="status" className={incomeStyles.incomeAttachmentStatus}>Subiendo comprobante…</p> : null}
+              {lastUploadedAttachment && !attachmentUploading && !attachmentError ? (
+                <p role="status" className={incomeStyles.incomeAttachmentSuccess}>
+                  {lastUploadedAttachment.availability === 'AVAILABLE' ? 'Comprobante asociado:' : 'Comprobante asociado sin vista verificada:'} {lastUploadedAttachment.file_name}
+                  {lastUploadedAttachment.signed_url ? <>{' · '}<a href={lastUploadedAttachment.signed_url} target="_blank" rel="noreferrer">Ver</a></> : null}
+                </p>
+              ) : null}
+              {attachmentError ? <div className={incomeStyles.incomeAttachmentError}><p role="alert">{attachmentError}</p>{attachmentFile && lastAttachmentTxId ? <button type="button" onClick={retryAttachmentUpload} disabled={attachmentUploading}>Reintentar</button> : null}</div> : null}
+            </div>
+          ) : null}
+        </div>
+      </section>
+    ) : (
     <OptionalSection
       title="Mas opciones"
       summary={optionalSummary}
@@ -2501,6 +3855,7 @@ export function TransactionForm({
                 : 'Observaciones de la transferencia…'
           }
           data-testid="transaction-notes-input"
+          disabled={lockSettlementEdit}
           {...register('notes')}
         />
       </FieldWrapper>
@@ -2640,6 +3995,7 @@ export function TransactionForm({
       </FieldWrapper>
       )}
     </OptionalSection>
+    )
   ) : null
 
   const payableIssueField = operationType === 'payable_issue' ? (
@@ -2647,22 +4003,36 @@ export function TransactionForm({
       label="Acreedor"
       required
       error={errors.payable_creditor_id?.message}
-      hint="Usa el mismo catálogo de acreedores del módulo Por Pagar."
+      hint={isPayableIssueLayout ? undefined : 'Usa el mismo catálogo de acreedores del módulo Por Pagar.'}
     >
-      <Select
-        data-testid="transaction-payable-creditor-select"
-        error={errors.payable_creditor_id?.message}
-        {...register('payable_creditor_id', {
-          required: 'Selecciona el acreedor',
-        })}
-      >
-        <option value="">Seleccionar acreedor...</option>
-        {creditorOptions.map(creditor => (
-          <option key={creditor.value} value={creditor.value}>
-            {creditor.label}
-          </option>
-        ))}
-      </Select>
+      <div className={isPayableIssueLayout ? incomeStyles.payableIssueCreditorControl : undefined}>
+        <Select
+          data-testid="transaction-payable-creditor-select"
+          error={errors.payable_creditor_id?.message}
+          matchTriggerWidth={isPayableIssueLayout}
+          disabled={payableHasPayments}
+          {...register('payable_creditor_id', {
+            required: 'Selecciona el acreedor',
+          })}
+        >
+          <option value="">Seleccionar acreedor...</option>
+          {creditorOptions.map(creditor => (
+            <option key={creditor.value} value={creditor.value}>
+              {creditor.label}
+            </option>
+          ))}
+        </Select>
+        {isPayableIssueLayout ? (
+          <IncomeInfoHint label="Ayuda sobre el acreedor">
+            Selecciona la persona o entidad a la que quedará vinculada esta obligación.
+          </IncomeInfoHint>
+        ) : null}
+        {payableHasPayments ? (
+          <p className={incomeStyles.incomeAttachmentHint} role="status">
+            Esta obligación ya tiene pagos: no se puede cambiar el acreedor ni la moneda. El monto debe conservar al menos lo ya pagado ({formatCurrency(editContext?.payablePaidAmount ?? 0, currency)}).
+          </p>
+        ) : null}
+      </div>
       {!hasCreditors && (
         <div className="mt-2">
           <InlineFeedback
@@ -2680,22 +4050,46 @@ export function TransactionForm({
       label="Deudor"
       required
       error={errors.receivable_debtor_id?.message}
-      hint="Usa el mismo catálogo de deudores del módulo Por Cobrar."
+      hint={isReceivableIssueLayout ? undefined : 'Usa el mismo catálogo de deudores del módulo Por Cobrar.'}
     >
-      <Select
-        data-testid="transaction-receivable-debtor-select"
-        error={errors.receivable_debtor_id?.message}
-        {...register('receivable_debtor_id', {
-          required: 'Selecciona el deudor',
-        })}
-      >
-        <option value="">Seleccionar deudor...</option>
-        {debtorOptions.map(debtor => (
-          <option key={debtor.value} value={debtor.value}>
-            {debtor.label}
-          </option>
-        ))}
-      </Select>
+      {isReceivableIssueLayout ? (
+        <div className={incomeStyles.receivableIssueDebtorControl}>
+          <Select
+            data-testid="transaction-receivable-debtor-select"
+            error={errors.receivable_debtor_id?.message}
+            disabled={receivableHasCollections}
+            {...register('receivable_debtor_id', {
+              required: 'Selecciona el deudor',
+            })}
+          >
+            <option value="">Seleccionar deudor...</option>
+            {debtorOptions.map(debtor => (
+              <option key={debtor.value} value={debtor.value}>
+                {debtor.label}
+              </option>
+            ))}
+          </Select>
+          <IncomeInfoHint label="Ayuda sobre el deudor">
+            Selecciona a la persona que recibirá el préstamo.
+          </IncomeInfoHint>
+        </div>
+      ) : (
+        <Select
+          data-testid="transaction-receivable-debtor-select"
+          error={errors.receivable_debtor_id?.message}
+          disabled={receivableHasCollections}
+          {...register('receivable_debtor_id', {
+            required: 'Selecciona el deudor',
+          })}
+        >
+          <option value="">Seleccionar deudor...</option>
+          {debtorOptions.map(debtor => (
+            <option key={debtor.value} value={debtor.value}>
+              {debtor.label}
+            </option>
+          ))}
+        </Select>
+      )}
       {!hasDebtors && (
         <div className="mt-2">
           <InlineFeedback
@@ -2705,31 +4099,58 @@ export function TransactionForm({
           />
         </div>
       )}
+      {receivableHasCollections ? (
+        <p className={incomeStyles.incomeAttachmentHint} role="status">
+          Esta cuenta ya tiene cobros: no se puede cambiar el deudor ni la moneda. El monto debe conservar al menos lo ya cobrado ({formatCurrency(editContext?.receivableCollectedAmount ?? 0, currency)}).
+        </p>
+      ) : null}
     </FieldWrapper>
   ) : null
 
   const receivableCollectField = operationType === 'receivable_collect' ? (
-    <div className="space-y-3">
+    <div className={isReceivableCollectCreate ? `${incomeStyles.receivableCollectSelector} space-y-2.5` : 'space-y-3'}>
       <FieldWrapper
-        label="Cuenta por cobrar o saldo del deudor"
+        label={isReceivableCollectCreate ? 'Pendiente por cobrar' : 'Cuenta por cobrar o saldo del deudor'}
         required
         error={errors.settlement_receivable_id?.message}
-        hint="Elige `Cobro general` para aplicar el pago al saldo total del deudor, o `Cuenta puntual` si quieres cobrar una sola deuda."
+        hint={isReceivableCollectCreate ? undefined : 'Elige `Cobro general` para aplicar el pago al saldo total del deudor, o `Cuenta puntual` si quieres cobrar una sola deuda.'}
       >
-        <Select
-          data-testid="transaction-settlement-receivable-select"
-          error={errors.settlement_receivable_id?.message}
-          {...register('settlement_receivable_id', {
-            required: 'Selecciona una cuenta puntual o un cobro general',
-          })}
-        >
-          <option value="">Seleccionar cobro...</option>
-          {pendingReceivableOptions.map(receivable => (
-            <option key={receivable.value} value={receivable.value}>
-              {receivable.label}
-            </option>
-          ))}
-        </Select>
+        {isReceivableCollectCreate ? (
+          <div className={incomeStyles.receivableCollectSelectControl}>
+            <Select
+              data-testid="transaction-settlement-receivable-select"
+              error={errors.settlement_receivable_id?.message}
+              {...register('settlement_receivable_id', {
+                required: 'Selecciona una cuenta puntual o un cobro general',
+              })}
+            >
+              <option value="">Seleccionar cobro...</option>
+              {pendingReceivableOptions.map(receivable => (
+                <option key={receivable.value} value={receivable.value}>
+                  {receivable.label}
+                </option>
+              ))}
+            </Select>
+            <IncomeInfoHint label="Ayuda sobre el pendiente por cobrar">
+              Elige Cobro general para aplicar al saldo del deudor o Cuenta puntual para una deuda específica.
+            </IncomeInfoHint>
+          </div>
+        ) : (
+          <Select
+            data-testid="transaction-settlement-receivable-select"
+            error={errors.settlement_receivable_id?.message}
+            {...register('settlement_receivable_id', {
+              required: 'Selecciona una cuenta puntual o un cobro general',
+            })}
+          >
+            <option value="">Seleccionar cobro...</option>
+            {pendingReceivableOptions.map(receivable => (
+              <option key={receivable.value} value={receivable.value}>
+                {receivable.label}
+              </option>
+            ))}
+          </Select>
+        )}
         {!hasPendingReceivables && (
           <div className="mt-2">
             <InlineFeedback
@@ -2742,48 +4163,73 @@ export function TransactionForm({
       </FieldWrapper>
 
       {selectedSettlementReceivable && (
-        <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3.5 py-3">
-          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-            Saldo a cobrar
-          </p>
-          <p className="mt-1 text-[15px] font-semibold tabular-nums text-[var(--c-primary)]">
-            {formatCurrency(selectedSettlementPendingAmount, selectedSettlementCurrency ?? 'PEN')}
-          </p>
-          <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">
-            {selectedSettlementCounterparty}{selectedSettlementConcept ? ` · ${selectedSettlementConcept}` : ''}
-          </p>
-          {selectedReceivableSettlementKind === 'debtor_total' && selectedReceivableSettlementLinesCount > 1 ? (
-            <p className="mt-1 text-[10px] text-[var(--c-text-faint)]">
-              El cobro se aplicará automáticamente a {selectedReceivableSettlementLinesCount} cuentas abiertas, empezando por las más antiguas.
+        isReceivableCollectCreate ? (
+          <div className={incomeStyles.receivablePendingSummary}>
+            <div className={incomeStyles.receivablePendingSummaryHeader}>
+              <span className={incomeStyles.receivableSettlementKind}>{selectedReceivableSettlementKind === 'debtor_total' ? 'Cobro general' : 'Cuenta puntual'}</span>
+              <div className={incomeStyles.receivablePendingAmount}>
+                <small>Saldo pendiente</small>
+                <strong>{formatCurrency(selectedSettlementPendingAmount, selectedSettlementCurrency ?? 'PEN')}</strong>
+              </div>
+            </div>
+            <p className={incomeStyles.receivablePendingCounterparty}>{selectedSettlementCounterparty}</p>
+            {selectedSettlementConcept ? (
+              <p className={incomeStyles.receivablePendingConcept}>{selectedSettlementConcept}</p>
+            ) : null}
+            {selectedReceivableSettlementKind === 'debtor_total' && selectedReceivableSettlementLinesCount > 1 ? (
+              <small className={incomeStyles.receivablePendingAllocation}>Se aplicará a {selectedReceivableSettlementLinesCount} cuentas abiertas, desde la más antigua.</small>
+            ) : null}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3.5 py-3">
+            <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Saldo a cobrar</p>
+            <p className="mt-1 text-[15px] font-semibold tabular-nums text-[var(--c-primary)]">
+              {formatCurrency(selectedSettlementPendingAmount, selectedSettlementCurrency ?? 'PEN')}
             </p>
-          ) : null}
-        </div>
+            <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">
+              {selectedSettlementCounterparty}{selectedSettlementConcept ? ` · ${selectedSettlementConcept}` : ''}
+            </p>
+            {selectedReceivableSettlementKind === 'debtor_total' && selectedReceivableSettlementLinesCount > 1 ? (
+              <p className="mt-1 text-[10px] text-[var(--c-text-faint)]">
+                El cobro se aplicará automáticamente a {selectedReceivableSettlementLinesCount} cuentas abiertas, empezando por las más antiguas.
+              </p>
+            ) : null}
+          </div>
+        )
       )}
     </div>
   ) : null
 
   const payablePayField = operationType === 'payable_pay' ? (
-    <div className="space-y-3">
+    <div className={`${isPayablePayCreate ? incomeStyles.receivableCollectSelector : ''} ${isPayablePayCreate ? 'space-y-2.5' : 'space-y-3'}`}>
       <FieldWrapper
-        label="Cuenta por pagar o saldo del acreedor"
+        label={isPayablePayCreate ? 'Obligación por pagar' : 'Cuenta por pagar o saldo del acreedor'}
         required
         error={errors.settlement_payable_id?.message}
-        hint="Puedes pagar una cuenta puntual o aplicar un pago general al saldo pendiente del acreedor."
+        hint={isPayablePayCreate ? undefined : 'Puedes pagar una cuenta puntual o aplicar un pago general al saldo pendiente del acreedor.'}
       >
-        <Select
-          data-testid="transaction-settlement-payable-select"
-          error={errors.settlement_payable_id?.message}
-          {...register('settlement_payable_id', {
-            required: 'Selecciona la cuenta por pagar',
-          })}
-        >
-          <option value="">Seleccionar cuenta pendiente...</option>
-          {pendingPayableOptions.map(payable => (
-            <option key={payable.value} value={payable.value}>
-              {payable.label}
-            </option>
-          ))}
-        </Select>
+        <div className={isPayablePayCreate ? incomeStyles.payablePaySelectControl : undefined}>
+          <Select
+            data-testid="transaction-settlement-payable-select"
+            error={errors.settlement_payable_id?.message}
+            matchTriggerWidth={isPayablePayCreate}
+            {...register('settlement_payable_id', {
+              required: 'Selecciona la cuenta por pagar',
+            })}
+          >
+          <option value="">{isPayablePayCreate ? 'Seleccionar obligación...' : 'Seleccionar cuenta pendiente...'}</option>
+            {pendingPayableOptions.map(payable => (
+              <option key={payable.value} value={payable.value}>
+                {payable.label}
+              </option>
+            ))}
+          </Select>
+          {isPayablePayCreate ? (
+            <IncomeInfoHint label="Ayuda sobre la obligación">
+              Elige una cuenta puntual o el saldo agrupado del acreedor. Los pagos generales se distribuyen con el orden vigente del servidor.
+            </IncomeInfoHint>
+          ) : null}
+        </div>
         {!hasPendingPayables && (
           <div className="mt-2">
             <InlineFeedback
@@ -2795,11 +4241,33 @@ export function TransactionForm({
         )}
       </FieldWrapper>
 
-      {selectedSettlementPayable && (
+      {selectedSettlementPayable && isPayablePayCreate ? (
+        <div className={incomeStyles.receivablePendingSummary}>
+          <div className={incomeStyles.receivablePendingSummaryHeader}>
+            <span className={incomeStyles.receivableSettlementKind}>
+              {selectedPayableSettlementKind === 'creditor_total' ? 'Pago general' : 'Cuenta puntual'}
+            </span>
+            <div className={incomeStyles.receivablePendingAmount}>
+              <small>Saldo pendiente</small>
+              <strong className={incomeStyles.payablePendingAmount}>
+                {formatCurrency(selectedSettlementPendingAmount, selectedSettlementCurrency ?? 'PEN')}
+              </strong>
+            </div>
+          </div>
+          <p className={incomeStyles.receivablePendingCounterparty}>{selectedSettlementCounterparty}</p>
+          {selectedSettlementConcept ? (
+            <p className={incomeStyles.receivablePendingConcept}>{selectedSettlementConcept}</p>
+          ) : null}
+          {selectedPayableSettlementKind === 'creditor_total' && selectedPayableSettlementLinesCount > 1 ? (
+            <small className={incomeStyles.receivablePendingAllocation}>
+              Abarca {selectedPayableSettlementLinesCount} obligaciones abiertas.
+            </small>
+          ) : null}
+        </div>
+      ) : null}
+      {selectedSettlementPayable && !isPayablePayCreate ? (
         <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3.5 py-3">
-          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-            Saldo a pagar
-          </p>
+          <p className="text-[10px] uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Saldo a pagar</p>
           <p className="mt-1 text-[15px] font-semibold tabular-nums text-red-300">
             {formatCurrency(selectedSettlementPendingAmount, selectedSettlementCurrency ?? 'PEN')}
           </p>
@@ -2812,7 +4280,7 @@ export function TransactionForm({
             </p>
           ) : null}
         </div>
-      )}
+      ) : null}
     </div>
   ) : null
 
@@ -3094,7 +4562,12 @@ export function TransactionForm({
         onSubmit={handleFormSubmit}
         noValidate
         data-testid="transaction-form"
-        className={`${isCompactLayout ? 'space-y-2.5' : 'space-y-5'} ${className}`}
+        data-operation-layout={layoutMode}
+        data-stage-a-operation={isStageACreate ? layoutMode : undefined}
+        data-asset-purchase-create={isAssetPurchaseCreate ? 'true' : undefined}
+        data-receivable-create={isReceivableCreate ? layoutMode : undefined}
+        data-payable-create={isPayableCreate ? layoutMode : undefined}
+        className={`${isCompactLayout ? 'space-y-2.5' : 'space-y-5'} ${incomeStyles.operationCreateFormRoot} ${className}`}
       >
         {!hideTypeSelector && (
           <div data-testid="transaction-type-selector">
@@ -3107,33 +4580,238 @@ export function TransactionForm({
           </div>
         )}
 
-        {isEditMode && (
+        {lockSettlementEdit && (
           <InlineFeedback
-            type={lockSettlementEdit ? 'warning' : 'info'}
-            message={lockSettlementEdit ? 'Edición protegida' : 'Edición completa'}
-            detail={lockSettlementEdit
-              ? 'Los cobros y pagos aplicados sobre cuentas por cobrar o por pagar aún conservan edición restringida para no desalinear saldos distribuidos.'
-              : 'Esta ventana usa la misma lógica del alta: puedes ajustar cuenta, monto, moneda, tipo de cambio, fecha y datos descriptivos.'}
+            type="warning"
+            message="Este movimiento no admite edición"
+            detail="El cobro o pago ya forma parte de una liquidación. Puedes revisar sus datos, pero no guardar cambios desde esta ventana."
           />
         )}
 
-        <div className="grid grid-cols-1 gap-4 min-[860px]:grid-cols-[minmax(0,1.04fr)_minmax(320px,0.96fr)] min-[860px]:items-start min-[860px]:gap-5">
-          <div className="space-y-4">
-            {primaryContextZone}
-          </div>
+        <div className={isIncomeLayout ? incomeStyles.incomeForm : incomeStyles.operationCreateForm}>
+          <fieldset
+            disabled={lockSettlementEdit}
+            aria-label={lockSettlementEdit ? 'Datos del movimiento en modo de consulta' : undefined}
+            className={incomeStyles.operationEditFields}
+          >
+          {isIncomeLayout ? (
+            <>
+              <section className={incomeStyles.incomeSection} aria-label="Movimiento">
+                <h3 className={incomeStyles.incomeSectionHeading}>Movimiento</h3>
+                <div className={incomeStyles.incomePrimaryFields}>
+                  {accountField}
+                  {amountCurrencyField}
+                </div>
+                {exchangeRateField}
+                {equivalenceField}
+              </section>
 
-          <div className="space-y-4">
-            {secondaryRecordZone}
-          </div>
+              <section className={incomeStyles.incomeSection} aria-label="Clasificación">
+                <h3 className={incomeStyles.incomeSectionHeading}>Clasificación</h3>
+                <div className={incomeStyles.incomeClassificationFields}>
+                  {categoryField}
+                  {transactionDateField}
+                  <div className={incomeStyles.incomeDescription}>{descriptionField}</div>
+                </div>
+              </section>
+            </>
+          ) : isAssetPurchaseLayout ? (
+            <>
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Compra">
+                <h3 className={incomeStyles.incomeSectionHeading}>Compra</h3>
+                <div className={incomeStyles.assetPurchasePrimaryFields}>
+                  {paymentMethodField}
+                  {accountField}
+                  {creditCardImpactField}
+                  {amountCurrencyField}
+                </div>
+                {exchangeRateField}
+                {equivalenceField}
+              </section>
+
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Clasificación">
+                <h3 className={incomeStyles.incomeSectionHeading}>Clasificación</h3>
+                <div className={incomeStyles.incomeClassificationFields}>
+                  {categoryField}
+                  {transactionDateField}
+                  <div className={incomeStyles.incomeDescription}>{descriptionField}</div>
+                </div>
+              </section>
+
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Activo">
+                <h3 className={incomeStyles.incomeSectionHeading}>Activo</h3>
+                {assetPurchaseField}
+              </section>
+            </>
+          ) : isReceivableIssueLayout ? (
+            <>
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Salida de fondos">
+                <h3 className={incomeStyles.incomeSectionHeading}>Salida de fondos</h3>
+                {paymentMethodField}
+                <div className={incomeStyles.receivableIssueSourceFields}>
+                  {accountField}
+                  <div className={incomeStyles.receivableIssueTransactionDate}>{transactionDateField}</div>
+                  {creditCardImpactField}
+                </div>
+              </section>
+
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Importe y moneda">
+                <h3 className={incomeStyles.incomeSectionHeading}>Importe y moneda</h3>
+                <div className={incomeStyles.incomePrimaryFields}>
+                  {amountCurrencyField}
+                  {exchangeRateField}
+                  {equivalenceField}
+                </div>
+              </section>
+
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Cuenta por cobrar">
+                <h3 className={incomeStyles.incomeSectionHeading}>Cuenta por cobrar</h3>
+                <div className={incomeStyles.receivableIssueFields}>
+                  {receivableIssueField}
+                  {receivableDueField}
+                  <div className={incomeStyles.receivableIssueDescription}>{descriptionField}</div>
+                </div>
+              </section>
+            </>
+          ) : isReceivableCollectLayout ? (
+            <>
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Pendiente por cobrar">
+                <h3 className={incomeStyles.incomeSectionHeading}>Pendiente por cobrar</h3>
+                {isEditMode ? (
+                  <p className={incomeStyles.incomeAttachmentHint} role="status">
+                    El endpoint de edición no expone la cuenta puntual o el grupo de deudas aplicado a este cobro.
+                  </p>
+                ) : receivableCollectField}
+              </section>
+
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Registrar cobro">
+                <h3 className={incomeStyles.incomeSectionHeading}>Registrar cobro</h3>
+                <div className={incomeStyles.incomePrimaryFields}>
+                  {accountField}
+                  {amountCurrencyField}
+                  {exchangeRateField}
+                </div>
+                <div className={incomeStyles.receivableCollectRecordFields}>
+                  <div className={incomeStyles.receivableCollectDate}>{transactionDateField}</div>
+                  <div className={incomeStyles.receivableCollectDescription}>{descriptionField}</div>
+                </div>
+              </section>
+            </>
+          ) : isPayableIssueLayout ? (
+            <>
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Dinero recibido">
+                <h3 className={incomeStyles.incomeSectionHeading}>Dinero recibido</h3>
+                <div className={incomeStyles.incomePrimaryFields}>
+                  {accountField}
+                  {amountCurrencyField}
+                </div>
+                {exchangeRateField}
+                {equivalenceField}
+              </section>
+
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Cuenta por pagar">
+                <h3 className={incomeStyles.incomeSectionHeading}>Cuenta por pagar</h3>
+                <div className={incomeStyles.payableIssueFields}>
+                  {payableIssueField}
+                  <div className={incomeStyles.payableIssueRecordFields}>
+                    {transactionDateField}
+                    {descriptionField}
+                    {payableDueField}
+                  </div>
+                </div>
+              </section>
+            </>
+          ) : isPayablePayLayout ? (
+            <>
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Pendiente por pagar">
+                <h3 className={incomeStyles.incomeSectionHeading}>Pendiente por pagar</h3>
+                {isEditMode ? (
+                  <p className={incomeStyles.incomeAttachmentHint} role="status">
+                    El endpoint de edición no expone la obligación o el grupo de deudas aplicado a este pago.
+                  </p>
+                ) : payablePayField}
+              </section>
+
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Registrar pago">
+                <h3 className={incomeStyles.incomeSectionHeading}>Registrar pago</h3>
+                <div className={incomeStyles.incomePrimaryFields}>
+                  {accountField}
+                  {amountCurrencyField}
+                  {exchangeRateField}
+                  {equivalenceField}
+                </div>
+                <div className={incomeStyles.receivableCollectRecordFields}>
+                  <div className={incomeStyles.receivableCollectDate}>{transactionDateField}</div>
+                  <div className={incomeStyles.receivableCollectDescription}>{descriptionField}</div>
+                </div>
+              </section>
+            </>
+          ) : isStageALayout && layoutMode === 'expense' ? (
+            <>
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Movimiento">
+                <h3 className={incomeStyles.incomeSectionHeading}>Movimiento</h3>
+                <div className={incomeStyles.incomePrimaryFields}>
+                  {paymentMethodField}
+                  {accountField}
+                  {creditCardImpactField}
+                  {amountCurrencyField}
+                </div>
+                {exchangeRateField}
+                {equivalenceField}
+              </section>
+
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Clasificación y registro">
+                <h3 className={incomeStyles.incomeSectionHeading}>Clasificación y registro</h3>
+                <div className={incomeStyles.operationCreateClassificationFields}>
+                  {categoryField}
+                  {transactionDateField}
+                  <div className={incomeStyles.incomeDescription}>{descriptionField}</div>
+                </div>
+              </section>
+            </>
+          ) : isStageALayout && layoutMode === 'transfer' ? (
+            <>
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection} ${incomeStyles.operationCreateFullWidth}`} aria-label="Transferencia">
+                <h3 className={incomeStyles.incomeSectionHeading}>Transferencia</h3>
+                <div className={incomeStyles.incomePrimaryFields}>
+                  {transferAccountsField}
+                  {transferSummaryField}
+                  {creditCardImpactField}
+                </div>
+              </section>
+
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Importe y moneda">
+                <h3 className={incomeStyles.incomeSectionHeading}>Importe y moneda</h3>
+                <div className={incomeStyles.incomePrimaryFields}>
+                  {amountCurrencyField}
+                  {exchangeRateField}
+                  {!isCrossCurrencyTransfer ? equivalenceField : null}
+                </div>
+              </section>
+
+              <section className={`${incomeStyles.incomeSection} ${incomeStyles.operationCreateSection}`} aria-label="Datos del registro">
+                <h3 className={incomeStyles.incomeSectionHeading}>Datos del registro</h3>
+                <div className={incomeStyles.incomePrimaryFields}>
+                  {dateDescriptionField}
+                </div>
+              </section>
+            </>
+          ) : (
+            <>
+              <div className="space-y-4">{primaryContextZone}</div>
+              <div className="space-y-4">{secondaryRecordZone}</div>
+            </>
+          )}
+          </fieldset>
 
           {progressiveOptionalField ? (
-            <div className="min-[860px]:col-span-2">
+            <div className={isIncomeLayout ? incomeStyles.incomeOptionalSlot : incomeStyles.operationCreateFullWidth}>
               {progressiveOptionalField}
             </div>
           ) : null}
 
           {inlineOptionalField ? (
-            <div className="min-[860px]:col-span-2">
+            <div className={isIncomeLayout ? incomeStyles.incomeOptionalSlot : incomeStyles.operationCreateFullWidth}>
               {inlineOptionalField}
             </div>
           ) : null}
@@ -3171,6 +4849,7 @@ export function TransactionForm({
       {/* ── 9. SUBMIT ────────────────────────────────────────────────────── */}
       <RecordModalFooter>
         <FormActions
+          className={isIncomeLayout ? '' : incomeStyles.operationFormActions}
           secondaryAction={onCancel ? (
             <Button
               type="button"
@@ -3179,10 +4858,10 @@ export function TransactionForm({
               onClick={onCancel}
               disabled={activeSubmitState.status === 'loading'}
             >
-              Cancelar
+              {lockSettlementEdit ? 'Cerrar' : 'Cancelar'}
             </Button>
           ) : undefined}
-          primaryAction={(
+          primaryAction={lockSettlementEdit ? null : (
             <SubmitButton
               type={type}
               state={activeSubmitState}
@@ -3194,6 +4873,14 @@ export function TransactionForm({
                 idle: 'Guardar cambios',
                 loading: 'Guardando...',
                 success: 'Cambios guardados',
+              } : isReceivableIssueCreate ? {
+                idle: 'Prestar dinero',
+                loading: 'Registrando…',
+                success: 'Préstamo registrado',
+              } : isPayableIssueCreate ? {
+                idle: 'Registrar dinero recibido',
+                loading: 'Registrando…',
+                success: 'Dinero recibido registrado',
               } : undefined}
             />
           )}

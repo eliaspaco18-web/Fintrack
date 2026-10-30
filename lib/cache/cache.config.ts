@@ -28,7 +28,6 @@ export const CacheTags = {
   userAccounts:     (userId: string) => `accounts:${userId}`,
   singleTx:         (id: string)     => `tx:${id}`,
 } as const
-
 // ─── TTL POR TIPO DE DATO ─────────────────────────────────────────────────────
 // En segundos. Guía al sistema de caché de Next.js y a SWR en el cliente.
 
@@ -98,29 +97,3 @@ export const RevalidationPaths = {
   collectReceivable: ['/dashboard', '/receivables'],
   payPayable:        ['/dashboard', '/payables'],
 } as const
-
-// ─── HELPER: revalidar por mutación ──────────────────────────────────────────
-// Importar en Server Actions para centralizar la lógica de invalidación.
-
-import { revalidatePath, revalidateTag } from 'next/cache'
-
-type MutationKey = keyof typeof InvalidationMap
-
-export function revalidateAfterMutation(
-  mutation: MutationKey,
-  extraPaths: string[] = []
-): void {
-  // Invalidar tags del Data Cache de Next.js
-  for (const tag of InvalidationMap[mutation]) {
-    revalidateTag(tag)
-  }
-
-  // Revalidar rutas del Full Route Cache
-  const paths = [
-    ...(RevalidationPaths[mutation as keyof typeof RevalidationPaths] ?? []),
-    ...extraPaths,
-  ]
-  for (const path of paths) {
-    revalidatePath(path)
-  }
-}

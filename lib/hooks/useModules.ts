@@ -153,7 +153,7 @@ export function useBudgets(initial: ModuleFilters = {}): UseBudgetsReturn {
   }
 }
 
-export function useAssets(initial: ModuleFilters = {}): UseAssetsReturn {
+export function useAssets(initial: ModuleFilters = {}, enabled = true): UseAssetsReturn {
   const [filters, setFiltersState] = useState<ModuleFilters>({
     status: 'ACTIVE', sort: 'purchase_date', ...initial,
   })
@@ -161,7 +161,7 @@ export function useAssets(initial: ModuleFilters = {}): UseAssetsReturn {
   const url = buildUrl('/api/assets', filters)
 
   const { data, isLoading, error, mutate } = useSWR<Asset[]>(
-    url, fetcher, {
+    enabled ? url : null, fetcher, {
       revalidateOnFocus: false,
       dedupingInterval:  CacheTTL.assets * 1000,
       keepPreviousData:  true,
@@ -174,12 +174,12 @@ export function useAssets(initial: ModuleFilters = {}): UseAssetsReturn {
 
   return {
     assets:     data ?? [],
-    isLoading:  isLoading && !data,
-    isEmpty:    !isLoading && (data ?? []).length === 0,
+    isLoading:  enabled && isLoading && !data,
+    isEmpty:    enabled && !isLoading && (data ?? []).length === 0,
     error:      error as FormError | null,
     filters,
     setFilters,
-    refetch:    () => mutate(),
+    refetch:    () => enabled ? mutate() : Promise.resolve(undefined),
   }
 }
 

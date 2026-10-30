@@ -41,7 +41,7 @@ interface TransactionExportRow {
   amount: number
   amount_pen: number
   currency: CurrencyCode
-  exchange_rate: number
+  exchange_rate: number | null
   description: string
   notes: string | null
   affects_reports: boolean
@@ -371,11 +371,7 @@ function buildSummary(rows: TransactionExportRow[]): ExportSummary {
 }
 
 async function readLogoFilePath(): Promise<string | null> {
-  const candidates = [
-    path.join(process.cwd(), 'public', 'brand', 'fintrack-mark.png'),
-    path.join(process.cwd(), 'public', 'brand', 'logo-fintrack.png'),
-    path.join(process.cwd(), 'public', 'logo.png'),
-  ]
+  const candidates = [path.join(process.cwd(), 'public', 'brand', 'v3', 'ft-ligature.png')]
 
   for (const filePath of candidates) {
     try {
@@ -432,7 +428,7 @@ async function buildCsv(payload: ExportPayload): Promise<Uint8Array> {
       row.description,
       row.amount.toFixed(2),
       row.currency,
-      row.exchange_rate.toFixed(4),
+      row.exchange_rate?.toFixed(4) ?? '',
       row.amount_pen.toFixed(2),
       row.affects_reports ? 'Si' : 'No',
       row.notes ?? '',
@@ -1707,7 +1703,7 @@ async function buildPdf(payload: ExportPayload): Promise<Uint8Array> {
 }
 
 async function fetchExportMeta(userId: string): Promise<MetaPayload> {
-  const supabase = createClient()
+  const supabase = await createClient()
   const [{ data: txDates, error: txError }, { data: portfolios, error: portfolioError }] = await Promise.all([
     supabase
       .from('transactions')
@@ -1747,7 +1743,7 @@ async function fetchExportMeta(userId: string): Promise<MetaPayload> {
 }
 
 async function fetchTransactions(userId: string): Promise<TransactionExportRow[]> {
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data, error } = await supabase
     .from('transactions')
     .select(`
@@ -1814,7 +1810,10 @@ async function fetchTransactions(userId: string): Promise<TransactionExportRow[]
       amount: toSafeNumber(row.amount),
       amount_pen: toSafeNumber(row.amount_pen),
       currency: toSafeCurrency(row.currency),
-      exchange_rate: toSafeNumber(row.exchange_rate, 1),
+      exchange_rate: (() => {
+        const rate = toSafeNumber(row.exchange_rate, 0)
+        return rate > 0 ? rate : null
+      })(),
       description: String(row.description ?? ''),
       notes: typeof row.notes === 'string' ? row.notes : null,
       affects_reports: row.affects_reports !== false,
@@ -1826,7 +1825,7 @@ async function fetchTransactions(userId: string): Promise<TransactionExportRow[]
 }
 
 export async function GET(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const {
     data: { user },
     error: authError,

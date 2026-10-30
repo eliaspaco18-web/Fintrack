@@ -1,0 +1,39 @@
+.creditsTableHead {
+  background: var(--ft-surface-muted);
+  color: var(--ft-text-muted);
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+
+.creditsTableHeaderTableCell {
+  box-sizing: border-box;
+  height: 38px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--ft-border);
+  vertical-align: middle;
+  white-space: nowrap;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+
+.creditsTableHeaderGridCell {
+  display: flex;
+  box-sizing: border-box;
+  min-width: 0;
+  height: 38px;
+  min-height: 38px;
+  align-items: center;
+  padding: 6px 4px;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+
+.creditsTableHeaderLeft { text-align: left; justify-content: flex-start; }
+.creditsTableHeaderCenter { text-align: center; justify-content: center; }
+.creditsTableHeaderRight { text-align: right; justify-content: flex-end; }

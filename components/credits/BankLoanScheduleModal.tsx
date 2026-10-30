@@ -4,9 +4,9 @@ import { Button } from '@/components/ui/Button'
 import { NumericInput } from '@/components/ui/NumericInput'
 import { FormActions } from '@/components/forms/primitives'
 import { RecordModal } from '@/components/ui/RecordModal'
-import {
-  BANK_LOAN_DATE_INPUT_MIN_WIDTH,
-} from '@/components/credits/credits-schedule.constants'
+import { CreditScheduleDateField } from '@/components/credits/CreditScheduleDateField'
+import tableHeaderStyles from '@/components/credits/CreditsTableHeader.module.css'
+import workbenchStyles from '@/components/credits/CreditsWorkbench.module.css'
 import { formatNumber } from '@/lib/contracts/ui.contracts'
 import { parseNumericInput } from '@/lib/utils/numeric-input'
 
@@ -30,6 +30,7 @@ type ScheduleTotals = {
 interface BankLoanScheduleModalProps {
   open: boolean
   onClose: () => void
+  onExitComplete?: () => void
   installments: InstallmentRow[]
   totalInstallmentsNum: number
   scheduleTotal: ScheduleTotals
@@ -63,11 +64,11 @@ function SummaryMetric({
   return (
     <div
       className={`
-        min-h-[84px] rounded-[var(--ft-form-radius-sm)] border border-[var(--ft-form-border)] px-3.5 py-3
+        min-h-[76px] rounded-[var(--ft-form-radius-sm)] border border-[var(--ft-form-border)] px-3.5 py-3
         ${emphasized ? 'bg-[var(--ft-form-surface)]' : 'bg-[var(--ft-surface-muted)]'}
       `}
     >
-      <p className="text-[11px] font-medium leading-[1.35] text-[var(--ft-form-muted)]">
+      <p className="text-[12px] font-medium leading-[1.35] text-[var(--ft-form-muted)]">
         {label}
       </p>
       <p
@@ -85,6 +86,7 @@ function SummaryMetric({
 export function BankLoanScheduleModal({
   open,
   onClose,
+  onExitComplete,
   installments,
   totalInstallmentsNum,
   scheduleTotal,
@@ -97,13 +99,18 @@ export function BankLoanScheduleModal({
     <RecordModal
       open={open}
       onClose={onClose}
+      onExitComplete={onExitComplete}
       eyebrow="Créditos"
       title="Cronograma completo del préstamo"
       subtitle="Edita el calendario entero de cuotas en una ventana dedicada, con columnas estables y totales visibles."
       size="full-form"
       widthClassName="w-[calc(100vw-32px)] max-w-[1240px]"
-      overlayClassName="z-[132]"
+      overlayClassName={`z-[132] ${workbenchStyles.creditScheduleOverlay}`}
       bodyClassName="credits-modal-body !flex !flex-col !overflow-hidden py-4"
+      presentation="workbench"
+      workbenchKind="schedule"
+      preserveFocusOnResume
+      motionSource="pointer"
       footer={(
         <FormActions
           secondaryAction={(
@@ -121,11 +128,11 @@ export function BankLoanScheduleModal({
     >
       <div className="flex min-h-0 w-full flex-1 flex-col gap-4">
         <div className="space-y-1">
-          <p className="text-[13px] font-semibold tracking-[-0.01em] text-[var(--ft-text)]">
+          <p className="text-[14px] font-semibold tracking-[-0.01em] text-[var(--ft-text-strong)]">
             Editor completo de cuotas
           </p>
           <p className="text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-            Revisa capital, intereses, seguro y total de cada cuota desde una tabla de ancho completo.
+            Capital, intereses, seguro y cargos por cuota.
           </p>
         </div>
 
@@ -139,7 +146,7 @@ export function BankLoanScheduleModal({
 
         <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)]">
           <div className="min-h-0 w-full flex-1 overflow-x-auto overflow-y-auto">
-            <table className="w-full min-w-[1080px] table-fixed text-[12px]">
+            <table className="w-full min-w-[1080px] table-fixed text-[13px]">
               <colgroup>
                 <col style={colWidth(BANK_LOAN_SCHEDULE_COLUMN_SHARES.installmentNumber)} />
                 <col style={colWidth(BANK_LOAN_SCHEDULE_COLUMN_SHARES.dueDate)} />
@@ -149,15 +156,15 @@ export function BankLoanScheduleModal({
                 <col style={colWidth(BANK_LOAN_SCHEDULE_COLUMN_SHARES.others)} />
                 <col style={colWidth(BANK_LOAN_SCHEDULE_COLUMN_SHARES.installmentTotal)} />
               </colgroup>
-              <thead className="sticky top-0 z-[1] bg-[var(--ft-surface-muted)]">
-                <tr className="text-[var(--ft-form-muted)]">
-                  <th className="px-3 py-2 text-center font-semibold">#</th>
-                  <th className="px-3 py-2 text-center font-semibold">Vencimiento</th>
-                  <th className="px-3 py-2 text-center font-semibold">Capital</th>
-                  <th className="px-3 py-2 text-center font-semibold">Intereses</th>
-                  <th className="px-3 py-2 text-center font-semibold">Seguro</th>
-                  <th className="px-3 py-2 text-center font-semibold">Otros</th>
-                  <th className="px-3 py-2 text-center font-semibold">Cuota</th>
+              <thead className={`sticky top-0 z-[1] ${tableHeaderStyles.creditsTableHead}`}>
+                <tr>
+                  <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderCenter}`}>#</th>
+                  <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderLeft}`}>Vencimiento</th>
+                  <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderRight}`}>Capital</th>
+                  <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderRight}`}>Intereses</th>
+                  <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderRight}`}>Seguro</th>
+                  <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderRight}`}>Otros</th>
+                  <th className={`${tableHeaderStyles.creditsTableHeaderTableCell} ${tableHeaderStyles.creditsTableHeaderRight}`}>Cuota</th>
                 </tr>
               </thead>
               <tbody>
@@ -181,13 +188,11 @@ export function BankLoanScheduleModal({
                           {index + 1}
                         </td>
                         <td className="px-3 py-3 align-middle">
-                          <input
-                            type="date"
+                          <CreditScheduleDateField
                             value={row.due_date}
-                            onChange={event => onUpdateInstallment(row.id, { due_date: event.target.value })}
-                            className="field-base ft-form-input credits-date-input h-10 w-full min-w-[136px] px-2 py-2 text-[12px]"
-                            style={{ minWidth: `${BANK_LOAN_DATE_INPUT_MIN_WIDTH}px` }}
-                            required
+                            onChange={value => onUpdateInstallment(row.id, { due_date: value })}
+                            label={`Fecha de vencimiento de la cuota ${index + 1}`}
+                            testId={`loan-installment-date-${row.id}`}
                             disabled={disabled}
                           />
                         </td>

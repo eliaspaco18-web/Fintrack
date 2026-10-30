@@ -1,0 +1,48 @@
+.formRoot {
+  min-width: 0;
+  container: receivable-form / inline-size;
+}
+
+.formGrid {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 18px;
+}
+
+.formSectionContainer,
+.formWide {
+  min-width: 0;
+}
+
+.dateGrid,
+.currencyGrid {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--ft-form-field-gap, 12px);
+}
+
+@container receivable-form (min-width: 720px) {
+  .formGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+  }
+
+  .formWide {
+    grid-column: 1 / -1;
+  }
+}
+
+@container receivable-form (min-width: 600px) {
+  .currencyGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container receivable-form (min-width: 960px) {
+  .dateGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

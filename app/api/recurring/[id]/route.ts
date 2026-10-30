@@ -8,11 +8,9 @@ import { createClient }              from '@/lib/supabase.server'
 import { getSessionUserId }          from '@/lib/api/response'
 
 // ─── GET /api/recurring/[id] ────────────────────────────────────────────────
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const supabase = createClient()
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) {
     return NextResponse.json(
@@ -48,11 +46,9 @@ export async function GET(
 }
 
 // ─── PATCH /api/recurring/[id] ──────────────────────────────────────────────
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const supabase = createClient()
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) {
     return NextResponse.json(
@@ -117,11 +113,9 @@ export async function PATCH(
 // ─── DELETE /api/recurring/[id] ─────────────────────────────────────────────
 // Elimina SOLO la plantilla recurrente. Las transacciones anteriores ligadas
 // a ella mantienen su datos (ON DELETE SET NULL en recurring_transaction_id).
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const supabase = createClient()
+export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) {
     return NextResponse.json(

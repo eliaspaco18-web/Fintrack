@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase.server'
 import { apiError, apiUnauthorized, getSessionUserId } from '@/lib/api/response'
 import { ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE } from '@/modules/attachments/attachment-integrity'
 
-type Params = { params: { id: string } }
+type Params = { params: Promise<{ id: string }> }
 
 /**
  * Legacy endpoint retained only to return a controlled response to old clients.
@@ -11,7 +11,7 @@ type Params = { params: { id: string } }
  * billing-cycle statements do not yet have a safe cycle-scoped association.
  */
 export async function POST(_req: NextRequest, _context: Params) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 

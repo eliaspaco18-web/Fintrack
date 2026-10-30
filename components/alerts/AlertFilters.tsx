@@ -1,75 +1,54 @@
 'use client'
 
-// =============================================================================
-// components/alerts/AlertFilters.tsx
-// PRD v3 — Módulo 9: Filtros compactos para la Risk Inbox
-// =============================================================================
-
 import { FilterBar } from '@/components/finance'
-import { AppSelect } from '@/components/ui/AppSelect'
+import { AppSelect, type AppSelectOption } from '@/components/ui/AppSelect'
 
-export type TypeFilter   = 'all' | 'CRITICAL' | 'OPERATIONAL' | 'SUGGESTION'
-export type ReadFilter   = 'all' | 'unread' | 'read'
-export type ModuleFilter = 'all' | 'credits' | 'budgets' | 'receivables' | 'payables' | 'recurring'
+export type TypeFilter = 'all' | 'CRITICAL' | 'OPERATIONAL' | 'SUGGESTION'
+export type ModuleFilter = 'all' | 'credits' | 'budgets' | 'receivables' | 'payables' | 'recurring' | 'alerts'
 
 interface AlertFiltersProps {
-  typeFilter:    TypeFilter
-  readFilter:    ReadFilter
-  moduleFilter:  ModuleFilter
-  onTypeChange:   (v: TypeFilter)   => void
-  onReadChange:   (v: ReadFilter)   => void
-  onModuleChange: (v: ModuleFilter) => void
+  typeFilter: TypeFilter
+  moduleFilter: ModuleFilter
+  onTypeChange: (value: TypeFilter) => void
+  onModuleChange: (value: ModuleFilter) => void
+  originModuleOptions: AppSelectOption[]
 }
 
 export function AlertFilters({
   typeFilter,
-  readFilter,
   moduleFilter,
   onTypeChange,
-  onReadChange,
   onModuleChange,
+  originModuleOptions,
 }: AlertFiltersProps) {
   return (
     <FilterBar className="justify-start md:justify-end">
       <AppSelect
         value={typeFilter}
-        onChange={v => onTypeChange(v as TypeFilter)}
-        className="filters-control sm:w-[176px]"
+        onChange={value => onTypeChange(value as TypeFilter)}
+        className="filters-control w-full sm:w-[176px]"
+        ariaLabel="Filtrar avisos por severidad"
+        testId="alerts-severity-filter"
         compact
         searchable={false}
+        matchTriggerWidth
         options={[
-          { value: 'all',         label: 'Todas las prioridades' },
-          { value: 'CRITICAL',    label: 'Críticas'              },
-          { value: 'OPERATIONAL', label: 'Operativas'            },
-          { value: 'SUGGESTION',  label: 'Sugerencias'           },
-        ]}
-      />
-      <AppSelect
-        value={readFilter}
-        onChange={v => onReadChange(v as ReadFilter)}
-        className="filters-control sm:w-[164px]"
-        compact
-        searchable={false}
-        options={[
-          { value: 'all',    label: 'Todos los estados' },
-          { value: 'unread', label: 'Pendientes'         },
-          { value: 'read',   label: 'Resueltas'          },
+          { value: 'all', label: 'Todas las severidades' },
+          { value: 'CRITICAL', label: 'Críticas' },
+          { value: 'OPERATIONAL', label: 'Operativas' },
+          { value: 'SUGGESTION', label: 'Sugerencias' },
         ]}
       />
       <AppSelect
         value={moduleFilter}
-        onChange={v => onModuleChange(v as ModuleFilter)}
-        className="filters-control sm:w-[196px]"
+        onChange={value => onModuleChange(value as ModuleFilter)}
+        className="filters-control w-full sm:w-[196px]"
+        ariaLabel="Filtrar avisos por módulo de origen"
+        testId="alerts-module-filter"
         compact
         searchable={false}
-        options={[
-          { value: 'all',         label: 'Todos los módulos'   },
-          { value: 'credits',     label: 'Créditos'            },
-          { value: 'budgets',     label: 'Presupuestos'        },
-          { value: 'receivables', label: 'Cuentas por cobrar'  },
-          { value: 'payables',    label: 'Cuentas por pagar'   },
-          { value: 'recurring',   label: 'Recurrentes'         },
-        ]}
+        matchTriggerWidth
+        options={originModuleOptions}
       />
     </FilterBar>
   )

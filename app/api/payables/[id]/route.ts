@@ -55,8 +55,9 @@ function normalizePayableRow<T extends PayableResponseRow>(row: T) {
   }
 }
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const supabase = createClient()
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
@@ -71,8 +72,9 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   return NextResponse.json({ ok: true, data: normalizePayableRow(data as PayableResponseRow) })
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const supabase = createClient()
+export async function PATCH(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
@@ -127,8 +129,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   return NextResponse.json({ ok: true, data: normalizePayableRow(data as PayableResponseRow) })
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
-  const supabase = createClient()
+export async function DELETE(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 

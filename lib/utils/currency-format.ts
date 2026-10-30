@@ -39,14 +39,15 @@ export function formatWithSymbol(
  * Calcula la equivalencia en otra moneda.
  * @param amount Monto en la moneda original
  * @param fromCurrency Código de moneda original
- * @param exchangeRate Tipo de cambio (ej: 3.75 para USD→PEN)
+ * @param exchangeRate Tipo de cambio USD→PEN verificado o ingresado explícitamente
  * @returns Objeto con el monto convertido y el texto formateado
  */
 export function calculateEquivalence(
   amount: number,
   fromCurrency: string,
-  exchangeRate: number
-): { amount: number; text: string; targetCurrency: string } {
+  exchangeRate: number | null
+): { amount: number; text: string; targetCurrency: string } | null {
+  if (!Number.isFinite(exchangeRate) || exchangeRate === null || exchangeRate <= 0) return null
   if (fromCurrency === 'PEN') {
     // PEN → USD
     const converted = exchangeRate > 0 ? amount / exchangeRate : 0

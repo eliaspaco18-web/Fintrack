@@ -19,7 +19,8 @@ export async function middleware(request: NextRequest) {
   const isAuthEntryRoute = pathname.startsWith('/login') || pathname.startsWith('/register')
   const isAuthCallbackRoute = pathname.startsWith('/auth/callback')
   const isApiRoute = pathname.startsWith('/api/')
-  const isStaticAsset = pathname.startsWith('/_next') || pathname === '/favicon.ico'
+  const isPublicBrandAsset = pathname.startsWith('/brand/v3/')
+  const isStaticAsset = pathname.startsWith('/_next') || pathname === '/favicon.ico' || isPublicBrandAsset
   const isLandingPage = pathname === '/'
   const isDeveloperRoute = isDeveloperBypassRoute(pathname)
   const isStateScreenRoute = isSystemMessageRoute(pathname)
@@ -44,6 +45,14 @@ export async function middleware(request: NextRequest) {
   // Las API validan autenticación dentro de cada Route Handler.
   // El modo mantenimiento debe resolverse antes de este pass-through.
   if (isApiRoute) {
+    return NextResponse.next({
+      request: { headers: request.headers },
+    })
+  }
+
+  // Approved logos and browser icons are public static assets and must not
+  // invoke session validation or be redirected to the sign-in page.
+  if (isPublicBrandAsset) {
     return NextResponse.next({
       request: { headers: request.headers },
     })

@@ -8,13 +8,14 @@
 //   Notas, Adjuntar, Botón "guardar como recurrente"
 // =============================================================================
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button }                           from '@/components/ui/Button'
 import { NumericInput }                     from '@/components/ui/NumericInput'
 import { AppSelect }                        from '@/components/ui/AppSelect'
 import { CheckboxToggle }                   from '@/components/forms/TransactionForm/FormFields'
-import { FormActions, FormField, FormSection, OptionalSection } from '@/components/forms/primitives'
-import { RecordModalFooter }                from '@/components/ui/RecordModal'
+import { IncomeDatePicker } from '@/components/forms/TransactionForm/IncomeDatePicker'
+import { CreditInfoHint } from '@/components/credits/CreditInfoHint'
+import { FormField, FormSection, OptionalSection } from '@/components/forms/primitives'
 import { getApiErrorMessage }               from '@/lib/api/error-message'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 import { formatCurrency }                   from '@/lib/contracts/ui.contracts'
@@ -24,6 +25,7 @@ import {
   ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE,
 } from '@/modules/attachments/attachment-integrity'
 import type { DebtorRow }                   from './DebtorForm'
+import styles from './ReceivableForm.module.css'
 
 // ─── Tipos locales ────────────────────────────────────────────────────────────
 
@@ -35,12 +37,13 @@ type AccountOption = {
   is_active: boolean
 }
 
-type ReceivableRow = {
+export type ReceivableRow = {
   id:              string
   debtor_id:       string | null
   debtor_name:     string
   concept:         string | null
   amount:          number
+  collected_amount: number
   currency:        string
   issue_date:      string
   due_date:        string | null
@@ -66,13 +69,14 @@ type FormState = {
 type ReceivableFormProps = {
   receivable?:  ReceivableRow | null
   debtors:      DebtorRow[]
-  exchangeRate: number
+  exchangeRate: number | null
   onSuccess:    () => void
-  onCancel:     () => void
   defaultDebtorId?: string
   /** Llamado para refrescar lista de deudores tras crear uno nuevo */
   onAddDebtor?: () => void
   disabled?:    boolean
+  onDirtyChange?: (dirty: boolean) => void
+  onFormStateChange?: (state: { disabled: boolean; saving: boolean; editing: boolean }) => void
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -109,6 +113,19 @@ function fromReceivable(r: ReceivableRow): FormState {
   }
 }
 
+function sameFormValues(left: FormState, right: FormState) {
+  return left.account_id === right.account_id
+    && left.issue_date === right.issue_date
+    && left.due_date === right.due_date
+    && left.debtor_id === right.debtor_id
+    && left.concept.trim() === right.concept.trim()
+    && left.currency === right.currency
+    && roundToDecimals(parseNumericInput(left.amount, 0), 2) === roundToDecimals(parseNumericInput(right.amount, 0), 2)
+    && left.notes.trim() === right.notes.trim()
+    && left.save_recurring === right.save_recurring
+    && left.recurring_name.trim() === right.recurring_name.trim()
+}
+
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 export function ReceivableForm({
@@ -116,59 +133,73 @@ export function ReceivableForm({
   debtors,
   exchangeRate,
   onSuccess,
-  onCancel,
   defaultDebtorId,
   disabled = false,
+  onDirtyChange,
+  onFormStateChange,
 }: ReceivableFormProps) {
   const { toast } = useToast()
   const isEdit    = !!receivable
 
-  const [form, setForm]         = useState<FormState>(
-    receivable
-      ? fromReceivable(receivable)
-      : { ...EMPTY_FORM, debtor_id: defaultDebtorId ?? EMPTY_FORM.debtor_id }
-  )
+  const initialForm = useMemo(() => receivable
+    ? fromReceivable(receivable)
+    : { ...EMPTY_FORM, debtor_id: defaultDebtorId ?? EMPTY_FORM.debtor_id }, [defaultDebtorId, receivable])
+  const [form, setForm] = useState<FormState>(initialForm)
+  const formRef = useRef(form)
+  const initialFormRef = useRef(initialForm)
   const [accounts, setAccounts] = useState<AccountOption[]>([])
+  const [accountsLoading, setAccountsLoading] = useState(!isEdit)
+  const [accountsError, setAccountsError] = useState<string | null>(null)
   const [saving, setSaving]     = useState(false)
   const [error, setError]       = useState<string | null>(null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [dateError, setDateError] = useState<string | null>(null)
 
   const patch = useCallback((updates: Partial<FormState>) => {
-    setForm(prev => ({ ...prev, ...updates }))
-  }, [])
-
-  useEffect(() => {
-    const nextForm = receivable
-      ? fromReceivable(receivable)
-      : { ...EMPTY_FORM, debtor_id: defaultDebtorId ?? EMPTY_FORM.debtor_id }
-
+    const nextForm = { ...formRef.current, ...updates }
+    formRef.current = nextForm
     setForm(nextForm)
     setError(null)
+    onDirtyChange?.(!sameFormValues(nextForm, initialFormRef.current))
+  }, [onDirtyChange])
+
+  useEffect(() => {
+    formRef.current = initialForm
+    initialFormRef.current = initialForm
+    setForm(initialForm)
+    setError(null)
+    setDateError(null)
+    onDirtyChange?.(false)
     setAdvancedOpen(Boolean(
       receivable?.notes?.trim() ||
       receivable?.attachment_url ||
-      nextForm.save_recurring ||
-      nextForm.recurring_name.trim(),
+      initialForm.save_recurring ||
+      initialForm.recurring_name.trim(),
     ))
-  }, [defaultDebtorId, receivable])
+  }, [initialForm, onDirtyChange, receivable?.attachment_url, receivable?.notes])
 
   // Cargar portafolios activos. Las tarjetas se permiten como origen:
   // el backend las registra como consumo de línea disponible.
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      try {
-        const res  = await fetch('/api/accounts?is_active=true', { cache: 'no-store' })
-        const json = await res.json().catch(() => null)
-        if (!cancelled && res.ok && json?.ok) {
-          const list = (json.data as AccountOption[]).filter(account => account.is_active)
-          setAccounts(list)
-        }
-      } catch { /* silencioso */ }
+  const loadAccounts = useCallback(async () => {
+    setAccountsLoading(true)
+    setAccountsError(null)
+    try {
+      const response = await fetch('/api/accounts?is_active=true', { cache: 'no-store' })
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.ok || !Array.isArray(json.data)) {
+        throw new Error(getApiErrorMessage(json, 'No se pudieron cargar los portafolios.'))
+      }
+      setAccounts((json.data as AccountOption[]).filter(account => account.is_active))
+    } catch (caught) {
+      setAccountsError(caught instanceof Error ? caught.message : 'No se pudieron cargar los portafolios.')
+    } finally {
+      setAccountsLoading(false)
     }
-    void load()
-    return () => { cancelled = true }
   }, [])
+
+  useEffect(() => {
+    void loadAccounts()
+  }, [loadAccounts])
 
   // Auto-moneda desde portafolio seleccionado
   useEffect(() => {
@@ -180,9 +211,11 @@ export function ReceivableForm({
   // ── Equivalencia ────────────────────────────────────────────────────────────
   const amount     = parseNumericInput(form.amount, 0)
   const isPen      = form.currency === 'PEN'
-  const equivLabel = isPen
-    ? `≈ ${formatCurrency(amount / (exchangeRate || 1), 'USD')}`
-    : `≈ ${formatCurrency(amount * (exchangeRate || 1), 'PEN')}`
+  const equivLabel = exchangeRate === null || !Number.isFinite(exchangeRate) || exchangeRate <= 0
+    ? 'Equivalencia no disponible'
+    : isPen
+      ? `≈ ${formatCurrency(amount / exchangeRate, 'USD')}`
+      : `≈ ${formatCurrency(amount * exchangeRate, 'PEN')}`
 
   // ── Subir adjunto ────────────────────────────────────────────────────────────
   // ── Submit ──────────────────────────────────────────────────────────────────
@@ -252,6 +285,7 @@ export function ReceivableForm({
         `${debtorRow.name} — ${formatCurrency(amount, form.currency)}.`,
         { persist: false },
       )
+      onDirtyChange?.(false)
       onSuccess()
     } catch (caught) {
       const msg = caught instanceof Error ? caught.message : 'No se pudo guardar la cuenta por cobrar'
@@ -260,13 +294,17 @@ export function ReceivableForm({
     } finally {
       setSaving(false)
     }
-  }, [debtors, form, isEdit, onSuccess, receivable, toast])
+  }, [debtors, form, isEdit, onDirtyChange, onSuccess, receivable, toast])
 
-  const isDisabled = disabled || saving
+  const isDisabled = disabled || saving || (!isEdit && (accountsLoading || Boolean(accountsError) || accounts.length === 0))
+
+  useEffect(() => {
+    onFormStateChange?.({ disabled: isDisabled, saving, editing: isEdit })
+  }, [isDisabled, isEdit, onFormStateChange, saving])
 
   // ── Opciones de select ───────────────────────────────────────────────────────
   const accountOptions = [
-    { value: '', label: 'Selecciona portafolio...' },
+    { value: '', label: accountsLoading ? 'Cargando portafolios…' : accountsError ? 'Portafolios no disponibles' : accounts.length === 0 ? 'Sin portafolios activos' : 'Selecciona portafolio…' },
     ...accounts.map(a => ({ value: a.id, label: `${a.name} (${a.currency})` })),
   ]
 
@@ -289,12 +327,12 @@ export function ReceivableForm({
       id="receivable-form"
       onSubmit={handleSubmit}
       data-testid="receivable-form"
-      className="space-y-[var(--ft-form-section-gap)]"
+      className={`${styles.formRoot} space-y-5`}
     >
-      <div className="grid grid-cols-1 gap-5 min-[860px]:grid-cols-[minmax(0,1.04fr)_minmax(300px,0.96fr)] min-[860px]:items-start">
+      <div className={styles.formGrid}>
+        <div className={styles.formSectionContainer}>
         <FormSection
           title="Contexto"
-          description="Define quién te debe y desde qué portafolio estás registrando el cobro esperado."
           className="space-y-4"
         >
           <FormField label="Deudor">
@@ -304,9 +342,10 @@ export function ReceivableForm({
               options={debtorOptions}
               disabled={isDisabled}
               searchable
+              matchTriggerWidth
               searchPlaceholder="Buscar deudor..."
               className="w-full"
-              data-testid="receivable-debtor-select"
+              testId="receivable-debtor-select"
             />
           </FormField>
 
@@ -318,10 +357,19 @@ export function ReceivableForm({
                 options={accountOptions}
                 disabled={isDisabled}
                 searchable
+                matchTriggerWidth
                 searchPlaceholder="Buscar portafolio..."
                 className="w-full"
-                data-testid="receivable-account-select"
+                testId="receivable-account-select"
               />
+                  {accountsError ? (
+                    <p className="mt-2 flex items-center gap-2 text-[11px] text-[var(--ft-danger)]" role="alert">
+                      {accountsError}
+                      <Button type="button" variant="ghost" size="sm" onClick={() => void loadAccounts()}>Reintentar</Button>
+                    </p>
+                  ) : accounts.length === 0 && !accountsLoading ? (
+                    <p className="mt-2 text-[11px] text-[var(--ft-text-muted)]" role="status">No hay portafolios activos disponibles.</p>
+                  ) : null}
             </FormField>
           ) : (
             <FormField
@@ -331,7 +379,7 @@ export function ReceivableForm({
                 : 'El portafolio asociado se mantiene sin cambios durante la edición.'}
             >
               <div
-                className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--c-surface-2)] px-3.5 py-3 text-sm text-[var(--c-text)]"
+                className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3 text-sm text-[var(--ft-text-strong)]"
                 data-testid="receivable-account-context"
               >
                 <span className="font-medium">{sourceAccountName ?? 'Portafolio original'}</span>
@@ -339,10 +387,11 @@ export function ReceivableForm({
             </FormField>
           )}
         </FormSection>
+        </div>
 
+        <div className={styles.formSectionContainer}>
         <FormSection
           title="Registro"
-          description="Confirma importe, moneda y fechas para dejar el seguimiento listo."
           className="space-y-4"
         >
           <FormField label="Monto">
@@ -358,52 +407,54 @@ export function ReceivableForm({
             />
           </FormField>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className={styles.currencyGrid}>
             <div
-              className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--c-surface-2)] px-3.5 py-3"
+              className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3"
               data-testid="receivable-currency-display"
             >
-              <p className="text-[11px] font-medium text-[var(--ft-form-muted)]">Moneda</p>
-              <p className="mt-1 text-sm font-semibold text-[var(--c-text)]">{form.currency || '—'}</p>
+              <p className="flex items-center gap-1 text-[11px] font-medium text-[var(--ft-form-muted)]">Moneda <CreditInfoHint label="Ayuda sobre la moneda">La moneda procede del portafolio asociado y se conserva al editar.</CreditInfoHint></p>
+              <p className="mt-1 text-sm font-semibold text-[var(--ft-text-strong)]">{form.currency || '—'}</p>
             </div>
-            <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--c-surface-2)] px-3.5 py-3">
+            <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
               <p className="text-[11px] font-medium text-[var(--ft-form-muted)]">Equivalencia</p>
-              <p className="mt-1 text-sm font-semibold text-[var(--c-text)]">{equivLabel}</p>
+              <p className="mt-1 text-sm font-semibold text-[var(--ft-text-strong)]">{equivLabel}</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-[var(--ft-form-field-gap)] sm:grid-cols-2">
+          <div className={styles.dateGrid}>
             <FormField label="Fecha de emisión">
-              <input
-                type="date"
+              <IncomeDatePicker
                 value={form.issue_date}
-                onChange={e => patch({ issue_date: e.target.value })}
-                required
+                onChange={value => patch({ issue_date: value })}
+                onInvalidInput={setDateError}
+                error={dateError ?? undefined}
                 disabled={isDisabled}
-                className="field-base ft-form-input w-full"
-                data-testid="receivable-date-input"
+                inputLabel="Fecha de emisión"
+                inputTestId="receivable-date-input"
               />
             </FormField>
 
             <FormField
               label="Fecha de vencimiento"
               optional
-              description="Mantenla visible para operar cobros, alertas y priorización."
+              labelAdornment={<CreditInfoHint label="Ayuda sobre la fecha de vencimiento">Es opcional. Se usa para mostrar la fecha registrada y priorizar el seguimiento; no significa que el cobro ya ocurrió.</CreditInfoHint>}
             >
-              <input
-                type="date"
+              <IncomeDatePicker
                 value={form.due_date}
-                onChange={e => patch({ due_date: e.target.value })}
+                onChange={value => patch({ due_date: value })}
+                onInvalidInput={setDateError}
+                error={dateError ?? undefined}
                 disabled={isDisabled}
-                className="field-base ft-form-input w-full"
-                data-testid="receivable-due-date-input"
+                inputLabel="Fecha de vencimiento"
+                inputTestId="receivable-due-date-input"
               />
             </FormField>
           </div>
         </FormSection>
+        </div>
 
-        <div className="min-[860px]:col-span-2">
-          <FormField label="Descripción" optional description="Usa una referencia reconocible para el seguimiento del cobro.">
+        <div className={styles.formWide}>
+          <FormField label="Descripción" optional>
             <input
               value={form.concept}
               onChange={e => patch({ concept: e.target.value })}
@@ -416,9 +467,9 @@ export function ReceivableForm({
           </FormField>
         </div>
 
-        <div className="min-[860px]:col-span-2">
+        <div className={styles.formWide}>
           <OptionalSection
-            title="Mas opciones"
+            title="Información adicional"
             summary={optionalSummary}
             open={advancedOpen}
             onOpenChange={setAdvancedOpen}
@@ -485,27 +536,6 @@ export function ReceivableForm({
         </div>
       ) : null}
 
-      <RecordModalFooter>
-        <FormActions
-          secondaryAction={(
-            <Button type="button" variant="secondary" size="lg" onClick={onCancel} disabled={saving}>
-              Cancelar
-            </Button>
-          )}
-          primaryAction={(
-            <Button
-              type="submit"
-              variant="primary"
-              size="lg"
-              disabled={isDisabled}
-              loading={saving}
-              testId="receivable-save-btn"
-            >
-              {isEdit ? 'Actualizar cuenta por cobrar' : 'Crear cuenta por cobrar'}
-            </Button>
-          )}
-        />
-      </RecordModalFooter>
     </form>
   )
 }

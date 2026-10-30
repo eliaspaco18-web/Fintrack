@@ -8,8 +8,9 @@ import type { CreditDetailLoanEvidence } from '@/modules/credits/credit-detail-p
 
 const SERVER_QUERY_TIMEOUT_MS = 4_000
 
-export default async function CreditDetailPage({ params }: { params: { id: string } }) {
-  const supabase = createClient()
+export default async function CreditDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 

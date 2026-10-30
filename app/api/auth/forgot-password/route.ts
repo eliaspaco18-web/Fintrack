@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
     console.warn('[forgot-password] custom email fallback:', customResetEmail.reason)
   }
 
-  const supabase = createClient()
+  const supabase = await createClient()
   if (!customResetEmail.sent) {
     const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {
       redirectTo,

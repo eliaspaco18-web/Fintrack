@@ -1,0 +1,24 @@
+.brand-review{background:var(--canvas)}
+.brand-review main{max-width:1200px;padding:40px 40px 28px}
+.identity-heading{display:flex;justify-content:space-between;align-items:center;gap:28px;margin-bottom:30px}
+.identity-heading h1{font-size:28px;line-height:36px;margin:8px 0}
+.identity-heading p:not(.eyebrow){font-size:12px;color:var(--muted);line-height:20px}
+.identity-heading>.btn{white-space:nowrap}
+.identity-lockups{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.identity-lockups section{padding:38px 28px;display:flex;flex-direction:column;justify-content:center;align-items:center;min-height:220px}
+.identity-light{background:var(--surface)}.identity-dark{background:var(--surface);color:var(--ink)}
+.identity-word{display:flex;gap:16px;align-items:center}.identity-word img{width:72px;height:72px}
+.identity-word span{font-size:42px;line-height:54px;font-weight:700;letter-spacing:-2px}
+.identity-lockups p{font-size:11px;color:var(--muted);margin-top:24px}
+.identity-scale{display:flex;justify-content:space-between;align-items:center;gap:32px;padding:30px 0;border-bottom:1px solid var(--line)}
+.identity-scale p{font-size:11px;line-height:18px;color:var(--muted);margin-top:8px;max-width:42ch}
+.size-strip{display:flex;gap:28px;align-items:flex-end}.size-strip figure{text-align:center;margin:0;width:48px}
+.size-strip figcaption{font-size:10px;color:var(--muted);margin-top:16px}
+.identity-usage{display:grid;grid-template-columns:1.2fr 1.15fr 1fr;gap:28px;padding:28px 0}
+.identity-usage h2{font-size:15px;margin-bottom:18px}
+.identity-usage p{font-size:11px;line-height:19px;color:var(--muted);margin-top:12px}
+.app-samples{display:flex;align-items:center;gap:20px}.sidebar-sample{display:flex;gap:8px;align-items:center}
+.sidebar-sample strong{font-size:22px;letter-spacing:-1px}.mono-sample{display:flex;align-items:center;gap:16px;padding:16px 0}
+.mono-sample span{font-size:11px;line-height:20px;color:var(--muted)}.identity-swatches{display:flex;gap:9px}
+.identity-swatches i{width:34px;height:34px;border-radius:7px}.identity-note{font-size:10px;line-height:18px;color:var(--muted);border-top:1px solid var(--line);padding-top:18px}
+@media(max-width:767px){.brand-review main{padding:24px 18px}.identity-heading{display:block}.identity-heading h1{font-size:24px;line-height:32px}.identity-heading>.btn{margin-top:16px}.identity-lockups{grid-template-columns:1fr}.identity-scale{display:block}.size-strip{gap:10px;margin-top:24px;justify-content:space-between}.size-strip figure{width:auto}.identity-usage{grid-template-columns:1fr}.identity-word span{font-size:38px}}

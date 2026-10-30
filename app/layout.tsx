@@ -3,8 +3,22 @@
 // =============================================================================
 
 import type { Metadata, Viewport } from 'next'
+import localFont from 'next/font/local'
 import { Providers } from './providers'
 import './globals.css'
+
+// Next serves these local files under /_next/static, which is already exempt
+// from the auth middleware. The variable alone does not restyle legacy routes.
+const fintrackV3Font = localFont({
+  src: [
+    { path: '../public/fonts/v3/manrope-regular.ttf', weight: '400', style: 'normal' },
+    { path: '../public/fonts/v3/manrope-semibold.ttf', weight: '600', style: 'normal' },
+    { path: '../public/fonts/v3/manrope-bold.ttf', weight: '700', style: 'normal' },
+  ],
+  variable: '--font-fintrack-v3',
+  display: 'swap',
+  preload: false,
+})
 
 export const metadata: Metadata = {
   title: {
@@ -13,9 +27,14 @@ export const metadata: Metadata = {
   },
   description: 'Plataforma financiera para gestionar ingresos, egresos, créditos, activos y alertas.',
   icons: {
-    icon: '/brand/fintrack-tab-icon.png',
-    shortcut: '/brand/fintrack-tab-icon.png',
-    apple: '/brand/fintrack-mark.png',
+    icon: [
+      { url: '/brand/v3/ft-favicon.svg', type: 'image/svg+xml', sizes: 'any' },
+      { url: '/brand/v3/ft-favicon-16.png', type: 'image/png', sizes: '16x16' },
+      { url: '/brand/v3/ft-favicon-32.png', type: 'image/png', sizes: '32x32' },
+      { url: '/brand/v3/ft-favicon-48.png', type: 'image/png', sizes: '48x48' },
+    ],
+    shortcut: '/brand/v3/ft-favicon-32.png',
+    apple: [{ url: '/brand/v3/ft-apple-touch-icon.png', type: 'image/png', sizes: '180x180' }],
   },
   robots: { index: false, follow: false },
 }
@@ -51,7 +70,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="es"
       suppressHydrationWarning
     >
-      <body className="font-body antialiased">
+      <body className={`font-body antialiased ${fintrackV3Font.variable}`}>
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
         <Providers>
           {children}

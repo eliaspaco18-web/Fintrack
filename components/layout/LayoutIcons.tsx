@@ -25,10 +25,10 @@ const NAV_ICON_PATHS: Record<NavIconKey, React.ReactNode> = {
   ),
   portfolio: (
     <>
-      <rect x="2.5" y="6" width="19" height="14" rx="3"/>
-      <path d="M8 6V4.5A2.5 2.5 0 0 1 10.5 2h3A2.5 2.5 0 0 1 16 4.5V6"/>
-      <path d="M2.5 11.5h19"/>
-      <circle cx="16.8" cy="15.2" r="1.3"/>
+      <path d="M4 6.5V5a2 2 0 0 1 2-2h12"/>
+      <rect x="3" y="6.5" width="18" height="14" rx="2.5"/>
+      <path d="M16.5 12h4.5v4.5h-4.5a2.25 2.25 0 0 1 0-4.5Z"/>
+      <circle cx="17.5" cy="14.25" r=".5" fill="currentColor" stroke="none"/>
     </>
   ),
   transactions: (
@@ -49,11 +49,9 @@ const NAV_ICON_PATHS: Record<NavIconKey, React.ReactNode> = {
   ),
   budgets: (
     <>
-      <path d="M4 6.5h16v11a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-11Z"/>
-      <path d="M4 10.5h16"/>
-      <path d="M8 3.5v3"/>
-      <path d="M16 3.5v3"/>
-      <path d="M8.8 14.8h6.4"/>
+      <circle cx="12" cy="12" r="9"/>
+      <circle cx="12" cy="12" r="5.5"/>
+      <circle cx="12" cy="12" r="2"/>
     </>
   ),
   assets: (
@@ -65,16 +63,14 @@ const NAV_ICON_PATHS: Record<NavIconKey, React.ReactNode> = {
   ),
   receivables: (
     <>
-      <path d="M14 2.5H6.5A2.5 2.5 0 0 0 4 5v14a2.5 2.5 0 0 0 2.5 2.5h11A2.5 2.5 0 0 0 20 19V8.5L14 2.5Z"/>
-      <path d="M14 2.5V8h6"/>
-      <path d="m8.8 14.8 2.3 2.3 4.2-4.2"/>
+      <path d="M5 18.5 19 4.5"/>
+      <path d="M10.5 4.5H19V13"/>
     </>
   ),
   payables: (
     <>
-      <path d="M14 2.5H6.5A2.5 2.5 0 0 0 4 5v14a2.5 2.5 0 0 0 2.5 2.5h11A2.5 2.5 0 0 0 20 19V8.5L14 2.5Z"/>
-      <path d="M14 2.5V8h6"/>
-      <path d="M8.8 14.8h6.4"/>
+      <path d="m5 19.5 14-14"/>
+      <path d="M5 11v8.5h8.5"/>
     </>
   ),
   alerts: (

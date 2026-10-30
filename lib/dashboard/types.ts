@@ -4,14 +4,14 @@
 // =============================================================================
 
 export interface MoneyAmount {
-  pen: number
-  usd: number
+  pen: number | null
+  usd: number | null
 }
 
 export interface DashboardMonthlyBalanceVariation {
   amount_pen: number
   percent: number | null
-  previous_balance_pen: number
+  previous_balance_pen: number | null
   trend: 'up' | 'down' | 'flat'
 }
 
@@ -26,7 +26,7 @@ export interface DashboardCategoryBreakdownItem {
 export interface DashboardCounterpartyPreview {
   id: string
   name: string
-  pending_amount_pen: number
+  pending_amount_pen: number | null
   href: string
 }
 
@@ -35,13 +35,13 @@ export interface DashboardSummary {
   monthly_balance_variation: DashboardMonthlyBalanceVariation
   resultado_mensual: number
   ingresos_mes: number
-  ingresos_mes_usd?: number
+  ingresos_mes_usd?: number | null
   egresos_mes: number
-  egresos_mes_usd?: number
+  egresos_mes_usd?: number | null
   alertas_pendientes: number
   patrimonio_neto: MoneyAmount
   balance_mes: number
-  balance_mes_usd?: number
+  balance_mes_usd?: number | null
 }
 
 export type MoneyFlowMode = 'acumulado' | 'mensual'
@@ -66,46 +66,46 @@ export interface SaldoDiaPoint {
 
 export interface ModulesSummary {
   cuentas: number
-  cuentas_total_consolidado?: number
-  liquidez_propia_total?: number
+  cuentas_total_consolidado?: number | null
+  liquidez_propia_total?: number | null
   creditos: number
-  creditos_uso_total?: number
-  creditos_limite_total?: number
-  creditos_disponible_total?: number
-  disponibilidad_ampliada_total?: number
+  creditos_uso_total?: number | null
+  creditos_limite_total?: number | null
+  creditos_disponible_total?: number | null
+  disponibilidad_ampliada_total?: number | null
   activos: {
     count: number
-    total_soles: number
+    total_soles: number | null
   }
   por_cobrar: {
     count: number
-    total_adeudado: number
+    total_adeudado: number | null
   }
   por_pagar: {
     count: number
-    total_por_pagar: number
+    total_por_pagar: number | null
   }
-  creditos_uso_pct: number
-  posicion_neta?: number
+  creditos_uso_pct: number | null
+  posicion_neta?: number | null
 }
 
 export interface DashboardSidebar {
   saldos_bancarios: {
-    total_consolidado: number
+    total_consolidado: number | null
     items: Array<{
       portfolio_id: string
       name: string
-      saldo: number
-      pct_of_total: number
+      saldo: number | null
+      pct_of_total: number | null
     }>
   }
   flujo_pendiente: {
-    por_cobrar_total: number
+    por_cobrar_total: number | null
     por_cobrar_count: number
-    por_pagar_total: number
+    por_pagar_total: number | null
     por_pagar_count: number
-    neto: number
-    nota: 'favorece' | 'desfavorece' | 'equilibrado'
+    neto: number | null
+    nota: 'favorece' | 'desfavorece' | 'equilibrado' | 'incomplete'
     top_deudores: DashboardCounterpartyPreview[]
     top_acreedores: DashboardCounterpartyPreview[]
   }
@@ -116,7 +116,8 @@ export interface DashboardSidebar {
     tipo: 'credito_bancario' | 'ciclo_tarjeta' | 'cuenta_por_pagar'
     name: string
     due_date: string
-    monto: number
+    monto: number | null
+    currency: 'PEN' | 'USD'
   }>
 }
 
@@ -170,7 +171,7 @@ export interface DashboardAlertItem {
   type: DashboardAlertType
   label: string
   amount: number
-  amountPen: number
+  amountPen: number | null
   currency: 'PEN' | 'USD'
   dueDate: string | null
   urgency: DashboardAlertUrgency
@@ -179,6 +180,6 @@ export interface DashboardAlertItem {
 
 export interface DashboardAlertsResponse {
   criticalCount: number
-  totalAmountPen: number
+  totalAmountPen: number | null
   alerts: DashboardAlertItem[]
 }

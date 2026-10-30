@@ -1,243 +1,197 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { TransactionForm } from '@/components/forms/TransactionForm'
 import { RecordModal } from '@/components/ui/RecordModal'
+import { Button } from '@/components/ui/Button'
+import { FormActions } from '@/components/forms/primitives'
+import styles from '@/components/tables/TransactionsRound07.module.css'
+import incomeStyles from '@/components/forms/TransactionForm/IncomeTransactionForm.module.css'
 import { InlineFeedback } from '@/components/forms/TransactionForm/FormFields'
-import {
-  operationTypeLabel,
-  type OperationType,
-} from '@/components/transactions/OperationTypeSelector'
-import { CategoryKeys } from '@/lib/constants/category-keys'
-import type {
-  TransactionFormOptions,
-  TransactionFormValues,
-} from '@/lib/contracts/ui.contracts'
+import { getTransactionEditPresentation } from '@/components/forms/transaction-edit-presentation'
+import { firstLinkedRecord, inferOperationType, toInitialValues } from '@/components/forms/transaction-edit-data'
+import type { OperationType } from '@/components/transactions/OperationTypeSelector'
+import { useTransactionEditRecord } from '@/components/forms/use-transaction-edit-record'
+import type { TransactionFormOptions } from '@/lib/contracts/ui.contracts'
 import type { TransactionWithRelations } from '@/types/database.types'
-
-type LinkedAssetSnapshot = {
-  id: string
-  name: string
-  asset_type: TransactionFormValues['asset_type']
-  asset_type_id: string | null
-  serial_number: string | null
-  location: string | null
-}
-
-type LinkedReceivableSnapshot = {
-  id: string
-  debtor_id: string | null
-  due_date: string | null
-}
-
-type LinkedPayableSnapshot = {
-  id: string
-  creditor_id: string | null
-  due_date: string | null
-}
-
-type EditableTransaction = Pick<
-  TransactionWithRelations,
-  | 'id'
-  | 'type'
-  | 'amount'
-  | 'amount_pen'
-  | 'currency'
-  | 'exchange_rate'
-  | 'description'
-  | 'transaction_date'
-  | 'category_id'
-  | 'notes'
-  | 'payment_method'
-  | 'sender'
-  | 'recipient'
-  | 'budget_id'
-  | 'source_account_id'
-  | 'destination_account_id'
-  | 'source_account'
-  | 'destination_account'
-> & {
-  category?: { id: string; system_key?: string | null } | null
-  linked_asset?: LinkedAssetSnapshot[] | LinkedAssetSnapshot | null
-  linked_receivable?: LinkedReceivableSnapshot[] | LinkedReceivableSnapshot | null
-  linked_payable?: LinkedPayableSnapshot[] | LinkedPayableSnapshot | null
-}
 
 interface TransactionEditModalProps {
   open: boolean
   transactionId: string | null
   options: TransactionFormOptions
-  initialTransaction?: Partial<EditableTransaction> | null
+  initialOperationType?: OperationType | null
   onClose: () => void
   onUpdated?: (transaction: TransactionWithRelations) => void
 }
 
-function normalizeTransaction(raw: unknown): (TransactionWithRelations & EditableTransaction) | null {
-  if (!raw || typeof raw !== 'object') return null
-  const candidate = raw as Partial<TransactionWithRelations & EditableTransaction>
-  if (!candidate.id || !candidate.type || !candidate.transaction_date) return null
-  return candidate as TransactionWithRelations & EditableTransaction
+function EditTransactionLoadingActions({ onCancel, operationType }: { onCancel: () => void; operationType: OperationType | null }) {
+  return (
+    <FormActions
+      className={operationType === 'income' ? '' : incomeStyles.operationFormActions}
+      secondaryAction={(
+        <Button type="button" variant="secondary" size="lg" onClick={onCancel}>
+          Cancelar
+        </Button>
+      )}
+      primaryAction={(
+        <Button type="button" size="lg" disabled className="min-w-[190px]" aria-disabled="true">
+          Guardar cambios
+        </Button>
+      )}
+    />
+  )
 }
 
-function firstLinkedRecord<T>(value: T[] | T | null | undefined): T | null {
-  if (!value) return null
-  return Array.isArray(value) ? value[0] ?? null : value
-}
-
-function inferOperationType(transaction: Partial<EditableTransaction> | null): OperationType {
-  if (firstLinkedRecord(transaction?.linked_asset)) return 'asset_purchase'
-  if (firstLinkedRecord(transaction?.linked_receivable)) return 'receivable_issue'
-  if (firstLinkedRecord(transaction?.linked_payable)) return 'payable_issue'
-
-  const categorySystemKey = transaction?.category?.system_key ?? null
-  if (categorySystemKey === CategoryKeys.INCOME_RECEIVABLE_COLLECTION) return 'receivable_collect'
-  if (categorySystemKey === CategoryKeys.EXPENSE_PAYABLE_PAYMENT) return 'payable_pay'
-  if (transaction?.type === 'TRANSFER') return 'transfer'
-  if (transaction?.type === 'INCOME') return 'income'
-  return 'expense'
-}
-
-function toInitialValues(
-  transaction: Partial<EditableTransaction> | null,
-): Partial<TransactionFormValues> {
-  if (!transaction) return {}
-
-  const linkedAsset = firstLinkedRecord(transaction.linked_asset)
-  const linkedReceivable = firstLinkedRecord(transaction.linked_receivable)
-  const linkedPayable = firstLinkedRecord(transaction.linked_payable)
-
-  return {
-    type: transaction.type,
-    source_account_id: transaction.source_account_id ?? undefined,
-    destination_account_id: transaction.destination_account_id ?? undefined,
-    amount: Number(transaction.amount ?? 0),
-    currency: transaction.currency === 'USD' ? 'USD' : 'PEN',
-    exchange_rate: transaction.currency === 'USD'
-      ? Number(transaction.exchange_rate ?? 1)
-      : undefined,
-    payment_method: transaction.payment_method ?? 'DEBIT',
-    description: transaction.description ?? '',
-    transaction_date: transaction.transaction_date,
-    category_id: transaction.category_id ?? undefined,
-    notes: transaction.notes ?? undefined,
-    sender: transaction.sender ?? undefined,
-    recipient: transaction.recipient ?? undefined,
-    budget_id: transaction.budget_id ?? undefined,
-    creates_asset: Boolean(linkedAsset),
-    asset_name: linkedAsset?.name ?? undefined,
-    asset_type: linkedAsset?.asset_type ?? undefined,
-    asset_type_id: linkedAsset?.asset_type_id ?? undefined,
-    asset_serial: linkedAsset?.serial_number ?? undefined,
-    asset_location: linkedAsset?.location ?? undefined,
-    creates_receivable: Boolean(linkedReceivable),
-    receivable_debtor_id: linkedReceivable?.debtor_id ?? undefined,
-    receivable_due: linkedReceivable?.due_date ?? undefined,
-    creates_payable: Boolean(linkedPayable),
-    payable_creditor_id: linkedPayable?.creditor_id ?? undefined,
-    payable_due: linkedPayable?.due_date ?? undefined,
-  }
+function EditTransactionSkeleton({
+  visible,
+  onCancel,
+  operationType,
+}: {
+  visible: boolean
+  onCancel: () => void
+  operationType: OperationType | null
+}) {
+  return (
+    <div className="grid content-start gap-4" data-testid="transaction-edit-loading-state">
+      <div
+        className={`${styles.editSkeletonContainer} grid min-h-[460px] content-start gap-5`}
+        role={visible ? 'status' : undefined}
+        aria-label={visible ? 'Cargando datos del movimiento' : undefined}
+        aria-busy={visible || undefined}
+        aria-hidden={!visible}
+        data-visible={visible ? 'true' : 'false'}
+        data-testid="transaction-edit-skeleton"
+      >
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_132px]">
+          <span className={styles.editSkeleton} />
+          <span className={styles.editSkeleton} />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <span className={styles.editSkeleton} />
+          <span className={styles.editSkeleton} />
+        </div>
+        <span className={styles.editSkeleton} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <span className={styles.editSkeleton} />
+          <span className={styles.editSkeleton} />
+        </div>
+        <span className={`${styles.editSkeleton} ${styles.editSkeletonLarge}`} />
+        <span className={`${styles.editSkeleton} ${styles.editSkeletonWide}`} />
+      </div>
+      <EditTransactionLoadingActions onCancel={onCancel} operationType={operationType} />
+    </div>
+  )
 }
 
 export function TransactionEditModal({
   open,
   transactionId,
   options,
-  initialTransaction,
+  initialOperationType,
   onClose,
   onUpdated,
 }: TransactionEditModalProps) {
-  const [transaction, setTransaction] = useState<(TransactionWithRelations & EditableTransaction) | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const visibleTransaction = transaction ?? (
-    initialTransaction?.id ? initialTransaction as EditableTransaction : null
-  )
-
-  const operationType = useMemo(
-    () => inferOperationType(visibleTransaction),
-    [visibleTransaction],
-  )
+  const editRecord = useTransactionEditRecord(open, transactionId)
+  const visibleTransaction = editRecord.transaction
+  const operationType = visibleTransaction
+    ? inferOperationType(visibleTransaction)
+    : (open && transactionId ? initialOperationType ?? null : null)
   const initialValues = useMemo(
     () => toInitialValues(visibleTransaction),
     [visibleTransaction],
   )
+  const editPresentation = operationType ? getTransactionEditPresentation(operationType) : null
+  const isLoading = editRecord.status === 'loading'
+  const loadError = editRecord.error
+  const [skeletonTransactionId, setSkeletonTransactionId] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!open || !transactionId) {
-      setTransaction(null)
-      setError(null)
-      setLoading(false)
+    if (!isLoading || !transactionId || loadError) {
+      setSkeletonTransactionId(null)
       return
     }
 
-    let cancelled = false
-    setLoading(true)
-    setError(null)
+    const timeoutId = window.setTimeout(() => setSkeletonTransactionId(transactionId), 120)
+    return () => window.clearTimeout(timeoutId)
+  }, [isLoading, loadError, transactionId])
 
-    const loadTransaction = async () => {
-      try {
-        const res = await fetch(`/api/transactions/${transactionId}`, { cache: 'no-store' })
-        const json = await res.json().catch(() => null)
-        if (cancelled) return
+  const showSkeleton = isLoading && !loadError && skeletonTransactionId === transactionId
 
-        if (!res.ok || !json?.ok) {
-          throw new Error(json?.error?.message ?? 'No se pudo cargar el movimiento.')
-        }
+  const onSuccessfulEdit = useCallback((updatedTransaction: TransactionWithRelations) => {
+    onUpdated?.(updatedTransaction)
+    onClose()
+  }, [onClose, onUpdated])
 
-        const nextTransaction = normalizeTransaction(json.data)
-        if (!nextTransaction) throw new Error('El movimiento no tiene el formato esperado.')
-
-        setTransaction(nextTransaction)
-      } catch (caught) {
-        if (cancelled) return
-        setError(caught instanceof Error ? caught.message : 'No se pudo cargar el movimiento.')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-
-    void loadTransaction()
-    return () => { cancelled = true }
-  }, [open, transactionId])
-
-  const title = `Editar ${operationTypeLabel(operationType).toLowerCase()}`
+  const title = editPresentation?.title ?? 'Editar movimiento'
+  const subtitleText = isLoading
+    ? 'Cargando datos del movimiento.'
+    : editPresentation?.blocked
+      ? 'La distribución financiera de este movimiento está protegida.'
+      : 'Actualiza los datos permitidos de este movimiento.'
+  // Both the loading and ready copy reserve two lines. This avoids a panel
+  // height change when the final subtitle wraps on narrow workbench widths.
+  const subtitle = <span className="block min-h-10">{subtitleText}</span>
 
   return (
     <RecordModal
       open={open}
       onClose={onClose}
+      onExitComplete={editRecord.clearAfterExit}
       eyebrow="Movimientos"
       title={title}
-      subtitle="Usa la misma ventana de registro, ajustada al tipo de movimiento seleccionado."
-      widthClassName="max-w-[min(96vw,920px)]"
+      subtitle={subtitle}
+      widthClassName="max-w-[min(96vw,580px)]"
       testId="transaction-edit-modal"
+      presentation="workbench"
+      motionSource="pointer"
+      overlayClassName={styles.formOverlay}
     >
-      {error ? (
-        <InlineFeedback type="error" message={error} />
+      {open && !transactionId ? (
+        <div className="grid gap-4">
+          <InlineFeedback type="error" message="No se seleccionó un movimiento para editar." />
+          <EditTransactionLoadingActions onCancel={onClose} operationType={operationType} />
+        </div>
       ) : null}
 
-      {loading && !visibleTransaction ? (
-        <InlineFeedback type="info" message="Cargando movimiento..." />
+      {loadError ? (
+        <div className="space-y-3" role="alert">
+          <InlineFeedback type="error" message={loadError} />
+          <button
+            type="button"
+            onClick={editRecord.retry}
+            className="inline-flex min-h-10 items-center rounded-control border border-[var(--ft-border)] px-3 text-[13px] font-semibold text-[var(--ft-text-strong)] transition-colors hover:bg-[var(--ft-surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ft-focus-ring-color)] motion-reduce:transition-none"
+          >
+            Reintentar
+          </button>
+          <EditTransactionLoadingActions onCancel={onClose} operationType={operationType} />
+        </div>
       ) : null}
 
-      {visibleTransaction ? (
-        <TransactionForm
-          key={`${visibleTransaction.id}-${visibleTransaction.transaction_date}-${visibleTransaction.category_id ?? 'no-category'}`}
-          options={options}
-          initialValues={initialValues}
-          className="tx-modal-form"
-          hideTypeSelector
-          operationType={operationType}
-          showSuccessSummary={false}
-          mode="edit"
-          transactionId={visibleTransaction.id}
-          onCancel={onClose}
-          onEditSuccess={updatedTransaction => {
-            onUpdated?.(updatedTransaction)
-            onClose()
-          }}
-        />
+      {isLoading && !loadError ? (
+        <EditTransactionSkeleton visible={showSkeleton} onCancel={onClose} operationType={operationType} />
+      ) : null}
+
+      {visibleTransaction && operationType ? (
+        <div className={styles.editFormReveal} data-testid="transaction-edit-form">
+          <TransactionForm
+            key={visibleTransaction.id}
+            options={options}
+            initialValues={initialValues}
+            className="tx-modal-form"
+            hideTypeSelector
+            operationType={operationType}
+            showSuccessSummary={false}
+            mode="edit"
+            transactionId={visibleTransaction.id}
+            editContext={{
+              hasExistingAttachment: Boolean(visibleTransaction.attachment_url),
+              receivableCollectedAmount: Number(firstLinkedRecord(visibleTransaction.linked_receivable)?.collected_amount ?? 0),
+              payablePaidAmount: Number(firstLinkedRecord(visibleTransaction.linked_payable)?.paid_amount ?? 0),
+            }}
+            onCancel={onClose}
+            onEditSuccess={onSuccessfulEdit}
+          />
+        </div>
       ) : null}
     </RecordModal>
   )

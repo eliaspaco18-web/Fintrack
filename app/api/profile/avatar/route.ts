@@ -87,7 +87,7 @@ async function ensureProfileRow(user: AuthenticatedUser) {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const {
     data: { user },
     error: authError,
@@ -189,7 +189,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE() {
-  const supabase = createClient()
+  const supabase = await createClient()
   const {
     data: { user },
     error: authError,

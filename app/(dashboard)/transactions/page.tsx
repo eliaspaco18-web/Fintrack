@@ -69,12 +69,13 @@ export const metadata: Metadata = {
   description: 'Registra y gestiona tus ingresos, egresos, transferencias y más.',
 }
 
-export default async function TransactionsPage({
-  searchParams,
-}: {
-  searchParams?: TransactionSearchParamMap
-}) {
-  const supabase = createClient()
+export default async function TransactionsPage(
+  props: {
+    searchParams?: Promise<TransactionSearchParamMap>
+  }
+) {
+  const searchParams = await props.searchParams;
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 

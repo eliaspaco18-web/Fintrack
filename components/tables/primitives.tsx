@@ -503,26 +503,34 @@ function PageBtn({
 // ═════════════════════════════════════════════════════════════════════════════
 
 interface AmountCellProps {
-  amountPen:  number
+  amountPen:  number | null
   original?:  { amount: number; currency: string }
   variant?:   'income' | 'expense' | 'neutral'
   preferred:  'PEN' | 'USD'
-  exchangeRate?: number
-  format:     (n: number) => number
+  exchangeRate?: number | null
+  format:     (n: number) => number | null
   formatter:  (n: number, c: string) => string
 }
 
 export function AmountCell({
-  amountPen, original, variant = 'neutral', preferred, exchangeRate = 1, format, formatter,
+  amountPen, original, variant = 'neutral', preferred, exchangeRate, format, formatter,
 }: AmountCellProps) {
-  const display = formatter(format(amountPen), preferred)
+  const convertedAmount = amountPen === null ? null : format(amountPen)
+  const display = convertedAmount === null
+    ? 'No disponible'
+    : formatter(convertedAmount, preferred)
   const prefix  = variant === 'income' ? '+' : variant === 'expense' ? '−' : ''
-  const safeExchangeRate = exchangeRate > 0 ? exchangeRate : 1
-  const secondaryCurrency = preferred === 'PEN' ? 'USD' : 'PEN'
-  const secondaryAmount = preferred === 'PEN'
-    ? amountPen / safeExchangeRate
-    : amountPen
-  const secondaryDisplay = formatter(secondaryAmount, secondaryCurrency)
+  const secondaryCurrency = original?.currency === preferred
+    ? null
+    : original?.currency ?? (preferred === 'PEN' ? 'USD' : 'PEN')
+  const secondaryAmount = original && secondaryCurrency === original.currency
+    ? original.amount
+    : preferred === 'PEN' && amountPen !== null && exchangeRate != null && exchangeRate > 0
+      ? amountPen / exchangeRate
+      : preferred === 'USD' ? amountPen : null
+  const secondaryDisplay = secondaryCurrency && secondaryAmount !== null
+    ? formatter(secondaryAmount, secondaryCurrency)
+    : 'No disponible'
 
   const colorClass = {
     income:  'text-[var(--ft-success)]',
@@ -531,17 +539,15 @@ export function AmountCell({
   }[variant]
 
   const showOriginal =
-    original &&
-    original.currency !== preferred &&
-    original.currency !== secondaryCurrency
+    original && original.currency !== preferred && original.currency !== secondaryCurrency
 
   return (
     <div className="text-right">
       <p className={`font-mono text-sm font-semibold tabular-nums ${colorClass}`}>
-        {prefix}{display}
+        {convertedAmount === null ? display : `${prefix}${display}`}
       </p>
       <p className="mt-0.5 font-mono text-[11px] tabular-nums text-[var(--ft-text-muted)]">
-        ≈ {secondaryDisplay}
+        {secondaryCurrency ? `≈ ${secondaryDisplay}` : ' '}
       </p>
       {showOriginal && (
         <p className="mt-0.5 font-mono text-[11px] tabular-nums text-[var(--ft-text-muted)]">

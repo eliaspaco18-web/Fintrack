@@ -10,7 +10,7 @@ import { getSessionUserId }          from '@/lib/api/response'
 import { generateAlertsForUser }     from '@/lib/alerts/alert-generator'
 
 export async function POST() {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) {
     return NextResponse.json(

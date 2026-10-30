@@ -8,6 +8,7 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase.server'
 import { DashboardService } from '@/modules/dashboard/dashboard.service'
 import { measureServerOperation } from '@/lib/server/observability'
+import { categoryBreakdown } from '@/lib/dashboard/category-breakdown'
 import {
   apiError,
   apiOk,
@@ -16,14 +17,12 @@ import {
   getSessionUserId,
 } from '@/lib/api/response'
 import type {
-  DashboardCategoryBreakdownItem,
   DashboardCounterpartyPreview,
   DashboardSidebar,
 } from '@/lib/dashboard/types'
 
 const DAY_IN_MS = 86_400_000
-const UNCATEGORIZED_LABEL = 'Sin categoría'
-const UNCATEGORIZED_COLOR = '#8f8a80'
+const CATEGORY_QUERY_PAGE_SIZE = 500
 
 function toDateUtc(dateIso: string): Date {
   return new Date(`${dateIso}T00:00:00Z`)
@@ -55,34 +54,14 @@ function getDaysUntil(dueDateIso: string, todayUtc: Date): number {
   return Math.floor((due.getTime() - todayUtc.getTime()) / DAY_IN_MS)
 }
 
-function toPenAmount(amount: number, currency: string, exchangeRate: number): number {
-  return currency === 'USD'
-    ? amount * exchangeRate
-    : amount
-}
-
-function normalizeCategoryBreakdown(
-  rows: Array<{
-    category_id: string | null
-    name: string
-    color: string
-    monto: number
-  }>
-): DashboardCategoryBreakdownItem[] {
-  const total = rows.reduce((sum, row) => sum + row.monto, 0)
-
-  return rows.map((row) => ({
-    category_id: row.category_id,
-    name: row.name,
-    color: row.color,
-    monto: Math.round(row.monto * 100) / 100,
-    pct: total > 0 ? Math.round((row.monto / total) * 1000) / 10 : 0,
-  }))
+function toPenAmount(amount: number, currency: string, exchangeRate: number | null): number | null {
+  if (currency !== 'USD') return amount
+  return exchangeRate === null ? null : amount * exchangeRate
 }
 
 export async function GET(req: NextRequest) {
   return measureServerOperation('api.dashboard.sidebar', async () => {
-    const supabase = createClient()
+    const supabase = await createClient()
     const userId = await getSessionUserId(supabase)
     if (!userId) return apiUnauthorized()
 
@@ -91,10 +70,12 @@ export async function GET(req: NextRequest) {
     if (!result.ok) return fromResult(result)
 
     const summary = result.data
-    const saldoTotal = summary.accounts.reduce((sum, account) => sum + account.balancePen, 0)
+    const saldoTotal = summary.accounts.some(account => account.balancePen === null)
+      ? null
+      : summary.accounts.reduce((sum, account) => sum + (account.balancePen ?? 0), 0)
     const porCobrar = summary.receivables.totalPendingPen
     const porPagar = summary.payables.totalPendingPen
-    const neto = porCobrar - porPagar
+    const neto = porCobrar === null || porPagar === null ? null : porCobrar - porPagar
     const exchangeRate = summary.meta.exchangeRateUsdPen
 
     const todayUtc = startOfTodayUtc()
@@ -121,7 +102,7 @@ export async function GET(req: NextRequest) {
     ] = await Promise.all([
       supabase
         .from('credits')
-        .select('id, name')
+        .select('id, name, currency')
         .eq('user_id', userId)
         .eq('status', 'ACTIVE')
         .eq('credit_type', 'CREDIT_CARD'),
@@ -145,12 +126,14 @@ export async function GET(req: NextRequest) {
         .in('status', ['PENDING', 'PARTIAL']),
       supabase
         .from('transactions')
-        .select('category_id, amount_pen, type')
+        .select('category_id, amount_pen, type', { count: 'exact' })
         .eq('user_id', userId)
         .eq('affects_reports', true)
         .in('type', ['INCOME', 'EXPENSE'])
         .gte('transaction_date', monthStartIso)
-        .lt('transaction_date', nextMonthStartIso),
+        .lt('transaction_date', nextMonthStartIso)
+        .order('id', { ascending: true })
+        .range(0, CATEGORY_QUERY_PAGE_SIZE - 1),
     ])
 
     if (activeCardsResult.error) {
@@ -191,7 +174,7 @@ export async function GET(req: NextRequest) {
     }
 
     const activeCards = activeCardsResult.data ?? []
-    const cardById = new Map(activeCards.map((card) => [card.id, card.name]))
+    const cardById = new Map(activeCards.map((card) => [card.id, { name: card.name, currency: card.currency }]))
     const cardIds = activeCards.map((card) => card.id)
 
     let cycleRows: Array<{
@@ -199,6 +182,7 @@ export async function GET(req: NextRequest) {
       credit_id: string
       payment_date: string
       total_to_pay: number
+      currency: string
     }> = []
 
     if (cardIds.length > 0) {
@@ -222,49 +206,82 @@ export async function GET(req: NextRequest) {
         credit_id: row.credit_id,
         payment_date: row.payment_date,
         total_to_pay: Number(row.total_to_pay ?? 0),
+        currency: cardById.get(row.credit_id)?.currency ?? 'PEN',
       }))
     }
 
     const debtorsById = new Map((debtorsResult.data ?? []).map((debtor) => [debtor.id, debtor.name]))
     const creditorsById = new Map((creditorsResult.data ?? []).map((creditor) => [creditor.id, creditor.name]))
 
-    const debtorPending = new Map<string, number>()
+    const debtorPending = new Map<string, number | null>()
     for (const row of receivablesResult.data ?? []) {
       if (!row.debtor_id) continue
       const pendingOriginal = Number(row.amount ?? 0) - Number(row.collected_amount ?? 0)
       const pendingPen = toPenAmount(Math.max(0, pendingOriginal), row.currency, exchangeRate)
-      debtorPending.set(row.debtor_id, (debtorPending.get(row.debtor_id) ?? 0) + pendingPen)
+      const current = debtorPending.get(row.debtor_id)
+      debtorPending.set(row.debtor_id, current === null || pendingPen === null
+        ? null
+        : (current ?? 0) + pendingPen)
     }
 
-    const creditorPending = new Map<string, number>()
+    const creditorPending = new Map<string, number | null>()
     for (const row of payablesResult.data ?? []) {
       if (!row.creditor_id) continue
       const pendingOriginal = Number(row.amount ?? 0) - Number(row.paid_amount ?? 0)
       const pendingPen = toPenAmount(Math.max(0, pendingOriginal), row.currency, exchangeRate)
-      creditorPending.set(row.creditor_id, (creditorPending.get(row.creditor_id) ?? 0) + pendingPen)
+      const current = creditorPending.get(row.creditor_id)
+      creditorPending.set(row.creditor_id, current === null || pendingPen === null
+        ? null
+        : (current ?? 0) + pendingPen)
     }
 
     const topDeudores: DashboardCounterpartyPreview[] = Array.from(debtorPending.entries())
     .map(([id, pendingAmountPen]) => ({
       id,
       name: debtorsById.get(id) ?? 'Deudor',
-      pending_amount_pen: Math.round(pendingAmountPen * 100) / 100,
+      pending_amount_pen: pendingAmountPen === null ? null : Math.round(pendingAmountPen * 100) / 100,
       href: `/receivables?debtorId=${id}`,
     }))
-    .sort((a, b) => b.pending_amount_pen - a.pending_amount_pen)
+    .sort((a, b) => (b.pending_amount_pen ?? -Infinity) - (a.pending_amount_pen ?? -Infinity))
     .slice(0, 3)
 
     const topAcreedores: DashboardCounterpartyPreview[] = Array.from(creditorPending.entries())
     .map(([id, pendingAmountPen]) => ({
       id,
       name: creditorsById.get(id) ?? 'Acreedor',
-      pending_amount_pen: Math.round(pendingAmountPen * 100) / 100,
+      pending_amount_pen: pendingAmountPen === null ? null : Math.round(pendingAmountPen * 100) / 100,
       href: `/payables?creditorId=${id}`,
     }))
-    .sort((a, b) => b.pending_amount_pen - a.pending_amount_pen)
+    .sort((a, b) => (b.pending_amount_pen ?? -Infinity) - (a.pending_amount_pen ?? -Infinity))
     .slice(0, 3)
 
-    const transactionRows = monthTransactionsResult.data ?? []
+    const transactionCount = monthTransactionsResult.count
+    if (transactionCount === null || !Number.isSafeInteger(transactionCount) || transactionCount < 0) {
+      return apiError({ code: 'DATABASE_ERROR', message: 'Category transaction coverage is unavailable' })
+    }
+
+    const transactionRows = [...(monthTransactionsResult.data ?? [])]
+    while (transactionRows.length < transactionCount) {
+      const start = transactionRows.length
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('category_id, amount_pen, type')
+        .eq('user_id', userId)
+        .eq('affects_reports', true)
+        .in('type', ['INCOME', 'EXPENSE'])
+        .gte('transaction_date', monthStartIso)
+        .lt('transaction_date', nextMonthStartIso)
+        .order('id', { ascending: true })
+        .range(start, start + CATEGORY_QUERY_PAGE_SIZE - 1)
+
+      if (error || !data?.length) {
+        return apiError({ code: 'DATABASE_ERROR', message: 'Category transaction coverage is incomplete' })
+      }
+      transactionRows.push(...data)
+    }
+    if (transactionRows.length !== transactionCount) {
+      return apiError({ code: 'DATABASE_ERROR', message: 'Category transaction coverage changed during read' })
+    }
     const categoryIds = Array.from(new Set(
       transactionRows
         .map((row) => row.category_id)
@@ -272,11 +289,11 @@ export async function GET(req: NextRequest) {
     ))
 
     const categoryMap = new Map<string, { name: string; color: string }>()
-    if (categoryIds.length > 0) {
+    for (let start = 0; start < categoryIds.length; start += CATEGORY_QUERY_PAGE_SIZE) {
       const { data: categories, error: categoriesError } = await supabase
         .from('categories')
         .select('id, name, color')
-        .in('id', categoryIds)
+        .in('id', categoryIds.slice(start, start + CATEGORY_QUERY_PAGE_SIZE))
 
       if (categoriesError) {
         return apiError({
@@ -293,34 +310,13 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const incomeAgg = new Map<string, { category_id: string | null; name: string; color: string; monto: number }>()
-    const expenseAgg = new Map<string, { category_id: string | null; name: string; color: string; monto: number }>()
-
-    for (const row of transactionRows) {
-      const key = row.category_id ?? 'uncategorized'
-      const ref = row.category_id ? categoryMap.get(row.category_id) : null
-      const target = row.type === 'INCOME' ? incomeAgg : expenseAgg
-      const current = target.get(key) ?? {
+    const { income: ingresosCategoria, expense: egresosCategoria } = categoryBreakdown(
+      transactionRows.map((row) => ({
         category_id: row.category_id,
-        name: ref?.name ?? UNCATEGORIZED_LABEL,
-        color: ref?.color ?? UNCATEGORIZED_COLOR,
-        monto: 0,
-      }
-
-      current.monto += Number(row.amount_pen ?? 0)
-      target.set(key, current)
-    }
-
-    const ingresosCategoria = normalizeCategoryBreakdown(
-      Array.from(incomeAgg.values())
-        .sort((a, b) => b.monto - a.monto)
-        .slice(0, 5)
-    )
-
-    const egresosCategoria = normalizeCategoryBreakdown(
-      Array.from(expenseAgg.values())
-        .sort((a, b) => b.monto - a.monto)
-        .slice(0, 5)
+        amount_pen: row.amount_pen,
+        type: row.type === 'INCOME' ? 'INCOME' : 'EXPENSE',
+      })),
+      categoryMap,
     )
 
     const vencimientosCreditoBancario = summary.upcomingInstallments
@@ -331,14 +327,16 @@ export async function GET(req: NextRequest) {
         name: item.creditorName,
         due_date: item.dueDate,
         monto: item.totalAmount,
+        currency: item.currency === 'USD' ? 'USD' as const : 'PEN' as const,
       }))
 
     const vencimientosTarjeta = cycleRows.map((cycle) => ({
       id: cycle.id,
       tipo: 'ciclo_tarjeta' as const,
-      name: cardById.get(cycle.credit_id) ?? 'Tarjeta de crédito',
+      name: cardById.get(cycle.credit_id)?.name ?? 'Tarjeta de crédito',
       due_date: cycle.payment_date,
       monto: cycle.total_to_pay,
+      currency: cycle.currency === 'USD' ? 'USD' as const : 'PEN' as const,
     }))
 
     const vencimientosPorPagar = summary.payables.items
@@ -354,6 +352,7 @@ export async function GET(req: NextRequest) {
         name: item.creditorName,
         due_date: item.dueDate as string,
         monto: item.pendingAmount,
+        currency: item.currency === 'USD' ? 'USD' as const : 'PEN' as const,
       }))
 
     const payload: DashboardSidebar = {
@@ -361,14 +360,14 @@ export async function GET(req: NextRequest) {
         total_consolidado: saldoTotal,
         items: summary.accounts
           .slice()
-          .sort((a, b) => b.balancePen - a.balancePen)
+          .sort((a, b) => (b.balancePen ?? -Infinity) - (a.balancePen ?? -Infinity))
           .map((account) => ({
             portfolio_id: account.id,
             name: account.name,
             saldo: account.balancePen,
-            pct_of_total: saldoTotal > 0
+            pct_of_total: saldoTotal !== null && saldoTotal > 0 && account.balancePen !== null
               ? Math.round((account.balancePen / saldoTotal) * 10000) / 100
-              : 0,
+              : null,
           })),
       },
       flujo_pendiente: {
@@ -377,7 +376,7 @@ export async function GET(req: NextRequest) {
         por_pagar_total: porPagar,
         por_pagar_count: summary.payables.count,
         neto,
-        nota: neto > 0 ? 'favorece' : neto < 0 ? 'desfavorece' : 'equilibrado',
+        nota: neto === null ? 'incomplete' : neto > 0 ? 'favorece' : neto < 0 ? 'desfavorece' : 'equilibrado',
         top_deudores: topDeudores,
         top_acreedores: topAcreedores,
       },

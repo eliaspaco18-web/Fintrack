@@ -250,6 +250,7 @@ export async function generateAlertsForUser(
           period,
           (txs ?? []) as BudgetPeriodMetricTransaction[],
         )
+        if (!metrics.metrics_complete || metrics.progress_percent === null) continue
         const pct = metrics.progress_percent
 
         if (pct >= 100) {
@@ -306,6 +307,7 @@ export async function generateAlertsForUser(
             (txs ?? []) as BudgetMetricTransaction[],
             activeWindow,
           )
+          if (!metrics.metrics_complete || metrics.progress_percent === null) continue
           const pct = metrics.progress_percent
 
           if (pct >= 100) {

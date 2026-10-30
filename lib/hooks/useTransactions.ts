@@ -15,6 +15,7 @@ import type { FormError, ActionState,
 }                                         from '@/lib/contracts/ui.contracts'
 import type { CreateTransactionResult }   from '@/modules/transactions/transaction.service.types'
 import type { Transaction }               from '@/types/database.types'
+import { buildTransactionListUrl, mergeTransactionListParams } from '@/modules/transactions/quick-filter-query'
 import {
   createTransactionAction,
   updateTransactionAction,
@@ -30,16 +31,6 @@ const fetcher = (url: string) =>
     if (!res.ok || !json.ok) throw json.error
     return json.data
   })
-
-function buildUrl(p: TransactionListParams): string {
-  const base   = '/api/transactions'
-  const params = new URLSearchParams()
-  Object.entries(p).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== '') params.set(k, String(v))
-  })
-  const qs = params.toString()
-  return qs ? `${base}?${qs}` : base
-}
 
 const DEFAULT_PARAMS: TransactionListParams = {
   page: 1, per_page: 20, sort_by: 'transaction_date', sort_dir: 'desc',
@@ -133,7 +124,7 @@ export function useTransactions(
     failed: Array<{ id: string; message: string; detail?: string }>
   }>>({ status: 'idle' })
 
-  const url = buildUrl(params)
+  const url = buildTransactionListUrl(params)
 
   const { data, isLoading, isValidating, error } = useSWR<
     TransactionListPayload
@@ -144,7 +135,7 @@ export function useTransactions(
   })
 
   const setParams = useCallback((next: Partial<TransactionListParams>) => {
-    setParamsState(prev => ({ ...prev, ...next, page: 'page' in next ? (next.page ?? 1) : 1 }))
+    setParamsState(prev => mergeTransactionListParams(prev, next))
   }, [])
 
   const setPage = useCallback((page: number) => {

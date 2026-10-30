@@ -79,16 +79,16 @@
     },
     {
       "key": "recurring",
-      "label": "Recurrentes",
+      "label": "Plantillas",
       "href": "/recurring",
       "section": "Principal",
-      "objective": "Plantillas para movimientos automáticos.",
+      "objective": "Plantillas para reutilizar movimientos de forma manual.",
       "status": "live",
       "note": ""
     },
     {
       "key": "alerts",
-      "label": "Alertas",
+      "label": "Avisos",
       "href": "/alerts",
       "section": "Principal",
       "objective": "Riesgos, vencimientos y recomendaciones.",
@@ -97,10 +97,10 @@
     },
     {
       "key": "admin",
-      "label": "Administración",
+      "label": "Catálogos",
       "href": "/admin",
       "section": "Sistema",
-      "objective": "Catálogos base y parámetros del sistema.",
+      "objective": "Referencias para organizar tus registros.",
       "status": "live",
       "note": ""
     },

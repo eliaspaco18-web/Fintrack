@@ -1,17 +1,28 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ModalOverlayPortal } from '@/components/ui/ModalOverlayPortal'
-import { FocusTrap } from '@/components/ui/accessibility'
-import { formatCurrency } from '@/lib/contracts/ui.contracts'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { RecordModal } from '@/components/ui/RecordModal'
+import { Button } from '@/components/ui/Button'
+import { ConfirmDialog } from '@/components/finance'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import type { CurrencyCode, BudgetPeriod } from '@/types/database.types'
 import { createBudgetRecordActionScope } from '@/modules/budgets/budget-action-scope'
+import { formatBudgetCurrency } from '@/lib/budgets/presentation'
+import { convertBudgetAmount } from '@/lib/budgets/budget-metrics'
+import { AppSelect } from '@/components/ui/AppSelect'
+import styles from '@/components/management/BudgetDetail.module.css'
+import {
+  mergeBudgetPeriodItems,
+  resolveBudgetPeriodAmountUrl,
+  resolveBudgetPeriodTransactionsUrl,
+} from '@/lib/budgets/period-record'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
 type BudgetRef = {
   id: string
+  budget_period_id?: string
+  legacy_budget_id?: string
   series_id: string
   name: string
   description: string | null
@@ -23,10 +34,11 @@ type BudgetRef = {
   period_start: string
   period_end: string
   amount: number
-  spent_amount: number
-  remaining_amount?: number
-  progress_percent?: number
-  over_limit?: boolean
+  spent_amount: number | null
+  remaining_amount?: number | null
+  progress_percent?: number | null
+  over_limit?: boolean | null
+  metrics_complete?: boolean
   is_active?: boolean
   category?: { name: string } | null
 }
@@ -75,10 +87,14 @@ function formatDate(d: string): string {
 // ── Component ────────────────────────────────────────────────────────────────
 
 interface Props {
+  open: boolean
   budget: BudgetRef
   periods?: BudgetRef[]
+  suspendFocusTrap?: boolean
   onClose: () => void
+  onExitComplete?: () => void
   onPeriodUpdated?: () => void | Promise<void>
+  onContinueNextPeriod?: () => void
 }
 
 function clampProgress(value: number | null | undefined): number {
@@ -100,6 +116,13 @@ function getPeriodStatus(period: BudgetRef): {
   tone: 'ok' | 'warning' | 'danger' | 'empty'
   description: string
 } {
+  if (period.metrics_complete === false || period.spent_amount === null || period.remaining_amount === null) {
+    return {
+      label: 'Datos incompletos',
+      tone: 'empty',
+      description: 'Falta una tasa histórica verificable para calcular el período',
+    }
+  }
   const spent = Number(period.spent_amount ?? 0)
   const progress = clampProgress(period.progress_percent)
 
@@ -107,7 +130,7 @@ function getPeriodStatus(period: BudgetRef): {
     return {
       label: 'Excedido',
       tone: 'danger',
-      description: `Exceso ${formatCurrency(Math.abs(Number(period.remaining_amount ?? 0)), period.currency)}`,
+      description: 'El gasto supera el límite del período',
     }
   }
 
@@ -123,43 +146,27 @@ function getPeriodStatus(period: BudgetRef): {
     return {
       label: 'En riesgo',
       tone: 'warning',
-      description: 'Cerca del limite',
+      description: 'El gasto se acerca al límite definido',
     }
   }
 
   return {
     label: 'En rango',
     tone: 'ok',
-    description: `Disponible ${formatCurrency(Math.max(0, Number(period.remaining_amount ?? 0)), period.currency)}`,
+    description: 'El gasto se mantiene dentro del límite',
   }
 }
 
 function getToneClasses(tone: 'ok' | 'warning' | 'danger' | 'empty') {
   switch (tone) {
     case 'danger':
-      return {
-        badge: 'border-red-400/30 bg-red-500/10 text-red-500',
-        bar: 'bg-red-500',
-        dot: 'bg-red-500',
-      }
+      return { badge: styles.badgeDanger, bar: styles.fillDanger, dot: styles.toneDanger }
     case 'warning':
-      return {
-        badge: 'border-amber-400/35 bg-amber-500/10 text-amber-600',
-        bar: 'bg-amber-500',
-        dot: 'bg-amber-500',
-      }
+      return { badge: styles.badgeWarning, bar: styles.fillWarning, dot: styles.toneWarning }
     case 'empty':
-      return {
-        badge: 'border-[var(--c-border)] bg-[var(--c-surface-2)] text-[var(--c-text-muted)]',
-        bar: 'bg-[var(--c-text-faint)]',
-        dot: 'bg-[var(--c-text-faint)]',
-      }
+      return { badge: '', bar: styles.fillEmpty, dot: styles.toneEmpty }
     default:
-      return {
-        badge: 'border-emerald-400/30 bg-emerald-500/10 text-emerald-600',
-        bar: 'bg-[var(--c-accent)]',
-        dot: 'bg-[var(--c-accent)]',
-      }
+      return { badge: styles.badgeOk, bar: styles.fillOk, dot: styles.toneOk }
   }
 }
 
@@ -170,18 +177,22 @@ function parseAmountInput(value: string): number | null {
   return Math.round(parsed * 100) / 100
 }
 
-export function BudgetDetail({ budget, periods, onClose, onPeriodUpdated }: Props) {
+export function BudgetDetail({ open, budget, periods, suspendFocusTrap = false, onClose, onExitComplete, onPeriodUpdated, onContinueNextPeriod }: Props) {
   const [transactions, setTransactions] = useState<TxRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [selectedBudgetId, setSelectedBudgetId] = useState(budget.id)
-  const [periodItems, setPeriodItems] = useState<BudgetRef[]>(() => (periods && periods.length > 0 ? periods : [budget]))
+  const [periodItems, setPeriodItems] = useState<BudgetRef[]>(() => mergeBudgetPeriodItems(periods, budget))
   const [periodAmount, setPeriodAmount] = useState(() => Number(budget.amount ?? 0).toFixed(2))
+  const [editingPeriod, setEditingPeriod] = useState<BudgetRef | null>(null)
+  const [periodEditorOpen, setPeriodEditorOpen] = useState(false)
   const [amountSaving, setAmountSaving] = useState(false)
   const [amountError, setAmountError] = useState<string | null>(null)
   const [periodYearFilter, setPeriodYearFilter] = useState(() => getPeriodYear(budget))
   const [periodSearch, setPeriodSearch] = useState('')
+  const [discardAmountConfirmationOpen, setDiscardAmountConfirmationOpen] = useState(false)
+  const requestSequenceRef = useRef(0)
 
   const seriesPeriods = useMemo(
     () => periodItems.slice().sort((a, b) => a.period_start.localeCompare(b.period_start)),
@@ -191,6 +202,13 @@ export function BudgetDetail({ budget, periods, onClose, onPeriodUpdated }: Prop
   const periodYears = useMemo(
     () => Array.from(new Set(seriesPeriods.map(period => getPeriodYear(period)))),
     [seriesPeriods],
+  )
+  const periodYearOptions = useMemo(
+    () => [
+      { value: 'all', label: 'Todos' },
+      ...periodYears.map(year => ({ value: year, label: year })),
+    ],
+    [periodYears],
   )
   const baseBudgetYear = useMemo(() => getYearFromDate(budget.period_start), [budget.period_start])
 
@@ -224,38 +242,34 @@ export function BudgetDetail({ budget, periods, onClose, onPeriodUpdated }: Prop
   }, [baseBudgetYear, budget.id])
 
   useEffect(() => {
-    const nextPeriods = periods && periods.length > 0 ? periods : [budget]
+    const nextPeriods = mergeBudgetPeriodItems(periods, budget)
     setPeriodItems(nextPeriods)
     setSelectedBudgetId(prev => (nextPeriods.some(period => period.id === prev) ? prev : budget.id))
   }, [budget, periods])
 
-  useEffect(() => {
-    setPeriodAmount(Number(selectedBudget.amount ?? 0).toFixed(2))
-    setAmountError(null)
-  }, [selectedBudget.id, selectedBudget.amount])
-
   const load = useCallback(async () => {
+    const sequence = ++requestSequenceRef.current
     setLoading(true)
     setError(null)
     try {
-      const params = new URLSearchParams({
-        period_start: selectedBudget.period_start,
-        period_end: selectedBudget.period_end,
-      })
-      const res = await fetch(`/api/budgets/${selectedBudget.id}/transactions?${params.toString()}`, {
+      const endpoint = resolveBudgetPeriodTransactionsUrl(selectedBudget)
+      const res = await fetch(endpoint, {
         cache: 'no-store',
       })
       const json = await res.json().catch(() => null)
       if (!res.ok || !json?.ok) {
         throw new Error(getApiErrorMessage(json, 'No se pudieron cargar las transacciones'))
       }
+      if (sequence !== requestSequenceRef.current) return
       setTransactions((json.data as TxRow[]) ?? [])
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'No se pudieron cargar las transacciones')
+      if (sequence === requestSequenceRef.current) {
+        setError(caught instanceof Error ? caught.message : 'No se pudieron cargar las transacciones')
+      }
     } finally {
-      setLoading(false)
+      if (sequence === requestSequenceRef.current) setLoading(false)
     }
-  }, [selectedBudget.id, selectedBudget.period_start, selectedBudget.period_end])
+  }, [selectedBudget])
 
   useEffect(() => {
     void load()
@@ -272,23 +286,68 @@ export function BudgetDetail({ budget, periods, onClose, onPeriodUpdated }: Prop
   })
 
   // Total gastado en la moneda del presupuesto
-  const safeRate = (r: number | null) => (r && r > 0 ? r : 3.7)
-  const totalSpent = filtered.reduce((sum, tx) => {
+  let totalSpent: number | null = 0
+  filtered.forEach(tx => {
     const amt = Number(tx.amount ?? 0)
-    if (tx.currency === selectedBudget.currency) return sum + amt
-    if (tx.currency === 'USD' && selectedBudget.currency === 'PEN') return sum + amt * safeRate(tx.exchange_rate)
-    if (tx.currency === 'PEN' && selectedBudget.currency === 'USD') return sum + amt / safeRate(tx.exchange_rate)
-    return sum + amt
-  }, 0)
+    const converted = convertBudgetAmount(amt, tx.currency, selectedBudget.currency, tx.exchange_rate)
+    if (converted === null) totalSpent = null
+    else if (totalSpent !== null) totalSpent += converted
+  })
 
-  const progress = clampProgress(selectedBudget.progress_percent)
-  const visibleSpent = Number(selectedBudget.spent_amount ?? 0)
-  const visibleRemaining = Number(selectedBudget.remaining_amount ?? Number(selectedBudget.amount ?? 0) - visibleSpent)
+  const metricsComplete = selectedBudget.metrics_complete !== false
+    && selectedBudget.spent_amount !== null
+    && selectedBudget.remaining_amount !== null
+    && selectedBudget.progress_percent !== null
+  const progress = metricsComplete ? clampProgress(selectedBudget.progress_percent) : null
+  const visibleSpent = metricsComplete ? Number(selectedBudget.spent_amount) : null
+  const visibleRemaining = metricsComplete ? Number(selectedBudget.remaining_amount) : null
   const parsedPeriodAmount = parseAmountInput(periodAmount)
   const amountChanged =
-    parsedPeriodAmount !== null && Math.abs(parsedPeriodAmount - Number(selectedBudget.amount ?? 0)) >= 0.01
+    editingPeriod !== null && parsedPeriodAmount !== null && Math.abs(parsedPeriodAmount - Number(editingPeriod.amount ?? 0)) >= 0.01
+  const hasAmountDraft = Boolean(editingPeriod && periodAmount !== Number(editingPeriod.amount ?? 0).toFixed(2))
+
+  const openPeriodAmountEditor = useCallback((period: BudgetRef) => {
+    setEditingPeriod(period)
+    setPeriodAmount(Number(period.amount ?? 0).toFixed(2))
+    setAmountError(null)
+    setDiscardAmountConfirmationOpen(false)
+    setPeriodEditorOpen(true)
+  }, [])
+
+  const closePeriodAmountEditor = useCallback(() => {
+    setDiscardAmountConfirmationOpen(false)
+    setPeriodEditorOpen(false)
+  }, [])
+
+  const requestClose = useCallback(() => {
+    if (amountSaving || periodEditorOpen) return
+    onClose()
+  }, [amountSaving, onClose, periodEditorOpen])
+
+  const requestNextPeriod = useCallback(() => {
+    if (amountSaving || periodEditorOpen || !onContinueNextPeriod) return
+    onContinueNextPeriod()
+  }, [amountSaving, onContinueNextPeriod, periodEditorOpen])
+
+  const requestPeriodSelection = useCallback((periodId: string) => {
+    setSelectedBudgetId(periodId)
+  }, [])
+
+  const requestClosePeriodEditor = useCallback(() => {
+    if (amountSaving) return
+    if (hasAmountDraft) {
+      setDiscardAmountConfirmationOpen(true)
+      return
+    }
+    closePeriodAmountEditor()
+  }, [amountSaving, closePeriodAmountEditor, hasAmountDraft])
+
+  const discardAmountDraft = useCallback(() => {
+    closePeriodAmountEditor()
+  }, [closePeriodAmountEditor])
 
   async function savePeriodAmount() {
+    if (!editingPeriod) return
     const nextAmount = parseAmountInput(periodAmount)
     if (nextAmount === null) {
       setAmountError('Ingresa un importe mayor a cero.')
@@ -298,13 +357,19 @@ export function BudgetDetail({ budget, periods, onClose, onPeriodUpdated }: Prop
     setAmountSaving(true)
     setAmountError(null)
     try {
-      const res = await fetch(`/api/budgets/${selectedBudget.id}`, {
+      const endpoint = resolveBudgetPeriodAmountUrl(editingPeriod)
+      const res = await fetch(endpoint, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: nextAmount,
-          action_scope: createBudgetRecordActionScope(selectedBudget),
-        }),
+          body: JSON.stringify(editingPeriod.budget_period_id
+            ? { amount: nextAmount }
+            : {
+                amount: nextAmount,
+                action_scope: createBudgetRecordActionScope({
+                  ...editingPeriod,
+                  id: editingPeriod.legacy_budget_id ?? editingPeriod.id,
+                }),
+              }),
       })
       const json = await res.json().catch(() => null)
       if (!res.ok || !json?.ok) {
@@ -313,19 +378,22 @@ export function BudgetDetail({ budget, periods, onClose, onPeriodUpdated }: Prop
 
       setPeriodItems(prev =>
         prev.map(period => {
-          if (period.id !== selectedBudget.id) return period
-          const spent = Number(period.spent_amount ?? 0)
-          const remaining = nextAmount - spent
+          if (period.id !== editingPeriod.id) return period
+          const metricsComplete = period.metrics_complete !== false && period.spent_amount !== null
+          const spent = metricsComplete ? Number(period.spent_amount) : null
+          const remaining = spent === null ? null : nextAmount - spent
           return {
             ...period,
             amount: nextAmount,
             remaining_amount: remaining,
-            progress_percent: nextAmount > 0 ? Math.round((spent / nextAmount) * 10000) / 100 : 0,
-            over_limit: spent > nextAmount,
+            progress_percent: spent === null ? null : nextAmount > 0 ? Math.round((spent / nextAmount) * 10000) / 100 : 0,
+            over_limit: spent === null ? null : spent > nextAmount,
+            metrics_complete: metricsComplete,
           }
         }),
       )
       await onPeriodUpdated?.()
+      closePeriodAmountEditor()
     } catch (caught) {
       setAmountError(caught instanceof Error ? caught.message : 'No se pudo actualizar el importe del periodo')
     } finally {
@@ -334,314 +402,288 @@ export function BudgetDetail({ budget, periods, onClose, onPeriodUpdated }: Prop
   }
 
   return (
-    <ModalOverlayPortal className="z-[97]" onClick={onClose}>
-      <FocusTrap active onEscape={onClose}>
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="budget-detail-title"
-          onClick={event => event.stopPropagation()}
-          className="flex h-[min(92vh,920px)] w-[min(98vw,1500px)] max-h-[92vh] flex-col overflow-hidden rounded-2xl border border-[var(--c-border)] bg-[var(--c-modal-bg)] shadow-2xl shadow-[color:var(--c-shadow)]"
-        >
-          <header className="flex items-start justify-between gap-5 border-b border-[var(--c-border)] px-5 py-4">
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-[10px] font-semibold uppercase text-[var(--c-text-muted)]">
-                  Detalle de presupuesto
-                </p>
-                <span className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold ${selectedTone.badge}`}>
-                  {selectedStatus.label}
-                </span>
-              </div>
-              <h2 id="budget-detail-title" className="mt-1 text-lg font-bold text-[var(--c-text)] truncate">
-                {budget.name}
-              </h2>
-              {budget.description && (
-                <p className="mt-0.5 text-[12px] text-[var(--c-text-muted)]">{budget.description}</p>
-              )}
-              <p className="mt-1 text-[11px] text-[var(--c-text-faint)]">
-                {formatRange(selectedBudget.period_start, selectedBudget.period_end)}
-                {budget.category && ` · ${budget.category.name}`}
-              </p>
+    <>
+    <RecordModal
+      open={open}
+      onClose={requestClose}
+      onExitComplete={onExitComplete}
+      presentation="workbench"
+      size="xl"
+      focusTrapActive={!suspendFocusTrap && !periodEditorOpen}
+      overlayClassName={styles.detailOverlay}
+      widthClassName="w-[calc(100vw-40px)] max-w-[1320px]"
+      footer={onContinueNextPeriod ? (
+        <div className={styles.workbenchFooter}>
+          <div className={styles.footerTotals}>
+            <div>
+              <p className={styles.detailFooterLabel}>Total gastado · {filtered.length} movimiento{filtered.length === 1 ? '' : 's'}</p>
+              <p className={styles.detailFooterValue}>{totalSpent === null ? 'No disponible' : formatBudgetCurrency(Math.round(totalSpent * 100) / 100, selectedBudget.currency)}</p>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Cerrar panel"
-              className="shrink-0 rounded-lg border border-[var(--c-border)] p-1.5 text-[var(--c-text-muted)] transition-colors hover:border-[var(--c-border-hover)] hover:text-[var(--c-text)]"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </header>
-
-          <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[440px_minmax(0,1fr)]">
-            <aside className="flex min-h-0 flex-col border-b border-[var(--c-border)] bg-[var(--c-surface-2)] lg:border-b-0 lg:border-r">
-              <div className="border-b border-[var(--c-border)] px-4 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-[10px] font-semibold uppercase text-[var(--c-text-muted)]">
-                    Periodos de la serie
-                  </p>
-                  <span className="rounded-md bg-[var(--c-surface)] px-2 py-1 text-[11px] text-[var(--c-text-muted)]">
-                    {visiblePeriods.length}/{seriesPeriods.length}
-                  </span>
-                </div>
-
-                <div className="mt-3 grid gap-2 sm:grid-cols-[120px_minmax(0,1fr)]">
-                  <select
-                    value={periodYearFilter}
-                    onChange={event => setPeriodYearFilter(event.target.value)}
-                    className="field-base h-9 w-full px-2 text-[12px]"
-                    aria-label="Filtrar periodos por año"
-                  >
-                    <option value="all">Todos</option>
-                    {periodYears.map(year => (
-                      <option key={year} value={year}>{year}</option>
-                    ))}
-                  </select>
-                  <input
-                    value={periodSearch}
-                    onChange={event => setPeriodSearch(event.target.value)}
-                    placeholder="Buscar periodo o estado..."
-                    className="field-base h-9 w-full px-3 text-[12px]"
-                  />
-                </div>
-              </div>
-
-              <div className="min-h-[220px] flex-1 overflow-y-auto px-3 py-3">
-                {visiblePeriods.length === 0 ? (
-                  <div className="flex h-full min-h-[220px] items-center justify-center rounded-xl border border-dashed border-[var(--c-border)] bg-[var(--c-surface)] px-4 text-center">
-                    <p className="text-[12px] leading-5 text-[var(--c-text-muted)]">
-                      No hay periodos para el filtro seleccionado.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2">
-                    {visiblePeriods.map(period => {
-                      const selected = period.id === selectedBudget.id
-                      const periodProgress = clampProgress(period.progress_percent)
-                      const periodStatus = getPeriodStatus(period)
-                      const tone = getToneClasses(periodStatus.tone)
-
-                      return (
-                        <button
-                          key={period.id}
-                          type="button"
-                          onClick={() => setSelectedBudgetId(period.id)}
-                          className={`min-h-[86px] rounded-xl border px-2.5 py-2 text-left transition-all duration-200 active:scale-[0.99] ${
-                            selected
-                              ? 'border-[var(--c-accent)] bg-[var(--c-surface)] shadow-sm text-[var(--c-text)]'
-                              : 'border-transparent bg-[var(--c-surface)]/75 text-[var(--c-text-muted)] hover:border-[var(--c-border-hover)] hover:bg-[var(--c-surface)] hover:text-[var(--c-text)]'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="truncate text-[11px] font-semibold text-[var(--c-text)]">
-                              {formatRangeCompact(period.period_start, period.period_end)}
-                            </span>
-                            <span className={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`} />
-                          </div>
-                          <div className="mt-1 flex items-baseline justify-between gap-2">
-                            <span className="truncate text-[10px] tabular-nums text-[var(--c-text-faint)]">
-                              {formatCurrency(Number(period.amount ?? 0), period.currency)}
-                            </span>
-                            <span className="text-[10px] font-semibold tabular-nums text-[var(--c-text-muted)]">
-                              {periodProgress.toFixed(0)}%
-                            </span>
-                          </div>
-                          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--c-border)]">
-                            <div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${Math.min(100, periodProgress)}%` }} />
-                          </div>
-                          <span className={`mt-2 inline-flex max-w-full rounded-md border px-1.5 py-0.5 text-[9px] font-semibold ${tone.badge}`}>
-                            <span className="truncate">{periodStatus.label}</span>
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            </aside>
-
-            <section className="flex min-h-0 flex-col">
-              <div className="border-b border-[var(--c-border)] px-5 py-4">
-                <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-semibold uppercase text-[var(--c-text-muted)]">Periodo seleccionado</p>
-                    <p className="mt-1 text-sm font-semibold text-[var(--c-text)]">
-                      {formatRange(selectedBudget.period_start, selectedBudget.period_end)}
-                    </p>
-                    <p className="mt-1 text-[11px] text-[var(--c-text-faint)]">{selectedStatus.description}</p>
-                  </div>
-
-                  <form
-                    onSubmit={event => {
-                      event.preventDefault()
-                      void savePeriodAmount()
-                    }}
-                    className="w-full rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] p-3 xl:w-[360px]"
-                  >
-                    <label htmlFor="budget-period-amount" className="text-[10px] font-semibold uppercase text-[var(--c-text-muted)]">
-                      Importe del periodo
-                    </label>
-                    <div className="mt-2 flex gap-2">
-                      <input
-                        id="budget-period-amount"
-                        value={periodAmount}
-                        onChange={event => setPeriodAmount(event.target.value)}
-                        inputMode="decimal"
-                        className="field-base min-w-0 flex-1 px-3 py-2 text-sm font-semibold tabular-nums"
-                        aria-invalid={amountError ? 'true' : 'false'}
-                      />
-                      <button
-                        type="submit"
-                        disabled={!amountChanged || amountSaving}
-                        className="rounded-lg bg-[var(--c-accent)] px-3 py-2 text-[12px] font-semibold text-white transition-colors hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-45"
-                      >
-                        {amountSaving ? 'Guardando' : 'Guardar'}
-                      </button>
-                    </div>
-                    {amountError && <p className="mt-2 text-[11px] text-red-500">{amountError}</p>}
-                  </form>
-                </div>
-
-                <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-3">
-                    <p className="text-[10px] font-semibold uppercase text-[var(--c-text-muted)]">Presupuesto</p>
-                    <p className="mt-1 text-base font-bold tabular-nums text-[var(--c-text)]">
-                      {formatCurrency(Number(selectedBudget.amount ?? 0), selectedBudget.currency)}
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-3">
-                    <p className="text-[10px] font-semibold uppercase text-[var(--c-text-muted)]">Ejecutado</p>
-                    <p className="mt-1 text-base font-bold tabular-nums text-[var(--c-text)]">
-                      {formatCurrency(visibleSpent, selectedBudget.currency)}
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-3">
-                    <p className="text-[10px] font-semibold uppercase text-[var(--c-text-muted)]">
-                      {visibleRemaining < 0 ? 'Exceso' : 'Disponible'}
-                    </p>
-                    <p className={`mt-1 text-base font-bold tabular-nums ${visibleRemaining < 0 ? 'text-red-500' : 'text-[var(--c-text)]'}`}>
-                      {formatCurrency(Math.abs(visibleRemaining), selectedBudget.currency)}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-4">
-                  <div className="flex items-center justify-between gap-3 text-[11px]">
-                    <span className="font-semibold text-[var(--c-text-muted)]">Ejecucion</span>
-                    <span className={`font-bold tabular-nums ${selectedBudget.over_limit ? 'text-red-500' : 'text-[var(--c-text)]'}`}>
-                      {progress.toFixed(0)}%
-                    </span>
-                  </div>
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--c-border)]">
-                    <div className={`h-full rounded-full ${selectedTone.bar}`} style={{ width: `${Math.min(100, progress)}%` }} />
-                  </div>
-                </div>
-              </div>
-
-              <div className="border-b border-[var(--c-border)] px-5 py-3">
-                <input
-                  value={query}
-                  onChange={e => setQuery(e.target.value)}
-                  placeholder="Buscar por descripcion, portafolio o destinatario..."
-                  className="field-base w-full"
-                />
-              </div>
-
-              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-                {loading ? (
-                  <div className="space-y-2">
-                    {[0, 1, 2].map(item => (
-                      <div key={item} className="h-14 animate-pulse rounded-xl bg-[var(--c-surface-2)]" />
-                    ))}
-                  </div>
-                ) : error ? (
-                  <div className="flex h-full min-h-[260px] flex-col items-center justify-center gap-3 text-center">
-                    <p className="text-[12px] text-red-500">{error}</p>
-                    <button
-                      type="button"
-                      onClick={() => void load()}
-                      className="rounded-md border border-red-400/35 px-3 py-1.5 text-[11px] font-semibold text-red-500 transition-colors hover:bg-red-500/10"
-                    >
-                      Reintentar
-                    </button>
-                  </div>
-                ) : filtered.length === 0 ? (
-                  <div className="flex h-full min-h-[260px] flex-col items-center justify-center rounded-xl border border-dashed border-[var(--c-border)] bg-[var(--c-surface-2)] px-6 text-center">
-                    <p className="text-sm font-semibold text-[var(--c-text)]">
-                      {q ? 'Sin coincidencias' : 'Sin transacciones en este periodo'}
-                    </p>
-                    <p className="mt-1 max-w-sm text-[12px] leading-5 text-[var(--c-text-muted)]">
-                      {q
-                        ? 'Prueba con otro termino de busqueda.'
-                        : 'El periodo mantiene su tamano y sus indicadores aunque todavia no tenga movimientos asociados.'}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="hidden grid-cols-[110px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.35fr)_120px] gap-3 px-3 text-[10px] font-semibold uppercase text-[var(--c-text-faint)] md:grid">
-                      <span>Fecha</span>
-                      <span>Portafolio</span>
-                      <span>Destinatario</span>
-                      <span>Descripcion</span>
-                      <span className="text-right">Importe</span>
-                    </div>
-
-                    {filtered.map(tx => (
-                      <div
-                        key={tx.id}
-                        className="grid grid-cols-1 gap-3 rounded-xl border border-[var(--c-border)] bg-[var(--c-surface-2)] px-4 py-3 md:grid-cols-[110px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.35fr)_120px] md:items-center"
-                      >
-                        <div>
-                          <p className="text-[10px] uppercase text-[var(--c-text-faint)] md:hidden">Fecha</p>
-                          <p className="text-[12px] text-[var(--c-text-muted)]">{formatDate(tx.date)}</p>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[10px] uppercase text-[var(--c-text-faint)] md:hidden">Portafolio</p>
-                          <p className="truncate text-[13px] text-[var(--c-text)]">{tx.portfolio ?? '-'}</p>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[10px] uppercase text-[var(--c-text-faint)] md:hidden">Destinatario</p>
-                          <p className="truncate text-[13px] text-[var(--c-text)]">{tx.recipient ?? '-'}</p>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-[10px] uppercase text-[var(--c-text-faint)] md:hidden">Descripcion</p>
-                          <p className="text-[13px] leading-5 text-[var(--c-text)]">{tx.description ?? '-'}</p>
-                        </div>
-                        <div className="md:text-right">
-                          <p className="text-[10px] uppercase text-[var(--c-text-faint)] md:hidden">Importe</p>
-                          <span className="shrink-0 text-sm font-bold tabular-nums text-red-500">
-                            -{formatCurrency(Number(tx.amount ?? 0), tx.currency)}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <footer className="flex items-center justify-between gap-4 border-t border-[var(--c-border)] px-5 py-4">
-                <div>
-                  <p className="text-[10px] font-semibold uppercase text-[var(--c-text-muted)]">
-                    Total gastado ({filtered.length} transaccion{filtered.length !== 1 ? 'es' : ''})
-                  </p>
-                  <p className="text-lg font-bold tabular-nums text-[var(--c-text)]">
-                    {formatCurrency(Math.round(totalSpent * 100) / 100, selectedBudget.currency)}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-[10px] font-semibold uppercase text-[var(--c-text-muted)]">Presupuesto</p>
-                  <p className="text-sm font-semibold tabular-nums text-[var(--c-text-muted)]">
-                    {formatCurrency(Number(selectedBudget.amount ?? 0), selectedBudget.currency)}
-                  </p>
-                </div>
-              </footer>
-            </section>
+            <div className={styles.detailFooterSecondary}>
+              <p className={styles.detailFooterLabel}>Límite del período</p>
+              <p className={styles.detailFooterValue}>{formatBudgetCurrency(Number(selectedBudget.amount ?? 0), selectedBudget.currency)}</p>
+            </div>
           </div>
+          <Button
+            type="button"
+            variant="primary"
+            size="md"
+            disabled={amountSaving}
+            onClick={requestNextPeriod}
+            testId="budget-detail-next-period"
+            leadingIcon={<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>}
+          >
+            Crear siguiente período
+          </Button>
         </div>
-      </FocusTrap>
-    </ModalOverlayPortal>
+      ) : undefined}
+      eyebrow="Detalle de presupuesto"
+      title={budget.name}
+      subtitle={`${formatRange(selectedBudget.period_start, selectedBudget.period_end)}${budget.category ? ` · ${budget.category.name}` : ''}`}
+      headerBadge={<span className={`${styles.statusBadge} ${selectedTone.badge}`}><span className={styles.statusDot} aria-hidden="true" />{selectedStatus.label}</span>}
+      bodyClassName="!p-0"
+      testId="budget-detail-workbench"
+    >
+      <div className={styles.detailLayout} data-testid="budget-detail-layout">
+        <aside className={styles.periodRail} aria-label="Períodos de la serie">
+          <div className={styles.periodRailHeader}>
+            <div className={styles.periodRailTitleRow}>
+              <p className={styles.sectionEyebrow}>Períodos de la serie</p>
+              <span className={styles.periodCount}>{visiblePeriods.length}/{seriesPeriods.length}</span>
+            </div>
+            <div className={styles.periodFilters}>
+              <AppSelect
+                value={periodYearFilter}
+                onChange={setPeriodYearFilter}
+                className={styles.periodYearSelect}
+                compact
+                searchable={false}
+                options={periodYearOptions}
+                aria-label="Filtrar períodos por año"
+              />
+              <input
+                value={periodSearch}
+                onChange={event => setPeriodSearch(event.target.value)}
+                placeholder="Buscar período o estado"
+                aria-label="Buscar período de presupuesto"
+                className={styles.periodSearch}
+              />
+            </div>
+          </div>
+
+          <div className={styles.periodList}>
+            {visiblePeriods.length === 0 ? (
+              <div className={styles.periodEmpty}>No hay períodos para el filtro seleccionado.</div>
+            ) : visiblePeriods.map(period => {
+              const selected = period.id === selectedBudget.id
+              const periodProgress = clampProgress(period.progress_percent)
+              const periodStatus = getPeriodStatus(period)
+              const tone = getToneClasses(periodStatus.tone)
+
+              return (
+                <div key={period.id} className={styles.periodOption} data-selected={selected}>
+                  <button
+                    type="button"
+                    onClick={() => requestPeriodSelection(period.id)}
+                    className={styles.periodSelectButton}
+                    data-testid={`budget-select-period-${period.id}`}
+                    aria-current={selected ? 'true' : undefined}
+                    aria-label={`${formatRange(period.period_start, period.period_end)}, ${periodStatus.label}, ${formatBudgetCurrency(Number(period.amount ?? 0), period.currency)}`}
+                  >
+                    <span className={styles.periodOptionTop}>
+                      <span className={styles.periodOptionRange}>{formatRangeCompact(period.period_start, period.period_end)}</span>
+                      <span className={`${styles.periodOptionStatus} ${tone.badge}`}>
+                        <span className={`${styles.periodOptionDot} ${tone.dot}`} aria-hidden="true" />
+                        {periodStatus.label}
+                      </span>
+                    </span>
+                    <span className={styles.periodOptionAmounts}>
+                      <span className={styles.periodOptionAmount}>{formatBudgetCurrency(Number(period.amount ?? 0), period.currency)}</span>
+                      <span className={styles.periodOptionProgressLabel}>{period.metrics_complete === false ? '—' : `${periodProgress.toFixed(0)}%`}</span>
+                    </span>
+                    <span className={styles.progressTrack} aria-hidden="true">
+                      <span className={`${styles.progressFill} ${tone.bar}`} style={{ width: `${Math.min(100, periodProgress)}%` }} />
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.periodEditButton}
+                    aria-label={`Editar importe del período ${formatRange(period.period_start, period.period_end)}`}
+                    data-testid={`budget-edit-period-${period.id}`}
+                    onClick={() => openPeriodAmountEditor(period)}
+                    disabled={amountSaving}
+                  >
+                    <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" />
+                    </svg>
+                    <span>Editar</span>
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </aside>
+
+        <section className={styles.detailMain} aria-label="Detalle del período seleccionado">
+          <div className={styles.detailOverview}>
+            <div className={styles.periodHeadingRow}>
+              <div className={styles.selectedPeriodCopy}>
+                <p className={styles.sectionEyebrow}>Período seleccionado</p>
+                <h3 className={styles.selectedPeriodDate}>{formatRange(selectedBudget.period_start, selectedBudget.period_end)}</h3>
+                <p className={styles.selectedStatusDescription}>{selectedStatus.description}</p>
+              </div>
+
+            </div>
+
+            <div className={styles.summaryFinance}>
+              <div className={styles.detailMetrics} aria-label="Resumen del período">
+                <div className={styles.detailMetric}>
+                  <p className={styles.detailMetricLabel}>Presupuesto</p>
+                  <strong className={styles.detailMetricValue}>{formatBudgetCurrency(Number(selectedBudget.amount ?? 0), selectedBudget.currency)}</strong>
+                </div>
+                <div className={styles.detailMetric}>
+                  <p className={styles.detailMetricLabel}>Ejecutado</p>
+                  <strong className={styles.detailMetricValue}>{formatBudgetCurrency(visibleSpent, selectedBudget.currency)}</strong>
+                </div>
+                <div className={styles.detailMetric}>
+                  <p className={styles.detailMetricLabel}>{visibleRemaining === null ? 'Saldo' : visibleRemaining < 0 ? 'Exceso' : 'Disponible'}</p>
+                  <strong className={`${styles.detailMetricValue} ${visibleRemaining !== null && visibleRemaining < 0 ? styles.detailMetricValueDanger : ''}`}>
+                    {visibleRemaining === null ? 'No disponible' : formatBudgetCurrency(Math.abs(visibleRemaining), selectedBudget.currency)}
+                  </strong>
+                </div>
+              </div>
+
+              <div className={styles.execution}>
+                <div className={styles.executionHeading}>
+                  <span>Ejecución del límite</span>
+                  <strong className={`${styles.executionPercent} ${selectedBudget.over_limit ? styles.toneDanger : ''}`}>{progress === null ? '—' : `${progress.toFixed(0)}%`}</strong>
+                </div>
+                <div className={styles.progressTrack} role="progressbar" aria-label="Ejecución del presupuesto" aria-valuemin={0} aria-valuemax={Math.max(100, progress ?? 100)} aria-valuenow={progress ?? undefined}>
+                  <div className={`${styles.progressFill} ${selectedTone.bar}`} style={{ width: `${Math.min(100, progress ?? 0)}%` }} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className={styles.transactionToolbar}>
+            <div>
+              <h4 className={styles.transactionTitle}>Movimientos vinculados</h4>
+              {!loading && !error ? <span className={styles.transactionCount}>{filtered.length} movimiento{filtered.length === 1 ? '' : 's'} · {formatRange(selectedBudget.period_start, selectedBudget.period_end)}</span> : null}
+            </div>
+            <div className={styles.transactionToolbarSearch}>
+              <input
+                value={query}
+                onChange={event => setQuery(event.target.value)}
+                placeholder="Buscar descripción, cuenta o destinatario"
+                aria-label="Buscar movimientos vinculados"
+                className={styles.transactionSearch}
+              />
+            </div>
+          </div>
+
+          <div className={styles.transactionList}>
+            {loading ? (
+              <div className="space-y-2" aria-label="Cargando movimientos" role="status">
+                {[0, 1, 2].map(item => <div key={item} className="h-14 animate-pulse rounded-lg bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />)}
+              </div>
+            ) : error ? (
+              <div className={styles.detailError} role="alert">
+                <p className={styles.inlineError}>{error}</p>
+                <button type="button" onClick={() => void load()} className={styles.retryButton}>Reintentar</button>
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className={styles.detailEmpty}>
+                <p className={styles.detailEmptyTitle}>{q ? 'Sin coincidencias' : 'Sin movimientos en este período'}</p>
+                <p className={styles.detailEmptyCopy}>{q ? 'Prueba con otra búsqueda.' : 'El resumen del período se conserva aunque todavía no tenga movimientos vinculados.'}</p>
+              </div>
+            ) : (
+              <div className={styles.transactionTable}>
+                <div className={styles.transactionHeader} aria-hidden="true">
+                  <span>Fecha</span><span>Cuenta</span><span>Destinatario</span><span>Descripción</span><span className="text-right">Importe</span>
+                </div>
+                {filtered.map(tx => (
+                  <div key={tx.id} className={styles.transactionRow}>
+                    <div className={`${styles.transactionCell} ${styles.transactionCellMuted}`}>
+                      <span className={styles.mobileCellLabel}>Fecha</span>{formatDate(tx.date)}
+                    </div>
+                    <div className={styles.transactionCell}>
+                      <span className={styles.mobileCellLabel}>Cuenta</span>{tx.portfolio ?? '—'}
+                    </div>
+                    <div className={styles.transactionCell}>
+                      <span className={styles.mobileCellLabel}>Destinatario</span>{tx.recipient ?? '—'}
+                    </div>
+                    <div className={`${styles.transactionCell} ${styles.transactionDescription}`}>
+                      <span className={styles.mobileCellLabel}>Descripción</span>{tx.description ?? '—'}
+                    </div>
+                    <div className={`${styles.transactionCell} ${styles.transactionAmount} ${styles.toneDanger}`}>
+                      <span className={styles.mobileCellLabel}>Importe</span>−{formatBudgetCurrency(Number(tx.amount ?? 0), tx.currency)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+        </section>
+      </div>
+    </RecordModal>
+    <RecordModal
+      open={periodEditorOpen}
+      onClose={requestClosePeriodEditor}
+      presentation="workbench"
+      eyebrow="Presupuestos"
+      title="Editar período"
+      subtitle={editingPeriod ? formatRange(editingPeriod.period_start, editingPeriod.period_end) : undefined}
+      widthClassName="w-[calc(100vw-32px)] max-w-[580px]"
+      overlayClassName={styles.periodEditorOverlay}
+      testId="budget-period-editor-workbench"
+      footer={(
+        <div className={styles.periodEditorActions}>
+          <Button type="button" variant="secondary" size="lg" onClick={requestClosePeriodEditor} disabled={amountSaving}>
+            Cancelar
+          </Button>
+          <Button type="submit" form="budget-period-edit-form" variant="primary" size="lg" disabled={!amountChanged || amountSaving} loading={amountSaving} testId="budget-period-save-button">
+            Guardar cambios
+          </Button>
+        </div>
+      )}
+    >
+      <form
+        id="budget-period-edit-form"
+        onSubmit={event => { event.preventDefault(); void savePeriodAmount() }}
+        className={styles.periodEditorForm}
+      >
+        {editingPeriod ? (
+          <>
+            <div className={styles.periodEditorContext}>
+              <span className={styles.sectionEyebrow}>Límite actual</span>
+              <strong>{formatBudgetCurrency(Number(editingPeriod.amount ?? 0), editingPeriod.currency)}</strong>
+            </div>
+            <label htmlFor="budget-period-amount" className={styles.amountLabel}>Nuevo importe · {editingPeriod.currency}</label>
+            <input
+              id="budget-period-amount"
+              value={periodAmount}
+              onChange={event => setPeriodAmount(event.target.value)}
+              inputMode="decimal"
+              className={styles.amountInput}
+              aria-invalid={amountError ? 'true' : 'false'}
+              aria-describedby={amountError ? 'budget-period-amount-error' : undefined}
+              autoFocus
+            />
+            {amountError && <p id="budget-period-amount-error" className={styles.inlineError} role="alert">{amountError}</p>}
+          </>
+        ) : null}
+      </form>
+      <ConfirmDialog
+        open={discardAmountConfirmationOpen}
+        title="Descartar cambio de importe"
+        message="El nuevo límite del período aún no se ha guardado. ¿Quieres cerrar y descartarlo?"
+        onCancel={() => setDiscardAmountConfirmationOpen(false)}
+        onConfirm={discardAmountDraft}
+        confirmLabel="Descartar cambio"
+        testId="budget-period-discard-modal"
+      />
+    </RecordModal>
+    </>
   )
 }

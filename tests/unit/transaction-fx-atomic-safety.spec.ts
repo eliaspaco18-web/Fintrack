@@ -18,12 +18,17 @@ test.describe('V2 compatibility with nullable exchange rates and the atomic RPC'
     const start = service.indexOf("'create_transaction_atomic',")
     const end = service.indexOf('\n      )', start)
     const request = service.slice(start, end)
-    const argumentNames = [...request.matchAll(/^\s+(p_[a-z_]+):/gm)].map((match) => match[1])
+    const helper = readFileSync(resolve(process.cwd(), 'modules/transactions/transaction-atomic-rpc-arguments.ts'), 'utf8')
+    const directArgumentNames = [...request.matchAll(/^\s+(p_[a-z_]+):/gm)].map((match) => match[1])
+    const derivedArgumentNames = [...helper.matchAll(/^\s+(p_[a-z_]+): payload\./gm)].map((match) => match[1])
+    const argumentNames = [...directArgumentNames, ...derivedArgumentNames]
 
     expect(start).toBeGreaterThan(-1)
     expect(argumentNames).toHaveLength(20)
     expect(argumentNames).toContain('p_budget_id')
     expect(argumentNames).not.toContain('p_budget_period_id')
+    expect(request).toContain('...atomicDerivedJsonbArguments(payload)')
+    expect(derivedArgumentNames).toHaveLength(5)
   })
 
   test('RPC errors, including a stale PostgREST schema cache, fail closed without a direct insert fallback', () => {
@@ -36,7 +41,8 @@ test.describe('V2 compatibility with nullable exchange rates and the atomic RPC'
     expect(callImplementation).not.toContain('createTransactionFallback')
     expect(callImplementation).not.toContain(".from('transactions')")
     expect(service).not.toContain('private async createTransactionFallback(')
-    expect(service).not.toContain('private isMissingAtomicFunction(')
+    expect(callImplementation).toContain('this.isMissingAtomicFunction(error.message)')
+    expect(service).toContain('private isMissingAtomicFunction(')
   })
 
   test('USD payload never inherits the PEN neutral factor when its verified rate is absent', () => {

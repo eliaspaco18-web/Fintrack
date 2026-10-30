@@ -1,7 +1,6 @@
 // =============================================================================
 // components/layout/Brand.tsx
-// Identidad visual FinTrack — Rediseño v2
-// Logo aprobado: isotipo circular oficial + wordmark "FinTrack" (Plus Jakarta Sans)
+// V3 FinTrack identity mark with the existing wordmark.
 // =============================================================================
 
 import Image from 'next/image'
@@ -23,29 +22,19 @@ interface BrandWordmarkProps {
 }
 
 // ─── BRAND MARK ───────────────────────────────────────────────────────────────
-// Isotipo oficial (archivo en /public/brand)
+// Use the approved Astra Round 07 ligature in light- and dark-surface variants.
 
 export function BrandMark({ size = 40, className = '', variant = 'default' }: BrandMarkProps) {
   return (
-    <span
-      className={`relative inline-flex overflow-hidden rounded-full ${className}`}
-      style={{
-        width: size,
-        height: size,
-        boxShadow: variant === 'white'
-          ? '0 0 0 1px rgba(255,255,255,0.28) inset'
-          : '0 0 0 1px rgba(13,79,74,0.14) inset',
-      }}
-    >
-      <Image
-        src="/brand/fintrack-mark.png"
-        alt="FinTrack"
-        fill
-        sizes={`${size}px`}
-        unoptimized
-        className="object-cover"
-      />
-    </span>
+    <Image
+      src={variant === 'white' ? '/brand/v3/ft-ligature-dark.svg' : '/brand/v3/ft-ligature.svg'}
+      alt=""
+      width={size}
+      height={size}
+      sizes={`${size}px`}
+      unoptimized
+      className={`shrink-0 object-contain ${className}`.trim()}
+    />
   )
 }
 

@@ -2,7 +2,7 @@ const PRODUCTION_HOST = 'fintrack-eta-silk.vercel.app'
 
 type ExchangeRateSnapshot = {
   refreshed: boolean
-  rate: number
+  rate: number | null
   fetched_at: string | null
   source: string
 }
@@ -29,7 +29,7 @@ export async function runExchangeRateCron(
 
   try {
     const snapshot = await refresh({ forceRefresh: true })
-    if (!snapshot.refreshed) {
+    if (!snapshot.refreshed || snapshot.rate === null) {
       return Response.json({
         ok: false,
         message: 'No se pudo refrescar desde internet, se mantiene la tasa almacenada',

@@ -9,8 +9,8 @@ import type { Metadata } from 'next'
 import { AlertsWorkspace } from '@/components/alerts/AlertsWorkspace'
 
 export const metadata: Metadata = {
-  title: 'Risk inbox | FinTrack',
-  description: 'Bandeja priorizada de riesgos, vencimientos y alertas operativas.',
+  title: 'Avisos | FinTrack',
+  description: 'Revisa vencimientos, recordatorios y avisos relacionados con tus finanzas.',
 }
 
 export default function AlertsPage() {

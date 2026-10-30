@@ -14,7 +14,7 @@ const zCurrency = z.enum(['PEN', 'USD'])
 const zDate     = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)')
 const zUUID     = z.string().uuid('UUID inválido')
 const zAmount   = z
-  .number({ invalid_type_error: 'El monto debe ser un número' })
+  .number({ error: 'El monto debe ser un número' })
   .positive('El monto debe ser mayor a cero')
   .refine(v => hasAtMostDecimals(v, 2), 'Máximo 2 decimales')
   .refine(v => v <= 100_000_000, 'Monto excede el límite permitido')

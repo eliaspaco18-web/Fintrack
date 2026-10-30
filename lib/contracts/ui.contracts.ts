@@ -6,7 +6,7 @@
 
 import type {
   TransactionType, CurrencyCode, AccountType,
-  AssetType, CreditType, ReceivableStatus, PayableStatus,
+  AssetType, CreditType, ReceivableStatus, PayableStatus, Enums,
 } from '@/types/database.types'
 
 // ─── ERRORES DE FORMULARIO ────────────────────────────────────────────────────
@@ -195,6 +195,15 @@ export function formatCurrency(amount: number, currency: CurrencyCode, locale = 
   }).format(amount)
 }
 
+export function formatCurrencyOrUnavailable(
+  amount: number | null | undefined,
+  currency: CurrencyCode,
+  locale = 'es-PE',
+): string {
+  if (amount == null || !Number.isFinite(amount)) return 'No disponible'
+  return formatCurrency(amount, currency, locale)
+}
+
 export function formatNumber(
   value: number,
   options?: {
@@ -342,9 +351,10 @@ export type DisplayCurrency = 'PEN' | 'USD'
 export function toPenAmount(
   amount:       number,
   currency:     CurrencyCode,
-  exchangeRate: number
-): number {
+  exchangeRate: number | null
+): number | null {
   if (currency === 'PEN') return amount
+  if (exchangeRate === null || !Number.isFinite(exchangeRate) || exchangeRate <= 0) return null
   return Math.round(amount * exchangeRate * 100) / 100
 }
 
@@ -352,9 +362,10 @@ export function toPenAmount(
 export function toDisplayAmount(
   amountPen:    number,
   preferred:    DisplayCurrency,
-  exchangeRate: number
-): number {
+  exchangeRate: number | null
+): number | null {
   if (preferred === 'PEN') return amountPen
+  if (exchangeRate === null || !Number.isFinite(exchangeRate) || exchangeRate <= 0) return null
   return Math.round((amountPen / exchangeRate) * 100) / 100
 }
 
@@ -404,7 +415,12 @@ export interface TransactionListItem {
   source_account: { id: string; name: string; color: string; icon: string } | null
   destinationAccount: { id: string; name: string; color: string; icon: string } | null
   destination_account: { id: string; name: string; color: string; icon: string } | null
-  category: { id: string; name: string; icon: string; color: string } | null
+  category: { id: string; name: string; icon: string; color: string; system_key?: string | null } | null
+  /** Persisted discriminator and module relations selected by the paginated API. */
+  sub_type?: Enums<'transaction_sub_type'> | null
+  linked_asset?: { id: string } | Array<{ id: string }> | null
+  linked_receivable?: { id: string } | Array<{ id: string }> | null
+  linked_payable?: { id: string } | Array<{ id: string }> | null
   hasAsset?:      boolean
   hasCredit?:     boolean
   hasReceivable?: boolean

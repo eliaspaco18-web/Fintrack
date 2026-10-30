@@ -3,6 +3,7 @@ import {
   getIdentifiedPortfolioInstitution,
   getPortfolioBankDisplayName,
   getPortfolioReferenceDataState,
+  resolveCreateAccountCurrency,
 } from '@/modules/portfolio/reference-data-state'
 
 type StateInput = Parameters<typeof getPortfolioReferenceDataState>[0]
@@ -172,5 +173,25 @@ test.describe('Portfolio bank reference labels', () => {
     expect(getPortfolioBankDisplayName(unresolved)).toBe('Entidad no disponible')
     expect(getIdentifiedPortfolioInstitution(unresolved)).toBeNull()
     expect(getPortfolioBankDisplayName(genuinelyUnassigned)).toBe('Sin banco')
+  })
+})
+
+test.describe('Portfolio create currency readiness', () => {
+  test('selects a valid currency when options arrive after the create form opens', () => {
+    const options = [{ value: 'PEN' }, { value: 'USD' }]
+    let selected = resolveCreateAccountCurrency('', [])
+    expect(selected).toBe('')
+
+    selected = resolveCreateAccountCurrency(selected, options)
+    expect(selected).toBe('PEN')
+
+    selected = 'USD'
+    expect(resolveCreateAccountCurrency(selected, options)).toBe('USD')
+    expect(resolveCreateAccountCurrency(selected, [...options].reverse())).toBe('USD')
+  })
+
+  test('keeps a selected currency while options are unavailable and replaces it only if invalid', () => {
+    expect(resolveCreateAccountCurrency('USD', [])).toBe('USD')
+    expect(resolveCreateAccountCurrency('USD', [{ value: 'PEN' }])).toBe('PEN')
   })
 })

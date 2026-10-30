@@ -13,15 +13,15 @@ import {
 import { getImportJobWithRows } from '@/lib/imports/import-repository'
 
 type RouteContext = {
-  params: {
+  params: Promise<{
     id: string
-  }
+  }>
 }
 
 function csvEscape(value: unknown): string {
   const text = String(value ?? '')
   if (/[",\n]/.test(text)) {
-    return `"${text.replace(/"/g, '""')}"`
+    return `"${text.replace(/"/g, '""')}"`;
   }
   return text
 }
@@ -97,11 +97,11 @@ function toCsv(job: NonNullable<Awaited<ReturnType<typeof getImportJobWithRows>>
 }
 
 export async function GET(_req: NextRequest, context: RouteContext) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
-  const { data: job, error } = await getImportJobWithRows(supabase, userId, context.params.id)
+  const { data: job, error } = await getImportJobWithRows(supabase, userId, (await context.params).id)
   if (error) return apiError({ code: 'DATABASE_ERROR', message: error.message })
   if (!job) return apiError({ code: 'NOT_FOUND', message: 'Importación no encontrada' })
 

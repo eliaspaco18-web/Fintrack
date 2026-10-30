@@ -8,8 +8,7 @@
 
 import { useState }                from 'react'
 import { useRouter }               from 'next/navigation'
-import { useCurrency }             from '@/lib/hooks/useDashboard'
-import { formatCurrency, formatPercent, toPenAmount } from '@/lib/contracts/ui.contracts'
+import { formatCurrency, formatPercent } from '@/lib/contracts/ui.contracts'
 import {
   DetailSection,
   ActionButton,
@@ -43,6 +42,8 @@ import { getLoanTypeLabel } from '@/modules/loans/loan-type'
 import {
   getAssetStatusPresentation,
   getAssetTypePresentation,
+  getAssetPurchaseValue,
+  getRecordedAssetValue,
   type AssetWithTypeInfo,
 } from '@/modules/assets/asset-presentation'
 import {
@@ -334,18 +335,19 @@ export function CreditDetail({
 
 interface AssetDetailProps {
   asset:       AssetWithTypeInfo
-  transaction?: { id: string; description: string } | null
+  transaction?: { id: string; description: string | null; source_account?: { id: string; name: string } | null } | null
 }
 
 export function AssetDetail({ asset, transaction }: AssetDetailProps) {
-  const { preferred, format, exchangeRate } = useCurrency()
   const assetStatus = getAssetStatusPresentation(asset.status)
   const assetType = getAssetTypePresentation(asset)
-
-  const purchasePen = toPenAmount(asset.purchase_value, asset.currency, exchangeRate)
-  const valuePen    = toPenAmount(asset.current_value, asset.currency, exchangeRate)
-  const gainPen     = valuePen - purchasePen
-  const gainPct     = purchasePen > 0 ? (gainPen / purchasePen) * 100 : 0
+  const currentValue = getRecordedAssetValue(asset)
+  const currency = asset.currency === 'PEN' || asset.currency === 'USD' ? asset.currency : null
+  const displayValue = (value: number | null) => value === null
+    ? 'No verificable'
+    : currency
+      ? formatCurrency(value, currency)
+      : `${asset.currency || 'Moneda no verificable'} ${new Intl.NumberFormat('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)}`
 
   return (
     <CanonicalDetailLayout
@@ -370,40 +372,26 @@ export function AssetDetail({ asset, transaction }: AssetDetailProps) {
             </>
           }
           title={asset.name}
-          amount={formatCurrency(format(valuePen), preferred)}
+          amount={displayValue(currentValue)}
           amountMeta={
-            <span className="text-xs font-medium text-[var(--ft-text-muted)]">valor actual</span>
+            <span className="text-xs font-medium text-[var(--ft-text-muted)]">valor actual registrado · {asset.currency || 'moneda no verificable'}</span>
           }
-          supporting={Math.abs(gainPct) > 0.5 ? (
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <p className="text-xs font-medium leading-4 text-[var(--ft-text-muted)]">Variación de valor</p>
-                <p className={`mt-1 text-xl font-bold leading-6 tabular-nums ${gainPct >= 0 ? 'text-[var(--ft-primary)]' : 'text-[var(--ft-danger)]'}`}>
-                  {formatPercent(gainPct, { fractionDigits: 1, signed: true })}
-                </p>
-              </div>
-              <p className={`text-[13px] font-semibold leading-5 tabular-nums ${gainPct >= 0 ? 'text-[var(--ft-primary)]' : 'text-[var(--ft-danger)]'}`}>
-                {gainPct >= 0 ? '+' : ''}{formatCurrency(format(gainPen), preferred)}
-              </p>
-            </div>
-          ) : undefined}
+          supporting={<p className="text-xs leading-5 text-[var(--ft-text-muted)]">Importe ingresado por el usuario; no es una tasación automática ni un indicador de rentabilidad.</p>}
         />
       }
       aside={transaction ? (
         <CanonicalDetailRailSection title="Transacción origen">
           <CanonicalRelatedRecordLink
-            label={transaction.description}
+            label={transaction.description || 'Compra vinculada'}
             href={`/transactions/${transaction.id}`}
           />
         </CanonicalDetailRailSection>
       ) : undefined}
     >
       <CanonicalDetailFacts>
-        <CanonicalDetailFact label="Valor de compra" mono>
-          {formatCurrency(format(purchasePen), preferred)}
-        </CanonicalDetailFact>
+        <CanonicalDetailFact label="Valor de compra" mono>{displayValue(getAssetPurchaseValue(asset))}</CanonicalDetailFact>
         <CanonicalDetailFact label="Valor actual" mono>
-          {formatCurrency(format(valuePen), preferred)}
+          {displayValue(currentValue)}
         </CanonicalDetailFact>
         <CanonicalDetailFact label="Fecha de compra">
           {new Date(asset.purchase_date + 'T12:00:00').toLocaleDateString('es-PE', {

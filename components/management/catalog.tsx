@@ -4,22 +4,22 @@ import type { ReactNode } from 'react'
 import {
   DataErrorBanner,
   EmptyState,
-  ModuleHeader,
-  type ModuleHeaderMode,
   PageLayout,
 } from '@/components/finance'
+import assetsStyles from '@/components/assets/AssetsListPanel.module.css'
+import movementStyles from '@/components/tables/TransactionsRound07.module.css'
+import styles from '@/components/management/CatalogWorkspace.module.css'
+import { AnchoredActionMenu, type AnchoredAction } from '@/components/ui/AnchoredActionMenu'
 
 export interface CatalogNavItem<T extends string> {
   key: T
   label: string
-  description: string
-  icon: ReactNode
 }
 
 export function CatalogAdminLayout<T extends string>({
   title,
   description,
-  headerMode = 'full',
+  action,
   nav,
   activeKey,
   onSelect,
@@ -27,7 +27,7 @@ export function CatalogAdminLayout<T extends string>({
 }: {
   title: string
   description: string
-  headerMode?: ModuleHeaderMode
+  action?: ReactNode
   nav: CatalogNavItem<T>[]
   activeKey: T
   onSelect: (key: T) => void
@@ -35,59 +35,34 @@ export function CatalogAdminLayout<T extends string>({
 }) {
   return (
     <PageLayout
-      className="max-w-[1320px] gap-5"
+      className={`max-w-none !gap-0 ${movementStyles.v3ModuleContent} ${styles.workspace}`}
       header={(
-        <ModuleHeader
-          eyebrow="Catálogos base"
-          title={title}
-          description={description}
-          mode={headerMode}
-        />
+        <header className="flex flex-col gap-3 pb-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="font-display text-[26px] font-semibold leading-8 tracking-[-0.035em] text-[var(--ft-text-strong)]">{title}</h1>
+            <p className="mt-0.5 max-w-2xl text-[12px] leading-5 text-[var(--ft-text-muted)]">{description}</p>
+          </div>
+          {action ? <div className="flex w-full items-center sm:w-auto sm:shrink-0">{action}</div> : null}
+        </header>
       )}
     >
-      <section className="rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)] p-2">
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-          {nav.map(item => {
-            const active = item.key === activeKey
+      <nav aria-label="Catálogos" className={`${movementStyles.tabs} ${assetsStyles.tabs} mb-3`} data-testid="catalog-tabs">
+        {nav.map(item => (
+          <button
+            key={item.key}
+            type="button"
+            aria-current={item.key === activeKey ? 'page' : undefined}
+            aria-pressed={item.key === activeKey}
+            data-active={item.key === activeKey}
+            className={assetsStyles.tab}
+            onClick={() => onSelect(item.key)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
 
-            return (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => onSelect(item.key)}
-                className={`
-                  ui-pressable flex items-start gap-3 rounded-lg border px-3.5 py-3 text-left
-                  transition-[border-color,background-color,color,transform] duration-150
-                  ${active
-                    ? 'border-[var(--c-primary-border)] bg-[var(--c-primary-soft)] text-[var(--c-text)]'
-                    : 'border-transparent bg-transparent text-[var(--c-text-muted)] hover:border-[var(--c-border)] hover:bg-[var(--c-surface-2)] hover:text-[var(--c-text)]'}
-                `}
-              >
-                <span
-                  className={`
-                    flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border
-                    ${active
-                      ? 'border-[var(--c-primary-border)] bg-[var(--c-surface)] text-[var(--c-primary)]'
-                      : 'border-[var(--c-border)] bg-[var(--c-surface-2)] text-[var(--c-text-muted)]'}
-                  `}
-                >
-                  {item.icon}
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-[12.5px] font-semibold text-[var(--c-text)]">
-                    {item.label}
-                  </span>
-                  <span className="mt-1 block text-[11px] leading-5 text-[var(--c-text-muted)]">
-                    {item.description}
-                  </span>
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      </section>
-
-      <div className="animate-fade-in">
+      <div className={`${styles.content} min-w-0 pt-1`}>
         {children}
       </div>
     </PageLayout>
@@ -134,47 +109,24 @@ export function CatalogTable({
   const hasControls = Boolean(search || filters || controlsActions)
 
   return (
-    <section className="overflow-hidden rounded-xl border border-[var(--c-border)] bg-[var(--c-surface)]">
-      <div className="border-b border-[var(--c-border)] px-4 py-4">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-sm font-semibold text-[var(--c-text)]">
-                {title}
-              </h2>
-              {typeof count === 'number' ? (
-                <span className="font-mono text-[12px] font-medium tabular-nums text-[var(--c-text-faint)]">
-                  {count}
-                </span>
-              ) : null}
-            </div>
-            {description ? (
-              <p className="mt-1 text-[12px] leading-5 text-[var(--c-text-muted)]">
-                {description}
-              </p>
-            ) : null}
-            {summary ? (
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                {summary}
-              </div>
-            ) : null}
-          </div>
-
-          {primaryAction ? (
-            <div className="flex shrink-0 items-center gap-2">
-              {primaryAction}
-            </div>
-          ) : null}
+    <section className={styles.catalog} data-testid="catalog-listing">
+      <div className={styles.context}>
+        <div className={styles.contextTitle}>
+          <h2>{title}</h2>
+          {typeof count === 'number' ? <span>{count}</span> : null}
+          {description ? <p>{description}</p> : null}
         </div>
+        {summary ? <div className={styles.summary}>{summary}</div> : null}
+        {primaryAction ? <div className={styles.contextAction}>{primaryAction}</div> : null}
       </div>
 
       {hasControls ? (
-        <div className="border-b border-[var(--c-border)] bg-[var(--c-surface-2)] px-4 py-3">
-          <div className="grid gap-2 lg:grid-cols-[minmax(240px,1fr)_auto] lg:items-start">
+        <div className={styles.controls} data-testid="catalog-controls">
+          <div className={styles.search}>
             <div className="min-w-0">
               {search}
             </div>
-            <div className="flex min-w-0 flex-wrap items-center justify-start gap-2 lg:justify-end">
+            <div className={styles.filters}>
               {filters}
               {controlsActions}
             </div>
@@ -182,54 +134,44 @@ export function CatalogTable({
         </div>
       ) : null}
 
-      {error && onRetry ? (
-        <DataErrorBanner message={error} onRetry={onRetry} className="pb-3" />
-      ) : null}
-
-      {loading ? (
-        loadingState
-      ) : empty && emptyState ? (
-        emptyState
-      ) : (
-        <>
-          {columns && columns.length > 0 && gridClassName ? (
-            <div
-              className={`hidden border-b border-[var(--c-border)] px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)] md:grid ${gridClassName}`.trim()}
-            >
-              {columns.map(column => (
-                <span
-                  key={column.label}
-                  className={`${column.align === 'right' ? 'text-right' : ''} ${column.className ?? ''}`.trim()}
-                >
-                  {column.label}
-                </span>
-              ))}
-            </div>
-          ) : null}
-          <div>{children}</div>
-        </>
-      )}
+      <div className={styles.list}>
+        {error && onRetry ? <DataErrorBanner message={error} onRetry={onRetry} className="pb-3" /> : null}
+        {loading ? loadingState : empty && emptyState ? emptyState : (
+          <>
+            {columns && columns.length > 0 && gridClassName ? (
+              <div className={`hidden ${styles.tableHead} md:grid ${gridClassName}`.trim()} data-testid="catalog-table-head">
+                {columns.map(column => (
+                  <span key={column.label} className={`${column.align === 'right' ? 'text-right' : ''} ${column.className ?? ''}`.trim()}>
+                    {column.label}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            <div>{children}</div>
+          </>
+        )}
+      </div>
     </section>
   )
 }
 
 export function CatalogRow({
   gridClassName,
-  accentColor,
   muted = false,
+  testId,
+  'data-testid': dataTestId,
   children,
 }: {
   gridClassName: string
-  accentColor?: string
   muted?: boolean
+  testId?: string
+  'data-testid'?: string
   children: ReactNode
 }) {
   return (
     <article
-      className={`grid gap-3 border-b border-[var(--c-border)] px-4 py-4 transition-[background-color,opacity] duration-150 last:border-b-0 hover:bg-[var(--c-surface-2)] ${gridClassName} ${muted ? 'opacity-65' : ''}`.trim()}
-      style={{
-        boxShadow: accentColor ? `inset 2px 0 0 ${accentColor}` : undefined,
-      }}
+      data-testid={testId ?? dataTestId}
+      className={`${styles.row} grid gap-3 border-b border-[var(--ft-border)] px-4 transition-[background-color,opacity] duration-150 last:border-b-0 hover:bg-[var(--ft-surface-hover)] ${gridClassName} ${muted ? 'opacity-65' : ''}`.trim()}
     >
       {children}
     </article>
@@ -248,7 +190,7 @@ export function CatalogCell({
   return (
     <div className={`min-w-0 ${align === 'right' ? 'md:text-right' : ''}`.trim()}>
       {label ? (
-        <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--c-text-faint)] md:hidden">
+        <p className="sr-only">
           {label}
         </p>
       ) : null}
@@ -272,18 +214,61 @@ export function CatalogIdentity({
     <div className="flex min-w-0 items-center gap-3">
       {icon ? <div className="shrink-0">{icon}</div> : null}
       <div className="min-w-0">
-        <p className="truncate text-sm font-semibold text-[var(--c-text)]">
+        <p className="truncate text-[13px] font-semibold leading-[19px] text-[var(--ft-text-strong)]">
           {title}
         </p>
         {(subtitle || meta) ? (
-          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
             {subtitle ? (
-              <span className="text-[12px] text-[var(--c-text-muted)]">{subtitle}</span>
+              <span className="text-[11px] leading-4 text-[var(--ft-text-muted)]">{subtitle}</span>
             ) : null}
             {meta}
           </div>
         ) : null}
       </div>
+    </div>
+  )
+}
+
+/** Shared compact row actions: direct Edit plus the approved contextual menu. */
+export function CatalogRowActions({
+  label,
+  editLabel = 'Editar',
+  onEdit,
+  actions,
+  disabled = false,
+}: {
+  label: string
+  editLabel?: string
+  onEdit: () => void
+  actions: AnchoredAction[]
+  disabled?: boolean
+}) {
+  return (
+    <div className="flex items-center justify-end gap-1">
+      <button
+        type="button"
+        onClick={onEdit}
+        disabled={disabled}
+        aria-label={`${editLabel} ${label}`}
+        className="min-h-9 rounded-control px-2.5 text-[11px] font-semibold text-[var(--ft-text-muted)] hover:bg-[var(--ft-surface-muted)] hover:text-[var(--ft-text-strong)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ft-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {editLabel}
+      </button>
+      <AnchoredActionMenu
+        label={`Más acciones para ${label}`}
+        disabled={disabled || actions.length === 0}
+        actions={actions}
+        align="end"
+        triggerContent={(
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="5" cy="12" r="1.7" />
+            <circle cx="12" cy="12" r="1.7" />
+            <circle cx="19" cy="12" r="1.7" />
+          </svg>
+        )}
+        className="grid h-9 w-9 place-items-center rounded-control text-[var(--ft-text-muted)] hover:bg-[var(--ft-surface-muted)] hover:text-[var(--ft-text-strong)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ft-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+      />
     </div>
   )
 }

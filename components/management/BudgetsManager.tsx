@@ -1,41 +1,44 @@
 'use client'
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { BudgetPeriod, CurrencyCode } from '@/types/database.types'
-import { formatCurrency } from '@/lib/contracts/ui.contracts'
+import styles from '@/components/management/BudgetsManager.module.css'
+import movementFormStyles from '@/components/forms/TransactionForm/IncomeTransactionForm.module.css'
+import movementPageStyles from '@/components/tables/TransactionsRound07.module.css'
+import { IncomeDatePicker } from '@/components/forms/TransactionForm/IncomeDatePicker'
 import { useToast } from '@/lib/toast/toast'
 import { fetchWithTimeout } from '@/lib/client/fetch-with-timeout'
 import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
 import { ActionIconButton } from '@/components/ui/ActionIconButton'
+import { BudgetViewPeriodAction } from '@/components/management/BudgetViewPeriodAction'
 import { AppSelect } from '@/components/ui/AppSelect'
 import { NumericInput } from '@/components/ui/NumericInput'
 import { Button } from '@/components/ui/Button'
 import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
 import { ViewToggle } from '@/components/ui/ViewToggle'
-import { FormActions, FormField, FormSection, OptionalSection } from '@/components/forms/primitives'
+import { FormActions, FormField, FormSection } from '@/components/forms/primitives'
 import {
   AmountCell,
   ConfirmDialog,
-  ControlsBar,
   DataErrorBanner,
-  DataFilterPreset,
   DataSearchField,
   EmptyState,
-  FilterBar,
+  PageLayout,
   ProgressMetric,
-  RegisterModule,
-  StatCard,
-  StatGrid,
   StatusBadge,
 } from '@/components/finance'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 import { BudgetDetail } from '@/components/management/BudgetDetail'
+import { BudgetMonthPicker } from '@/components/management/BudgetMonthPicker'
 import {
   BUDGET_SCOPE_REQUIRED_ERROR,
   createBudgetRecordActionScope,
 } from '@/modules/budgets/budget-action-scope'
+import { budgetRowsForSelectedMonth, displayBudgetProgress, formatBudgetCurrency, summarizeBudgetCurrencies } from '@/lib/budgets/presentation'
+import { resolveBudgetPeriodEditTarget, resolveBudgetPeriodIdentity } from '@/lib/budgets/period-record'
 
 type BudgetCategoryRef = {
   id: string
@@ -47,6 +50,8 @@ type BudgetCategoryRef = {
 
 type BudgetItem = {
   id: string
+  budget_period_id?: string
+  legacy_budget_id?: string
   series_id: string
   name: string
   description: string | null
@@ -59,10 +64,12 @@ type BudgetItem = {
   end_date: string | null
   period_start: string
   period_end: string
-  spent_amount: number
-  remaining_amount: number
-  progress_percent: number
-  over_limit: boolean
+  spent_amount: number | null
+  remaining_amount: number | null
+  progress_percent: number | null
+  over_limit: boolean | null
+  metrics_complete?: boolean
+  missing_conversion_count?: number
   is_active: boolean
   notes: string | null
   created_at: string
@@ -96,12 +103,12 @@ type BudgetForm = {
   notes: string
 }
 
-type StatusFilter = 'all' | 'active' | 'inactive'
 type CurrencyFilter = 'all' | CurrencyCode
 type PeriodFilter = 'all' | BudgetPeriod
 type ViewMode = 'list' | 'cards'
-type WorkspaceView = 'series' | 'periods'
+type WorkspaceView = 'current' | 'exceeded' | 'series'
 type FormMode = 'create' | 'edit' | 'continuation'
+type BudgetOptionalKey = 'description' | 'notes'
 
 type ContinuationPreview = {
   sourceBudgetId: string
@@ -119,13 +126,16 @@ type BudgetPeriodViewItem = {
   period_end: string
   amount: number
   status: string
-  spent_amount: number
-  remaining_amount: number
-  progress_percent: number
-  over_limit: boolean
+  spent_amount: number | null
+  remaining_amount: number | null
+  progress_percent: number | null
+  over_limit: boolean | null
+  metrics_complete?: boolean
+  missing_conversion_count?: number
   budget: {
     id: string
     name: string
+    description?: string | null
     category_id: string | null
     currency: CurrencyCode
     period_type: BudgetPeriod
@@ -140,21 +150,6 @@ const PERIOD_LABEL: Record<BudgetPeriod, string> = {
   QUARTERLY: 'Trimestral',
   YEARLY: 'Anual',
 }
-
-const MONTH_OPTIONS = [
-  { value: '01', label: 'Enero' },
-  { value: '02', label: 'Febrero' },
-  { value: '03', label: 'Marzo' },
-  { value: '04', label: 'Abril' },
-  { value: '05', label: 'Mayo' },
-  { value: '06', label: 'Junio' },
-  { value: '07', label: 'Julio' },
-  { value: '08', label: 'Agosto' },
-  { value: '09', label: 'Septiembre' },
-  { value: '10', label: 'Octubre' },
-  { value: '11', label: 'Noviembre' },
-  { value: '12', label: 'Diciembre' },
-]
 
 // Calcula la fecha de fin automática según periodicidad (PRD: "automática según periodicidad")
 function calcEndDate(startDate: string, period: BudgetPeriod): string {
@@ -176,13 +171,6 @@ function calcEndDate(startDate: string, period: BudgetPeriod): string {
 
 function isoToday(): string {
   return new Date().toISOString().slice(0, 10)
-}
-
-function updateMonthKeyPart(periodKey: string, patch: { month?: string; year?: string }): string {
-  const [currentYear, currentMonth] = periodKey.split('-')
-  const nextYear = patch.year ?? currentYear ?? isoToday().slice(0, 4)
-  const nextMonth = patch.month ?? currentMonth ?? isoToday().slice(5, 7)
-  return `${nextYear}-${nextMonth}`
 }
 
 const EMPTY_FORM: BudgetForm = {
@@ -289,6 +277,176 @@ function periodStatusLabel(status: string): string {
   return 'Activo'
 }
 
+function formatFullDate(isoDate: string): string {
+  return new Date(`${isoDate}T12:00:00`).toLocaleDateString('es-PE', {
+    day: '2-digit', month: 'short', year: 'numeric',
+  })
+}
+
+function BudgetInfoHint({ label, children }: { label: string; children: string }) {
+  const tooltipId = useId()
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const tooltipRef = useRef<HTMLSpanElement>(null)
+  const lastInputRef = useRef<'mouse' | 'touch' | 'keyboard'>('mouse')
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [mounted, setMounted] = useState(false)
+  const [open, setOpen] = useState(false)
+  const [closing, setClosing] = useState(false)
+  const [position, setPosition] = useState<{ left: number; top: number } | null>(null)
+
+  useEffect(() => setMounted(true), [])
+
+  const showTooltip = useCallback(() => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    closeTimerRef.current = null
+    setClosing(false)
+    setOpen(true)
+  }, [])
+
+  const closeTooltip = useCallback((immediate = false) => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    closeTimerRef.current = null
+    if (immediate) {
+      setOpen(false)
+      setClosing(false)
+      return
+    }
+    setClosing(true)
+    closeTimerRef.current = setTimeout(() => {
+      setOpen(false)
+      setClosing(false)
+      closeTimerRef.current = null
+    }, 120)
+  }, [])
+
+  useEffect(() => () => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+  }, [])
+
+  const updatePosition = useCallback(() => {
+    const trigger = triggerRef.current
+    const tooltip = tooltipRef.current
+    if (!trigger || !tooltip) return
+
+    const margin = 12
+    const gap = 8
+    const triggerRect = trigger.getBoundingClientRect()
+    const tooltipRect = tooltip.getBoundingClientRect()
+    const left = Math.min(
+      Math.max(margin, window.innerWidth - tooltipRect.width - margin),
+      Math.max(margin, triggerRect.left + triggerRect.width / 2 - tooltipRect.width / 2),
+    )
+    const spaceAbove = triggerRect.top - margin
+    const spaceBelow = window.innerHeight - triggerRect.bottom - margin
+    const fitsAbove = spaceAbove >= tooltipRect.height + gap
+    const fitsBelow = spaceBelow >= tooltipRect.height + gap
+    const top = fitsAbove || (!fitsBelow && spaceAbove > spaceBelow)
+      ? Math.max(margin, triggerRect.top - tooltipRect.height - gap)
+      : Math.min(window.innerHeight - tooltipRect.height - margin, triggerRect.bottom + gap)
+
+    setPosition(previous => previous?.left === left && previous.top === top ? previous : { left, top })
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!open || !mounted) return
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [mounted, open, updatePosition])
+
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      const restoreFocus = document.activeElement === triggerRef.current
+      closeTooltip(true)
+      if (restoreFocus) triggerRef.current?.focus()
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (!triggerRef.current?.contains(event.target as Node)) closeTooltip()
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    document.addEventListener('pointerdown', onPointerDown, true)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, true)
+      document.removeEventListener('pointerdown', onPointerDown, true)
+    }
+  }, [closeTooltip, open])
+
+  const triggerIsV3 = Boolean(triggerRef.current?.closest('[data-ft-v3], [data-ft-v3-shell]'))
+
+  return (
+    <span className={movementFormStyles.infoHint}>
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-label={label}
+        aria-describedby={open ? tooltipId : undefined}
+        aria-expanded={open && !closing}
+        className={movementFormStyles.infoHintTrigger}
+        onPointerDown={event => { lastInputRef.current = event.pointerType === 'touch' ? 'touch' : 'mouse' }}
+        onPointerEnter={event => {
+          if (event.pointerType !== 'mouse') return
+          lastInputRef.current = 'mouse'
+          showTooltip()
+        }}
+        onPointerLeave={event => {
+          if (event.pointerType === 'mouse' && lastInputRef.current === 'mouse') closeTooltip()
+        }}
+        onFocus={event => {
+          if (lastInputRef.current === 'touch') return
+          lastInputRef.current = event.currentTarget.matches(':focus-visible') ? 'keyboard' : 'mouse'
+          showTooltip()
+        }}
+        onBlur={() => { if (lastInputRef.current === 'keyboard') closeTooltip() }}
+        onKeyDown={event => {
+          if (event.key !== 'Escape') lastInputRef.current = 'keyboard'
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            event.stopPropagation()
+            closeTooltip(true)
+          }
+        }}
+        onClick={event => {
+          if (event.detail > 0 && lastInputRef.current === 'touch') {
+            if (open && !closing) closeTooltip()
+            else showTooltip()
+          }
+        }}
+      >
+        <svg aria-hidden="true" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="6.25" />
+          <path d="M8 7.1v3.7M8 5.2h.01" />
+        </svg>
+      </button>
+      {open && mounted ? createPortal(
+        <span
+          ref={tooltipRef}
+          id={tooltipId}
+          role="tooltip"
+          className={movementFormStyles.infoTooltip}
+          data-ft-v3={triggerIsV3 ? '' : undefined}
+          data-state={closing ? 'closing' : 'open'}
+          style={{
+            left: position?.left ?? 12,
+            top: position?.top ?? 12,
+            visibility: position ? 'visible' : 'hidden',
+          }}
+        >
+          {children}
+        </span>,
+        document.body,
+      ) : null}
+    </span>
+  )
+}
+
 export function BudgetsManager() {
   const router = useRouter()
   const pathname = usePathname()
@@ -301,32 +459,44 @@ export function BudgetsManager() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState<BudgetForm>(EMPTY_FORM)
+  const [dateInputError, setDateInputError] = useState<string | null>(null)
   const [formMode, setFormMode] = useState<FormMode>('create')
+  const [additionalOptionsOpen, setAdditionalOptionsOpen] = useState<Record<BudgetOptionalKey, boolean>>({
+    description: false,
+    notes: false,
+  })
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingBudget, setEditingBudget] = useState<BudgetItem | null>(null)
   const [continuationPreview, setContinuationPreview] = useState<ContinuationPreview | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [discardConfirmationOpen, setDiscardConfirmationOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [currencyFilter, setCurrencyFilter] = useState<CurrencyFilter>('all')
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all')
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [rowActionId, setRowActionId] = useState<string | null>(null)
   const [pendingDeleteBudget, setPendingDeleteBudget] = useState<BudgetItem | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('list')
-  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>('series')
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>('current')
   const [periodMonth, setPeriodMonth] = useState(() => isoToday().slice(0, 7))
   const [periodRows, setPeriodRows] = useState<BudgetPeriodViewItem[]>([])
   const [periodRowsLoading, setPeriodRowsLoading] = useState(false)
+  const [showPeriodSkeleton, setShowPeriodSkeleton] = useState(false)
   const [periodRowsError, setPeriodRowsError] = useState<string | null>(null)
+  const [loadedPeriodMonth, setLoadedPeriodMonth] = useState<string | null>(null)
   const [detailBudget, setDetailBudget] = useState<BudgetSeriesItem | null>(null)
+  const [detailOpen, setDetailOpen] = useState(false)
+  const periodFetchSequence = useRef(0)
+  const resetAfterModalExitRef = useRef(false)
+  const initialFormSnapshotRef = useRef(JSON.stringify(EMPTY_FORM))
   const handledQueryOpenRef = useRef(false)
+  const hasLoadedBudgetsRef = useRef(false)
   const isContinuationMode = formMode === 'continuation' && continuationPreview !== null
 
   const openFromHeroQuery = searchParams.get('new') === 'budget'
 
-  const loadBudgets = useCallback(async () => {
-    setLoading(true)
+  const loadBudgets = useCallback(async (): Promise<BudgetItem[] | null> => {
+    if (!hasLoadedBudgetsRef.current) setLoading(true)
     setError(null)
     try {
       const res = await fetchWithTimeout('/api/budgets?include_inactive=true', { cache: 'no-store' })
@@ -334,9 +504,13 @@ export function BudgetsManager() {
       if (!res.ok || !json?.ok) {
         throw new Error(getApiErrorMessage(json, 'No se pudieron cargar los presupuestos'))
       }
-      setBudgets((json.data as BudgetItem[]) ?? [])
+      const nextBudgets = (json.data as BudgetItem[]) ?? []
+      setBudgets(nextBudgets)
+      hasLoadedBudgetsRef.current = true
+      return nextBudgets
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No se pudieron cargar los presupuestos')
+      return null
     } finally {
       setLoading(false)
     }
@@ -363,6 +537,7 @@ export function BudgetsManager() {
   }, [loadBudgets, loadCategories])
 
   const loadPeriodRows = useCallback(async () => {
+    const sequence = ++periodFetchSequence.current
     setPeriodRowsLoading(true)
     setPeriodRowsError(null)
     try {
@@ -371,26 +546,43 @@ export function BudgetsManager() {
       if (!res.ok || !json?.ok) {
         throw new Error(getApiErrorMessage(json, 'No se pudieron cargar los periodos'))
       }
+      if (sequence !== periodFetchSequence.current) return
       setPeriodRows((json.data as BudgetPeriodViewItem[]) ?? [])
+      setLoadedPeriodMonth(periodMonth)
     } catch (caught) {
-      setPeriodRows([])
+      if (sequence !== periodFetchSequence.current) return
       setPeriodRowsError(caught instanceof Error ? caught.message : 'No se pudieron cargar los periodos')
     } finally {
-      setPeriodRowsLoading(false)
+      if (sequence === periodFetchSequence.current) setPeriodRowsLoading(false)
     }
   }, [periodMonth])
 
   useEffect(() => {
-    if (workspaceView !== 'periods') return
     void loadPeriodRows()
-  }, [loadPeriodRows, workspaceView])
+    return () => {
+      periodFetchSequence.current += 1
+    }
+  }, [loadPeriodRows])
+
+  useEffect(() => {
+    if (!periodRowsLoading || loadedPeriodMonth === periodMonth) {
+      setShowPeriodSkeleton(false)
+      return
+    }
+    const timer = window.setTimeout(() => setShowPeriodSkeleton(true), 120)
+    return () => window.clearTimeout(timer)
+  }, [loadedPeriodMonth, periodMonth, periodRowsLoading])
 
   const resetForm = useCallback(() => {
-    setForm({
+    const nextForm = {
       ...EMPTY_FORM,
       start_date: isoToday(),
       end_date: calcEndDate(isoToday(), 'MONTHLY'),
-    })
+    }
+    initialFormSnapshotRef.current = JSON.stringify(nextForm)
+    setForm(nextForm)
+    setDateInputError(null)
+    setError(null)
     setFormMode('create')
     setEditingId(null)
     setEditingBudget(null)
@@ -400,6 +592,7 @@ export function BudgetsManager() {
   // Recalcular fecha fin automáticamente cuando cambia periodicidad o fecha inicio
   const handlePeriodOrDateChange = useCallback(
     (patch: Partial<BudgetForm>) => {
+      if (patch.start_date !== undefined) setDateInputError(null)
       setForm(prev => {
         const next = { ...prev, ...patch }
         // Solo auto-calcular si el usuario no está editando un presupuesto existente
@@ -420,14 +613,34 @@ export function BudgetsManager() {
     router.replace(nextUrl, { scroll: false })
   }, [pathname, router, searchParams])
 
+  const performCloseModal = useCallback(() => {
+    setDiscardConfirmationOpen(false)
+    resetAfterModalExitRef.current = true
+    setModalOpen(false)
+    clearCreateQueryParam()
+  }, [clearCreateQueryParam])
+
   const closeModal = useCallback(() => {
     if (saving) return
-    setModalOpen(false)
+    if (JSON.stringify(form) !== initialFormSnapshotRef.current) {
+      setDiscardConfirmationOpen(true)
+      return
+    }
+    performCloseModal()
+  }, [form, performCloseModal, saving])
+
+  const handleModalExitComplete = useCallback(() => {
+    if (!resetAfterModalExitRef.current) return
+    resetAfterModalExitRef.current = false
     resetForm()
-    clearCreateQueryParam()
-  }, [clearCreateQueryParam, resetForm, saving])
+  }, [resetForm])
 
   const openCreateModal = useCallback(() => {
+    resetAfterModalExitRef.current = false
+    setDiscardConfirmationOpen(false)
+    setDateInputError(null)
+    setError(null)
+    setAdditionalOptionsOpen({ description: false, notes: false })
     resetForm()
     setModalOpen(true)
   }, [resetForm])
@@ -444,11 +657,16 @@ export function BudgetsManager() {
   }, [openCreateModal, openFromHeroQuery])
 
   const startEdit = useCallback((budget: BudgetItem) => {
+    resetAfterModalExitRef.current = false
+    setDiscardConfirmationOpen(false)
+    setDateInputError(null)
+    setError(null)
     setFormMode('edit')
+    setAdditionalOptionsOpen({ description: false, notes: false })
     setEditingId(budget.id)
     setEditingBudget(budget)
     setContinuationPreview(null)
-    setForm({
+    const nextForm = {
       name: budget.name,
       description: budget.description ?? '',
       category_id: budget.category_id ?? '',
@@ -459,12 +677,19 @@ export function BudgetsManager() {
       end_date: budget.end_date ?? '',
       is_active: budget.is_active,
       notes: budget.notes ?? '',
-    })
+    }
+    initialFormSnapshotRef.current = JSON.stringify(nextForm)
+    setForm(nextForm)
     setModalOpen(true)
   }, [])
 
   // A.2 — Nuevo período con continuidad automática
   const openNewPeriod = useCallback((budget: BudgetItem) => {
+    resetAfterModalExitRef.current = false
+    setDiscardConfirmationOpen(false)
+    setDateInputError(null)
+    setError(null)
+    setAdditionalOptionsOpen({ description: false, notes: false })
     const seriesBudgets = budgets.filter(item => item.series_id === budget.series_id)
     const latestBudget = [...seriesBudgets]
       .sort((left, right) => {
@@ -490,7 +715,7 @@ export function BudgetsManager() {
       nextPeriodStart: nextStart,
       nextPeriodEnd: nextEnd,
     })
-    setForm({
+    const nextForm = {
       name: budget.name,
       description: budget.description ?? '',
       category_id: budget.category_id ?? '',
@@ -501,65 +726,158 @@ export function BudgetsManager() {
       end_date: nextEnd,
       is_active: true,
       notes: budget.notes ?? '',
-    })
+    }
+    initialFormSnapshotRef.current = JSON.stringify(nextForm)
+    setForm(nextForm)
     setModalOpen(true)
   }, [budgets])
 
+  const requestNextPeriodFromDetail = useCallback(() => {
+    if (!detailBudget) return
+    openNewPeriod(detailBudget)
+  }, [detailBudget, openNewPeriod])
+
+  const completeDetailExit = useCallback(() => {
+    setDetailBudget(null)
+  }, [])
+
   const budgetSeries = useMemo(() => buildBudgetSeries(budgets), [budgets])
 
-  const activeCount = useMemo(
-    () => budgetSeries.filter(item => item.is_active).length,
-    [budgetSeries],
-  )
+  useEffect(() => {
+    if (!detailBudget) return
+    const refreshedSeries = budgetSeries.find(item => item.series_id === detailBudget.series_id)
+    if (refreshedSeries && refreshedSeries !== detailBudget) setDetailBudget(refreshedSeries)
+  }, [budgetSeries, detailBudget])
 
-  const inactiveCount = useMemo(
-    () => budgetSeries.filter(item => !item.is_active).length,
-    [budgetSeries],
-  )
+  const openSeriesDetail = useCallback((budget: BudgetSeriesItem) => {
+    setDetailBudget(budget)
+    setDetailOpen(true)
+  }, [])
 
-  const totalPen = useMemo(
-    () => budgetSeries
-      .filter(item => item.is_active && item.currency === 'PEN')
-      .reduce((sum, item) => sum + Number(item.amount ?? 0), 0),
-    [budgetSeries],
-  )
-
-  const totalUsd = useMemo(
-    () => budgetSeries
-      .filter(item => item.is_active && item.currency === 'USD')
-      .reduce((sum, item) => sum + Number(item.amount ?? 0), 0),
-    [budgetSeries],
-  )
+  const openPeriodDetail = useCallback((row: BudgetPeriodViewItem) => {
+    const recordIdentity = resolveBudgetPeriodIdentity(row)
+    const series = budgetSeries.find(item => item.series_id === row.budget_id)
+    const base: BudgetSeriesItem = series ?? {
+      id: row.legacy_budget_id ?? row.id,
+      series_id: row.budget_id,
+      name: row.budget.name,
+      description: null,
+      category_id: row.budget.category_id,
+      category: row.budget.category ?? null,
+      amount: Number(row.amount ?? 0),
+      currency: row.budget.currency,
+      period_type: row.budget.period_type,
+      start_date: row.period_start,
+      end_date: row.period_end,
+      period_start: row.period_start,
+      period_end: row.period_end,
+      spent_amount: row.spent_amount == null ? null : Number(row.spent_amount),
+      remaining_amount: row.remaining_amount == null ? null : Number(row.remaining_amount),
+      progress_percent: row.progress_percent == null ? null : Number(row.progress_percent),
+      over_limit: row.over_limit,
+      metrics_complete: row.metrics_complete !== false,
+      missing_conversion_count: row.missing_conversion_count ?? 0,
+      is_active: row.budget.is_active,
+      notes: null,
+      created_at: '',
+      updated_at: '',
+      periods: [],
+      period_count: 1,
+      active_period_count: row.budget.is_active ? 1 : 0,
+      latest_period_end: row.period_end,
+    }
+    const exactPeriod: BudgetItem = {
+      ...base,
+      ...recordIdentity,
+      amount: Number(row.amount ?? 0),
+      period_start: row.period_start,
+      period_end: row.period_end,
+      start_date: row.period_start,
+      end_date: row.period_end,
+      spent_amount: row.spent_amount == null ? null : Number(row.spent_amount),
+      remaining_amount: row.remaining_amount == null ? null : Number(row.remaining_amount),
+      progress_percent: row.progress_percent == null ? null : Number(row.progress_percent),
+      over_limit: row.over_limit,
+      metrics_complete: row.metrics_complete !== false,
+      missing_conversion_count: row.missing_conversion_count ?? 0,
+      is_active: row.budget.is_active,
+    }
+    const otherPeriods = base.periods.filter(period =>
+      period.period_start !== row.period_start || period.period_end !== row.period_end,
+    )
+    setDetailBudget({
+      ...base,
+      ...exactPeriod,
+      periods: sortPeriods([...otherPeriods, exactPeriod]),
+      period_count: Math.max(base.period_count, otherPeriods.length + 1),
+    })
+    setDetailOpen(true)
+  }, [budgetSeries])
 
   const overLimitCount = useMemo(
     () => budgetSeries.filter(item => item.is_active && item.over_limit).length,
     [budgetSeries],
   )
 
-  const periodYearOptions = useMemo(() => {
-    const years = new Set<string>()
-    const currentYear = Number(isoToday().slice(0, 4))
-    const selectedYear = Number(periodMonth.slice(0, 4))
+  const periodRowsReady = loadedPeriodMonth === periodMonth
+  const currentPeriodRows = useMemo(
+    () => budgetRowsForSelectedMonth(periodRows, loadedPeriodMonth, periodMonth),
+    [loadedPeriodMonth, periodMonth, periodRows],
+  )
 
-    for (let year = currentYear - 2; year <= currentYear + 2; year += 1) {
-      years.add(String(year))
-    }
-    if (Number.isFinite(selectedYear)) years.add(String(selectedYear))
+  const periodSummary = useMemo(
+    () => summarizeBudgetCurrencies(currentPeriodRows),
+    [currentPeriodRows],
+  )
 
-    for (const budget of budgets) {
-      const starts = [budget.start_date, budget.period_start]
-      const ends = [budget.end_date, budget.period_end]
-      for (const dateValue of [...starts, ...ends]) {
-        if (dateValue && /^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
-          years.add(dateValue.slice(0, 4))
-        }
-      }
-    }
+  const budgetCurrencyOptions = useMemo(() => {
+    const currencies = new Set([
+      ...budgets.map(budget => String(budget.currency)),
+      ...periodRows.map(row => String(row.budget.currency)),
+    ])
+    return [
+      { value: 'all', label: 'Todas' },
+      ...Array.from(currencies).sort().map(currency => ({ value: currency, label: currency })),
+    ]
+  }, [budgets, periodRows])
 
-    return Array.from(years)
-      .sort((left, right) => Number(right) - Number(left))
-      .map(year => ({ value: year, label: year }))
-  }, [budgets, periodMonth])
+  const filteredPeriodRows = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase()
+    return currentPeriodRows.filter(row => {
+      if (workspaceView === 'exceeded' && !row.over_limit) return false
+      if (currencyFilter !== 'all' && row.budget.currency !== currencyFilter) return false
+      if (periodFilter !== 'all' && row.budget.period_type !== periodFilter) return false
+      if (categoryFilter === 'none' && row.budget.category_id) return false
+      if (categoryFilter !== 'all' && categoryFilter !== 'none' && row.budget.category_id !== categoryFilter) return false
+      if (!normalizedQuery) return true
+      return row.budget.name.toLowerCase().includes(normalizedQuery)
+        || (row.budget.description ?? '').toLowerCase().includes(normalizedQuery)
+        || (row.budget.category?.name ?? '').toLowerCase().includes(normalizedQuery)
+        || formatFullDate(row.period_start).toLowerCase().includes(normalizedQuery)
+        || formatFullDate(row.period_end).toLowerCase().includes(normalizedQuery)
+        || PERIOD_LABEL[row.budget.period_type].toLowerCase().includes(normalizedQuery)
+    })
+  }, [categoryFilter, currencyFilter, currentPeriodRows, periodFilter, query, workspaceView])
+
+  const exceededPeriodRows = useMemo(
+    () => currentPeriodRows.filter(row => row.over_limit),
+    [currentPeriodRows],
+  )
+
+  const priorityExceededPeriod = useMemo(
+    () => [...exceededPeriodRows].sort((left, right) =>
+      (right.progress_percent ?? -1) - (left.progress_percent ?? -1) || left.budget.name.localeCompare(right.budget.name),
+    )[0] ?? null,
+    [exceededPeriodRows],
+  )
+
+  const periodMonthLabel = useMemo(() => {
+    const year = Number(periodMonth.slice(0, 4))
+    const month = Number(periodMonth.slice(5, 7))
+    return new Date(Date.UTC(year, month - 1, 15)).toLocaleDateString('es-PE', {
+      month: 'long', year: 'numeric', timeZone: 'UTC',
+    })
+  }, [periodMonth])
 
   const filteredBudgetSeries = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -567,8 +885,6 @@ export function BudgetsManager() {
     return budgetSeries.filter(item => {
       if (currencyFilter !== 'all' && item.currency !== currencyFilter) return false
       if (periodFilter !== 'all' && item.period_type !== periodFilter) return false
-      if (statusFilter === 'active' && !item.is_active) return false
-      if (statusFilter === 'inactive' && item.is_active) return false
       if (categoryFilter !== 'all') {
         if (categoryFilter === 'none' && item.category_id) return false
         if (categoryFilter !== 'none' && item.category_id !== categoryFilter) return false
@@ -584,15 +900,7 @@ export function BudgetsManager() {
         item.periods.some(period => formatRange(period.period_start, period.period_end).toLowerCase().includes(q))
       )
     })
-  }, [budgetSeries, categoryFilter, currencyFilter, periodFilter, query, statusFilter])
-
-  const optionalSummary = useMemo(() => {
-    const summary: string[] = []
-    if (form.description.trim()) summary.push('Descripcion')
-    if (form.notes.trim()) summary.push('Notas')
-    if (!form.is_active) summary.push('Inactivo')
-    return summary
-  }, [form.description, form.is_active, form.notes])
+  }, [budgetSeries, categoryFilter, currencyFilter, periodFilter, query])
 
   const handleSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -601,6 +909,14 @@ export function BudgetsManager() {
       const msg = 'El nombre debe tener al menos 2 caracteres.'
       setError(msg)
       toast.error('No se pudo guardar el presupuesto', msg)
+      return
+    }
+
+    if (!form.start_date || dateInputError) {
+      const msg = dateInputError ?? 'Selecciona una fecha de inicio válida.'
+      setDateInputError(msg)
+      setError(msg)
+      toast.error('Revisa la fecha del periodo', msg)
       return
     }
 
@@ -677,10 +993,27 @@ export function BudgetsManager() {
         throw new Error(getApiErrorMessage(json, 'No se pudo guardar el presupuesto'))
       }
 
-      await loadBudgets()
-      setModalOpen(false)
-      resetForm()
-      clearCreateQueryParam()
+      const [updatedBudgets] = await Promise.all([loadBudgets(), loadPeriodRows()])
+      if (isContinuation && updatedBudgets) {
+        const updatedSeries = buildBudgetSeries(updatedBudgets).find(item => item.series_id === continuationPreview.sourceBudgetId || item.id === continuationPreview.sourceBudgetId)
+        if (updatedSeries) {
+          setDetailBudget(current => {
+            if (!current || current.series_id !== updatedSeries.series_id) return current
+            const periods = updatedSeries.periods.some(period => period.id === current.id)
+              ? updatedSeries.periods
+              : sortPeriods([...updatedSeries.periods, current])
+            return {
+              ...updatedSeries,
+              ...current,
+              periods,
+              period_count: periods.length,
+              active_period_count: periods.filter(period => period.is_active).length,
+              latest_period_end: updatedSeries.latest_period_end,
+            }
+          })
+        }
+      }
+      performCloseModal()
       toast.success(
         editingId
           ? 'Periodo actualizado'
@@ -701,7 +1034,7 @@ export function BudgetsManager() {
     } finally {
       setSaving(false)
     }
-  }, [clearCreateQueryParam, continuationPreview, editingBudget, editingId, form, formMode, loadBudgets, resetForm, toast])
+  }, [continuationPreview, dateInputError, editingBudget, editingId, form, formMode, loadBudgets, loadPeriodRows, performCloseModal, toast])
 
   const toggleActive = useCallback(async (budget: BudgetItem, nextValue: boolean) => {
     setRowActionId(budget.id)
@@ -720,7 +1053,7 @@ export function BudgetsManager() {
         throw new Error(getApiErrorMessage(json, 'No se pudo actualizar el estado del presupuesto'))
       }
 
-      await loadBudgets()
+      await Promise.all([loadBudgets(), loadPeriodRows()])
       toast.success(
         nextValue ? 'Periodo reactivado' : 'Periodo desactivado',
         `${formatRange(budget.period_start, budget.period_end)}. Los demas periodos de la serie no cambiaron.`,
@@ -733,7 +1066,7 @@ export function BudgetsManager() {
     } finally {
       setRowActionId(null)
     }
-  }, [loadBudgets, toast])
+  }, [loadBudgets, loadPeriodRows, toast])
 
   const confirmDelete = useCallback((budget: BudgetItem) => {
     if (saving || loading || rowActionId !== null) return
@@ -763,7 +1096,7 @@ export function BudgetsManager() {
         throw new Error(getApiErrorMessage(json, 'No se pudo eliminar el presupuesto'))
       }
 
-      await loadBudgets()
+      await Promise.all([loadBudgets(), loadPeriodRows()])
       setPendingDeleteBudget(null)
       toast.success(
         'Periodo eliminado',
@@ -777,272 +1110,294 @@ export function BudgetsManager() {
     } finally {
       setRowActionId(null)
     }
-  }, [loadBudgets, pendingDeleteBudget, toast])
+  }, [loadBudgets, loadPeriodRows, pendingDeleteBudget, toast])
 
   return (
     <>
-      <RegisterModule
-        eyebrow="Control presupuestal"
-        title="Presupuestos"
-        description="Limites por categoria y periodo con lectura clara de ejecucion, margen restante y continuidad operativa."
-        headerMode="content"
-        actions={(
-          <CreateModuleButton
-            onClick={openCreateModal}
-            label="Nuevo presupuesto"
-            testId="budgets-create-button"
-          />
-        )}
-        stats={(
-          <StatGrid>
-            <StatCard
-              label="Presupuestos activos"
-              value={String(activeCount)}
-              detail={inactiveCount > 0 ? `${inactiveCount} inactivo${inactiveCount === 1 ? '' : 's'}` : 'Sin bajas'}
-              caption="Controles vigentes sobre gasto del periodo actual."
-            />
-            <StatCard
-              label="Monto PEN"
-              value={formatCurrency(totalPen, 'PEN')}
-              detail="Base operativa"
-              caption="Limites activos definidos en soles peruanos."
-            />
-            <StatCard
-              label="Monto USD"
-              value={formatCurrency(totalUsd, 'USD')}
-              detail={totalUsd === 0 ? 'Sin exposicion' : 'Exposicion dolarizada'}
-              caption="Limites activos registrados en dolares."
-            />
-            <StatCard
-              label="Presupuestos excedidos"
-              value={String(overLimitCount)}
-              detail={overLimitCount > 0 ? 'Atencion requerida' : 'Sin desbordes'}
-              caption="Casos donde el gasto ya sobrepaso el limite del periodo."
-            />
-          </StatGrid>
+      <PageLayout
+        className={`max-w-none !gap-0 ${movementPageStyles.v3ModuleContent}`}
+        header={(
+          <div className={`${movementPageStyles.pageOverview} ${styles.budgetOverview}`} data-testid="budgets-page-overview">
+            <header aria-labelledby="budgets-heading" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <h1 id="budgets-heading" data-ft-route-heading="" tabIndex={-1} className="font-display text-[26px] font-semibold leading-8 tracking-[-0.035em] text-[var(--ft-text-strong)]">Presupuestos</h1>
+                <p className="mt-0.5 max-w-2xl text-[12px] leading-5 text-[var(--ft-text-muted)]">Límites que puedes revisar antes de tu próximo gasto.</p>
+              </div>
+              <div className={styles.budgetHeaderActions}>
+                <div className={styles.headerPeriodControl}>
+                  <BudgetMonthPicker
+                    value={periodMonth}
+                    onChange={setPeriodMonth}
+                    testId="budgets-header-period-select"
+                  />
+                </div>
+                <CreateModuleButton
+                  onClick={openCreateModal}
+                  label="Crear presupuesto"
+                  className={`${movementPageStyles.v3ModulePrimaryAction} w-full sm:w-auto`}
+                  testId="budgets-create-button"
+                />
+              </div>
+            </header>
+
+            <section aria-label={`Resumen de presupuestos: ${periodMonthLabel}`} data-ft-route-group="summary" className={`${movementPageStyles.summary} ${styles.budgetSummary}`}>
+              {!periodRowsReady && !periodRowsError ? (showPeriodSkeleton ? [0, 1, 2].map(item => (
+                <div key={item} aria-hidden="true" className={styles.summarySkeletonItem}>
+                  <div className="h-3 w-24 animate-pulse rounded-full bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />
+                  <div className="h-7 w-36 animate-pulse rounded-full bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />
+                  <div className="h-3 w-28 animate-pulse rounded-full bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />
+                </div>
+              )) : <span className={styles.summaryReserve} aria-hidden="true" />) : periodRowsReady && periodSummary.length > 0 ? periodSummary.map(summary => (
+                <div key={String(summary.currency)} className={styles.summaryCurrency} aria-label={`Resumen ${summary.currency}`}>
+                  <div className={movementPageStyles.summaryItem}>
+                    <p>Asignado · {summary.currency}</p>
+                    <div className={`${movementPageStyles.summaryValue} ${styles.summaryValue} tabular-nums`}>{formatBudgetCurrency(summary.assigned, summary.currency)}</div>
+                    <span className={movementPageStyles.summaryDetail}>
+                      {currentPeriodRows.filter(row => row.budget.currency === summary.currency).length} presupuesto{currentPeriodRows.filter(row => row.budget.currency === summary.currency).length === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  <div className={movementPageStyles.summaryItem}>
+                    <p>Gasto vinculado · {summary.currency}</p>
+                    <div className={`${movementPageStyles.summaryValue} ${styles.summaryValue} tabular-nums`}>{formatBudgetCurrency(summary.spent, summary.currency)}</div>
+                    <span className={movementPageStyles.summaryDetail}>{summary.metrics_complete ? 'Egresos vinculados' : 'Falta tasa histórica verificable'}</span>
+                  </div>
+                  <div className={movementPageStyles.summaryItem}>
+                    <p>Disponible · {summary.currency}</p>
+                    <div className={`${movementPageStyles.summaryValue} ${styles.summaryValue} tabular-nums ${summary.available !== null && summary.available < 0 ? 'text-[var(--ft-danger)]' : ''}`}>
+                      {formatBudgetCurrency(summary.available, summary.currency)}
+                    </div>
+                    <span className={movementPageStyles.summaryDetail}>
+                      {!summary.metrics_complete
+                        ? 'Cálculo incompleto'
+                        : summary.available !== null && summary.available < 0
+                        ? `Excedido por ${formatBudgetCurrency(Math.abs(summary.available), summary.currency)}`
+                        : 'Asignado menos gasto'}
+                    </span>
+                  </div>
+                </div>
+              )) : (
+                <p className={styles.summaryUnavailable}>
+                  {periodRowsError ? 'Resumen no disponible para este período.' : `Sin presupuestos en ${periodMonthLabel}.`}
+                </p>
+              )}
+            </section>
+          </div>
         )}
         controls={(
-          <ControlsBar
-            presets={(
-              <>
-                <DataFilterPreset
-                  label="Activos"
-                  active={statusFilter === 'active'}
-                  count={activeCount}
-                  onClick={() => setStatusFilter('active')}
+          <div className={styles.budgetControls}>
+            <div className={styles.budgetPeriodNavigation}>
+              <nav aria-label="Vistas de presupuestos" className={`${styles.budgetTabs} ${movementPageStyles.tabs}`}>
+                {([
+                  ['current', 'Este período', periodRowsReady ? periodRows.length : null],
+                  ['exceeded', 'Excedidos', periodRowsReady ? exceededPeriodRows.length : null],
+                  ['series', 'Otros períodos', budgetSeries.length],
+                ] as const).map(([view, label, count]) => (
+                  <button
+                    key={view}
+                    type="button"
+                    aria-pressed={workspaceView === view}
+                    onClick={() => setWorkspaceView(view)}
+                    className={styles.budgetTab}
+                    data-active={workspaceView === view}
+                  >
+                    {label}
+                    {count !== null ? <span className={styles.budgetTabCount}>{count}</span> : null}
+                  </button>
+                ))}
+              </nav>
+
+            </div>
+
+            <div className={`${movementPageStyles.controls} ${movementPageStyles.portfolioFilterBar} ${styles.budgetFilterToolbar}`} data-testid="budgets-filter-toolbar">
+              <div className={`${movementPageStyles.controlsMain} ${styles.budgetFilterMain}`}>
+                <DataSearchField
+                  value={query}
+                  onChange={setQuery}
+                  placeholder="Buscar presupuesto, descripción, categoría o período"
+                  aria-label="Buscar presupuestos"
+                  data-testid="budgets-search-input"
+                  className={`${movementPageStyles.searchControl} ${styles.budgetSearchControl}`}
                 />
-                <DataFilterPreset
-                  label="Inactivos"
-                  active={statusFilter === 'inactive'}
-                  count={inactiveCount}
-                  onClick={() => setStatusFilter('inactive')}
-                />
-                <DataFilterPreset
-                  label="Todos"
-                  active={statusFilter === 'all'}
-                  count={budgetSeries.length}
-                  onClick={() => setStatusFilter('all')}
-                />
-              </>
-            )}
-            search={(
-              <DataSearchField
-                value={query}
-                onChange={setQuery}
-                placeholder="Buscar presupuesto, descripcion, categoria o periodo"
-              />
-            )}
-            filters={(
-              <FilterBar>
                 <AppSelect
                   value={currencyFilter}
                   onChange={value => setCurrencyFilter(value as CurrencyFilter)}
-                  className="filters-control sm:w-[112px]"
+                  className={`${movementPageStyles.portfolioFilter} ${movementPageStyles.portfolioFilterCurrency} filters-control`}
                   compact
                   searchable={false}
-                  options={[
-                    { value: 'all', label: 'Moneda' },
-                    { value: 'PEN', label: 'PEN' },
-                    { value: 'USD', label: 'USD' },
-                  ]}
+                  adaptiveMenuWidth
+                  options={budgetCurrencyOptions}
+                  ariaLabel="Filtrar por moneda"
                 />
                 <AppSelect
                   value={periodFilter}
                   onChange={value => setPeriodFilter(value as PeriodFilter)}
-                  className="filters-control sm:w-[150px]"
+                  className={`${movementPageStyles.portfolioFilter} ${styles.budgetPeriodFilter} filters-control`}
                   compact
                   searchable={false}
+                  adaptiveMenuWidth
                   options={[
-                    { value: 'all', label: 'Periodo' },
+                    { value: 'all', label: 'Todas' },
                     { value: 'WEEKLY', label: 'Semanal' },
                     { value: 'MONTHLY', label: 'Mensual' },
                     { value: 'QUARTERLY', label: 'Trimestral' },
                     { value: 'YEARLY', label: 'Anual' },
                   ]}
+                  ariaLabel="Filtrar por periodicidad"
                 />
                 <AppSelect
                   value={categoryFilter}
                   onChange={setCategoryFilter}
-                  className="filters-control sm:w-[220px]"
-                  compact
-                  searchPlaceholder="Buscar categoria..."
+                  className={`${movementPageStyles.portfolioFilter} ${styles.budgetCategoryFilter} filters-control`}
+                  searchPlaceholder="Buscar categoría..."
+                  adaptiveMenuWidth
                   options={[
-                    { value: 'all', label: 'Categoria' },
-                    { value: 'none', label: 'General (sin categoria)' },
-                    ...categories.map(category => ({
-                      value: category.id,
-                      label: category.name,
-                    })),
+                    { value: 'all', label: 'Todas' },
+                    { value: 'none', label: 'General (sin categoría)' },
+                    ...categories.map(category => ({ value: category.id, label: category.name })),
                   ]}
+                  ariaLabel="Filtrar por categoría"
                 />
-              </FilterBar>
-            )}
-            viewToggle={workspaceView === 'series'
-              ? <ViewToggle value={viewMode} onChange={setViewMode} id="budgets-view-toggle" />
-              : null}
-            actions={(
-              <StatusBadge tone="muted" dot={false}>
-                {filteredBudgetSeries.length} serie{filteredBudgetSeries.length === 1 ? '' : 's'}
-              </StatusBadge>
-            )}
-          />
+              </div>
+              <div className={`${movementPageStyles.controlsActions} ${styles.budgetFilterActions}`}>
+                {workspaceView === 'series' ? <ViewToggle value={viewMode} onChange={setViewMode} id="budgets-view-toggle" /> : null}
+              </div>
+            </div>
+          </div>
         )}
       >
         {error ? <DataErrorBanner message={error} onRetry={loadBudgets} /> : null}
 
-        <div className="flex flex-col gap-3 rounded-[14px] border border-[var(--c-border)] bg-[var(--c-surface)] px-3 py-3 md:flex-row md:items-center md:justify-between">
-          <div className="inline-flex w-fit items-center gap-1 rounded-[10px] border border-[var(--c-border)] bg-[var(--c-surface-2)] p-1">
-            <Button
-              type="button"
-              size="sm"
-              variant={workspaceView === 'series' ? 'success' : 'ghost'}
-              onClick={() => setWorkspaceView('series')}
-            >
-              Presupuestos
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={workspaceView === 'periods' ? 'success' : 'ghost'}
-              onClick={() => setWorkspaceView('periods')}
-            >
-              Por periodo
-            </Button>
-          </div>
-
-          {workspaceView === 'periods' ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[11px] font-medium text-[var(--ft-text-muted)]">
-                Periodo
-              </span>
-              <AppSelect
-                value={periodMonth.slice(5, 7)}
-                onChange={value => setPeriodMonth(current => updateMonthKeyPart(current, { month: value }))}
-                className="filters-control w-[140px]"
-                compact
-                searchable={false}
-                options={MONTH_OPTIONS}
-              />
-              <AppSelect
-                value={periodMonth.slice(0, 4)}
-                onChange={value => setPeriodMonth(current => updateMonthKeyPart(current, { year: value }))}
-                className="filters-control w-[104px]"
-                compact
-                searchable={false}
-                options={periodYearOptions}
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                onClick={() => void loadPeriodRows()}
-                disabled={periodRowsLoading}
-                loading={periodRowsLoading}
-              >
-                Actualizar
-              </Button>
-            </div>
-          ) : null}
-        </div>
-
-        {workspaceView === 'periods' ? (
+        {workspaceView !== 'series' ? (
           <div className="space-y-3">
             {periodRowsError ? (
               <DataErrorBanner message={periodRowsError} onRetry={loadPeriodRows} />
             ) : null}
 
-            {periodRowsLoading ? (
-              <div className="grid gap-3">
-                {[0, 1, 2].map(item => (
-                  <div key={item} className="rounded-[14px] border border-[var(--c-border)] bg-[var(--c-surface)] px-4 py-4">
-                    <div className="flex animate-pulse items-center justify-between gap-4">
-                      <div className="space-y-2">
-                        <div className="h-3 w-24 rounded-full bg-[var(--c-surface-2)]" />
-                        <div className="h-5 w-56 rounded-full bg-[var(--c-surface-2)]" />
-                      </div>
-                      <div className="h-10 w-32 rounded-full bg-[var(--c-surface-2)]" />
-                    </div>
-                  </div>
+            {periodRowsReady && priorityExceededPeriod ? (
+              <aside className={styles.exceptionBand} data-testid="budget-period-exception">
+                <div className={styles.exceptionCopy}>
+                  <p className={styles.exceptionEyebrow}>
+                    {exceededPeriodRows.length > 1 ? `${exceededPeriodRows.length} presupuestos excedidos · prioridad` : 'Presupuesto excedido'}
+                  </p>
+                  <p className={styles.exceptionTitle}>{priorityExceededPeriod.budget.name}</p>
+                  <p className={styles.exceptionValues}>
+                    Gastado <strong>{formatBudgetCurrency(priorityExceededPeriod.spent_amount, priorityExceededPeriod.budget.currency)}</strong>
+                    <span aria-hidden="true"> · </span>
+                    Límite <strong>{formatBudgetCurrency(priorityExceededPeriod.amount, priorityExceededPeriod.budget.currency)}</strong>
+                    <span aria-hidden="true"> · </span>
+                    Exceso <strong>{formatBudgetCurrency(priorityExceededPeriod.remaining_amount === null ? null : Math.abs(priorityExceededPeriod.remaining_amount), priorityExceededPeriod.budget.currency)}</strong>
+                  </p>
+                </div>
+                <Button type="button" variant="secondary" size="sm" onClick={() => openPeriodDetail(priorityExceededPeriod)}>
+                  Ver este período
+                </Button>
+              </aside>
+            ) : null}
+
+            {showPeriodSkeleton && loadedPeriodMonth !== periodMonth ? (
+              <div className={`${styles.periodTable} overflow-hidden rounded-[14px] border border-[var(--ft-border)] bg-[var(--ft-surface)]`}>
+                <div className="h-10 animate-pulse bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />
+                {Array.from({ length: Math.max(3, periodRows.length) }, (_, item) => (
+                  <div key={item} className="h-[76px] border-t border-[var(--ft-border)] bg-[var(--ft-surface)]" />
                 ))}
               </div>
-            ) : periodRows.length === 0 ? (
+            ) : periodRowsError && !periodRowsReady ? null : !periodRowsReady ? (
+              <div
+                aria-hidden="true"
+                className={`${styles.periodTable} overflow-hidden rounded-[14px] border border-[var(--ft-border)] bg-[var(--ft-surface)]`}
+              >
+                <div className={styles.periodHeader}>
+                  <span>Presupuesto</span><span>Uso del límite</span><span>Gasto / límite</span><span>Disponible</span><span className="text-right">Acciones</span>
+                </div>
+                {Array.from({ length: Math.max(3, periodRows.length) }, (_, item) => (
+                  <div key={item} className={styles.periodReserveRow} />
+                ))}
+              </div>
+            ) : periodRowsReady && currentPeriodRows.length === 0 ? (
               <EmptyState
-                title="No hay periodos para el mes seleccionado."
-                description="Crea periodos desde cada presupuesto o cambia el mes de consulta."
+                title={`No hay presupuestos en ${periodMonthLabel}.`}
+                description="Puedes consultar otros períodos o crear un presupuesto para empezar a asignar límites."
                 action={{
-                  label: 'Volver a presupuestos',
+                  label: 'Ver otros períodos',
                   onClick: () => setWorkspaceView('series'),
                 }}
               />
+            ) : periodRowsReady && filteredPeriodRows.length === 0 ? (
+              <EmptyState
+                title={workspaceView === 'exceeded' ? 'Sin excedentes en este período.' : 'No encontramos presupuestos para esos filtros.'}
+                description={workspaceView === 'exceeded' ? `No hay límites que superen el monto asignado en ${periodMonthLabel}.` : 'Prueba con otra moneda, periodicidad, categoría o búsqueda.'}
+                action={workspaceView === 'exceeded' ? undefined : {
+                  label: 'Limpiar filtros',
+                  onClick: () => { setQuery(''); setCurrencyFilter('all'); setPeriodFilter('all'); setCategoryFilter('all') },
+                }}
+              />
             ) : (
-              <div className="overflow-hidden rounded-[14px] border border-[var(--c-border)] bg-[var(--c-surface)]">
-                <div className="grid grid-cols-[minmax(0,1.3fr)_minmax(120px,0.7fr)_minmax(120px,0.7fr)_minmax(180px,1fr)_120px] gap-3 border-b border-[var(--c-border)] bg-[var(--c-surface-2)] px-4 py-3 text-[10px] uppercase tracking-[0.1em] text-[var(--c-text-faint)]">
-                  <span>Presupuesto</span>
-                  <span>Importe</span>
-                  <span>Gastado</span>
-                  <span>Ejecucion</span>
-                  <span>Estado</span>
+              <div className={`${styles.periodTable} overflow-hidden rounded-[14px] border border-[var(--ft-border)] bg-[var(--ft-surface)]`}>
+                <div className={styles.periodHeader}>
+                  <span>Presupuesto</span><span>Uso del límite</span><span>Gasto / límite</span><span>Disponible</span><span className="text-right">Acciones</span>
                 </div>
-                <div className="divide-y divide-[var(--c-border)]">
-                  {periodRows.map(row => {
-                    const progress = Math.max(0, Math.min(100, row.progress_percent))
-                    const tone = budgetProgressTone(row.over_limit, progress)
-
-                    return (
-                      <article
-                        key={row.id}
-                        className="grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,1.3fr)_minmax(120px,0.7fr)_minmax(120px,0.7fr)_minmax(180px,1fr)_120px] md:items-center"
-                      >
-                        <div className="min-w-0">
-                          <p className="truncate text-[13px] font-semibold text-[var(--c-text)]">
-                            {row.budget.name}
-                          </p>
-                          <p className="mt-1 text-[11px] text-[var(--c-text-muted)]">
-                            {row.budget.category?.name ?? 'General'} · {formatRange(row.period_start, row.period_end)}
-                          </p>
+                {filteredPeriodRows.map(row => {
+                  const metricsComplete = row.metrics_complete !== false && row.progress_percent !== null && row.spent_amount !== null && row.remaining_amount !== null
+                  const progress = metricsComplete ? Math.max(0, Number(row.progress_percent)) : 0
+                  const visualProgress = Math.min(100, progress)
+                  const fillClass = row.over_limit ? styles.progressFillDanger : progress >= 80 ? styles.progressFillWarning : styles.progressFill
+                  const remaining = row.remaining_amount
+                  return (
+                    <article key={row.id} className={styles.periodRow} data-testid={`budget-period-row-${row.id}`}>
+                      <div className="min-w-0">
+                        <p className="truncate text-[13px] font-semibold text-[var(--ft-text-strong)]">{row.budget.name}</p>
+                        <p className="mt-0.5 truncate text-[11px] text-[var(--ft-text-muted)]">{row.budget.category?.name ?? 'General'} · {PERIOD_LABEL[row.budget.period_type]}</p>
+                        <p className="mt-1 text-[11px] tabular-nums text-[var(--ft-text-subtle)]">{formatFullDate(row.period_start)} – {formatFullDate(row.period_end)}</p>
+                      </div>
+                      <div className={styles.periodProgress}>
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <span className="text-[10px] text-[var(--ft-text-subtle)] md:hidden">Uso del límite</span>
+                          <span className="text-[12px] font-semibold tabular-nums text-[var(--ft-text-strong)]">{metricsComplete ? displayBudgetProgress(progress) : '—'}</span>
                         </div>
-                        <p className="text-[13px] font-semibold tabular-nums text-[var(--c-text)]">
-                          {formatCurrency(Number(row.amount ?? 0), row.budget.currency)}
-                        </p>
-                        <p className="text-[13px] font-semibold tabular-nums text-[var(--c-text-muted)]">
-                          {formatCurrency(Number(row.spent_amount ?? 0), row.budget.currency)}
-                        </p>
-                        <ProgressMetric
-                          value={progress}
-                          label="Ejecucion"
-                          valueLabel={`${progress.toFixed(0)}%`}
-                          tone={tone}
-                          description={row.over_limit
-                            ? `Excedido por ${formatCurrency(Math.abs(Number(row.remaining_amount ?? 0)), row.budget.currency)}`
-                            : `Disponible ${formatCurrency(Math.max(0, Number(row.remaining_amount ?? 0)), row.budget.currency)}`}
+                        <div className={styles.progressTrack} role="progressbar" aria-label={`Ejecución de ${row.budget.name}`} aria-valuemin={0} aria-valuemax={Math.max(100, progress)} aria-valuenow={progress}>
+                          <div className={`${styles.progressFill} ${fillClass}`} style={{ width: `${visualProgress}%` }} />
+                        </div>
+                        <p className="mt-1 text-[10px] text-[var(--ft-text-muted)]">{!metricsComplete ? 'Falta tasa histórica verificable' : row.over_limit ? `Excedido por ${formatBudgetCurrency(Math.abs(remaining!), row.budget.currency)}` : 'Del límite asignado'}</p>
+                      </div>
+                      <div className={styles.periodSpentLimit}>
+                        <div>
+                          <p className="text-[10px] text-[var(--ft-text-subtle)] md:hidden">Gastado</p>
+                          <p className={`${styles.summaryValue} ${styles.periodSpent} text-[13px] font-semibold tabular-nums text-[var(--ft-text-strong)]`}>{formatBudgetCurrency(row.spent_amount, row.budget.currency)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-[var(--ft-text-subtle)] md:hidden">Límite</p>
+                          <p className={`${styles.summaryValue} ${styles.periodLimit} text-[11px] font-medium tabular-nums text-[var(--ft-text-muted)]`}>{formatBudgetCurrency(Number(row.amount ?? 0), row.budget.currency)}</p>
+                        </div>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[10px] text-[var(--ft-text-subtle)] md:hidden">Disponible</p>
+                        <p className={`${styles.summaryValue} text-[13px] font-semibold tabular-nums ${remaining !== null && remaining < 0 ? 'text-[var(--ft-danger)]' : 'text-[var(--ft-text-strong)]'}`}>{formatBudgetCurrency(remaining, row.budget.currency)}</p>
+                        <StatusBadge tone={!metricsComplete ? 'muted' : periodStatusTone(row.status, row.over_limit === true)} dot={row.status !== 'CLOSED'}>{!metricsComplete ? 'Datos incompletos' : row.over_limit ? 'Excedido' : periodStatusLabel(row.status)}</StatusBadge>
+                      </div>
+                      <div className={`${styles.periodActions} flex items-center gap-1.5 md:justify-end`}>
+                        <BudgetViewPeriodAction
+                          onClick={() => openPeriodDetail(row)}
+                          testId={`budget-period-detail-${row.id}`}
                         />
-                        <StatusBadge tone={periodStatusTone(row.status, row.over_limit)} dot={row.status !== 'CLOSED'}>
-                          {row.over_limit ? 'Excedido' : periodStatusLabel(row.status)}
-                        </StatusBadge>
-                      </article>
-                    )
-                  })}
-                </div>
+                        <ActionIconButton
+                          onClick={() => {
+                            const target = resolveBudgetPeriodEditTarget(row)
+                            if (target.kind === 'explicit-period') {
+                              openPeriodDetail(row)
+                              return
+                            }
+                            const legacy = budgets.find(item => item.id === target.budgetId)
+                            if (legacy) startEdit(legacy)
+                            else openPeriodDetail(row)
+                          }}
+                          disabled={saving || rowActionId !== null}
+                          icon="edit"
+                          label={row.id === row.legacy_budget_id ? 'Editar presupuesto heredado' : 'Editar el importe de este período'}
+                        />
+                      </div>
+                    </article>
+                  )
+                })}
               </div>
             )}
           </div>
@@ -1062,13 +1417,13 @@ export function BudgetsManager() {
           </div>
         ) : filteredBudgetSeries.length === 0 ? (
           <EmptyState
-            title={query.trim() || currencyFilter !== 'all' || periodFilter !== 'all' || categoryFilter !== 'all' || statusFilter !== 'all'
+            title={query.trim() || currencyFilter !== 'all' || periodFilter !== 'all' || categoryFilter !== 'all'
               ? 'No encontramos presupuestos para esos filtros.'
               : 'Todavia no tienes presupuestos registrados.'}
-            description={query.trim() || currencyFilter !== 'all' || periodFilter !== 'all' || categoryFilter !== 'all' || statusFilter !== 'all'
+            description={query.trim() || currencyFilter !== 'all' || periodFilter !== 'all' || categoryFilter !== 'all'
               ? 'Ajusta moneda, periodo o categoria para recuperar controles presupuestales del periodo.'
               : 'Crea tu primer presupuesto y empieza a vigilar gasto, margen restante y excedentes desde un solo registro.'}
-            action={query.trim() || currencyFilter !== 'all' || periodFilter !== 'all' || categoryFilter !== 'all' || statusFilter !== 'all'
+            action={query.trim() || currencyFilter !== 'all' || periodFilter !== 'all' || categoryFilter !== 'all'
               ? {
                   label: 'Limpiar filtros',
                   onClick: () => {
@@ -1076,7 +1431,6 @@ export function BudgetsManager() {
                     setCurrencyFilter('all')
                     setPeriodFilter('all')
                     setCategoryFilter('all')
-                    setStatusFilter('all')
                   },
                 }
               : {
@@ -1087,8 +1441,10 @@ export function BudgetsManager() {
         ) : viewMode === 'list' ? (
           <div className="space-y-2">
             {filteredBudgetSeries.map(budget => {
-              const progress = Math.max(0, Math.min(100, budget.progress_percent))
-              const tone = budgetProgressTone(budget.over_limit, progress)
+              const metricsComplete = budget.metrics_complete !== false && budget.spent_amount !== null && budget.remaining_amount !== null && budget.progress_percent !== null
+              const actualProgress = metricsComplete ? Math.max(0, Number(budget.progress_percent)) : 0
+              const progress = Math.min(100, actualProgress)
+              const tone = budgetProgressTone(budget.over_limit === true, actualProgress)
 
               return (
                 <article
@@ -1121,12 +1477,12 @@ export function BudgetsManager() {
                         <StatusBadge tone={budget.is_active ? 'success' : 'muted'}>
                           {budget.is_active ? 'Activo' : 'Inactivo'}
                         </StatusBadge>
-                        <StatusBadge tone={budget.over_limit ? 'danger' : 'primary'} dot={false}>
-                          {budget.over_limit ? 'Excedido' : 'En rango'}
+                        <StatusBadge tone={!metricsComplete ? 'muted' : budget.over_limit ? 'danger' : 'primary'} dot={false}>
+                          {!metricsComplete ? 'Datos incompletos' : budget.over_limit ? 'Excedido' : 'En rango'}
                         </StatusBadge>
                       </div>
                       <p className="mt-2 text-[12px] text-[var(--c-text-muted)]">
-                        Periodo visible {formatCurrency(Number(budget.amount ?? 0), budget.currency)}
+                        Periodo visible {formatBudgetCurrency(Number(budget.amount ?? 0), budget.currency)}
                       </p>
                       {budget.period_count > 1 ? (
                         <p className="mt-1 text-[11px] text-[var(--c-text-faint)]">
@@ -1139,17 +1495,19 @@ export function BudgetsManager() {
                       <ProgressMetric
                         value={progress}
                         label="Ejecucion"
-                        valueLabel={`${progress.toFixed(0)}%`}
+                        valueLabel={metricsComplete ? displayBudgetProgress(actualProgress) : '—'}
                         tone={tone}
-                        description={budget.over_limit
-                          ? `Excedido por ${formatCurrency(Math.abs(Number(budget.remaining_amount ?? 0)), budget.currency)}`
-                          : `Disponible ${formatCurrency(Math.max(0, Number(budget.remaining_amount ?? 0)), budget.currency)}`}
+                        description={!metricsComplete
+                          ? 'Falta una tasa histórica verificable'
+                          : budget.over_limit
+                            ? `Excedido por ${formatBudgetCurrency(Math.abs(Number(budget.remaining_amount)), budget.currency)}`
+                            : `Disponible ${formatBudgetCurrency(Math.max(0, Number(budget.remaining_amount)), budget.currency)}`}
                       />
                     </div>
 
                     <div className="flex shrink-0 items-center gap-1.5 md:justify-self-end">
                       <ActionIconButton
-                        onClick={() => setDetailBudget(budget)}
+                        onClick={() => openSeriesDetail(budget)}
                         disabled={saving || loading || rowActionId !== null}
                         title="Ver periodos y transacciones"
                         icon="view"
@@ -1208,8 +1566,10 @@ export function BudgetsManager() {
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {filteredBudgetSeries.map(budget => {
-              const progress = Math.max(0, Math.min(100, budget.progress_percent))
-              const tone = budgetProgressTone(budget.over_limit, progress)
+              const metricsComplete = budget.metrics_complete !== false && budget.spent_amount !== null && budget.remaining_amount !== null && budget.progress_percent !== null
+              const actualProgress = metricsComplete ? Math.max(0, Number(budget.progress_percent)) : 0
+              const progress = Math.min(100, actualProgress)
+              const tone = budgetProgressTone(budget.over_limit === true, actualProgress)
 
               return (
                 <article
@@ -1241,16 +1601,16 @@ export function BudgetsManager() {
                       <ProgressMetric
                         value={progress}
                         label="Ejecucion"
-                        valueLabel={`${progress.toFixed(1)}%`}
+                        valueLabel={metricsComplete ? displayBudgetProgress(actualProgress) : '—'}
                         tone={tone}
-                        description={`Gastado ${formatCurrency(Number(budget.spent_amount ?? 0), budget.currency)}`}
+                        description={`Gastado ${formatBudgetCurrency(budget.spent_amount, budget.currency)}`}
                       />
                     </div>
 
                     <div className="mt-4 rounded-lg border border-[var(--c-border)] bg-[var(--c-surface-2)] px-3 py-2">
                       <AmountCell
-                        label={budget.over_limit ? 'Excedido por' : 'Disponible'}
-                        value={formatCurrency(Math.abs(Number(budget.remaining_amount ?? 0)), budget.currency)}
+                        label={!metricsComplete ? 'Saldo' : budget.over_limit ? 'Excedido por' : 'Disponible'}
+                        value={formatBudgetCurrency(metricsComplete ? Math.abs(Number(budget.remaining_amount)) : null, budget.currency)}
                         meta={`Periodo visible: ${formatRange(budget.period_start, budget.period_end)}`}
                         align="left"
                         tone={tone}
@@ -1260,7 +1620,7 @@ export function BudgetsManager() {
                     <div className="mt-4 border-t border-[var(--c-border)] pt-4">
                       <div className="flex items-center justify-end gap-1.5">
                         <ActionIconButton
-                          onClick={() => setDetailBudget(budget)}
+                          onClick={() => openSeriesDetail(budget)}
                           disabled={saving || loading || rowActionId !== null}
                           icon="view"
                           label="Ver transacciones del periodo"
@@ -1311,27 +1671,30 @@ export function BudgetsManager() {
             })}
           </div>
         )}
-      </RegisterModule>
+      </PageLayout>
 
       <RecordModal
         open={modalOpen}
         onClose={closeModal}
+        onExitComplete={handleModalExitComplete}
+        presentation="workbench"
+        overlayClassName={isContinuationMode ? styles.continuationOverlay : undefined}
         eyebrow="Presupuestos"
         title={
           editingId
             ? 'Editar este periodo'
             : formMode === 'continuation'
-              ? 'Nuevo período continuo'
+              ? 'Crear siguiente período'
               : 'Nuevo presupuesto'
         }
         subtitle={
           editingBudget
-            ? `Los cambios se aplican solo a ${formatRange(editingBudget.period_start, editingBudget.period_end)}. Los demas periodos de la serie no se modifican.`
+            ? `Solo cambia el período ${formatRange(editingBudget.period_start, editingBudget.period_end)}.`
             : formMode === 'continuation'
-            ? 'Previsualiza el siguiente rango y conserva la configuración operativa de la serie.'
-            : 'Define límites por categoría y controla tu gasto del período actual.'
+              ? `Siguiente período de ${form.name}.`
+              : 'Define el límite y su vigencia.'
         }
-        widthClassName={isContinuationMode ? 'w-[calc(100vw-32px)] max-w-[920px]' : 'w-[calc(100vw-32px)] max-w-[1040px]'}
+        widthClassName={isContinuationMode ? 'w-[calc(100vw-32px)] max-w-[580px]' : 'w-[calc(100vw-32px)] max-w-[720px]'}
       >
         <form
           id="budget-form"
@@ -1340,139 +1703,90 @@ export function BudgetsManager() {
           className="space-y-[var(--ft-form-section-gap)]"
         >
           {isContinuationMode && continuationPreview ? (
-            <>
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.02fr)_minmax(360px,0.98fr)]">
-                <FormSection
-                  title="Periodo anterior"
-                  description="Resumen readonly del último presupuesto activo dentro de la serie."
-                  columns="1"
-                  className="rounded-[var(--ft-form-radius)] border border-[color:color-mix(in_srgb,var(--c-border)_72%,transparent)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--c-surface)_90%,transparent),color-mix(in_srgb,var(--c-surface-2)_96%,transparent))] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3 rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] px-3.5 py-3">
-                    <div className="min-w-0">
-                      <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--ft-form-muted)]">Serie activa</p>
-                      <p className="mt-1 text-[15px] font-semibold tracking-[-0.02em] text-[var(--c-text)]">
-                        {form.name}
-                      </p>
-                      <p className="mt-1 text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-                        {PERIOD_LABEL[form.period_type]} · {form.currency}
-                      </p>
-                    </div>
-                    <StatusBadge tone="primary" dot={false}>
-                      Activo
-                    </StatusBadge>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
-                      <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--ft-form-muted)]">Monto vigente</p>
-                      <p className="mt-1 text-[15px] font-semibold tracking-[-0.02em] text-[var(--c-text)]">
-                        {formatCurrency(roundToDecimals(parseNumericInput(form.amount, 0), 2), form.currency)}
-                      </p>
-                    </div>
-                    <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
-                      <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--ft-form-muted)]">Rango consolidado</p>
-                      <p className="mt-1 text-[13px] font-medium text-[var(--c-text)]">
-                        {formatRange(continuationPreview.lastPeriodStart, continuationPreview.lastPeriodEnd)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] px-3.5 py-3">
-                    <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--ft-form-muted)]">Contexto heredado</p>
-                    <p className="mt-1 text-[12px] leading-[1.5] text-[var(--c-text-muted)]">
-                      Nombre, categoría, moneda, periodicidad y notas se mantienen para conservar la serie consistente.
+            <div className={styles.budgetFormSections}>
+              <FormSection title="Continuidad de la serie" columns="1" className={styles.budgetFormSection}>
+                <div className={styles.continuationContext}>
+                  <div className="min-w-0">
+                    <span className={styles.contextEyebrow}>Serie activa</span>
+                    <p className={styles.contextTitle}>{form.name}</p>
+                    <p className={styles.contextMeta}>
+                      {form.category_id ? categories.find(category => category.id === form.category_id)?.name ?? 'Categoría guardada' : 'General'}
+                      {' · '}{PERIOD_LABEL[form.period_type]} · {form.currency}
                     </p>
                   </div>
-                </FormSection>
-
-                <FormSection
-                  title="Nuevo periodo"
-                  description="La continuidad usa el rango siguiente calculado por la serie actual. Puedes ajustar el importe sin romper la serie."
-                  columns="1"
-                  className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
-                >
-                  <FormField label="Periodo siguiente calculado">
-                    <div className="rounded-[var(--ft-form-radius)] border border-[color:color-mix(in_srgb,var(--c-border)_60%,transparent)] bg-[color:color-mix(in_srgb,var(--c-surface-2)_90%,transparent)] px-3.5 py-3">
-                      <p className="text-[13px] font-semibold text-[var(--c-text)]">
-                        {formatRange(continuationPreview.nextPeriodStart, continuationPreview.nextPeriodEnd)}
-                      </p>
-                    </div>
-                  </FormField>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <FormField label="Importe del nuevo periodo">
-                      <NumericInput
-                        step="0.01"
-                        decimals={2}
-                        min={0}
-                        value={form.amount}
-                        onValueChange={value => setForm(prev => ({ ...prev, amount: value }))}
-                        required
-                        data-testid="budget-continuation-amount-input"
-                        className="field-base ft-form-amount-input w-full px-3.5 py-3 text-base font-semibold"
-                        placeholder="0.00"
-                      />
-                    </FormField>
-
-                    <FormField label="Fecha de inicio">
-                      <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3 text-sm font-medium text-[var(--c-text)]">
-                        {continuationPreview.nextPeriodStart}
-                      </div>
-                    </FormField>
+                  <div className={styles.contextRange}>
+                    <span className={styles.contextEyebrow}>Período anterior</span>
+                    <span>{formatRange(continuationPreview.lastPeriodStart, continuationPreview.lastPeriodEnd)}</span>
                   </div>
-                </FormSection>
-              </div>
-
-              <FormSection
-                title="Opciones"
-                description="Las notas siguen la configuración heredada de la serie en este flujo continuo."
-                columns="1"
-                className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
-              >
-                <FormField label="Notas" optional>
-                  <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3 text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-                    Las notas y ajustes finos del nuevo período siguen la configuración heredada de la serie.
-                  </div>
-                </FormField>
+                  <BudgetInfoHint label="Ayuda sobre la continuidad">
+                    Se conserva la configuración de la serie. Solo puedes ajustar el importe del nuevo período.
+                  </BudgetInfoHint>
+                </div>
               </FormSection>
-            </>
-          ) : (
-            <>
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,0.98fr)_minmax(400px,1.02fr)]">
-                <FormSection
-                  title="Presupuesto"
-                  description="Agrupa la identidad operativa, la categoría y el estado del límite que vas a seguir."
-                  columns="1"
-                  className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
-                >
-                  <FormField label="Nombre">
-                    <input
-                      value={form.name}
-                      onChange={event => setForm(prev => ({ ...prev, name: event.target.value }))}
+
+              <FormSection title="Siguiente período" columns="1" className={styles.budgetFormSection}>
+                <div className={styles.continuationNextPeriod}>
+                  <div>
+                    <span className={styles.contextEyebrow}>Vigencia calculada</span>
+                    <p className={styles.nextPeriodRange}>{formatRange(continuationPreview.nextPeriodStart, continuationPreview.nextPeriodEnd)}</p>
+                  </div>
+                  <FormField label="Importe del nuevo período" className="min-w-0">
+                    <NumericInput
+                      step="0.01"
+                      decimals={2}
+                      min={0}
+                      value={form.amount}
+                      onValueChange={value => setForm(prev => ({ ...prev, amount: value }))}
                       required
-                      data-testid="budget-name-input"
-                      className="field-base ft-form-input w-full"
-                      placeholder="Ej: Marketing mensual"
+                      data-testid="budget-continuation-amount-input"
+                      className="field-base ft-form-amount-input w-full px-3.5 py-3 text-base font-semibold"
+                      placeholder="0.00"
                     />
                   </FormField>
+                </div>
+                {form.notes.trim() ? (
+                  <p className={styles.inheritedNotes}><span>Notas heredadas:</span> {form.notes}</p>
+                ) : null}
+              </FormSection>
+            </div>
+          ) : (
+            <div className={styles.budgetFormSections}>
+              <FormSection title="Datos del presupuesto" columns="1" className={styles.budgetFormSection}>
+                <FormField
+                  label="Nombre"
+                  labelAdornment={<BudgetInfoHint label="Ayuda sobre el nombre">Un nombre breve te ayudará a encontrar este presupuesto en su período.</BudgetInfoHint>}
+                >
+                  <input
+                    value={form.name}
+                    onChange={event => setForm(prev => ({ ...prev, name: event.target.value }))}
+                    required
+                    data-testid="budget-name-input"
+                    className="field-base ft-form-input w-full"
+                    placeholder="Ej. Alimentación"
+                  />
+                </FormField>
 
-                  <FormField label="Categoria" optional optionalLabel="General si no eliges una">
+                <div className={styles.identityFields}>
+                  <FormField
+                    label="Categoría"
+                    optional
+                    optionalLabel="General si no eliges una"
+                    labelAdornment={<BudgetInfoHint label="Ayuda sobre la categoría">Sin categoría, el presupuesto queda asociado a todos los egresos del período.</BudgetInfoHint>}
+                  >
                     <AppSelect
                       value={form.category_id}
                       onChange={value => setForm(prev => ({ ...prev, category_id: value }))}
                       searchPlaceholder="Buscar categoría..."
                       options={[
                         { value: '', label: 'General (todos los egresos)' },
-                        ...categories.map(category => ({
-                          value: category.id,
-                          label: category.name,
-                        })),
+                        ...categories.map(category => ({ value: category.id, label: category.name })),
                       ]}
                     />
                   </FormField>
-
-                  <FormField label="Periodicidad">
+                  <FormField
+                    label="Periodicidad"
+                    labelAdornment={<BudgetInfoHint label="Ayuda sobre la periodicidad">La periodicidad determina la duración del período; las fechas se calculan desde la fecha de inicio.</BudgetInfoHint>}
+                  >
                     <AppSelect
                       value={form.period_type}
                       onChange={value => handlePeriodOrDateChange({ period_type: value as BudgetPeriod })}
@@ -1485,118 +1799,127 @@ export function BudgetsManager() {
                       ]}
                     />
                   </FormField>
+                </div>
+              </FormSection>
 
-                  <label className="flex items-start gap-3 rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
-                    <input
-                      type="checkbox"
-                      checked={form.is_active}
-                      onChange={event => setForm(prev => ({ ...prev, is_active: event.target.checked }))}
-                      className="mt-1"
+              <FormSection title="Límite y vigencia" columns="1" className={styles.budgetFormSection}>
+                <div className={styles.amountFields}>
+                  <FormField label="Monto">
+                    <NumericInput
+                      step="0.01"
+                      decimals={2}
+                      min={0}
+                      value={form.amount}
+                      onValueChange={value => setForm(prev => ({ ...prev, amount: value }))}
+                      required
+                      data-testid="budget-amount-input"
+                      className="field-base ft-form-amount-input w-full px-3.5 py-3 text-base font-semibold"
+                      placeholder="0.00"
                     />
-                    <span className="block">
-                      <span className="block text-sm font-medium text-[var(--c-text)]">Presupuesto activo</span>
-                      <span className="block text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
-                        Mantiene este límite visible en el seguimiento operativo del período actual.
-                      </span>
-                    </span>
-                  </label>
-                </FormSection>
+                  </FormField>
+                  <FormField label="Moneda">
+                    <AppSelect
+                      value={form.currency}
+                      onChange={value => setForm(prev => ({ ...prev, currency: value as CurrencyCode }))}
+                      compact
+                      searchable={false}
+                      options={[{ value: 'PEN', label: 'PEN' }, { value: 'USD', label: 'USD' }]}
+                    />
+                  </FormField>
+                </div>
 
-                <FormSection
-                  title="Monto y fechas"
-                  description="El importe y la vigencia viven juntos para que el rango del presupuesto se lea de una sola vez."
-                  columns="1"
-                  className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
-                >
-                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
-                    <FormField label="Monto">
-                      <NumericInput
-                        step="0.01"
-                        decimals={2}
-                        min={0}
-                        value={form.amount}
-                        onValueChange={value => setForm(prev => ({ ...prev, amount: value }))}
-                        required
-                        data-testid="budget-amount-input"
-                        className="field-base ft-form-amount-input w-full px-3.5 py-3 text-base font-semibold"
-                        placeholder="0.00"
-                      />
-                    </FormField>
+                <div className={styles.dateFields}>
+                  <FormField label="Fecha de inicio">
+                    <IncomeDatePicker
+                      value={form.start_date}
+                      onChange={value => handlePeriodOrDateChange({ start_date: value })}
+                      onInvalidInput={setDateInputError}
+                      error={dateInputError ?? undefined}
+                      inputLabel="Fecha de inicio del presupuesto, día, mes y año"
+                      inputTestId="budget-start-date-input"
+                    />
+                  </FormField>
+                  <FormField
+                    label="Fecha de fin calculada"
+                    labelAdornment={<BudgetInfoHint label="Ayuda sobre la fecha de fin">Se calcula automáticamente según la periodicidad y la fecha de inicio.</BudgetInfoHint>}
+                  >
+                    <div className={styles.calculatedDate}>
+                      <span>{form.end_date ? formatFullDate(form.end_date) : 'Se calculará al completar el inicio'}</span>
+                    </div>
+                  </FormField>
+                </div>
 
-                    <FormField label="Moneda">
-                      <AppSelect
-                        value={form.currency}
-                        onChange={value => setForm(prev => ({ ...prev, currency: value as CurrencyCode }))}
-                        compact
-                        searchable={false}
-                        options={[
-                          { value: 'PEN', label: 'PEN' },
-                          { value: 'USD', label: 'USD' },
-                        ]}
-                      />
-                    </FormField>
+                <div className={styles.activeToggle}>
+                  <input
+                    id="budget-active"
+                    type="checkbox"
+                    checked={form.is_active}
+                    onChange={event => setForm(prev => ({ ...prev, is_active: event.target.checked }))}
+                  />
+                  <label htmlFor="budget-active">Presupuesto activo</label>
+                  <BudgetInfoHint label="Ayuda sobre el estado activo">Los períodos activos aparecen en el seguimiento de presupuestos.</BudgetInfoHint>
+                </div>
+              </FormSection>
+
+              <section className={movementFormStyles.incomeOptionalSection} aria-label="Información adicional" data-testid="budget-additional-information">
+                <div className={movementFormStyles.incomeOptionsHeader}>
+                  <div>
+                    <h3 className={movementFormStyles.incomeSectionHeading}>Información adicional</h3>
+                    <p className={movementFormStyles.incomeOptionsDescription}>Opcional · agrega detalles cuando los necesites</p>
                   </div>
+                </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <FormField label="Fecha de inicio">
+                <div className={movementFormStyles.incomeOptionControls} role="group" aria-label="Opciones adicionales del presupuesto">
+                  {([
+                    ['description', 'Descripción', form.description],
+                    ['notes', 'Notas', form.notes],
+                  ] as const).map(([key, label, value]) => {
+                    const isOpen = additionalOptionsOpen[key]
+                    const panelId = `budget-additional-${key}`
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        aria-expanded={isOpen}
+                        aria-controls={panelId}
+                        data-active={isOpen ? 'true' : 'false'}
+                        data-has-value={value.trim() ? 'true' : 'false'}
+                        className={movementFormStyles.incomeOptionButton}
+                        onClick={() => setAdditionalOptionsOpen(current => ({ ...current, [key]: !current[key] }))}
+                      >
+                        <span aria-hidden="true" className={movementFormStyles.incomeOptionMark}>{isOpen ? '−' : '+'}</span>
+                        <span>{label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+
+                <div className={movementFormStyles.incomeOptionPanels}>
+                  <div id="budget-additional-description" data-income-option="description" hidden={!additionalOptionsOpen.description} className={movementFormStyles.incomeOptionPanel}>
+                    <FormField label="Descripción" optional>
                       <input
-                        type="date"
-                        value={form.start_date}
-                        onChange={event => handlePeriodOrDateChange({ start_date: event.target.value })}
+                        value={form.description}
+                        onChange={event => setForm(prev => ({ ...prev, description: event.target.value }))}
                         className="field-base ft-form-input w-full"
-                        required
+                        placeholder="¿Qué incluye este límite?"
+                        maxLength={300}
                       />
                     </FormField>
-
-                    <FormField
-                      label="Fecha de fin calculada"
-                      description="Se actualiza automáticamente cuando cambias la fecha de inicio o la periodicidad."
-                    >
-                      <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
-                        <p className="text-sm font-medium text-[var(--c-text)]">
-                          {form.end_date || 'Se calculara al guardar'}
-                        </p>
-                      </div>
+                  </div>
+                  <div id="budget-additional-notes" data-income-option="notes" hidden={!additionalOptionsOpen.notes} className={movementFormStyles.incomeOptionPanel}>
+                    <FormField label="Notas" optional>
+                      <textarea
+                        rows={3}
+                        value={form.notes}
+                        onChange={event => setForm(prev => ({ ...prev, notes: event.target.value }))}
+                        className="field-base ft-form-textarea w-full resize-none"
+                        placeholder="Una nota para consultar después"
+                      />
                     </FormField>
                   </div>
-
-                  <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] px-3.5 py-3">
-                    <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--ft-form-muted)]">Preview del periodo</p>
-                    <p className="mt-1 text-[13px] font-medium text-[var(--c-text)]">
-                      {form.start_date && form.end_date ? formatRange(form.start_date, form.end_date) : 'El rango aparecera al completar la vigencia'}
-                    </p>
-                  </div>
-                </FormSection>
-              </div>
-
-              <OptionalSection
-                title="Opciones"
-                summary={optionalSummary}
-                className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4"
-              >
-                <FormSection columns="2">
-                  <FormField label="Descripcion" optional>
-                    <input
-                      value={form.description}
-                      onChange={event => setForm(prev => ({ ...prev, description: event.target.value }))}
-                      className="field-base ft-form-input w-full"
-                      placeholder="Ej: Presupuesto para pauta y herramientas"
-                      maxLength={300}
-                    />
-                  </FormField>
-
-                  <FormField label="Notas" optional>
-                    <textarea
-                      rows={3}
-                      value={form.notes}
-                      onChange={event => setForm(prev => ({ ...prev, notes: event.target.value }))}
-                      className="field-base ft-form-textarea w-full resize-none"
-                      placeholder="Observaciones internas para el seguimiento del presupuesto"
-                    />
-                  </FormField>
-                </FormSection>
-              </OptionalSection>
-            </>
+                </div>
+              </section>
+            </div>
           )}
 
           {error ? (
@@ -1639,12 +1962,28 @@ export function BudgetsManager() {
       {/* A.3 — Panel de detalle de transacciones por presupuesto */}
       {detailBudget && (
         <BudgetDetail
+          open={detailOpen}
           budget={detailBudget}
           periods={detailBudget.periods}
-          onPeriodUpdated={loadBudgets}
-          onClose={() => setDetailBudget(null)}
+          suspendFocusTrap={modalOpen && isContinuationMode}
+          onPeriodUpdated={async () => { await Promise.all([loadBudgets(), loadPeriodRows()]) }}
+          onClose={() => setDetailOpen(false)}
+          onExitComplete={completeDetailExit}
+          onContinueNextPeriod={requestNextPeriodFromDetail}
         />
       )}
+
+      <ConfirmDialog
+        open={discardConfirmationOpen}
+        title="Descartar cambios sin guardar"
+        message="Los cambios de este presupuesto todavía no se han guardado. ¿Quieres cerrar y descartarlos?"
+        onCancel={() => setDiscardConfirmationOpen(false)}
+        onConfirm={performCloseModal}
+        confirmLabel="Descartar cambios"
+        testId="budgets-discard-modal"
+        cancelTestId="budgets-discard-cancel-button"
+        confirmTestId="budgets-discard-confirm-button"
+      />
 
       <ConfirmDialog
         open={Boolean(pendingDeleteBudget)}

@@ -16,11 +16,13 @@
 import { redirect }              from 'next/navigation'
 import { Suspense }              from 'react'
 import { createClient }          from '@/lib/supabase.server'
-import { AppShell }              from '@/components/layout/AppShell'
+import { AppShell as V3AppShell } from '@/components/layout/AppShell'
+import { AppShell as LegacyAppShell } from '@/components/layout/legacy/AppShell'
+import { isV3ShellEnabled } from '@/lib/flags/v3-shell'
 import {
-  ensureAccountingUsdPenExchangeRate,
   resolveLiveUsdPenExchangeRate,
 } from '@/lib/server/exchange-rate'
+import { getVerifiedUsdPenRate } from '@/lib/finance/exchange-rate-verification'
 import { withTimeout } from '@/lib/server/promise-timeout'
 import { measureServerOperation } from '@/lib/server/observability'
 
@@ -30,7 +32,7 @@ const SERVER_QUERY_TIMEOUT_MS = 4_000
 
 async function getLayoutData(userId: string) {
   return measureServerOperation('dashboard.layout-data', async () => {
-    const supabase = createClient()
+    const supabase = await createClient()
     const [profileResult, exchangeRateResult] = await Promise.allSettled([
       withTimeout(
         supabase
@@ -40,13 +42,7 @@ async function getLayoutData(userId: string) {
           .single(),
         SERVER_QUERY_TIMEOUT_MS,
       ),
-      withTimeout(
-        Promise.all([
-          ensureAccountingUsdPenExchangeRate(),
-          resolveLiveUsdPenExchangeRate(),
-        ]).then(([, liveSnapshot]) => liveSnapshot),
-        SERVER_QUERY_TIMEOUT_MS,
-      ),
+      withTimeout(resolveLiveUsdPenExchangeRate(), SERVER_QUERY_TIMEOUT_MS),
     ])
 
     const profile =
@@ -57,7 +53,7 @@ async function getLayoutData(userId: string) {
     const exchangeRateSnapshot =
       exchangeRateResult.status === 'fulfilled'
         ? exchangeRateResult.value
-        : { rate: 3.75 }
+        : null
 
     return {
       user: {
@@ -65,7 +61,7 @@ async function getLayoutData(userId: string) {
         name:   profile?.full_name ?? null,
         avatar: profile?.avatar_url ?? null,
       },
-      exchangeRate: exchangeRateSnapshot.rate,
+      exchangeRate: getVerifiedUsdPenRate(exchangeRateSnapshot),
     }
   }, { warnAtMs: 350, meta: { user_id: userId } })
 }
@@ -77,7 +73,7 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -92,13 +88,15 @@ export default async function DashboardLayout({
     : null
   const fallbackName = 'Usuario'
 
+  const AppShell = isV3ShellEnabled() ? V3AppShell : LegacyAppShell
+
   return (
     <AppShell
       user={{
         ...profile,
         name: profile.name ?? metadataName ?? fallbackName,
       }}
-      exchangeRate={Number(exchangeRate)}
+      exchangeRate={exchangeRate}
     >
       {/* Suspense permite que las páginas hijas usen loading.tsx */}
       <Suspense fallback={<PageSkeleton/>}>

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import useSWR from 'swr'
-import { formatCurrency, formatNumber } from '@/lib/contracts/ui.contracts'
+import { formatCurrency, formatCurrencyOrUnavailable, formatNumber } from '@/lib/contracts/ui.contracts'
 import type { DashboardSidebar } from '@/lib/dashboard/types'
 import { fetchDashboardData } from './api'
 import { PremiumCard } from './PremiumCard'
@@ -64,9 +64,10 @@ export function SaldosBancariosWidget() {
   })
 
   const saldos = data?.saldos_bancarios.items ?? []
-  const total = data?.saldos_bancarios.total_consolidado ?? 0
+  const total = data?.saldos_bancarios.total_consolidado ?? null
+  const incomplete = total === null || saldos.some((item) => item.saldo === null)
   const distribution = saldos
-    .filter((item) => item.saldo > 0)
+    .filter((item): item is typeof item & { saldo: number } => item.saldo !== null && !incomplete && item.saldo > 0)
     .map((item, index) => ({
       ...item,
       color: SEGMENT_COLORS[index % SEGMENT_COLORS.length],
@@ -95,7 +96,7 @@ export function SaldosBancariosWidget() {
             Saldos bancarios
           </p>
           <p className="mt-2 text-[2rem] font-semibold leading-none tracking-normal text-[var(--ft-text)]">
-            {formatCurrency(total, 'PEN')}
+            {formatCurrencyOrUnavailable(total, 'PEN')}
           </p>
           <p className="mt-1 text-[11px] text-[var(--ft-text-muted)]">
             Total consolidado
@@ -104,7 +105,9 @@ export function SaldosBancariosWidget() {
         <SmartTip text="Este panel te muestra cómo se distribuye tu liquidez actual entre portafolios para detectar concentración y margen de maniobra." />
       </div>
 
-      {distribution.length === 0 || distributionTotal <= 0 ? (
+      {incomplete ? (
+        <p className="mt-4 text-[12px] text-[var(--ft-text-muted)]">No disponible: falta una conversión verificada para consolidar las cuentas.</p>
+      ) : distribution.length === 0 || distributionTotal <= 0 ? (
         <PortfolioEmptyState />
       ) : (
         <div className="mt-5">

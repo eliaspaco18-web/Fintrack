@@ -44,7 +44,7 @@ export function buildWelcomeAuthEmailHtml(data: WelcomeAuthEmailData): string {
   const safeType = data.accountType === 'BUSINESS' ? 'Empresa / equipo' : 'Personal'
   const safeAppUrl = data.appUrl.replace(/\/+$/, '')
   const securityUrl = `${safeAppUrl}/settings?tab=security`
-  const logoUrl = `${safeAppUrl}/brand/fintrack-mark.png`
+  const logoUrl = `${safeAppUrl}/brand/v3/ft-ligature.png`
   const safeLogoUrl = escapeHtml(logoUrl)
 
   return `<!DOCTYPE html>

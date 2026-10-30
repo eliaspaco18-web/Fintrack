@@ -11,17 +11,16 @@
 
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useToast } from '@/lib/toast/toast'
 import { FormActions, FormField, FormSection, OptionalSection } from '@/components/forms/primitives'
 import { FinancialIcon } from '@/components/ui/FinancialIcon'
 import { ColorSwatchPicker, IconGridPicker } from '@/components/ui/VisualPickers'
 import { CATEGORY_COLOR_OPTIONS, CATEGORY_ICON_OPTIONS } from '@/lib/constants/visual-options'
 import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
-import { ActionIconButton } from '@/components/ui/ActionIconButton'
 import { AppSelect } from '@/components/ui/AppSelect'
 import { Button } from '@/components/ui/Button'
-import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
 import {
   ConfirmDialog,
   DataSearchField,
@@ -32,6 +31,7 @@ import {
   CatalogEmptyState,
   CatalogIdentity,
   CatalogRow,
+  CatalogRowActions,
   CatalogTable,
 } from '@/components/management/catalog'
 import {
@@ -76,6 +76,9 @@ function isSystemAssetType(item: AssetTypeItem): boolean {
 // ─── COMPONENT ────────────────────────────────────────────────────────────────
 
 export function AssetTypesManager() {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const { toast } = useToast()
   const [items, setItems] = useState<AssetTypeItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -88,6 +91,8 @@ export function AssetTypesManager() {
   const [form, setForm] = useState<AssetTypeForm>(EMPTY_FORM)
   const [modalOpen, setModalOpen] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<AssetTypeItem | null>(null)
+  const handledQueryOpen = useRef(false)
+  const openFromHeroQuery = searchParams.get('new') === 'asset-type'
 
   // ─── DATA ─────────────────────────────────────────────────────────────────
 
@@ -135,11 +140,29 @@ export function AssetTypesManager() {
     setModalOpen(true)
   }, [resetForm])
 
+  useEffect(() => {
+    if (!openFromHeroQuery) {
+      handledQueryOpen.current = false
+      return
+    }
+    if (handledQueryOpen.current) return
+    handledQueryOpen.current = true
+    openCreateModal()
+  }, [openCreateModal, openFromHeroQuery])
+
+  const clearCreateQueryParam = useCallback(() => {
+    if (searchParams.get('new') !== 'asset-type') return
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete('new')
+    router.replace(params.toString() ? `${pathname}?${params.toString()}` : pathname, { scroll: false })
+  }, [pathname, router, searchParams])
+
   const closeModal = useCallback(() => {
     if (saving) return
     setModalOpen(false)
     resetForm()
-  }, [resetForm, saving])
+    clearCreateQueryParam()
+  }, [clearCreateQueryParam, resetForm, saving])
 
   const startEdit = useCallback((item: AssetTypeItem) => {
     setEditingId(item.id)
@@ -237,8 +260,7 @@ export function AssetTypesManager() {
   return (
     <div className="space-y-5">
       <CatalogTable
-        title="Catálogo de tipos de activo"
-        description="Clasificación base para registrar bienes, patrimonio y posiciones personales."
+        title="Tipos de activo"
         count={filteredItems.length}
         summary={(
           <>
@@ -246,9 +268,6 @@ export function AssetTypesManager() {
             <StatusBadge tone="info">{customCount} personalizados</StatusBadge>
             <StatusBadge tone="muted">{items.length - customCount} del sistema</StatusBadge>
           </>
-        )}
-        primaryAction={(
-          <CreateModuleButton onClick={openCreateModal} label="Nuevo tipo" />
         )}
         search={(
           <DataSearchField
@@ -283,21 +302,18 @@ export function AssetTypesManager() {
             {[...Array(4)].map((_, index) => (
               <div
                 key={index}
-                className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1.7fr)_170px_170px_auto] md:items-center"
+                className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1fr)_100px_100px_120px] lg:grid-cols-[minmax(0,1.6fr)_130px_120px_120px] md:items-center"
               >
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 animate-pulse rounded-lg bg-[var(--c-surface-2)]" />
+                  <div className="h-7 w-7 animate-pulse rounded-md bg-[var(--ft-surface-muted)]" />
                   <div className="min-w-0 flex-1 space-y-2">
-                    <div className="h-4 w-40 animate-pulse rounded bg-[var(--c-surface-2)]" />
-                    <div className="h-3 w-24 animate-pulse rounded bg-[var(--c-surface-2)]" />
+                    <div className="h-4 w-40 animate-pulse rounded bg-[var(--ft-surface-muted)]" />
+                    <div className="h-3 w-24 animate-pulse rounded bg-[var(--ft-surface-muted)]" />
                   </div>
                 </div>
-                <div className="h-7 w-24 animate-pulse rounded-md bg-[var(--c-surface-2)]" />
-                <div className="h-7 w-24 animate-pulse rounded-md bg-[var(--c-surface-2)]" />
-                <div className="flex gap-2 md:justify-end">
-                  <div className="h-8 w-8 animate-pulse rounded-lg bg-[var(--c-surface-2)]" />
-                  <div className="h-8 w-8 animate-pulse rounded-lg bg-[var(--c-surface-2)]" />
-                </div>
+                <div className="h-5 w-20 animate-pulse rounded bg-[var(--ft-surface-muted)]" />
+                <div className="h-5 w-20 animate-pulse rounded bg-[var(--ft-surface-muted)]" />
+                <div className="ml-auto h-8 w-24 animate-pulse rounded bg-[var(--ft-surface-muted)]" />
               </div>
             ))}
           </div>
@@ -308,11 +324,6 @@ export function AssetTypesManager() {
             description={query.trim().length > 0
               ? 'Prueba otra búsqueda o cambia el estado para revisar el catálogo completo.'
               : 'Crea un tipo nuevo para clasificar mejor tus activos financieros o patrimoniales.'}
-            action={(
-              <Button type="button" onClick={openCreateModal} variant="secondary" size="md">
-                Nuevo tipo
-              </Button>
-            )}
           />
         )}
         columns={[
@@ -321,23 +332,23 @@ export function AssetTypesManager() {
           { label: 'Estado' },
           { label: 'Acciones', align: 'right' },
         ]}
-        gridClassName="md:grid-cols-[minmax(0,1.7fr)_170px_170px_auto] md:items-center"
+        gridClassName="md:grid-cols-[minmax(0,1fr)_100px_100px_120px] lg:grid-cols-[minmax(0,1.6fr)_130px_120px_120px] md:items-center"
       >
         {filteredItems.map(item => (
           <CatalogRow
             key={item.id}
-            gridClassName="md:grid-cols-[minmax(0,1.7fr)_170px_170px_auto] md:items-center"
-            accentColor={item.color}
+            gridClassName="md:grid-cols-[minmax(0,1fr)_100px_100px_120px] lg:grid-cols-[minmax(0,1.6fr)_130px_120px_120px] md:items-center"
             muted={!item.is_active}
           >
             <CatalogCell label="Tipo">
               <CatalogIdentity
                 icon={(
                   <span
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--c-border)]"
-                    style={{ backgroundColor: `${item.color}16`, color: item.color }}
+                    aria-hidden="true"
+                    className="inline-flex h-7 w-7 items-center justify-center text-[var(--ft-text-muted)]"
+                    style={{ color: item.color }}
                   >
-                    <FinancialIcon name={item.icon} size={17} />
+                    <FinancialIcon name={item.icon} size={16} />
                   </span>
                 )}
                 title={item.name}
@@ -357,28 +368,25 @@ export function AssetTypesManager() {
             </CatalogCell>
 
             <CatalogCell label="Acciones" align="right">
-              <div className="flex items-center gap-1.5 md:justify-end">
-                <ActionIconButton
-                  onClick={() => startEdit(item)}
-                  disabled={Boolean(rowActionId)}
-                  icon="edit"
-                  label={isSystemAssetType(item) ? 'Personalizar tipo' : 'Editar tipo'}
-                />
-                <ActionIconButton
-                  onClick={() => void toggleStatus(item)}
-                  disabled={Boolean(rowActionId)}
-                  icon={item.is_active ? 'deactivate' : 'reactivate'}
-                  label={item.is_active ? 'Desactivar' : 'Activar'}
-                  variant={item.is_active ? 'danger' : 'success'}
-                />
-                <ActionIconButton
-                  onClick={() => setPendingDelete(item)}
-                  disabled={Boolean(rowActionId)}
-                  icon="delete"
-                  label="Eliminar tipo"
-                  variant="danger"
-                />
-              </div>
+              <CatalogRowActions
+                label={item.name}
+                editLabel={isSystemAssetType(item) ? 'Personalizar' : 'Editar'}
+                onEdit={() => startEdit(item)}
+                disabled={Boolean(rowActionId)}
+                actions={[
+                  {
+                    id: 'status',
+                    label: item.is_active ? 'Desactivar' : 'Activar',
+                    onSelect: () => void toggleStatus(item),
+                  },
+                  {
+                    id: 'delete',
+                    label: 'Eliminar',
+                    destructive: true,
+                    onSelect: () => setPendingDelete(item),
+                  },
+                ]}
+              />
             </CatalogCell>
           </CatalogRow>
         ))}

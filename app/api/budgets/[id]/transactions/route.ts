@@ -17,7 +17,7 @@ import {
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
 interface Params {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }
 
 type BudgetTransactionRow = {
@@ -37,8 +37,9 @@ function pickSingle<T>(value: T | T[] | null | undefined): T | null {
   return value ?? null
 }
 
-export async function GET(req: NextRequest, { params }: Params) {
-  const supabase = createClient()
+export async function GET(req: NextRequest, props: Params) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 

@@ -30,10 +30,8 @@ import {
   getVisualIconImageSrc,
 } from '@/lib/constants/visual-options'
 import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
-import { ActionIconButton } from '@/components/ui/ActionIconButton'
 import { AppSelect } from '@/components/ui/AppSelect'
 import { Button } from '@/components/ui/Button'
-import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
 import {
   ConfirmDialog,
   DataSearchField,
@@ -44,6 +42,7 @@ import {
   CatalogEmptyState,
   CatalogIdentity,
   CatalogRow,
+  CatalogRowActions,
   CatalogTable,
 } from '@/components/management/catalog'
 import { getApiErrorMessage } from '@/lib/api/error-message'
@@ -352,8 +351,7 @@ export function BankEntitiesManager() {
   return (
     <div className="space-y-5">
       <CatalogTable
-        title="Catálogo de entidades bancarias"
-        description="Instituciones financieras disponibles para portafolio, créditos y trazabilidad de cuentas."
+        title="Entidades"
         count={filtered.length}
         summary={(
           <>
@@ -361,9 +359,6 @@ export function BankEntitiesManager() {
             <StatusBadge tone="muted">{entities.length} registradas</StatusBadge>
             {inactiveCount > 0 ? <StatusBadge tone="warning">{inactiveCount} inactivas</StatusBadge> : null}
           </>
-        )}
-        primaryAction={(
-          <CreateModuleButton onClick={openCreateModal} label="Nueva entidad" testId="bank-entities-create-button" />
         )}
         search={(
           <DataSearchField
@@ -398,21 +393,18 @@ export function BankEntitiesManager() {
             {[...Array(4)].map((_, index) => (
               <div
                 key={index}
-                className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1.65fr)_220px_170px_auto] md:items-center"
+                className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1fr)_115px_100px_120px] lg:grid-cols-[minmax(0,1.6fr)_200px_120px_120px] md:items-center"
               >
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 animate-pulse rounded-lg bg-[var(--c-surface-2)]" />
+                  <div className="h-7 w-7 animate-pulse rounded-md bg-[var(--ft-surface-muted)]" />
                   <div className="min-w-0 flex-1 space-y-2">
-                    <div className="h-4 w-44 animate-pulse rounded bg-[var(--c-surface-2)]" />
-                    <div className="h-3 w-28 animate-pulse rounded bg-[var(--c-surface-2)]" />
+                    <div className="h-4 w-44 animate-pulse rounded bg-[var(--ft-surface-muted)]" />
+                    <div className="h-3 w-28 animate-pulse rounded bg-[var(--ft-surface-muted)]" />
                   </div>
                 </div>
-                <div className="h-4 w-24 animate-pulse rounded bg-[var(--c-surface-2)]" />
-                <div className="h-7 w-24 animate-pulse rounded-md bg-[var(--c-surface-2)]" />
-                <div className="flex gap-2 md:justify-end">
-                  <div className="h-8 w-8 animate-pulse rounded-lg bg-[var(--c-surface-2)]" />
-                  <div className="h-8 w-8 animate-pulse rounded-lg bg-[var(--c-surface-2)]" />
-                </div>
+                <div className="h-4 w-24 animate-pulse rounded bg-[var(--ft-surface-muted)]" />
+                <div className="h-5 w-20 animate-pulse rounded bg-[var(--ft-surface-muted)]" />
+                <div className="ml-auto h-8 w-24 animate-pulse rounded bg-[var(--ft-surface-muted)]" />
               </div>
             ))}
           </div>
@@ -423,26 +415,20 @@ export function BankEntitiesManager() {
             description={query.trim().length > 0
               ? 'Prueba otra búsqueda o revisa el estado seleccionado para ver más resultados.'
               : 'Registra tu primera entidad para conectar portafolios y productos financieros al banco correcto.'}
-            action={(
-              <Button type="button" onClick={openCreateModal} variant="secondary" size="md">
-                Nueva entidad
-              </Button>
-            )}
           />
         )}
         columns={[
           { label: 'Entidad' },
-          { label: 'Cobertura' },
+          { label: 'País' },
           { label: 'Estado' },
           { label: 'Acciones', align: 'right' },
         ]}
-        gridClassName="md:grid-cols-[minmax(0,1.65fr)_220px_170px_auto] md:items-center"
+        gridClassName="md:grid-cols-[minmax(0,1fr)_115px_100px_120px] lg:grid-cols-[minmax(0,1.6fr)_200px_120px_120px] md:items-center"
       >
         {filtered.map(entity => (
           <CatalogRow
             key={entity.id}
-            gridClassName="md:grid-cols-[minmax(0,1.65fr)_220px_170px_auto] md:items-center"
-            accentColor={entity.color}
+            gridClassName="md:grid-cols-[minmax(0,1fr)_115px_100px_120px] lg:grid-cols-[minmax(0,1.6fr)_200px_120px_120px] md:items-center"
             muted={!entity.is_active}
           >
             <CatalogCell label="Entidad">
@@ -450,25 +436,19 @@ export function BankEntitiesManager() {
                 icon={(
                   (() => {
                     const resolvedIcon = iconSignedUrls[entity.id] ?? null
-                    const hasImageIcon = Boolean(resolvedIcon)
                     return (
-                  <span
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--c-border)]"
-                    style={hasImageIcon
-                      ? { backgroundColor: 'color-mix(in srgb, var(--c-surface) 86%, white 14%)', color: entity.color }
-                      : { backgroundColor: `${entity.color}16`, color: entity.color }}
-                  >
+                  <span aria-hidden="true" className="inline-flex h-7 w-7 items-center justify-center text-[var(--ft-text-muted)]" style={{ color: entity.color }}>
                     {resolvedIcon ? (
                       <Image
                         src={resolvedIcon}
-                        alt={entity.name}
-                        width={32}
-                        height={32}
+                        alt=""
+                        width={24}
+                        height={24}
                         unoptimized
-                        className="h-9 w-9 rounded-md object-contain"
+                        className="h-6 w-6 rounded-sm object-contain"
                       />
                     ) : (
-                        <FinancialIcon name={entity.icon} size={17} />
+                        <FinancialIcon name={entity.icon} size={16} />
                       )}
                   </span>
                     )
@@ -480,13 +460,8 @@ export function BankEntitiesManager() {
               />
             </CatalogCell>
 
-            <CatalogCell label="Cobertura">
-              <div className="space-y-1">
-                <p className="text-[12px] font-medium text-[var(--c-text)]">{entity.country}</p>
-                <p className="text-[11px] text-[var(--c-text-muted)]">
-                  {entity.short_name ? `${entity.short_name} · ` : ''}{entity.code ?? 'Sin código'}
-                </p>
-              </div>
+            <CatalogCell label="País">
+              <p className="text-[12px] font-medium text-[var(--ft-text-strong)]">{entity.country}</p>
             </CatalogCell>
 
             <CatalogCell label="Estado">
@@ -496,38 +471,28 @@ export function BankEntitiesManager() {
             </CatalogCell>
 
             <CatalogCell label="Acciones" align="right">
-              <div className="flex items-center gap-1.5 md:justify-end">
-                <ActionIconButton
-                  onClick={() => startEdit(entity)}
-                  disabled={Boolean(rowActionId)}
-                  icon="edit"
-                  label="Editar entidad"
-                  title="Editar entidad bancaria"
-                  description="Actualiza nombre, alias, país o apariencia sin afectar los registros ya vinculados."
-                />
-                <ActionIconButton
-                  onClick={() => void toggleStatus(entity, !entity.is_active)}
-                  disabled={Boolean(rowActionId)}
-                  icon={entity.is_active ? 'deactivate' : 'reactivate'}
-                  label={entity.is_active ? 'Desactivar' : 'Activar'}
-                  title={entity.is_active
-                    ? 'Desactivar temporalmente'
-                    : 'Reactivar entidad'}
-                  description={entity.is_active
-                    ? 'La oculta de nuevos portafolios y productos, pero conserva el historial existente.'
-                    : 'La vuelve a mostrar para usarla otra vez en nuevos registros.'}
-                  variant={entity.is_active ? 'danger' : 'success'}
-                />
-                <ActionIconButton
-                  onClick={() => setPendingDelete(entity)}
-                  disabled={Boolean(rowActionId)}
-                  icon="delete"
-                  label="Eliminar entidad"
-                  title="Eliminar de forma permanente"
-                  description="Solo estará disponible cuando la entidad no tenga cuentas ni referencias vinculadas."
-                  variant="danger"
-                />
-              </div>
+              <CatalogRowActions
+                label={entity.name}
+                onEdit={() => startEdit(entity)}
+                disabled={Boolean(rowActionId)}
+                actions={[
+                  {
+                    id: 'status',
+                    label: entity.is_active ? 'Desactivar' : 'Activar',
+                    detail: entity.is_active
+                      ? 'Se oculta en nuevos registros y conserva el historial.'
+                      : 'Vuelve a estar disponible para nuevos registros.',
+                    onSelect: () => void toggleStatus(entity, !entity.is_active),
+                  },
+                  {
+                    id: 'delete',
+                    label: 'Eliminar',
+                    detail: 'Disponible solo si no tiene cuentas ni referencias vinculadas.',
+                    destructive: true,
+                    onSelect: () => setPendingDelete(entity),
+                  },
+                ]}
+              />
             </CatalogCell>
           </CatalogRow>
         ))}
