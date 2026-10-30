@@ -5,6 +5,10 @@ import { assertStagedDeployment } from './verify-staged-deployment.mjs'
 import { sanitizeBuildEnvironment } from './sanitize-build-env.mjs'
 import { assertMigrationEvidence, REQUIRED_MIGRATION_IDS } from './assert-migration-evidence.mjs'
 import { assertRemoteMigrationLedger } from './assert-migration-ledger.mjs'
+import { preparePrebuiltDeployEnv } from './prepare-prebuilt-deploy-env.mjs'
+import fs, { readFileSync } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 
 test('accepts only the exact ordered V3 migration set, regardless of dry-run order', () => {
   const dryRun = [
@@ -69,6 +73,51 @@ test('keeps public build variables, strips runtime secrets, and fixes the bridge
   assert.throws(() => sanitizeBuildEnvironment('FINTRACK_V3_SHELL_PRODUCTION=0', 'v3'), /requires/)
   assert.throws(() => sanitizeBuildEnvironment('NEXT_PUBLIC_SUPABASE_URL=a\nNEXT_PUBLIC_SUPABASE_URL=b', 'v2-bridge'), /Duplicate/)
   assert.match(sanitizeBuildEnvironment('FINTRACK_V3_SHELL_PRODUCTION=1', 'v3'), /FINTRACK_V3_SHELL_PRODUCTION=1/)
+})
+
+test('removes pulled secrets and leaves only an empty private env path for Vercel prebuilt upload', () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fintrack-prebuilt-env-'))
+  const vercelDir = path.join(projectRoot, '.vercel')
+  const outputDir = path.join(vercelDir, 'output')
+  fs.mkdirSync(outputDir, { recursive: true })
+  const pulledEnv = [
+    'NEXT_PUBLIC_SUPABASE_URL=https://qa.example.invalid',
+    'FINTRACK_V3_SHELL_PRODUCTION=0',
+    'SUPABASE_SERVICE_ROLE_KEY=runtime-secret',
+    'RESEND_API_KEY=email-secret',
+  ].join('\n')
+  const sanitizedEnv = sanitizeBuildEnvironment(pulledEnv, 'v2-bridge')
+  fs.writeFileSync(path.join(vercelDir, '.env.production.local'), sanitizedEnv, { mode: 0o600 })
+  fs.writeFileSync(path.join(projectRoot, '.env.local'), 'VERCEL_OIDC_TOKEN=local-secret')
+  fs.writeFileSync(path.join(outputDir, 'config.json'), JSON.stringify({ version: 3, buildEnv: sanitizedEnv }))
+
+  try {
+    preparePrebuiltDeployEnv(projectRoot)
+
+    const envPath = path.join(projectRoot, '.env.local')
+    const envStat = fs.lstatSync(envPath)
+    assert.equal(fs.existsSync(path.join(vercelDir, '.env.production.local')), false)
+    assert.equal(envStat.isFile(), true)
+    assert.equal(envStat.isSymbolicLink(), false)
+    assert.equal(envStat.size, 0)
+    assert.equal(envStat.mode & 0o077, 0)
+
+    const artifactText = fs.readFileSync(path.join(outputDir, 'config.json'), 'utf8')
+    assert.doesNotMatch(artifactText, /runtime-secret|local-secret|SUPABASE_SERVICE_ROLE_KEY|VERCEL_OIDC_TOKEN/)
+  } finally {
+    fs.rmSync(projectRoot, { recursive: true, force: true })
+  }
+})
+
+test('runs secret-free prebuilt env preparation after build and before Vercel upload', () => {
+  const workflowPath = new URL('../../.github/workflows/production-stage.yml', import.meta.url)
+  const workflow = readFileSync(workflowPath, 'utf8')
+  const buildIndex = workflow.indexOf('name: Build the exact release artifact')
+  const prepareIndex = workflow.indexOf('node scripts/release/prepare-prebuilt-deploy-env.mjs')
+  const deployIndex = workflow.indexOf('vercel deploy --prebuilt --prod --skip-domain')
+
+  assert.ok(buildIndex >= 0 && prepareIndex > buildIndex && deployIndex > prepareIndex)
+  assert.doesNotMatch(workflow, /rm\s+-f\s+\.vercel\/\.env\.production\.local\s+\.env\.local/)
 })
 
 test('binds a V3 stage to the exact successful migration SHA and set', () => {

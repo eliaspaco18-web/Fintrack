@@ -88,6 +88,9 @@ jobs:
       - name: Verify the Production cron host and secret guard
         run: npm run test:unit -- tests/unit/exchange-rate-cron-guard.spec.ts
 
+      - name: Verify prebuilt deployment environment cleanup
+        run: npm run test:release-guards
+
       - name: Install pinned Vercel CLI
         run: npm install --global vercel@63.1.0
 
@@ -110,7 +113,7 @@ jobs:
         run: vercel build --prod
 
       - name: Remove pulled environment file before artifact upload
-        run: rm -f .vercel/.env.production.local .env.local
+        run: node scripts/release/prepare-prebuilt-deploy-env.mjs
 
       - name: Stage without assigning any domain
         id: deploy
