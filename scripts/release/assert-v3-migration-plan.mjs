@@ -1,7 +1,8 @@
 import fs from 'node:fs'
 
+// Production ledger already contains 20261025000001 from the partial 2026-10-30 run.
+// Fail closed unless dry-run shows precisely the two still-pending migrations.
 export const EXPECTED_V3_MIGRATIONS = Object.freeze([
-  '20261025000001',
   '20261025000002',
   '20261026000001',
 ])
