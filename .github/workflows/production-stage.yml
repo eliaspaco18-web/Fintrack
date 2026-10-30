@@ -37,7 +37,6 @@ jobs:
       VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
       STAGE_ENABLED: ${{ vars.FINTRACK_PRODUCTION_STAGE_ENABLED }}
-      CRONS_DISABLED: ${{ vars.FINTRACK_PRODUCTION_CRONS_DISABLED }}
       RELEASE_SHA: ${{ inputs.release_sha }}
     steps:
       - name: Check out the exact release commit
@@ -57,7 +56,6 @@ jobs:
           git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
           git merge-base --is-ancestor "$RELEASE_SHA" origin/main
           [[ "$STAGE_ENABLED" == "1" ]]
-          [[ "$CRONS_DISABLED" == "1" ]]
           [[ -n "$VERCEL_ORG_ID" && -n "$VERCEL_PROJECT_ID" ]]
           migration_ids="$(git ls-tree -r --name-only "$RELEASE_SHA" -- supabase/migrations | grep -E '20261025000001|20261025000002|20261026000001' || true)"
           if [[ "${{ inputs.release_kind }}" == "v3" ]]; then
@@ -83,6 +81,12 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 24
+
+      - name: Install locked dependencies for the cron guard tests
+        run: npm ci
+
+      - name: Verify the Production cron host and secret guard
+        run: npm run test:unit -- tests/unit/exchange-rate-cron-guard.spec.ts
 
       - name: Install pinned Vercel CLI
         run: npm install --global vercel@63.1.0
