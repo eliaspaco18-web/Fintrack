@@ -4,7 +4,7 @@ import { assertV3MigrationPlan } from './assert-v3-migration-plan.mjs'
 import { assertStagedDeployment } from './verify-staged-deployment.mjs'
 import { sanitizeBuildEnvironment } from './sanitize-build-env.mjs'
 import { assertMigrationEvidence, REQUIRED_MIGRATION_IDS } from './assert-migration-evidence.mjs'
-import { assertRemoteMigrationLedger } from './assert-migration-ledger.mjs'
+import { assertRemoteMigrationLedger, assertCompleteMigrationLedger } from './assert-migration-ledger.mjs'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { spawnSync } from 'node:child_process'
@@ -182,4 +182,34 @@ test('requires the exact migrations to appear in the remote ledger column', () =
   assert.throws(() => assertRemoteMigrationLedger(output.replace('20261026000001 | 20261026000001', '20261026000001 |')), /missing required/)
   assert.throws(() => assertRemoteMigrationLedger(output.replace('REMOTE', 'OTHER')), /Could not identify/)
   assert.throws(() => assertRemoteMigrationLedger(`${output}\n20261025000001 | 20261025000001 | duplicate`), /duplicate IDs/)
+})
+
+test('parses Supabase CLI backtick-quoted migration ledger and certifies exact synchronization', () => {
+  const output = [
+    ' Local          | Remote         | Time (UTC)',
+    '----------------|----------------|---------------------',
+    ' `20261025000001` | `20261025000001` | 2026-10-25 00:00:01',
+    ' `20261025000002` | `20261025000002` | 2026-10-25 00:00:02',
+    ' `20261026000001` | `20261026000001` | 2026-10-26 00:00:01',
+  ].join('\n')
+  assert.equal(assertRemoteMigrationLedger(output).length, 3)
+  assert.equal(assertCompleteMigrationLedger(output, 3).length, 3)
+  assert.throws(() => assertCompleteMigrationLedger(output, 37), /Expected exactly/)
+  assert.throws(() => assertCompleteMigrationLedger(output.replace('`20261026000001` | `20261026000001`', '`20261026000001` |'), 3), /missing required|mismatch/i)
+  assert.throws(() => assertCompleteMigrationLedger(output.replace('`20261026000001` | `20261026000001`', '| `20261026000001`'), 3), /mismatch/i)
+  assert.throws(() => assertCompleteMigrationLedger(output.replace('`20261026000001` | `20261026000001`', '`20261025000002` | `20261026000001`'), 3), /mismatch/i)
+})
+
+test('accepts truthful read-only Production migration certification and rejects weak evidence', () => {
+  const good = {
+    release_sha: 'c'.repeat(40),
+    migrations: [...REQUIRED_MIGRATION_IDS],
+    result: 'supabase-ledger-certified',
+    certification: 'protected-production-migration-ledger',
+    observed_migration_count: 37,
+  }
+  assert.equal(assertMigrationEvidence(good, 'c'.repeat(40)), true)
+  assert.throws(() => assertMigrationEvidence({ ...good, certification: 'manual' }, 'c'.repeat(40)), /provenance/)
+  assert.throws(() => assertMigrationEvidence({ ...good, observed_migration_count: 35 }, 'c'.repeat(40)), /exact ledger count/)
+  assert.throws(() => assertMigrationEvidence({ ...good, migrations: REQUIRED_MIGRATION_IDS.slice(1) }, 'c'.repeat(40)), /exact required/)
 })
