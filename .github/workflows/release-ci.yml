@@ -34,5 +34,7 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
+      - name: Install Chromium for browser-backed unit tests
+        run: npx playwright install --with-deps chromium
       - run: npm run test:unit
       - run: npm run test:release-guards
