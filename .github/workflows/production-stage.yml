@@ -88,7 +88,7 @@ jobs:
       - name: Verify the Production cron host and secret guard
         run: npm run test:unit -- tests/unit/exchange-rate-cron-guard.spec.ts
 
-      - name: Verify prebuilt deployment environment cleanup
+      - name: Verify release guards and Vercel build environment validation
         run: npm run test:release-guards
 
       - name: Install pinned Vercel CLI
@@ -99,28 +99,12 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
-      - name: Pull Production build environment
-        run: vercel pull --yes --environment=production
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-
-      - name: Remove runtime secrets from the build environment
-        env:
-          RELEASE_KIND: ${{ inputs.release_kind }}
-        run: node scripts/release/sanitize-build-env.mjs .vercel/.env.production.local "$RELEASE_KIND"
-
-      - name: Build the exact release artifact
-        run: vercel build --prod
-
-      - name: Remove pulled environment file before artifact upload
-        run: node scripts/release/prepare-prebuilt-deploy-env.mjs
-
-      - name: Stage without assigning any domain
+      - name: Remote-build and stage exact release without assigning any domain
         id: deploy
         run: |
           set -euo pipefail
           log_file="$RUNNER_TEMP/vercel-stage-deploy.log"
-          vercel deploy --prebuilt --prod --skip-domain 2>&1 | tee "$log_file"
+          vercel deploy --prod --skip-domain --meta "githubCommitSha=$RELEASE_SHA" 2>&1 | tee "$log_file"
           url="$(grep -Eo 'https://[a-zA-Z0-9.-]+\.vercel\.app' "$log_file" | tail -n 1)"
           [[ "$url" =~ ^https://[a-zA-Z0-9.-]+\.vercel\.app$ ]]
           echo "deployment_url=$url" >> "$GITHUB_OUTPUT"
