@@ -12,26 +12,26 @@ import { spawnSync } from 'node:child_process'
 const require = createRequire(import.meta.url)
 const { validateSupabasePublicBuildEnvironment } = require('./validate-supabase-public-build-env.cjs')
 
-test('accepts only the exact ordered V3 migration set, regardless of dry-run order', () => {
+test('accepts exactly the two remaining V3 migrations after the first was applied', () => {
   const dryRun = [
     'Would push these migrations:',
     ' • 20261026000001_harden_user_scoped_rpc_permissions.sql',
-    ' • 20261025000001_dashboard_fx_completeness.sql',
     ' • 20261025000002_atomic_exchange_rate_default_null.sql',
   ].join('\n')
-  assert.equal(assertV3MigrationPlan(dryRun).length, 3)
+  assert.equal(assertV3MigrationPlan(dryRun).length, 2)
 })
 
-test('rejects missing, additional, or duplicate migration IDs', () => {
+test('rejects missing, already-applied, additional, or duplicate migration IDs', () => {
   assert.throws(() => assertV3MigrationPlan('No migrations to apply.'), /Expected/)
-  assert.throws(() => assertV3MigrationPlan('20261025000001_a.sql\n20261025000002_b.sql'), /Expected/)
+  assert.throws(() => assertV3MigrationPlan('20261025000002_b.sql'), /Expected/)
   assert.throws(() => assertV3MigrationPlan([
-    '20261025000001_a.sql', '20261025000001_a.sql',
-    '20261025000002_b.sql', '20261026000001_c.sql',
+    '20261025000002_b.sql', '20261025000002_b.sql', '20261026000001_c.sql',
   ].join('\n')), /duplicate/i)
   assert.throws(() => assertV3MigrationPlan([
-    '20261025000001_a.sql', '20261025000002_b.sql',
-    '20261026000001_c.sql', '20261027000001_unreviewed.sql',
+    '20261025000001_a.sql', '20261025000002_b.sql', '20261026000001_c.sql',
+  ].join('\n')), /Expected/)
+  assert.throws(() => assertV3MigrationPlan([
+    '20261025000002_b.sql', '20261026000001_c.sql', '20261027000001_unreviewed.sql',
   ].join('\n')), /Expected/)
 })
 
