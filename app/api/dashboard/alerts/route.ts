@@ -50,12 +50,13 @@ function normalizeCurrency(currency: string): 'PEN' | 'USD' {
   return currency === 'USD' ? 'USD' : 'PEN'
 }
 
-function toPenAmount(amount: number, currency: string, exchangeRate: number): number {
-  return normalizeCurrency(currency) === 'USD' ? amount * exchangeRate : amount
+function toPenAmount(amount: number, currency: string, exchangeRate: number | null): number | null {
+  if (normalizeCurrency(currency) !== 'USD') return amount
+  return exchangeRate === null ? null : amount * exchangeRate
 }
 
-function roundMoney(value: number): number {
-  return Math.round(value * 100) / 100
+function roundMoney(value: number | null): number | null {
+  return value === null ? null : Math.round(value * 100) / 100
 }
 
 function currentMonthKey(): string {
@@ -64,7 +65,7 @@ function currentMonthKey(): string {
 
 export async function GET() {
   return measureServerOperation('api.dashboard.alerts', async () => {
-    const supabase = createClient()
+    const supabase = await createClient()
     const userId = await getSessionUserId(supabase)
     if (!userId) return apiUnauthorized()
 
@@ -200,6 +201,7 @@ export async function GET() {
           transactions,
         )
 
+        if (!metrics.metrics_complete || metrics.over_limit === null || metrics.spent_amount === null || metrics.progress_percent === null) continue
         if (!metrics.over_limit) continue
 
         const overflow = Math.max(0, metrics.spent_amount - Number(period.amount ?? 0))
@@ -209,7 +211,7 @@ export async function GET() {
           id: `budget-${period.id}`,
           type: 'budget_exceeded',
           label: `${period.budget.name} excedió ${metrics.progress_percent.toFixed(0)}%`,
-          amount: roundMoney(overflow),
+          amount: Math.round(overflow * 100) / 100,
           amountPen: roundMoney(toPenAmount(overflow, currency, exchangeRate)),
           currency,
           dueDate: period.period_end,
@@ -222,7 +224,9 @@ export async function GET() {
     const sortedAlerts = sortDashboardAlerts(alerts)
     const payload: DashboardAlertsResponse = {
       criticalCount: sortedAlerts.length,
-      totalAmountPen: roundMoney(sortedAlerts.reduce((sum, alert) => sum + alert.amountPen, 0)),
+      totalAmountPen: sortedAlerts.some(alert => alert.amountPen === null)
+        ? null
+        : roundMoney(sortedAlerts.reduce((sum, alert) => sum + (alert.amountPen ?? 0), 0)),
       alerts: sortedAlerts,
     }
 

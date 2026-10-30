@@ -28,10 +28,12 @@ export type BudgetPeriodMetricTransaction = {
 }
 
 export type BudgetPeriodMetrics = {
-  spent_amount: number
-  remaining_amount: number
-  progress_percent: number
-  over_limit: boolean
+  spent_amount: number | null
+  remaining_amount: number | null
+  progress_percent: number | null
+  over_limit: boolean | null
+  metrics_complete: boolean
+  missing_conversion_count: number
 }
 
 function parseISODate(date: string): Date {
@@ -96,18 +98,36 @@ export function buildBudgetPeriodMetrics(
   period: BudgetPeriodForMetrics,
   transactions: BudgetPeriodMetricTransaction[],
 ): BudgetPeriodMetrics {
-  const spent = transactions.reduce((sum, tx) => {
+  let spent = 0
+  let missingConversionCount = 0
+  transactions.forEach(tx => {
     const matchesNew = tx.budget_period_id === period.id
     const matchesLegacy = Boolean(period.legacy_budget_id && tx.budget_id === period.legacy_budget_id)
-    if (!matchesNew && !matchesLegacy) return sum
+    if (!matchesNew && !matchesLegacy) return
 
-    return sum + convertBudgetAmount(
+    const converted = convertBudgetAmount(
       Number(tx.amount ?? 0),
       tx.currency,
       series.currency,
       tx.exchange_rate,
     )
-  }, 0)
+    if (converted === null || !Number.isFinite(converted)) {
+      missingConversionCount += 1
+      return
+    }
+    spent += converted
+  })
+
+  if (missingConversionCount > 0) {
+    return {
+      spent_amount: null,
+      remaining_amount: null,
+      progress_percent: null,
+      over_limit: null,
+      metrics_complete: false,
+      missing_conversion_count: missingConversionCount,
+    }
+  }
 
   const amount = Number(period.amount ?? 0)
   const safeSpent = clamp2(spent)
@@ -119,5 +139,7 @@ export function buildBudgetPeriodMetrics(
     remaining_amount: remaining,
     progress_percent: progress,
     over_limit: safeSpent > amount,
+    metrics_complete: true,
+    missing_conversion_count: 0,
   }
 }

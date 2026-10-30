@@ -1,14 +1,17 @@
 'use client'
 
 import {
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
 } from 'react'
+import { createPortal } from 'react-dom'
 
 export type AppSelectOption = {
   value: string
@@ -17,6 +20,8 @@ export type AppSelectOption = {
   disabled?: boolean
   icon?: ReactNode
 }
+
+const EMPTY_APP_SELECT_OPTIONS: AppSelectOption[] = []
 
 interface AppSelectProps {
   options: AppSelectOption[]
@@ -35,6 +40,172 @@ interface AppSelectProps {
   menuClassName?: string
   testId?: string
   compact?: boolean
+  selectedFallbackLabel?: string
+  loading?: boolean
+  error?: string | null
+  onRetry?: () => void
+  sourceComplete?: boolean
+  matchTriggerWidth?: boolean
+  adaptiveMenuWidth?: boolean
+}
+
+type AnchorRect = Pick<DOMRect, 'left' | 'top' | 'bottom' | 'width'>
+
+interface AppSelectViewportRect {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+export function resolveAppSelectPortalRoot(
+  wrapper: HTMLElement | null,
+  body: HTMLElement,
+  matchTriggerWidth: boolean,
+): HTMLElement {
+  const dialog = wrapper?.closest<HTMLElement>('[role="dialog"]') ?? null
+  const focusScope = dialog?.parentElement ?? null
+
+  if (matchTriggerWidth && focusScope?.hasAttribute('data-app-select-portal-root')) {
+    return focusScope
+  }
+
+  return dialog ?? body
+}
+
+export function getTriggerMatchedMenuStyle(
+  triggerRect: AnchorRect,
+  viewportRect: AppSelectViewportRect,
+  menuHeight: number,
+): CSSProperties {
+  const inset = 8
+  const gap = 8
+  const width = Math.min(Math.max(0, triggerRect.width), Math.max(0, viewportRect.width - inset * 2))
+  const left = Math.max(
+    viewportRect.left + inset,
+    Math.min(triggerRect.left, viewportRect.left + viewportRect.width - width - inset),
+  )
+  const spaceBelow = viewportRect.top + viewportRect.height - triggerRect.bottom - gap - inset
+  const spaceAbove = triggerRect.top - viewportRect.top - gap - inset
+  const requestedHeight = Math.max(0, menuHeight)
+  const fitsBelow = spaceBelow >= requestedHeight
+  const fitsAbove = spaceAbove >= requestedHeight
+  const flip = !fitsBelow && (fitsAbove || spaceAbove > spaceBelow)
+  const maxHeight = Math.max(0, Math.min(viewportRect.height - inset * 2, flip ? spaceAbove : spaceBelow))
+  const height = Math.min(requestedHeight, maxHeight)
+  const top = flip
+    ? Math.max(viewportRect.top + inset, triggerRect.top - height - gap)
+    : Math.min(triggerRect.bottom + gap, viewportRect.top + viewportRect.height - height - inset)
+
+  return {
+    position: 'fixed',
+    left,
+    top,
+    width,
+    maxWidth: width,
+    maxHeight,
+    overflowY: 'auto',
+    right: 'auto',
+    marginTop: 0,
+    visibility: 'visible',
+    transformOrigin: flip ? 'bottom center' : 'top center',
+  }
+}
+
+function measureTextWidth(
+  context: CanvasRenderingContext2D,
+  text: string,
+  font: string,
+  letterSpacing: number,
+): number {
+  context.font = font
+  const glyphs = Array.from(text).length
+  return context.measureText(text).width + Math.max(0, glyphs - 1) * letterSpacing
+}
+
+function measureAdaptiveMenuContentWidth(
+  menu: HTMLElement,
+  options: AppSelectOption[],
+  value: string,
+): number {
+  const canvas = document.createElement('canvas')
+  const context = canvas.getContext('2d')
+  const labelElement = menu.querySelector<HTMLElement>('.app-select-option-label')
+  const hintElement = menu.querySelector<HTMLElement>('.app-select-option-hint')
+  const optionElement = menu.querySelector<HTMLElement>('.app-select-option')
+  const rowElement = menu.querySelector<HTMLElement>('.app-select-option-row')
+  if (!context || !labelElement || !optionElement || !rowElement) return 0
+
+  const labelStyle = window.getComputedStyle(labelElement)
+  const hintStyle = hintElement ? window.getComputedStyle(hintElement) : labelStyle
+  const optionStyle = window.getComputedStyle(optionElement)
+  const rowStyle = window.getComputedStyle(rowElement)
+  const menuStyle = window.getComputedStyle(menu)
+  const labelFont = labelStyle.font || `${labelStyle.fontWeight} ${labelStyle.fontSize} ${labelStyle.fontFamily}`
+  const hintFont = hintStyle.font || `${hintStyle.fontWeight} ${hintStyle.fontSize} ${hintStyle.fontFamily}`
+  const labelSpacing = Number.parseFloat(labelStyle.letterSpacing) || 0
+  const hintSpacing = Number.parseFloat(hintStyle.letterSpacing) || 0
+  const rowGap = Number.parseFloat(rowStyle.columnGap) || Number.parseFloat(rowStyle.gap) || 0
+  const optionPadding = (Number.parseFloat(optionStyle.paddingLeft) || 0) + (Number.parseFloat(optionStyle.paddingRight) || 0)
+  // The menu width is border-box, while option text is measured inside its
+  // content box. Include the real portal surface borders or the final label
+  // can lose a few pixels to ellipsis even when Canvas reports it should fit.
+  const menuBorders = (Number.parseFloat(menuStyle.borderLeftWidth) || 0) + (Number.parseFloat(menuStyle.borderRightWidth) || 0)
+
+  const optionsWidth = options.reduce((widest, option) => {
+    const labelWidth = measureTextWidth(context, option.label, labelFont, labelSpacing)
+    const hintWidth = option.hint ? measureTextWidth(context, option.hint, hintFont, hintSpacing) : 0
+    const hasIcon = Boolean(option.icon)
+    const hasCheck = option.value === value
+    const adornmentWidth = (hasIcon ? 16 + rowGap : 0) + (hasCheck ? 16 + rowGap : 0)
+    return Math.max(widest, Math.max(labelWidth, hintWidth) + adornmentWidth + optionPadding)
+  }, 0)
+
+  return Math.ceil(optionsWidth + menuBorders)
+}
+
+export function getAdaptiveMenuStyle(
+  triggerRect: AnchorRect,
+  viewportRect: AppSelectViewportRect,
+  menuHeight: number,
+  contentWidth: number,
+  maxContentWidth = 296,
+): CSSProperties {
+  const inset = 8
+  const gap = 8
+  const availableWidth = Math.max(0, viewportRect.width - inset * 2)
+  const maxWidth = Math.min(maxContentWidth, availableWidth)
+  const width = Math.min(Math.max(triggerRect.width, contentWidth), maxWidth)
+  const left = Math.max(
+    viewportRect.left + inset,
+    Math.min(triggerRect.left, viewportRect.left + viewportRect.width - width - inset),
+  )
+  const spaceBelow = viewportRect.top + viewportRect.height - triggerRect.bottom - gap - inset
+  const spaceAbove = triggerRect.top - viewportRect.top - gap - inset
+  const requestedHeight = Math.max(0, menuHeight)
+  const fitsBelow = spaceBelow >= requestedHeight
+  const fitsAbove = spaceAbove >= requestedHeight
+  const flip = !fitsBelow && (fitsAbove || spaceAbove > spaceBelow)
+  const maxHeight = Math.max(0, Math.min(viewportRect.height - inset * 2, flip ? spaceAbove : spaceBelow))
+  const height = Math.min(requestedHeight, maxHeight)
+  const top = flip
+    ? Math.max(viewportRect.top + inset, triggerRect.top - height - gap)
+    : Math.min(triggerRect.bottom + gap, viewportRect.top + viewportRect.height - height - inset)
+
+  return {
+    position: 'fixed',
+    left,
+    top,
+    width,
+    minWidth: 0,
+    maxWidth: width,
+    maxHeight,
+    overflowY: 'auto',
+    right: 'auto',
+    marginTop: 0,
+    visibility: 'visible',
+    transformOrigin: flip ? 'bottom center' : 'top center',
+  }
 }
 
 function normalize(text: string): string {
@@ -42,6 +213,14 @@ function normalize(text: string): string {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+}
+
+export function filterAppSelectOptions(options: AppSelectOption[], query: string): AppSelectOption[] {
+  const normalizedQuery = normalize(query.trim())
+  if (!normalizedQuery) return options
+  return options.filter(option =>
+    normalize(`${option.label} ${option.hint ?? ''}`).includes(normalizedQuery),
+  )
 }
 
 export function AppSelect({
@@ -61,50 +240,123 @@ export function AppSelect({
   menuClassName = '',
   testId,
   compact = false,
+  selectedFallbackLabel = 'Selección anterior (sin cargar)',
+  loading = false,
+  error = null,
+  onRetry,
+  sourceComplete = true,
+  matchTriggerWidth = false,
+  adaptiveMenuWidth = false,
 }: AppSelectProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
-  const selectIdRef = useRef(`app-select-${Math.random().toString(36).slice(2, 10)}`)
+  const selectId = useId()
+  const panelId = `${selectId}-panel`
+  const listboxId = `${selectId}-listbox`
   const [open, setOpen] = useState(false)
+  const [exiting, setExiting] = useState(false)
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(-1)
+  const [announcement, setAnnouncement] = useState('')
+  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null)
+  const [menuStyle, setMenuStyle] = useState<CSSProperties>({ visibility: 'hidden' })
+  const [v3Layer, setV3Layer] = useState(false)
+  const exitTimerRef = useRef<number | null>(null)
+  const exitGenerationRef = useRef(0)
+  const settleTimerRef = useRef<number | null>(null)
+  const pointerCommitRef = useRef<{ value: string; at: number } | null>(null)
+  const [textSettling, setTextSettling] = useState(false)
 
   const selected = useMemo(
     () => options.find(option => option.value === value) ?? null,
     [options, value],
   )
+  const menuSizingOptions = adaptiveMenuWidth ? options : EMPTY_APP_SELECT_OPTIONS
+  const menuSizingValue = adaptiveMenuWidth ? value : ''
 
-  const canSearch = (searchable ?? options.length >= 6) && options.length > 0
+  // V3 keeps one predictable searchable selection surface for every option count.
+  // Retain the prop for existing callers; it no longer changes the V3 interaction.
+  void searchable
 
-  const filtered = useMemo(() => {
-    const q = normalize(query.trim())
-    if (!q) return options
-    return options.filter(option => {
-      const haystack = `${option.label} ${option.hint ?? ''}`
-      return normalize(haystack).includes(q)
-    })
-  }, [options, query])
+  const filtered = useMemo(() => filterAppSelectOptions(options, query), [options, query])
 
-  const close = useCallback(() => {
+  const close = useCallback((fromPointer = false) => {
+    exitGenerationRef.current += 1
+    if (exitTimerRef.current) window.clearTimeout(exitTimerRef.current)
     setOpen(false)
+    const animate = fromPointer && v3Layer && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (animate) {
+      const generation = exitGenerationRef.current
+      setExiting(true)
+      exitTimerRef.current = window.setTimeout(() => {
+        if (exitGenerationRef.current !== generation) return
+        setExiting(false)
+        setQuery('')
+        setActiveIndex(-1)
+        setPortalRoot(null)
+        exitTimerRef.current = null
+      }, 110)
+      return
+    }
+    setExiting(false)
     setQuery('')
     setActiveIndex(-1)
+    setPortalRoot(null)
+  }, [v3Layer])
+
+  useEffect(() => () => {
+    if (exitTimerRef.current) window.clearTimeout(exitTimerRef.current)
+    if (settleTimerRef.current) window.clearTimeout(settleTimerRef.current)
   }, [])
+
+  useEffect(() => {
+    const pending = pointerCommitRef.current
+    if (!pending || pending.value !== value) return
+    pointerCommitRef.current = null
+    if (performance.now() - pending.at > 500) return
+    if (settleTimerRef.current) window.clearTimeout(settleTimerRef.current)
+    setTextSettling(true)
+    settleTimerRef.current = window.setTimeout(() => {
+      setTextSettling(false)
+      settleTimerRef.current = null
+    }, 120)
+  }, [value])
 
   const openMenu = useCallback(() => {
     if (disabled) return
+    exitGenerationRef.current += 1
+    if (exitTimerRef.current) window.clearTimeout(exitTimerRef.current)
+    exitTimerRef.current = null
+    setExiting(false)
     window.dispatchEvent(new CustomEvent('app-select:open', {
-      detail: { id: selectIdRef.current },
+      detail: { id: selectId },
     }))
+    setQuery('')
+    setMenuStyle({ visibility: 'hidden' })
+    setV3Layer(Boolean(wrapperRef.current?.closest('[data-ft-v3]')))
+    setPortalRoot(resolveAppSelectPortalRoot(wrapperRef.current, document.body, matchTriggerWidth || adaptiveMenuWidth))
     setOpen(true)
-  }, [disabled])
+  }, [adaptiveMenuWidth, disabled, matchTriggerWidth, selectId])
 
-  const commitOption = useCallback((option: AppSelectOption) => {
+  const commitOption = useCallback((option: AppSelectOption, fromPointer = false) => {
     if (option.disabled) return
+    pointerCommitRef.current = fromPointer && v3Layer && option.value !== value &&
+      !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      ? { value: option.value, at: performance.now() }
+      : null
+    if (!pointerCommitRef.current) {
+      if (settleTimerRef.current) window.clearTimeout(settleTimerRef.current)
+      settleTimerRef.current = null
+      setTextSettling(false)
+    }
     onChange(option.value)
-    close()
-  }, [close, onChange])
+    setAnnouncement(`Seleccionado: ${option.label}`)
+    close(fromPointer)
+    triggerRef.current?.focus({ preventScroll: true })
+  }, [close, onChange, v3Layer, value])
 
   useEffect(() => {
     if (!open) return
@@ -112,43 +364,135 @@ export function AppSelect({
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Node | null
       if (!target) return
-      if (!wrapperRef.current?.contains(target)) {
-        close()
+      if (!wrapperRef.current?.contains(target) && !menuRef.current?.contains(target)) {
+        close(true)
       }
     }
 
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
         close()
+        triggerRef.current?.focus({ preventScroll: true })
       }
     }
 
     document.addEventListener('pointerdown', onPointerDown, true)
-    document.addEventListener('keydown', onKeyDown)
+    // Escape must close this layer before an enclosing RecordModal's focus trap.
+    document.addEventListener('keydown', onKeyDown, true)
     return () => {
       document.removeEventListener('pointerdown', onPointerDown, true)
-      document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('keydown', onKeyDown, true)
     }
   }, [close, open])
 
   useEffect(() => {
     const onSelectOpen = (event: Event) => {
       const customEvent = event as CustomEvent<{ id?: string }>
-      if (customEvent.detail?.id === selectIdRef.current) return
+      if (customEvent.detail?.id === selectId) return
       close()
     }
 
     window.addEventListener('app-select:open', onSelectOpen as EventListener)
     return () => window.removeEventListener('app-select:open', onSelectOpen as EventListener)
-  }, [close])
+  }, [close, selectId])
 
   useEffect(() => {
-    if (!open || !canSearch) return
-    const timer = window.setTimeout(() => {
-      searchInputRef.current?.focus()
-    }, 16)
-    return () => window.clearTimeout(timer)
-  }, [canSearch, open])
+    if (!open || !portalRoot || menuStyle.visibility !== 'visible') return
+    searchInputRef.current?.focus({ preventScroll: true })
+  }, [open, portalRoot, menuStyle.visibility])
+
+  useEffect(() => {
+    if (!open || !portalRoot) return
+
+    const positionMenu = () => {
+      const trigger = triggerRef.current
+      const menu = menuRef.current
+      if (!trigger || !menu) return
+      const viewport = window.visualViewport
+      const viewportLeft = viewport?.offsetLeft ?? 0
+      const viewportTop = viewport?.offsetTop ?? 0
+      const viewportWidth = viewport?.width ?? window.innerWidth
+      const viewportHeight = viewport?.height ?? window.innerHeight
+      const triggerRect = trigger.getBoundingClientRect()
+      const isMobile = viewportWidth < 768
+      if (matchTriggerWidth) {
+        setMenuStyle(getTriggerMatchedMenuStyle(
+          triggerRect,
+          { left: viewportLeft, top: viewportTop, width: viewportWidth, height: viewportHeight },
+          menu.offsetHeight,
+        ))
+        return
+      }
+      if (adaptiveMenuWidth) {
+        const contentWidth = measureAdaptiveMenuContentWidth(menu, menuSizingOptions, menuSizingValue)
+        setMenuStyle(getAdaptiveMenuStyle(
+          triggerRect,
+          { left: viewportLeft, top: viewportTop, width: viewportWidth, height: viewportHeight },
+          menu.offsetHeight,
+          contentWidth,
+        ))
+        return
+      }
+      const width = isMobile
+        ? Math.max(0, viewportWidth - 16)
+        : Math.min(400, Math.max(320, triggerRect.width), Math.max(0, viewportWidth - 24))
+      const height = Math.min(menu.offsetHeight, Math.max(0, viewportHeight - 16))
+
+      if (isMobile) {
+        setMenuStyle({
+          position: 'fixed',
+          left: viewportLeft + 8,
+          top: viewportTop + viewportHeight - height - 8,
+          width,
+          maxHeight: viewportHeight - 16,
+          right: 'auto',
+          marginTop: 0,
+          visibility: 'visible',
+          transformOrigin: 'bottom center',
+        })
+        return
+      }
+
+      const left = Math.max(viewportLeft + 12, Math.min(triggerRect.left, viewportLeft + viewportWidth - width - 12))
+      const below = viewportTop + viewportHeight - triggerRect.bottom - 8
+      const above = triggerRect.top - viewportTop - 8
+      const flip = below < height && above > below
+      const top = flip
+        ? Math.max(viewportTop + 12, triggerRect.top - height - 8)
+        : Math.min(triggerRect.bottom + 8, viewportTop + viewportHeight - height - 12)
+      setMenuStyle({
+        position: 'fixed', left, top, width, maxHeight: viewportHeight - 24,
+        right: 'auto', marginTop: 0, visibility: 'visible',
+        transformOrigin: flip ? 'bottom center' : 'top center',
+      })
+    }
+
+    const frame = window.requestAnimationFrame(positionMenu)
+    const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(positionMenu) : null
+    if (matchTriggerWidth || adaptiveMenuWidth) {
+      if (menuRef.current) resizeObserver?.observe(menuRef.current)
+      if (triggerRef.current) resizeObserver?.observe(triggerRef.current)
+    }
+    window.addEventListener('resize', positionMenu)
+    window.addEventListener('scroll', positionMenu, true)
+    window.visualViewport?.addEventListener('resize', positionMenu)
+    window.visualViewport?.addEventListener('scroll', positionMenu)
+    let cancelled = false
+    if (adaptiveMenuWidth) {
+      void document.fonts?.ready.then(() => { if (!cancelled) positionMenu() })
+    }
+    return () => {
+      cancelled = true
+      window.cancelAnimationFrame(frame)
+      resizeObserver?.disconnect()
+      window.removeEventListener('resize', positionMenu)
+      window.removeEventListener('scroll', positionMenu, true)
+      window.visualViewport?.removeEventListener('resize', positionMenu)
+      window.visualViewport?.removeEventListener('scroll', positionMenu)
+    }
+  }, [open, portalRoot, filtered.length, loading, error, sourceComplete, matchTriggerWidth, adaptiveMenuWidth, menuSizingOptions, menuSizingValue])
 
   useEffect(() => {
     if (!open) return
@@ -188,13 +532,36 @@ export function AppSelect({
 
   const handleTriggerKeyDown = useCallback((event: ReactKeyboardEvent<HTMLButtonElement>) => {
     if (disabled) return
-    if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
       openMenu()
     }
   }, [disabled, openMenu])
 
-  const handleListKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+  const exitSelectionWithTab = useCallback((backward: boolean) => {
+    const trigger = triggerRef.current
+    const scope = wrapperRef.current?.closest<HTMLElement>('[role="dialog"]') ?? document
+    const focusable = Array.from(scope.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    )).filter(element => !menuRef.current?.contains(element) && element.getClientRects().length > 0)
+    const triggerIndex = trigger ? focusable.indexOf(trigger) : -1
+    const next = triggerIndex >= 0 ? focusable[triggerIndex + (backward ? -1 : 1)] : undefined
+    close()
+    const target = next ?? trigger
+    target?.focus({ preventScroll: true })
+  }, [close])
+
+  const handleSearchKeyDown = useCallback((event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
+    if (event.key === 'Tab') {
+      event.preventDefault()
+      event.stopPropagation()
+      exitSelectionWithTab(event.shiftKey)
+      return
+    }
+    if (loading || error) {
+      return
+    }
     if (event.key === 'ArrowDown') {
       event.preventDefault()
       moveActive(1)
@@ -210,25 +577,36 @@ export function AppSelect({
       if (activeIndex >= 0 && filtered[activeIndex]) {
         commitOption(filtered[activeIndex]!)
       }
+      return
     }
-  }, [activeIndex, commitOption, filtered, moveActive])
+    if (query.length === 0 && (event.key === 'Home' || event.key === 'End')) {
+      event.preventDefault()
+      const indices = filtered.map((option, index) => option.disabled ? -1 : index).filter(index => index >= 0)
+      setActiveIndex(event.key === 'Home' ? (indices[0] ?? -1) : (indices.at(-1) ?? -1))
+    }
+  }, [activeIndex, commitOption, error, exitSelectionWithTab, filtered, loading, moveActive, query.length])
 
-  const triggerLabel = selected?.label ?? placeholder
+  const triggerLabel = selected?.label ?? (value ? selectedFallbackLabel : placeholder)
   const triggerHint = selected?.hint
+  const activeOptionId = !loading && !error && activeIndex >= 0 && filtered[activeIndex] && !filtered[activeIndex]?.disabled
+    ? `${listboxId}-option-${activeIndex}`
+    : undefined
 
   return (
     <div ref={wrapperRef} className={`app-select ${compact ? 'app-select-compact' : ''} ${className}`.trim()}>
       <button
+        ref={triggerRef}
         type="button"
         data-testid={testId}
-        onClick={() => (open ? close() : openMenu())}
+        onClick={event => (open ? close(event.detail > 0) : openMenu())}
         onKeyDown={handleTriggerKeyDown}
         disabled={disabled}
         aria-label={ariaLabel}
         aria-labelledby={ariaLabelledBy}
         aria-describedby={ariaDescribedBy}
-        aria-haspopup="listbox"
+        aria-haspopup="dialog"
         aria-expanded={open}
+        aria-controls={open ? panelId : undefined}
         className={`
           app-select-trigger field-base ui-pressable
           ${compact ? 'app-select-trigger-compact' : ''}
@@ -237,7 +615,7 @@ export function AppSelect({
         `}
       >
         <span className="app-select-trigger-copy">
-          <span className={`app-select-trigger-label ${selected ? '' : 'app-select-placeholder'}`}>
+          <span className={`app-select-trigger-label ${selected || value ? '' : 'app-select-placeholder'} ${textSettling ? 'app-select-trigger-label-settle' : ''}`}>
             {triggerLabel}
           </span>
           {triggerHint && (
@@ -251,43 +629,61 @@ export function AppSelect({
         </span>
       </button>
 
-      {open && (
+      {(open || exiting) && portalRoot && createPortal(
         <div
-          role="listbox"
-          aria-label={ariaLabel}
+          ref={menuRef}
+          id={panelId}
+          role="dialog"
+          aria-hidden={exiting || undefined}
+          aria-label={ariaLabel ?? 'Seleccionar opción'}
           aria-labelledby={ariaLabelledBy}
-          tabIndex={-1}
-          onKeyDown={handleListKeyDown}
-          className={`app-select-menu ${compact ? 'app-select-menu-compact' : ''} ${menuClassName}`.trim()}
+          data-ft-v3={v3Layer ? '' : undefined}
+          style={menuStyle}
+          className={`app-select-menu ${compact ? 'app-select-menu-compact' : ''} ${matchTriggerWidth ? 'app-select-menu-match-trigger-width' : ''} ${adaptiveMenuWidth ? 'app-select-menu-adaptive-width' : ''} ${exiting ? 'app-select-menu-exit' : ''} ${menuClassName}`.trim()}
         >
-          {canSearch && (
-            <div className="app-select-search-wrap">
-              <input
-                ref={searchInputRef}
-                value={query}
-                onChange={event => setQuery(event.target.value)}
-                placeholder={searchPlaceholder}
-                className="app-select-search"
-              />
-            </div>
-          )}
+          <div className="app-select-search-wrap">
+            <input
+              ref={searchInputRef}
+              role="combobox"
+              aria-label={ariaLabel ?? 'Buscar opciones'}
+              aria-autocomplete="list"
+              aria-expanded="true"
+              aria-controls={loading || error ? undefined : listboxId}
+              aria-activedescendant={activeOptionId}
+              value={query}
+              onChange={event => setQuery(event.target.value)}
+              onKeyDown={handleSearchKeyDown}
+              placeholder={searchPlaceholder}
+              className="app-select-search"
+            />
+          </div>
 
-          <div ref={listRef} className="app-select-options">
-            {filtered.length === 0 ? (
-              <p className="app-select-empty">{emptyText}</p>
-            ) : (
-              filtered.map((option, index) => {
+          {loading ? (
+            <div role="status" aria-live="polite" className="app-select-status">Cargando opciones…</div>
+          ) : error ? (
+            <div role="alert" className="app-select-status">
+              <span>{error}</span>
+              {onRetry && <button type="button" onClick={onRetry} className="app-select-retry">Reintentar</button>}
+            </div>
+          ) : (
+            <div ref={listRef} id={listboxId} role="listbox" aria-label={ariaLabel ?? 'Opciones'} className="app-select-options">
+              {filtered.length === 0 ? (
+                <p className="app-select-empty">{options.length === 0 ? 'No hay opciones disponibles' : emptyText}</p>
+              ) : filtered.map((option, index) => {
                 const isSelected = option.value === value
                 const isActive = index === activeIndex
                 return (
                   <button
                     key={`${option.value}-${index}`}
+                    id={`${listboxId}-option-${index}`}
                     type="button"
                     role="option"
                     aria-selected={isSelected}
+                    aria-disabled={option.disabled || undefined}
+                    tabIndex={-1}
                     data-option-index={index}
-                    onMouseEnter={() => setActiveIndex(index)}
-                    onClick={() => commitOption(option)}
+                    onMouseEnter={() => { if (!option.disabled) setActiveIndex(index) }}
+                    onClick={event => commitOption(option, event.detail > 0)}
                     disabled={option.disabled}
                     className={`
                       app-select-option
@@ -302,14 +698,24 @@ export function AppSelect({
                         <span className="app-select-option-label">{option.label}</span>
                         {option.hint && <span className="app-select-option-hint">{option.hint}</span>}
                       </span>
+                      {isSelected && (
+                        <svg className="app-select-option-check" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="m5 12 4 4L19 6" />
+                        </svg>
+                      )}
                     </span>
                   </button>
                 )
-              })
-            )}
-          </div>
-        </div>
+              })}
+            </div>
+          )}
+          {!sourceComplete && !loading && !error && (
+            <p className="app-select-coverage">Mostrando opciones cargadas; puede haber más resultados.</p>
+          )}
+        </div>,
+        portalRoot,
       )}
+      <span role="status" aria-live="polite" className="sr-only">{announcement}</span>
     </div>
   )
 }

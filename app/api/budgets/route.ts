@@ -86,10 +86,12 @@ type ExpenseTxRow = {
 type BudgetMetrics = {
   period_start: string
   period_end: string
-  spent_amount: number
-  remaining_amount: number
-  progress_percent: number
-  over_limit: boolean
+  spent_amount: number | null
+  remaining_amount: number | null
+  progress_percent: number | null
+  over_limit: boolean | null
+  metrics_complete: boolean
+  missing_conversion_count: number
 }
 
 function buildBudgetMetrics(
@@ -100,7 +102,7 @@ function buildBudgetMetrics(
 }
 
 async function validateBudgetCategory(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   categoryId: string,
 ) {
@@ -131,7 +133,7 @@ async function validateBudgetCategory(
 }
 
 export async function GET(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
@@ -252,7 +254,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 

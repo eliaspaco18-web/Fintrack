@@ -12,7 +12,7 @@ import {
 }                              from '@/lib/api/response'
 
 export async function GET() {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 

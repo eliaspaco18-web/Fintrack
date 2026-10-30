@@ -19,7 +19,7 @@ import type {
 // ─── HELPER ───────────────────────────────────────────────────────────────────
 
 async function getDashboardService() {
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data: { user }, error } = await supabase.auth.getUser()
   if (error || !user) return { service: null, userId: null }
   return { service: new DashboardService(supabase), userId: user.id }
@@ -72,9 +72,9 @@ export async function getExpensesByCategoryAction(): Promise<Result<ExpenseCateg
 // ─── PATRIMONIO NETO ──────────────────────────────────────────────────────────
 
 export async function getNetWorthAction(): Promise<Result<{
-  netWorthPen:  number
-  netWorthUsd:  number
-  exchangeRate: number
+  netWorthPen:  number | null
+  netWorthUsd:  number | null
+  exchangeRate: number | null
 }>> {
   const { service, userId } = await getDashboardService()
   if (!service || !userId) return Errors.unauthorized()

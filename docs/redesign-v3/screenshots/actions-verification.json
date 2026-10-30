@@ -1,0 +1,324 @@
+{
+  "startedAt": "2026-09-24T02:21:23.152Z",
+  "finishedAt": "2026-09-24T02:22:05.194Z",
+  "checks": [
+    {
+      "label": "No invented category deactivation",
+      "pass": true
+    },
+    {
+      "label": "Category menu has edit/delete, not state",
+      "pass": true
+    },
+    {
+      "label": "Created category appears in actual local list",
+      "pass": true
+    },
+    {
+      "label": "Success floats, no result panel or persistent band",
+      "pass": true
+    },
+    {
+      "label": "Focus returns to record, not notification",
+      "pass": true
+    },
+    {
+      "label": "Drawer close does not cancel acknowledgement clock animation",
+      "pass": true
+    },
+    {
+      "label": "60-create-ephemeral-feedback: no overflow",
+      "pass": true
+    },
+    {
+      "label": "Timer pauses on hover",
+      "pass": true
+    },
+    {
+      "label": "Feedback disappears automatically after resuming",
+      "pass": true
+    },
+    {
+      "label": "Edit updates intended row and emits brief feedback",
+      "pass": true
+    },
+    {
+      "label": "Pre-delete confirmation defaults to preserve",
+      "pass": true
+    },
+    {
+      "label": "Delete removes only intended local record",
+      "pass": true
+    },
+    {
+      "label": "61-delete-ephemeral-feedback: no overflow",
+      "pass": true
+    },
+    {
+      "label": "Supported entity deactivation changes local state",
+      "pass": true
+    },
+    {
+      "label": "62-entity-state-confirmation: no overflow",
+      "pass": true
+    },
+    {
+      "label": "Entity activates without duplicate row",
+      "pass": true
+    },
+    {
+      "label": "Desktop shows at most two notifications",
+      "pass": true
+    },
+    {
+      "label": "63-feedback-burst: no overflow",
+      "pass": true
+    },
+    {
+      "label": "Queued error is not lost",
+      "pass": true
+    },
+    {
+      "label": "Pending blocks duplicate submit",
+      "pass": true
+    },
+    {
+      "label": "Financial simulation closes form without success screen",
+      "pass": true
+    },
+    {
+      "label": "64-movement-save-feedback: no overflow",
+      "pass": true
+    },
+    {
+      "label": "transactions: primary action visible",
+      "pass": true
+    },
+    {
+      "label": "transactions: record action buttons visible",
+      "pass": true
+    },
+    {
+      "label": "transactions: secondary menu works",
+      "pass": true
+    },
+    {
+      "label": "65-actions-transactions: no overflow",
+      "pass": true
+    },
+    {
+      "label": "portfolio: primary action visible",
+      "pass": true
+    },
+    {
+      "label": "portfolio: record action buttons visible",
+      "pass": true
+    },
+    {
+      "label": "portfolio: secondary menu works",
+      "pass": true
+    },
+    {
+      "label": "budgets: primary action visible",
+      "pass": true
+    },
+    {
+      "label": "budgets: record action buttons visible",
+      "pass": true
+    },
+    {
+      "label": "budgets: secondary menu works",
+      "pass": true
+    },
+    {
+      "label": "credits: primary action visible",
+      "pass": true
+    },
+    {
+      "label": "credits: record action buttons visible",
+      "pass": true
+    },
+    {
+      "label": "credits: secondary menu works",
+      "pass": true
+    },
+    {
+      "label": "65-actions-credits: no overflow",
+      "pass": true
+    },
+    {
+      "label": "receivables: primary action visible",
+      "pass": true
+    },
+    {
+      "label": "receivables: record action buttons visible",
+      "pass": true
+    },
+    {
+      "label": "receivables: secondary menu works",
+      "pass": true
+    },
+    {
+      "label": "65-actions-receivables: no overflow",
+      "pass": true
+    },
+    {
+      "label": "payables: primary action visible",
+      "pass": true
+    },
+    {
+      "label": "payables: record action buttons visible",
+      "pass": true
+    },
+    {
+      "label": "payables: secondary menu works",
+      "pass": true
+    },
+    {
+      "label": "assets: primary action visible",
+      "pass": true
+    },
+    {
+      "label": "assets: record action buttons visible",
+      "pass": true
+    },
+    {
+      "label": "assets: secondary menu works",
+      "pass": true
+    },
+    {
+      "label": "recurring: primary action visible",
+      "pass": true
+    },
+    {
+      "label": "recurring: record action buttons visible",
+      "pass": true
+    },
+    {
+      "label": "recurring: secondary menu works",
+      "pass": true
+    },
+    {
+      "label": "alerts: primary action visible",
+      "pass": true
+    },
+    {
+      "label": "alerts: record action buttons visible",
+      "pass": true
+    },
+    {
+      "label": "alerts: secondary menu works",
+      "pass": true
+    },
+    {
+      "label": "Using template opens creation, not editing an existing transaction",
+      "pass": true
+    },
+    {
+      "label": "Template preview retains amount, classification and effect",
+      "pass": true
+    },
+    {
+      "label": "Collection retains chosen counterparty instead of first fixture",
+      "pass": true
+    },
+    {
+      "label": "Collection retains original USD scope and requires FX explicitly",
+      "pass": true
+    },
+    {
+      "label": "Existing bulk delete is exposed",
+      "pass": true
+    },
+    {
+      "label": "Bulk toolbar does not invent selected-row export",
+      "pass": true
+    },
+    {
+      "label": "Clear selection resets local selection and select-all",
+      "pass": true
+    },
+    {
+      "label": "Bulk confirmation specifies scope",
+      "pass": true
+    },
+    {
+      "label": "Error preserves form and inline explanation",
+      "pass": true
+    },
+    {
+      "label": "Error feedback belongs to active modal accessibility subtree",
+      "pass": true
+    },
+    {
+      "label": "66-error-inline-and-transient: no overflow",
+      "pass": true
+    },
+    {
+      "label": "Unknown result blocks blind retry and is warning, not success",
+      "pass": true
+    },
+    {
+      "label": "Mobile has one visible notification",
+      "pass": true
+    },
+    {
+      "label": "67-mobile-feedback-dark: no overflow",
+      "pass": true
+    },
+    {
+      "label": "Timer pauses for keyboard focus",
+      "pass": true
+    },
+    {
+      "label": "Focused notification Escape dismisses only itself",
+      "pass": true
+    },
+    {
+      "label": "68-tablet-credit-actions-dark: no overflow",
+      "pass": true
+    },
+    {
+      "label": "Asset state names SOLD and no financial sale",
+      "pass": true
+    },
+    {
+      "label": "69-mobile-destructive-context: no overflow",
+      "pass": true
+    },
+    {
+      "label": "Reduced motion has no animations",
+      "pass": true
+    },
+    {
+      "label": "Reduced motion retains auto-dismiss semantics",
+      "pass": true
+    },
+    {
+      "label": "Feedback fits 320",
+      "pass": true
+    },
+    {
+      "label": "Feedback fits 390",
+      "pass": true
+    },
+    {
+      "label": "Feedback fits 768",
+      "pass": true
+    },
+    {
+      "label": "Feedback fits 1024",
+      "pass": true
+    },
+    {
+      "label": "Feedback fits 1440",
+      "pass": true
+    },
+    {
+      "label": "No browser exceptions or external requests",
+      "pass": true
+    }
+  ],
+  "errors": [],
+  "failure": null
+}

@@ -13,7 +13,7 @@ import {
 import { CacheTTL }                        from '@/lib/cache/cache.config'
 import { fetchWithTimeout }                from '@/lib/client/fetch-with-timeout'
 import { toDisplayAmount }                 from '@/lib/contracts/ui.contracts'
-import { DEFAULT_USD_PEN_EXCHANGE_RATE }   from '@/lib/constants/currency'
+import { getVerifiedUsdPenRate } from '@/lib/finance/exchange-rate-verification'
 import type { DashboardSummary }           from '@/modules/dashboard/dashboard.types'
 import type { FormError, DisplayCurrency } from '@/lib/contracts/ui.contracts'
 
@@ -30,14 +30,14 @@ const fetcher = (url: string) =>
 
 interface CurrencyContextValue {
   preferred:    DisplayCurrency
-  exchangeRate: number
+  exchangeRate: number | null
   toggle:       () => void
-  format:       (amountPen: number) => number
+  format:       (amountPen: number) => number | null
 }
 
 const CurrencyContext = createContext<CurrencyContextValue>({
   preferred:    'PEN',
-  exchangeRate: DEFAULT_USD_PEN_EXCHANGE_RATE,
+  exchangeRate: null,
   toggle:       () => {},
   format:       (v) => v,
 })
@@ -48,15 +48,14 @@ export function CurrencyProvider({
   initialCurrency = 'PEN',
 }: {
   children:        ReactNode
-  initialRate:     number
+  initialRate:     number | null
   initialCurrency?: DisplayCurrency
 }) {
   const [preferred, setPreferred] = useState<DisplayCurrency>(initialCurrency)
-  const { data: liveRatePayload } = useSWR<{ rate?: number; fetched_at?: string | null }>(
+  const { data: liveRatePayload } = useSWR<{ rate?: number; fetched_at?: string | null; source?: string }>(
     '/api/exchange-rate?mode=live',
     fetcher,
     {
-      fallbackData: { rate: initialRate },
       revalidateOnFocus: false,
       revalidateOnReconnect: true,
       refreshInterval: 5 * 60 * 1000,
@@ -68,12 +67,16 @@ export function CurrencyProvider({
     setPreferred(prev => prev === 'PEN' ? 'USD' : 'PEN')
   }, [])
 
-  const resolvedRate = Number.isFinite(Number(liveRatePayload?.rate)) && Number(liveRatePayload?.rate) > 0
-    ? Number(liveRatePayload?.rate)
-    : initialRate
+  const liveRate = getVerifiedUsdPenRate(liveRatePayload)
+  const resolvedRate = liveRate ?? initialRate
 
   const format = useCallback(
-    (amountPen: number) => toDisplayAmount(amountPen, preferred, resolvedRate),
+    (amountPen: number) => {
+      if (!Number.isFinite(amountPen)) return null
+      if (preferred === 'PEN') return amountPen
+      if (resolvedRate === null || !Number.isFinite(resolvedRate) || resolvedRate <= 0) return null
+      return toDisplayAmount(amountPen, preferred, resolvedRate)
+    },
     [preferred, resolvedRate]
   )
 

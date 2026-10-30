@@ -6,7 +6,7 @@
 import { redirect } from 'next/navigation'
 
 interface RegisterPageProps {
-  searchParams?: Record<string, string | string[] | undefined>
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
 }
 
 function firstValue(value: string | string[] | undefined): string | undefined {
@@ -21,7 +21,8 @@ function sanitizeRelativePath(value: string | undefined): string | null {
   return value
 }
 
-export default function RegisterPage({ searchParams }: RegisterPageProps) {
+export default async function RegisterPage(props: RegisterPageProps) {
+  const searchParams = await props.searchParams;
   const nextPath = sanitizeRelativePath(firstValue(searchParams?.next))
 
   const params = new URLSearchParams({ mode: 'signup' })

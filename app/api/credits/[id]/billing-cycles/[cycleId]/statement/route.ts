@@ -11,12 +11,12 @@ import {
   storeFinancialAttachment,
 } from '@/modules/attachments/attachment-integrity'
 
-type Params = { params: { id: string; cycleId: string } }
+type Params = { params: Promise<{ id: string; cycleId: string }> }
 
 const ATTACHMENT_BUCKET = 'credit-documents'
 
-async function findOwnedBillingCycle(params: Params['params'], userId: string) {
-  const supabase = createClient()
+async function findOwnedBillingCycle(params: { id: string; cycleId: string }, userId: string) {
+  const supabase = await createClient()
   const { data, error } = await supabase
     .from('billing_cycles')
     .select('id, credit_id, statement_url, credit:credits!inner(id, user_id, credit_type)')
@@ -29,8 +29,9 @@ async function findOwnedBillingCycle(params: Params['params'], userId: string) {
   return { supabase, cycle: data, error }
 }
 
-export async function POST(req: NextRequest, { params }: Params) {
-  const supabase = createClient()
+export async function POST(req: NextRequest, props: Params) {
+  const params = await props.params
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
@@ -103,8 +104,9 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 }
 
-export async function GET(_req: NextRequest, { params }: Params) {
-  const supabase = createClient()
+export async function GET(_req: NextRequest, props: Params) {
+  const params = await props.params
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 

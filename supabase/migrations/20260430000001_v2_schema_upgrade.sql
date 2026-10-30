@@ -42,6 +42,17 @@ DROP VIEW IF EXISTS v_payables_summary;
 -- Eliminar la función con CASCADE para cubrir cualquier dependencia residual
 DROP FUNCTION IF EXISTS fn_latest_exchange_rate(currency_code, currency_code) CASCADE;
 
+-- Column defaults still depend on the enum and are not transformed by USING.
+ALTER TABLE profiles            ALTER COLUMN default_currency DROP DEFAULT;
+ALTER TABLE accounts            ALTER COLUMN currency         DROP DEFAULT;
+ALTER TABLE transactions        ALTER COLUMN currency         DROP DEFAULT;
+ALTER TABLE assets              ALTER COLUMN currency         DROP DEFAULT;
+ALTER TABLE credits             ALTER COLUMN currency         DROP DEFAULT;
+ALTER TABLE loans               ALTER COLUMN currency         DROP DEFAULT;
+ALTER TABLE accounts_receivable ALTER COLUMN currency         DROP DEFAULT;
+ALTER TABLE accounts_payable    ALTER COLUMN currency         DROP DEFAULT;
+ALTER TABLE budgets             ALTER COLUMN currency         DROP DEFAULT;
+
 ALTER TABLE profiles ALTER COLUMN default_currency TYPE text USING default_currency::text;
 ALTER TABLE accounts ALTER COLUMN currency TYPE text USING currency::text;
 ALTER TABLE transactions ALTER COLUMN currency TYPE text USING currency::text;
@@ -76,6 +87,7 @@ CREATE OR REPLACE FUNCTION fn_latest_exchange_rate(p_from text, p_to text)
 RETURNS numeric LANGUAGE sql STABLE AS $$
   SELECT rate FROM exchange_rates
   WHERE from_currency = p_from AND to_currency = p_to
+    AND rate > 0 AND lower(source) <> 'fallback'
   ORDER BY fetched_at DESC LIMIT 1;
 $$;
 
@@ -84,7 +96,7 @@ CREATE OR REPLACE VIEW v_net_worth WITH (security_invoker = true) AS
 SELECT
   a.user_id,
   SUM(CASE WHEN a.currency = 'PEN' THEN a.balance
-       ELSE a.balance * COALESCE(fn_latest_exchange_rate(a.currency, 'PEN'), 1) END
+       ELSE a.balance * fn_latest_exchange_rate(a.currency, 'PEN') END
   ) AS net_worth_pen,
   COUNT(*) FILTER (WHERE a.is_active) AS active_accounts
 FROM accounts a
@@ -121,7 +133,7 @@ SELECT
   a.is_active,
   CASE
     WHEN a.currency = 'PEN' THEN a.balance
-    ELSE a.balance * COALESCE(fn_latest_exchange_rate(a.currency, 'PEN'), 1)
+    ELSE a.balance * fn_latest_exchange_rate(a.currency, 'PEN')
   END AS balance_pen
 FROM accounts a
 WHERE a.is_active = true;

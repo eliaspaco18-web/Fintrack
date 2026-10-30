@@ -3,17 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AppSelect } from '@/components/ui/AppSelect'
 import { Button } from '@/components/ui/Button'
-import { RecordModal } from '@/components/ui/RecordModal'
-import {
-  ControlsBar,
-  DataSearchField,
-  EmptyState,
-  FilterBar,
-  StatusBadge,
-} from '@/components/finance'
-import { formatCurrency } from '@/lib/contracts/ui.contracts'
+import { DataErrorBanner, DataSearchField, EmptyState } from '@/components/finance'
+import { IncomeDatePicker } from '@/components/forms/TransactionForm/IncomeDatePicker'
 import { getApiErrorMessage } from '@/lib/api/error-message'
-import { ObligationCurrencyProgress } from '@/components/obligations/ObligationCurrencyProgress'
+import { formatCurrency } from '@/lib/contracts/ui.contracts'
 import {
   formatObligationLedgerSummaries,
   formatVerifiedObligationAmount,
@@ -22,8 +15,12 @@ import {
   summarizeObligationLedgerCurrencies,
   type ObligationCurrencySummary,
 } from '@/modules/obligations/obligation-currency-presentation'
+import { getPayablePaymentProgress } from '@/modules/payables/payables-list-presentation'
+import { buildPayableFinancialHistory, type PayableHistoryItem } from '@/modules/payables/payables-history-presentation'
+import movementStyles from '@/components/tables/TransactionsRound07.module.css'
 import type { CreditorRow } from './CreditorForm'
-import { PayableForm, type PayableRow } from './PayableForm'
+import type { PayableRow } from './PayableForm'
+import styles from './CreditorDetail.module.css'
 
 export type CreditorWithStats = CreditorRow & {
   total_owed: number
@@ -51,526 +48,133 @@ type LedgerRow = {
   source_account?: { id: string; name: string; color?: string | null; icon?: string | null } | null
   category?: { id: string; name: string; color?: string | null; icon?: string | null } | null
 }
-
 type AccountOption = { id: string; name: string }
-
-type Props = {
-  creditor: CreditorWithStats
-  exchangeRate: number
-  onChanged?: () => void | Promise<void>
-}
+type Props = { creditor: CreditorWithStats }
 
 function formatDate(iso: string) {
-  return new Date(`${iso}T12:00:00`).toLocaleDateString('es-PE', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  })
+  if (!iso) return 'Fecha no disponible'
+  return new Date(`${iso}T12:00:00Z`).toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' })
 }
 
-function isOverdue(row: PayableRow) {
-  if (!row.due_date || row.status === 'PAID') return false
-  return new Date(`${row.due_date}T12:00:00`).getTime() < Date.now()
+function historyType(item: PayableHistoryItem) {
+  if (item.kind === 'obligation') return { label: 'Obligación', className: styles.obligationType }
+  if (item.kind === 'loan') return { label: 'Préstamo recibido', className: styles.loanType }
+  return { label: 'Pago realizado', className: styles.paymentType }
 }
 
-function matchesText(value: string | null | undefined, query: string) {
-  if (!query) return true
-  return (value ?? '').toLowerCase().includes(query)
-}
-
-function resolveLedgerMeta(row: LedgerRow) {
-  const currency = resolveVerifiedObligationCurrency(row.currency)
-  const verifiedAmount = currency ? formatCurrency(row.amount, currency) : 'Importe no verificable'
-
-  if (row.type === 'INCOME') {
-    return {
-      label: 'Ingreso',
-      tone: 'info' as const,
-      detail: 'Prestamo recibido',
-      signedAmount: currency ? `+${verifiedAmount}` : verifiedAmount,
-    }
-  }
-
-  return {
-    label: 'Egreso',
-    tone: 'warning' as const,
-    detail: 'Pago registrado',
-    signedAmount: currency ? `-${verifiedAmount}` : verifiedAmount,
-  }
-}
-
-function RecoveryVisual({
-  summaries,
-  hasUnverifiedInitialBalance,
-  unverifiedRecordCount,
-  className = '',
-}: {
-  summaries: readonly ObligationCurrencySummary[]
-  hasUnverifiedInitialBalance: boolean
-  unverifiedRecordCount: number
-  className?: string
-}) {
-  const hasUnverifiedAmount = hasUnverifiedInitialBalance || unverifiedRecordCount > 0
-
-  return (
-    <section
-      className={`rounded-[22px] border border-[var(--c-border)] bg-[var(--c-surface)] px-4 py-4 ${className}`.trim()}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-            Pago documentado
-          </p>
-          <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">
-            Totales separados por moneda original.
-          </p>
-        </div>
-        <StatusBadge tone={summaries.some(summary => summary.pending > 0) || hasUnverifiedAmount ? 'warning' : 'success'} dot={false}>
-          {summaries.some(summary => summary.pending > 0)
-            ? 'Saldo abierto'
-            : hasUnverifiedAmount
-              ? 'Importe no verificable'
-              : 'Sin saldo documentado'}
-        </StatusBadge>
-      </div>
-
-      <div className="mt-3.5 space-y-3">
-        {summaries.map(summary => (
-          <div key={summary.currency} className="grid grid-cols-3 gap-2.5 rounded-[18px] border border-[var(--c-border)] bg-[var(--c-surface-2)] p-3">
-            <div className="min-w-0">
-              <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Total · {summary.currency}</p>
-              <p className="mt-1.5 truncate font-mono text-[13px] font-semibold tabular-nums text-[var(--c-text)]">
-                {formatVerifiedObligationAmount(summary.total, summary.currency)}
-              </p>
-            </div>
-            <div className="min-w-0">
-              <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Pagado</p>
-              <p className="mt-1.5 truncate font-mono text-[13px] font-semibold tabular-nums text-[var(--c-success)]">
-                {formatVerifiedObligationAmount(summary.settled, summary.currency)}
-              </p>
-            </div>
-            <div className="min-w-0">
-              <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Pendiente</p>
-              <p className="mt-1.5 truncate font-mono text-[13px] font-semibold tabular-nums text-[var(--c-warning)]">
-                {formatVerifiedObligationAmount(summary.pending, summary.currency)}
-              </p>
-            </div>
-          </div>
-        ))}
-
-        <ObligationCurrencyProgress
-          summaries={summaries}
-          kind="payable"
-          hasUnverifiedInitialBalance={hasUnverifiedInitialBalance}
-          unverifiedRecordCount={unverifiedRecordCount}
-          compact
-        />
-      </div>
-    </section>
-  )
-}
-
-export function CreditorDetail({ creditor, exchangeRate, onChanged }: Props) {
+export function CreditorDetail({ creditor }: Props) {
   const [rows, setRows] = useState<PayableRow[]>([])
   const [ledgerRows, setLedgerRows] = useState<LedgerRow[]>([])
   const [accounts, setAccounts] = useState<AccountOption[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-
   const [query, setQuery] = useState('')
   const [accountFilter, setAccountFilter] = useState('all')
-  const [movementFilter, setMovementFilter] = useState<'all' | 'income' | 'expense'>('all')
+  const [movementFilter, setMovementFilter] = useState<'all' | 'loan' | 'obligation' | 'payment'>('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
-
-  const [createOpen, setCreateOpen] = useState(false)
-  const settlementState = getObligationSettlementState({
-    summaries: creditor.currency_summaries,
-    unverifiedRecordCount: creditor.unverified_currency_records,
-    hasUnverifiedInitialBalance: creditor.has_unverified_initial_debt,
-  })
+  const [dateError, setDateError] = useState<string | null>(null)
+  const settlementState = getObligationSettlementState({ summaries: creditor.currency_summaries, unverifiedRecordCount: creditor.unverified_currency_records, hasUnverifiedInitialBalance: creditor.has_unverified_initial_debt })
+  const progress = getPayablePaymentProgress(creditor.currency_summaries)
 
   const loadRows = useCallback(async () => {
     setLoading(true)
     setError(null)
-
     try {
-      const [payablesRes, ledgerRes] = await Promise.all([
+      const [payablesResponse, ledgerResponse] = await Promise.all([
         fetch(`/api/payables?creditor_id=${creditor.id}`, { cache: 'no-store' }),
         fetch(`/api/creditors/${creditor.id}/ledger`, { cache: 'no-store' }),
       ])
-
-      const [payablesJson, ledgerJson] = await Promise.all([
-        payablesRes.json().catch(() => null),
-        ledgerRes.json().catch(() => null),
-      ])
-
-      if (!payablesRes.ok || !payablesJson?.ok) {
-        throw new Error(getApiErrorMessage(payablesJson, 'No se pudieron cargar las cuentas por pagar'))
-      }
-
-      if (!ledgerRes.ok || !ledgerJson?.ok) {
-        throw new Error(getApiErrorMessage(ledgerJson, 'No se pudo cargar el historial del acreedor'))
-      }
-
+      const [payablesJson, ledgerJson] = await Promise.all([payablesResponse.json().catch(() => null), ledgerResponse.json().catch(() => null)])
+      if (!payablesResponse.ok || !payablesJson?.ok) throw new Error(getApiErrorMessage(payablesJson, 'No se pudieron cargar las obligaciones.'))
+      if (!ledgerResponse.ok || !ledgerJson?.ok) throw new Error(getApiErrorMessage(ledgerJson, 'No se pudo cargar el historial del acreedor.'))
       setRows((payablesJson.data as PayableRow[]) ?? [])
       setLedgerRows((ledgerJson.data as LedgerRow[]) ?? [])
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al cargar el detalle del acreedor')
-    } finally {
-      setLoading(false)
-    }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Error al cargar el detalle del acreedor.')
+    } finally { setLoading(false) }
   }, [creditor.id])
 
   useEffect(() => {
     void loadRows()
-    fetch('/api/accounts?is_active=true', { cache: 'no-store' })
-      .then(response => response.json())
-      .then(json => {
-        if (json?.ok) setAccounts((json.data as AccountOption[]) ?? [])
-      })
-      .catch(() => null)
+    let cancelled = false
+    fetch('/api/accounts?is_active=true', { cache: 'no-store' }).then(response => response.json()).then(json => {
+      if (!cancelled && json?.ok) setAccounts((json.data as AccountOption[]) ?? [])
+    }).catch(() => null)
+    return () => { cancelled = true }
   }, [loadRows])
 
-  const normalizedQuery = query.trim().toLowerCase()
-  const accountOptions = useMemo(
-    () => [
-      { value: 'all', label: 'Todos los portafolios' },
-      ...accounts.map(account => ({
-        value: account.id,
-        label: account.name,
-      })),
-    ],
-    [accounts],
-  )
+  const accountOptions = useMemo(() => [{ value: 'all', label: 'Todos los portafolios' }, ...accounts.map(account => ({ value: account.id, label: account.name }))], [accounts])
+  const history = useMemo(() => buildPayableFinancialHistory(rows, ledgerRows), [ledgerRows, rows])
+  const queryNormalized = query.trim().toLocaleLowerCase('es-PE')
+  const filtered = useMemo(() => history.filter(item => {
+    if (movementFilter !== 'all' && item.kind !== movementFilter) return false
+    if (accountFilter !== 'all' && !ledgerRows.some(ledger => ledger.id === item.id.replace('ledger:', '') && ledger.source_account?.id === accountFilter)) {
+      if (item.source !== 'document' || rows.find(row => `payable:${row.id}` === item.id)?.source_account?.id !== accountFilter) return false
+    }
+    if (dateFrom && item.date < dateFrom) return false
+    if (dateTo && item.date > dateTo) return false
+    return !queryNormalized || `${item.title} ${item.description} ${item.account}`.toLocaleLowerCase('es-PE').includes(queryNormalized)
+  }), [accountFilter, dateFrom, dateTo, history, ledgerRows, movementFilter, queryNormalized, rows])
+  const ledgerBreakdown = useMemo(() => summarizeObligationLedgerCurrencies(ledgerRows), [ledgerRows])
+  const openCount = rows.filter(row => ['PENDING', 'PARTIAL', 'DISPUTED'].includes(row.status.toUpperCase()) && Number(row.amount) - Number(row.paid_amount) > 0).length
+  const disputedCount = rows.filter(row => row.status.toUpperCase() === 'DISPUTED').length
 
-  const filteredLedger = useMemo(() => {
-    return ledgerRows.filter(row => {
-      if (movementFilter === 'income' && row.type !== 'INCOME') return false
-      if (movementFilter === 'expense' && row.type !== 'EXPENSE') return false
-      if (accountFilter !== 'all' && row.source_account?.id !== accountFilter) return false
-      if (dateFrom && row.transaction_date < dateFrom) return false
-      if (dateTo && row.transaction_date > dateTo) return false
-
-      if (
-        normalizedQuery &&
-        !matchesText(row.description, normalizedQuery) &&
-        !matchesText(row.notes, normalizedQuery) &&
-        !matchesText(row.category?.name, normalizedQuery) &&
-        !matchesText(row.source_account?.name, normalizedQuery)
-      ) {
-        return false
-      }
-
-      return true
-    })
-  }, [accountFilter, dateFrom, dateTo, ledgerRows, movementFilter, normalizedQuery])
-
-  const filteredLedgerBreakdown = useMemo(
-    () => summarizeObligationLedgerCurrencies(filteredLedger),
-    [filteredLedger],
-  )
-  const overdueCount = useMemo(() => rows.filter(isOverdue).length, [rows])
-  const openAccountsCount = rows.filter(row => row.status !== 'PAID').length
-  const hasPositiveLedgerBalance = filteredLedgerBreakdown.summaries.some(summary => summary.balance > 0)
-
-  const syncParent = useCallback(async () => {
-    if (!onChanged) return
-    await onChanged()
-  }, [onChanged])
-
-  const handleFormSuccess = useCallback(async () => {
-    setCreateOpen(false)
-    await loadRows()
-    await syncParent()
-  }, [loadRows, syncParent])
-
-  const clearFilters = useCallback(() => {
-    setQuery('')
-    setAccountFilter('all')
-    setMovementFilter('all')
-    setDateFrom('')
-    setDateTo('')
-  }, [])
+  const clearFilters = useCallback(() => { setQuery(''); setAccountFilter('all'); setMovementFilter('all'); setDateFrom(''); setDateTo(''); setDateError(null) }, [])
+  const dateValid = !dateFrom || !dateTo || dateFrom <= dateTo
 
   return (
-    <div className="grid h-full min-h-0 gap-4 overflow-hidden xl:grid-cols-[388px_minmax(0,1fr)] 2xl:grid-cols-[404px_minmax(0,1fr)]">
-      <aside className="min-h-0 overflow-hidden">
-        <section className="flex h-full flex-col rounded-[24px] border border-[var(--c-border)] bg-[linear-gradient(180deg,var(--c-surface),var(--c-surface-2))] px-4 py-3.5">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-                Detalle del acreedor
-              </p>
-              <div className="mt-2">
-                <p className="break-words text-[20px] font-semibold tracking-[-0.03em] text-[var(--c-text)]">
-                  {creditor.relationship?.trim() || 'Sin relacion registrada'}
-                </p>
-                <p className="mt-1 text-[13px] text-[var(--c-text-muted)]">
-                  {openAccountsCount} cuenta{openAccountsCount === 1 ? '' : 's'} abierta{openAccountsCount === 1 ? '' : 's'}
-                  {' · '}
-                  {ledgerRows.length} movimiento{ledgerRows.length === 1 ? '' : 's'}
-                </p>
-              </div>
-            </div>
-            <Button
-              type="button"
-              onClick={() => setCreateOpen(true)}
-              variant="secondary"
-              size="sm"
-              className="shrink-0"
-            >
-              Nueva cuenta
-            </Button>
+    <div className={styles.detailLayout} data-testid="payables-detail-content">
+      <section className={styles.summaryPanel} aria-labelledby="payables-summary-title" data-testid="payables-detail-summary">
+        <div className={styles.summaryHeading}><h3 id="payables-summary-title">Pago documentado</h3><span className={`${styles.stateBadge} ${settlementState === 'SETTLED' ? styles.stateSuccess : settlementState === 'UNVERIFIED' || settlementState === 'EMPTY' ? styles.stateMuted : styles.stateWarning}`}>{settlementState === 'SETTLED' ? 'Pagos completos' : settlementState === 'UNVERIFIED' ? 'Moneda no verificable' : settlementState === 'EMPTY' ? 'Sin obligaciones' : 'Saldo pendiente'}</span></div>
+        {creditor.currency_summaries.length ? <div className={styles.currencyRows}>{creditor.currency_summaries.map(summary => {
+          const paidPercent = progress.available ? progress.items.find(item => item.currency === summary.currency)?.percent : null
+          return <div className={styles.currencyRow} key={summary.currency}>
+            <strong className={styles.currency}>{summary.currency}</strong>
+            <div><span>Total documentado</span><strong>{formatVerifiedObligationAmount(summary.total, summary.currency)}</strong></div>
+            <div><span>Total pagado</span><strong className={styles.paid}>{formatVerifiedObligationAmount(summary.settled, summary.currency)}</strong></div>
+            <div><span>Saldo pendiente</span><strong className={summary.pending > 0 ? styles.pending : ''}>{formatVerifiedObligationAmount(summary.pending, summary.currency)}</strong></div>
+            <div className={styles.progress}><div><span>Pagado</span><strong>{paidPercent === null || paidPercent === undefined ? 'Sin datos suficientes' : `${paidPercent.toFixed(1)}%`}</strong></div>{paidPercent !== null && paidPercent !== undefined ? <div className={styles.track} role="progressbar" aria-label={`Pagado en ${summary.currency}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={paidPercent}><span style={{ width: `${paidPercent}%` }} /></div> : null}</div>
           </div>
+        })}</div> : <p className={styles.summaryEmpty}>{creditor.has_unverified_initial_debt ? 'El saldo inicial no tiene moneda confirmada y se mantiene fuera de estos totales.' : 'Todavía no hay importes documentados.'}</p>}
+        {creditor.has_unverified_initial_debt || creditor.unverified_currency_records > 0 ? <p className={styles.unverified}>{creditor.has_unverified_initial_debt ? 'Saldo inicial sin moneda verificable' : `${creditor.unverified_currency_records} obligación${creditor.unverified_currency_records === 1 ? '' : 'es'} sin moneda verificable`}. Excluido de los importes por moneda.</p> : null}
+      </section>
 
-          <div className="mt-3.5 flex flex-wrap items-center gap-2">
-            <StatusBadge tone={settlementState === 'SETTLED' ? 'success' : settlementState === 'UNVERIFIED' ? 'muted' : 'danger'}>
-              {settlementState === 'SETTLED'
-                ? 'Pago cerrado'
-                : settlementState === 'UNVERIFIED'
-                  ? 'Estado no verificable'
-                  : settlementState === 'EMPTY'
-                    ? 'Sin cuentas documentadas'
-                    : 'Pago abierto'}
-            </StatusBadge>
-            <StatusBadge tone={creditor.is_active ? 'primary' : 'muted'} dot={false}>
-              {creditor.is_active ? 'Acreedor activo' : 'Acreedor inactivo'}
-            </StatusBadge>
-            {overdueCount > 0 ? (
-              <StatusBadge tone="danger" dot={false}>
-                {overdueCount} vencida{overdueCount === 1 ? '' : 's'}
-              </StatusBadge>
-            ) : null}
-          </div>
-
-          <RecoveryVisual
-            summaries={creditor.currency_summaries}
-            hasUnverifiedInitialBalance={creditor.has_unverified_initial_debt}
-            unverifiedRecordCount={creditor.unverified_currency_records}
-            className="mt-3.5"
-          />
-        </section>
-      </aside>
-
-      <div className="min-h-0 min-w-0 overflow-y-auto pr-1">
-        <div className="space-y-4">
-          <ControlsBar
-            className="rounded-[18px] px-3.5 py-2.5"
-            presets={(
-              <>
-                <StatusBadge tone="muted" dot={false}>
-                  Ledger {filteredLedger.length}
-                </StatusBadge>
-                <StatusBadge tone={hasPositiveLedgerBalance ? 'warning' : 'success'} dot={false}>
-                  Saldos {formatObligationLedgerSummaries(filteredLedgerBreakdown.summaries, 'balance')}
-                </StatusBadge>
-                {filteredLedgerBreakdown.unverifiedRecordCount > 0 ? (
-                  <StatusBadge tone="warning" dot={false}>
-                    {filteredLedgerBreakdown.unverifiedRecordCount} sin moneda verificable
-                  </StatusBadge>
-                ) : null}
-              </>
-            )}
-            search={(
-              <DataSearchField
-                value={query}
-                onChange={setQuery}
-                placeholder="Buscar concepto, categoria, nota o portafolio"
-                data-testid="creditor-detail-search"
-              />
-            )}
-            filters={(
-              <FilterBar>
-                <AppSelect
-                  value={accountFilter}
-                  onChange={setAccountFilter}
-                  options={accountOptions}
-                  compact
-                  searchable={false}
-                  className="w-[210px]"
-                />
-                <AppSelect
-                  value={movementFilter}
-                  onChange={value => setMovementFilter(value as 'all' | 'income' | 'expense')}
-                  options={[
-                    { value: 'all', label: 'Todos los movimientos' },
-                    { value: 'income', label: 'Solo ingresos' },
-                    { value: 'expense', label: 'Solo egresos' },
-                  ]}
-                  compact
-                  searchable={false}
-                  className="w-[220px]"
-                />
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={event => setDateFrom(event.target.value)}
-                  className="field-base h-9 w-[140px]"
-                  title="Fecha desde"
-                  data-testid="creditor-detail-date-from"
-                />
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={event => setDateTo(event.target.value)}
-                  className="field-base h-9 w-[140px]"
-                  title="Fecha hasta"
-                  data-testid="creditor-detail-date-to"
-                />
-              </FilterBar>
-            )}
-            actions={(
-              <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
-                Limpiar filtros
-              </Button>
-            )}
-          />
-
-          {error ? (
-            <div className="rounded-[18px] border border-[rgba(184,74,74,0.22)] bg-[var(--c-danger-soft)] px-4 py-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-[12px] font-medium text-[var(--c-danger)]">{error}</p>
-                <Button type="button" onClick={() => void loadRows()} variant="danger" size="sm">
-                  Reintentar
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
-          <section className="overflow-hidden rounded-[18px] border border-[var(--c-border)] bg-[var(--c-surface)]">
-            <div className="flex flex-col gap-2.5 border-b border-[var(--c-border)] px-3.5 py-3 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <p className="text-base font-semibold tracking-[-0.02em] text-[var(--c-text)]">
-                  Movimientos del acreedor
-                </p>
-                <p className="mt-1 text-[12px] leading-5 text-[var(--c-text-muted)]">
-                  Prestamos y pagos con saldos separados por moneda original, sin conversion.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <StatusBadge tone="info" dot={false}>
-                  Ingresos {formatObligationLedgerSummaries(filteredLedgerBreakdown.summaries, 'income')}
-                </StatusBadge>
-                <StatusBadge tone="warning" dot={false}>
-                  Egresos {formatObligationLedgerSummaries(filteredLedgerBreakdown.summaries, 'expense')}
-                </StatusBadge>
-                <StatusBadge tone={hasPositiveLedgerBalance ? 'warning' : 'success'} dot={false}>
-                  Saldos {formatObligationLedgerSummaries(filteredLedgerBreakdown.summaries, 'balance')}
-                </StatusBadge>
-                {filteredLedgerBreakdown.unverifiedRecordCount > 0 ? (
-                  <StatusBadge tone="warning" dot={false}>
-                    {filteredLedgerBreakdown.unverifiedRecordCount} sin moneda verificable
-                  </StatusBadge>
-                ) : null}
-              </div>
-            </div>
-
-            {loading ? (
-              <div className="divide-y divide-[var(--c-border)]">
-                {[0, 1, 2, 3].map(item => (
-                  <div key={item} className="px-3.5 py-3">
-                    <div className="flex animate-pulse flex-col gap-2">
-                      <div className="h-4 w-36 rounded-full bg-[var(--c-surface-2)]" />
-                      <div className="h-3 w-full rounded-full bg-[var(--c-surface-2)]" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : filteredLedger.length === 0 ? (
-              <div className="p-3.5">
-                <EmptyState
-                  title={query || accountFilter !== 'all' || movementFilter !== 'all' || dateFrom || dateTo
-                    ? 'No encontramos movimientos con esos filtros.'
-                    : 'Este acreedor aun no tiene movimientos asociados.'}
-                  description={query || accountFilter !== 'all' || movementFilter !== 'all' || dateFrom || dateTo
-                    ? 'Prueba con otro rango, otro tipo de movimiento o una busqueda mas amplia.'
-                    : 'Cuando registres ingresos por prestamo o pagos al acreedor, aqui veras el historial completo.'}
-                  compact
-                />
-              </div>
-            ) : (
-              <div>
-                <div className="hidden border-b border-[var(--c-border)] bg-[var(--c-surface-2)] px-3.5 py-2.5 lg:grid lg:grid-cols-[96px_minmax(0,2.35fr)_150px_190px_112px_120px] lg:gap-3">
-                  {['Tipo', 'Descripcion', 'Portafolio', 'Categoria', 'Fecha', 'Monto'].map(label => (
-                    <p key={label} className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">
-                      {label}
-                    </p>
-                  ))}
-                </div>
-
-                <div className="divide-y divide-[var(--c-border)]">
-                  {filteredLedger.map(row => {
-                    const meta = resolveLedgerMeta(row)
-                    return (
-                      <article key={row.id} className="px-3.5 py-3">
-                        <div className="grid gap-3 lg:grid-cols-[96px_minmax(0,2.35fr)_150px_190px_112px_120px] lg:items-center lg:gap-3">
-                          <div>
-                            <StatusBadge tone={meta.tone} dot={false}>
-                              {meta.label}
-                            </StatusBadge>
-                            <p className="mt-2 text-[12px] text-[var(--c-text-muted)] lg:hidden">
-                              {meta.detail}
-                            </p>
-                          </div>
-
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-[var(--c-text)]">
-                              {row.description?.trim() || 'Movimiento sin descripcion'}
-                            </p>
-                            <p className="mt-1 truncate text-[12px] leading-5 text-[var(--c-text-muted)]">
-                              {row.notes?.trim() || meta.detail}
-                            </p>
-                          </div>
-
-                          <div className="min-w-0">
-                            <p className="text-[12px] font-medium text-[var(--c-text)]">
-                              {row.source_account?.name || 'Sin portafolio'}
-                            </p>
-                          </div>
-
-                          <div className="min-w-0">
-                            <p className="truncate text-[12px] text-[var(--c-text)]">
-                              {row.category?.name || 'Sin categoria'}
-                            </p>
-                          </div>
-
-                          <div>
-                            <p className="text-[12px] text-[var(--c-text)]">{formatDate(row.transaction_date)}</p>
-                          </div>
-
-                          <div className="lg:text-right">
-                            <p className={`font-mono text-sm font-semibold tabular-nums ${row.type === 'INCOME' ? 'text-[var(--c-info)]' : 'text-[var(--c-warning)]'}`}>
-                              {meta.signedAmount}
-                            </p>
-                          </div>
-                        </div>
-                      </article>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-          </section>
+      <section className={styles.historyPanel} aria-labelledby="payables-history-title">
+        <header className={styles.historyHeading}><div><h3 id="payables-history-title">Historial financiero</h3><p>{filtered.length} registro{filtered.length === 1 ? '' : 's'} · {openCount} obligación{openCount === 1 ? '' : 'es'} pendiente{openCount === 1 ? '' : 's'}{disputedCount ? ` · ${disputedCount} en disputa` : ''}</p></div></header>
+        <div className={`${movementStyles.controlsMain} ${movementStyles.portfolioFilterBar} ${styles.detailToolbar}`} data-testid="payables-detail-filter-toolbar">
+          <DataSearchField value={query} onChange={setQuery} placeholder="Buscar historial financiero" aria-label="Buscar historial financiero" className={styles.detailSearch} data-testid="payables-detail-search" />
+          <AppSelect value={accountFilter} onChange={setAccountFilter} options={accountOptions} compact searchable={false} matchTriggerWidth className={`${movementStyles.portfolioFilter} ${styles.detailFilter} filters-control`} ariaLabel="Filtrar por portafolio" testId="payables-detail-account-filter" />
+          <AppSelect value={movementFilter} onChange={value => setMovementFilter(value as typeof movementFilter)} options={[{ value: 'all', label: 'Todos los movimientos' }, { value: 'loan', label: 'Préstamos recibidos' }, { value: 'obligation', label: 'Obligaciones' }, { value: 'payment', label: 'Pagos realizados' }]} compact searchable={false} matchTriggerWidth className={`${movementStyles.portfolioFilter} ${styles.detailFilter} filters-control`} ariaLabel="Filtrar por tipo de movimiento" testId="payables-detail-type-filter" />
+          <div className={styles.dateControl}><IncomeDatePicker value={dateFrom} onChange={value => { setDateFrom(value); setDateError(null) }} onInvalidInput={setDateError} error={dateError ?? undefined} inputLabel="Fecha desde" inputTestId="payables-detail-date-from" positioningBoundary="viewport" /></div>
+          <div className={styles.dateControl}><IncomeDatePicker value={dateTo} onChange={value => { setDateTo(value); setDateError(null) }} onInvalidInput={setDateError} error={dateError ?? undefined} inputLabel="Fecha hasta" inputTestId="payables-detail-date-to" positioningBoundary="viewport" /></div>
+          <Button className={styles.clearButton} type="button" variant="ghost" size="sm" onClick={clearFilters}>Limpiar</Button>
         </div>
-      </div>
-
-      <RecordModal
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        eyebrow="Cuentas por pagar"
-        title="Nueva cuenta por pagar"
-        subtitle="Registra un nuevo compromiso dentro del mismo acreedor."
-        size="lg"
-      >
-        <PayableForm
-          creditors={[creditor]}
-          exchangeRate={exchangeRate}
-          defaultCreditorId={creditor.id}
-          onSuccess={handleFormSuccess}
-          onCancel={() => setCreateOpen(false)}
-        />
-      </RecordModal>
+        {dateError || !dateValid ? <p className={styles.dateError} role="alert">{dateError || 'La fecha inicial debe ser anterior o igual a la fecha final.'}</p> : null}
+        <div className={styles.historyScroll}>
+          {error ? <DataErrorBanner message={error} onRetry={() => void loadRows()} /> : null}
+          {loading ? <div className={styles.loadingRows} aria-label="Cargando historial" aria-busy="true">{[0, 1, 2].map(index => <div key={index}><span /><span /><span /></div>)}</div>
+            : !error && (filtered.length === 0 || !dateValid) ? <EmptyState title={history.length && dateValid ? 'No encontramos movimientos con esos filtros.' : history.length ? 'Revisa el rango de fechas.' : 'Todavía no hay movimientos vinculados.'} description={history.length ? 'Prueba con otros filtros o límpialos para ver todo el historial.' : 'Las obligaciones, préstamos y pagos vinculados aparecerán aquí.'} action={history.length ? { label: 'Limpiar filtros', onClick: clearFilters } : undefined} />
+              : !error ? <div className={styles.historyTable}>
+                <div className={styles.tableHeader} aria-hidden="true"><span>Tipo</span><span>Descripción</span><span>Cuenta asociada</span><span>Fecha</span><span className="text-right">Importe</span><span>Estado</span></div>
+                {filtered.map(item => {
+                  const type = historyType(item)
+                  const currency = resolveVerifiedObligationCurrency(item.currency)
+                  const amountLabel = currency && Number.isFinite(item.amount) ? formatCurrency(item.amount, currency) : 'Importe no verificable'
+                  const signed = item.kind === 'loan' ? `+${amountLabel}` : item.kind === 'payment' ? `−${amountLabel}` : amountLabel
+                  return <article className={styles.tableRow} key={item.id} data-testid={`payables-history-row-${item.id}`} data-record-source={item.source}>
+                    <div><span className={`${styles.typeBadge} ${type.className}`}>{type.label}</span></div>
+                    <div className={styles.description}><strong>{item.title}</strong><span>{item.description}</span></div>
+                    <div className={styles.account}>{item.account}</div>
+                    <time dateTime={item.date}>{formatDate(item.date)}</time>
+                    <strong className={`${styles.amount} ${item.kind === 'loan' ? styles.loanAmount : item.kind === 'payment' ? styles.paymentAmount : ''}`}>{signed}</strong>
+                    <span className={`${styles.statusBadge} ${item.status === 'Pagado' ? styles.statusPaid : item.status === 'En disputa' ? styles.statusDisputed : styles.statusMuted}`}>{item.status}</span>
+                  </article>
+                })}
+                {ledgerBreakdown.unverifiedRecordCount > 0 ? <p className={styles.ledgerNote}>{ledgerBreakdown.unverifiedRecordCount} movimiento{ledgerBreakdown.unverifiedRecordCount === 1 ? '' : 's'} sin moneda verificable.</p> : null}
+              </div> : null}
+        </div>
+      </section>
     </div>
   )
 }

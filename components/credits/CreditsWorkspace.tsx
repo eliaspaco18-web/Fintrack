@@ -15,6 +15,7 @@ import { CreditTypeSelector } from '@/components/credits/CreditTypeSelector'
 import { CreditCardForm } from '@/components/credits/CreditCardForm'
 import { BankLoanForm } from '@/components/credits/BankLoanForm'
 import { CreditsListPanel } from '@/components/credits/CreditsListPanel'
+import workbenchStyles from '@/components/credits/CreditsWorkbench.module.css'
 
 export type CreditMode = 'CARD' | 'BANK'
 type CreditModalSize = 'sm' | 'lg' | 'xl' | 'full-form'
@@ -89,7 +90,7 @@ export function CreditsWorkspace() {
   ) => {
     toast.success('Crédito registrado', creditName)
     if (attachmentIssue) {
-      toast.error('Crédito registrado sin documento', attachmentIssue)
+      toast.error('Crédito registrado con un paso pendiente', attachmentIssue)
     }
     setIsModalOpen(false)
     clearQuery()
@@ -103,6 +104,9 @@ export function CreditsWorkspace() {
     if (openFromQuery) {
       if (handledRef.current) return
       handledRef.current = true
+      // The create button opens the modal before its router.replace settles.
+      // Do not reset a form the user may already have selected in that gap.
+      if (isModalOpen) return
       setModalStep('select_type')
       setSelectedMode(null)
       setModalSize('sm')
@@ -112,7 +116,7 @@ export function CreditsWorkspace() {
       return
     }
     handledRef.current = false
-  }, [openFromQuery])
+  }, [openFromQuery, isModalOpen])
 
   const modalTitle = modalStep === 'form'
     ? (selectedMode === 'CARD' ? 'Nueva tarjeta de crédito' : 'Nuevo crédito bancario')
@@ -120,12 +124,12 @@ export function CreditsWorkspace() {
 
   const modalSubtitle = modalStep === 'form'
     ? (selectedMode === 'CARD'
-      ? 'Completa los datos esenciales de la tarjeta y revisa el cronograma desde un resumen compacto dentro del mismo flujo.'
-      : 'Completa los datos base del préstamo y revisa el cronograma desde un resumen compacto dentro del mismo flujo.')
+      ? 'Registra la tarjeta, su línea y los ciclos de facturación.'
+      : 'Registra las condiciones y el cronograma del préstamo.')
     : 'Selecciona el tipo de crédito a registrar.'
 
   return (
-    <div className="space-y-5">
+    <div className="w-full">
       <CreditsListPanel onCreate={openModal} />
 
       {/* ── MODAL CREAR ──────────────────────────────────────────────── */}
@@ -137,7 +141,11 @@ export function CreditsWorkspace() {
         subtitle={modalSubtitle}
         size={modalSize}
         focusTrapActive={!isNestedModalOpen}
+        preserveFocusOnResume
         bodyClassName={modalStep === 'form' ? 'credits-modal-body !overflow-hidden py-4' : ''}
+        presentation="workbench"
+        overlayClassName={modalStep === 'form' ? workbenchStyles.creditFormOverlay : undefined}
+        motionSource="pointer"
       >
         {modalStep === 'select_type' ? (
           <CreditTypeSelector onSelect={handleTypeSelected} />

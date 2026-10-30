@@ -10,35 +10,42 @@ import {
   useState,
   useEffect,
   useCallback,
+  useRef,
   createContext,
   useContext,
 }                    from 'react'
+import {
+  LAYOUT_MOBILE_MAX,
+  LAYOUT_TABLET_MAX,
+  readSidebarPreference,
+  resolveSidebarMode,
+  writeSidebarPreference,
+  type SidebarMode,
+} from './layout-state'
 
 // ─── BREAKPOINTS ──────────────────────────────────────────────────────────────
 
-const BREAKPOINT_MD = 768   // tablet
-const BREAKPOINT_LG = 1024  // desktop
-
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
 
-export type SidebarMode =
-  | 'expanded'   // 240px — desktop, sidebar completo con labels
-  | 'collapsed'  // 56px  — tablet, solo iconos + tooltip
-  | 'hidden'     // 0px   — mobile, se muestra como drawer overlay
+export type { SidebarMode } from './layout-state'
 
 export interface LayoutContextValue {
   /** Modo actual del sidebar según viewport + preferencia */
   sidebarMode:       SidebarMode
   /** Solo móvil: controla si el drawer está abierto */
   mobileDrawerOpen:  boolean
+  /** Temporary labeled tablet navigation; never persisted. */
+  tabletNavigationOpen: boolean
   /** El usuario puede colapsar/expandir manualmente en desktop */
   userCollapsed:     boolean
   openMobileDrawer:  () => void
   closeMobileDrawer: () => void
+  openTabletNavigation: () => void
+  closeTabletNavigation: () => void
   toggleUserCollapse: () => void
   /** True si el viewport es mobile (<768px) */
   isMobile:          boolean
-  /** True si el viewport es tablet (768-1023px) */
+  /** True si el viewport es tablet (768-1199px) */
   isTablet:          boolean
 }
 
@@ -47,9 +54,12 @@ export interface LayoutContextValue {
 const LayoutContext = createContext<LayoutContextValue>({
   sidebarMode:        'expanded',
   mobileDrawerOpen:   false,
+  tabletNavigationOpen: false,
   userCollapsed:      false,
   openMobileDrawer:   () => {},
   closeMobileDrawer:  () => {},
+  openTabletNavigation: () => {},
+  closeTabletNavigation: () => {},
   toggleUserCollapse: () => {},
   isMobile:           false,
   isTablet:           false,
@@ -60,12 +70,16 @@ const LayoutContext = createContext<LayoutContextValue>({
 export function LayoutProvider({ children }: { children: React.ReactNode }) {
   const [viewportWidth,    setViewportWidth]    = useState(0)
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
+  const [tabletNavigationOpen, setTabletNavigationOpen] = useState(false)
   const [userCollapsed,    setUserCollapsed]    = useState(false)
+  const userCollapsedRef = useRef(false)
 
   // Leer preferencia de localStorage al montar
   useEffect(() => {
-    const stored = localStorage.getItem('sidebar-collapsed')
-    if (stored === 'true') setUserCollapsed(true)
+    let stored = false
+    try { stored = readSidebarPreference(window.localStorage) } catch { /* storage getter denied */ }
+    userCollapsedRef.current = stored
+    setUserCollapsed(stored)
     setViewportWidth(window.innerWidth)
   }, [])
 
@@ -86,38 +100,48 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
 
   // Cerrar drawer móvil al crecer el viewport
   useEffect(() => {
-    if (viewportWidth >= BREAKPOINT_MD && mobileDrawerOpen) {
+    if (viewportWidth > LAYOUT_MOBILE_MAX && mobileDrawerOpen) {
       setMobileDrawerOpen(false)
     }
   }, [viewportWidth, mobileDrawerOpen])
 
-  const isMobile = viewportWidth > 0 && viewportWidth < BREAKPOINT_MD
-  const isTablet = viewportWidth >= BREAKPOINT_MD && viewportWidth < BREAKPOINT_LG
+  useEffect(() => {
+    if ((viewportWidth <= LAYOUT_MOBILE_MAX || viewportWidth > LAYOUT_TABLET_MAX) && tabletNavigationOpen) {
+      setTabletNavigationOpen(false)
+    }
+  }, [viewportWidth, tabletNavigationOpen])
 
-  const sidebarMode: SidebarMode = (() => {
-    if (isMobile)                        return 'hidden'
-    if (isTablet || userCollapsed)       return 'collapsed'
-    return 'expanded'
-  })()
+  const isMobile = viewportWidth > 0 && viewportWidth <= LAYOUT_MOBILE_MAX
+  const isTablet = viewportWidth > LAYOUT_MOBILE_MAX && viewportWidth <= LAYOUT_TABLET_MAX
 
-  const openMobileDrawer  = useCallback(() => setMobileDrawerOpen(true), [])
+  const sidebarMode: SidebarMode = resolveSidebarMode(viewportWidth, userCollapsed)
+
+  const openMobileDrawer  = useCallback(() => { if (window.innerWidth <= LAYOUT_MOBILE_MAX) setMobileDrawerOpen(true) }, [])
   const closeMobileDrawer = useCallback(() => setMobileDrawerOpen(false), [])
+  const openTabletNavigation = useCallback(() => {
+    if (window.innerWidth > LAYOUT_MOBILE_MAX && window.innerWidth <= LAYOUT_TABLET_MAX) {
+      setTabletNavigationOpen(true)
+    }
+  }, [])
+  const closeTabletNavigation = useCallback(() => setTabletNavigationOpen(false), [])
 
   const toggleUserCollapse = useCallback(() => {
-    setUserCollapsed(prev => {
-      const next = !prev
-      localStorage.setItem('sidebar-collapsed', String(next))
-      return next
-    })
+    const next = !userCollapsedRef.current
+    userCollapsedRef.current = next
+    setUserCollapsed(next)
+    try { writeSidebarPreference(window.localStorage, next) } catch { /* storage getter denied */ }
   }, [])
 
   return (
     <LayoutContext.Provider value={{
       sidebarMode,
       mobileDrawerOpen,
+      tabletNavigationOpen,
       userCollapsed,
       openMobileDrawer,
       closeMobileDrawer,
+      openTabletNavigation,
+      closeTabletNavigation,
       toggleUserCollapse,
       isMobile,
       isTablet,

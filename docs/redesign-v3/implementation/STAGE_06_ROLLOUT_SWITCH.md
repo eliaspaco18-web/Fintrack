@@ -1,0 +1,21 @@
+# FinTrack V3 Round 07: Stage 6 rollout boundary
+
+Base SHA: `499c70fa446b8152120314e9279145176a6ed655`; branch: `codex/redisenio-total`. This is a code-only rollout guard for the Stage 6B–D shell packages, not a module migration or a release decision.
+
+## Active renderer and contract
+
+- `app/(dashboard)/layout.tsx` keeps its existing authentication, profile, exchange-rate and page-loading contracts. It selects **one** shell renderer after authentication. It does not mount a hidden second data owner.
+- `lib/flags/v3-shell.ts` enables the V3 shell only when `NEXT_PUBLIC_FINTRACK_V3_SHELL=1` **and** the environment is local development or Vercel Preview. `VERCEL_ENV=production` always disables it, even with the flag present. With no flag, the previous shell remains active. No environment file was changed to turn it on.
+- `components/layout/legacy/` contains scoped snapshots of the pre-Stage-6 shell, sidebar, topbar, FAB, nav item, layout provider and navigation catalog. These retain the old visible controls and links while V3 is being verified. The new shell uses `data-ft-v3-shell`; the old shell uses `data-ft-legacy-shell`. Shell-dependent CSS is scoped by these attributes; the legacy rail keeps 248/72px and 60px topbar, while V3 uses 208/68px and 56px. Module-level V3 presentation remains separately opt-in; the shell flag does not opt every old module into V3.
+- No route, query parameter, API, service, financial calculation, authentication or database contract was changed. The legacy snapshots are a temporary compatibility boundary to be removed only after Stage 18 consumer proof.
+
+## Verification and limits
+
+- `tests/unit/v3-shell-switch.spec.ts` checks default-off, local/Preview opt-in and production hard-off. A synthetic browser regression checks the legacy 248px/60px geometry and opaque rail, independently from the V3 material checks. The V3 material suite includes a stacking check: its moving flat backdrop remains behind the logo/navigation. This caught and corrected a visual occlusion during screenshot review.
+- Final local checks: `npm run lint` passed; `npm run build` passed; `npm run test:unit` passed **191/191**; unauthenticated `npx playwright test` with a dummy local Supabase address passed **36**, skipped **29** authenticated cases; `git diff --check` passed. `npm run typecheck` was run **after** the build and reports only the two registered pre-existing TS2614 named `describe` test-import errors. An earlier concurrent build/typecheck run produced temporary missing `.next/types` messages while Next regenerated types; that race disappeared when typecheck was rerun serially. Build and typecheck must not run concurrently in subsequent evidence.
+- Reviewed screenshots in `docs/redesign-v3/implementation/stage6-*`: desktop light expanded, desktop dark compact, tablet light rail, tablet dark overlay, mobile light 320px and mobile dark 390px. These are synthetic geometry/material fixtures on the unauthenticated login route. They do **not** prove actual authenticated route navigation, focus, live data or a write.
+- S06 is still open: there is no owner-provided disposable Vercel Preview/Supabase target with dedicated QA credentials. Stage 6B–D are **implemented behind the switch, not authenticated-route or write certified**. The next ordered Stage 6a catalog pilot requires real create/edit/delete outcomes and must not be marked certified from mocked transport. Safe read-only preparation may continue independently, but no real-data write or production release is authorized.
+
+## Risk and rollback
+
+The principal remaining risk is that actual authenticated module content exposes shell/focus/overlay interactions that synthetic fixtures cannot exercise. There is also a temporary duplicate shell source to maintain until Stage 18. Keep the flag unset to retain the prior renderer. For an opted-in local/Preview regression, unset `NEXT_PUBLIC_FINTRACK_V3_SHELL` and restart/rebuild that environment; the authenticated layout then renders the legacy shell without altering stored records. Roll back the layout selection, flag and legacy snapshots only as one scoped reviewed code patch after checking other changes in the dirty worktree. Do not reset the repository or restore a database snapshot for this presentation gate.

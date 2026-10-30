@@ -54,8 +54,9 @@ function normalizeCurrency(currency: string): Currency {
   return currency === 'USD' ? 'USD' : 'PEN'
 }
 
-function toPenAmount(amount: number, currency: string, exchangeRate: number): number {
-  return normalizeCurrency(currency) === 'USD' ? amount * exchangeRate : amount
+function toPenAmount(amount: number, currency: string, exchangeRate: number | null): number | null {
+  if (normalizeCurrency(currency) !== 'USD') return amount
+  return exchangeRate === null ? null : amount * exchangeRate
 }
 
 function roundMoney(value: number): number {
@@ -70,7 +71,7 @@ function pushEvent(map: Map<string, CashFlowProjectionEvent[]>, event: CashFlowP
 
 export async function GET() {
   return measureServerOperation('api.dashboard.projection', async () => {
-    const supabase = createClient()
+    const supabase = await createClient()
     const userId = await getSessionUserId(supabase)
     if (!userId) return apiUnauthorized()
 
@@ -80,7 +81,10 @@ export async function GET() {
 
     const summary = summaryResult.data
     const exchangeRate = summary.meta.exchangeRateUsdPen
-    const currentBalance = summary.accounts.reduce((sum, account) => sum + account.balancePen, 0)
+    if (summary.accounts.some(account => account.balancePen === null)) {
+      return apiError({ code: 'VALIDATION_ERROR', message: 'La proyección no está disponible: falta una tasa verificada para consolidar las cuentas en USD.' })
+    }
+    const currentBalance = summary.accounts.reduce((sum, account) => sum + (account.balancePen ?? 0), 0)
 
     const today = startOfTodayUtc()
     const horizonEnd = addDays(today, HORIZON_DAYS)
@@ -145,6 +149,7 @@ export async function GET() {
 
       const amount = Number(row.amount ?? 0)
       const amountPen = toPenAmount(amount, row.currency, exchangeRate)
+      if (amountPen === null) return apiError({ code: 'VALIDATION_ERROR', message: 'La proyección no está disponible: falta una tasa verificada para una plantilla en USD.' })
       const currency = normalizeCurrency(row.currency)
 
       if (row.type === 'INCOME') recurringMonthlyIncome += amountPen
@@ -174,12 +179,14 @@ export async function GET() {
       if (!row.due_date) continue
       const pending = Math.max(0, Number(row.amount ?? 0) - Number(row.collected_amount ?? 0))
       if (pending <= 0) continue
+      const amountPen = toPenAmount(pending, row.currency, exchangeRate)
+      if (amountPen === null) return apiError({ code: 'VALIDATION_ERROR', message: 'La proyección no está disponible: falta una tasa verificada para una cuenta por cobrar en USD.' })
 
       pushEvent(eventsByDate, {
         id: `receivable-${row.id}`,
         label: row.concept?.trim() || row.debtor_name || 'Cuenta por cobrar',
         amount: pending,
-        amountPen: roundMoney(toPenAmount(pending, row.currency, exchangeRate)),
+        amountPen: roundMoney(amountPen),
         currency: normalizeCurrency(row.currency),
         date: row.due_date,
         type: 'receivable',
@@ -190,12 +197,14 @@ export async function GET() {
       if (!row.due_date) continue
       const pending = Math.max(0, Number(row.amount ?? 0) - Number(row.paid_amount ?? 0))
       if (pending <= 0) continue
+      const amountPen = toPenAmount(pending, row.currency, exchangeRate)
+      if (amountPen === null) return apiError({ code: 'VALIDATION_ERROR', message: 'La proyección no está disponible: falta una tasa verificada para una cuenta por pagar en USD.' })
 
       pushEvent(eventsByDate, {
         id: `payable-${row.id}`,
         label: row.concept?.trim() || row.creditor_name || 'Cuenta por pagar',
         amount: pending,
-        amountPen: roundMoney(toPenAmount(pending, row.currency, exchangeRate)),
+        amountPen: roundMoney(amountPen),
         currency: normalizeCurrency(row.currency),
         date: row.due_date,
         type: 'payable',
@@ -207,12 +216,14 @@ export async function GET() {
       const currency = normalizeCurrency(loan?.currency ?? 'PEN')
       const amount = Number(row.total_amount ?? 0)
       if (amount <= 0) continue
+      const amountPen = toPenAmount(amount, currency, exchangeRate)
+      if (amountPen === null) return apiError({ code: 'VALIDATION_ERROR', message: 'La proyección no está disponible: falta una tasa verificada para una cuota en USD.' })
 
       pushEvent(eventsByDate, {
         id: `installment-${row.id}`,
         label: `${loan?.name || loan?.creditor_name || 'Crédito'} · cuota ${row.installment_number}`,
         amount,
-        amountPen: roundMoney(toPenAmount(amount, currency, exchangeRate)),
+        amountPen: roundMoney(amountPen),
         currency,
         date: row.due_date,
         type: 'installment',

@@ -32,6 +32,7 @@ interface ProfileSettingsFormProps {
   accountCount: number
   profilePreloadWarning?: SettingsPreloadWarning | null
   accountsPreloadWarning?: SettingsPreloadWarning | null
+  externalSaveAction?: boolean
 }
 
 type SettingsPreloadWarning = {
@@ -101,6 +102,7 @@ export function ProfileSettingsForm({
   accountCount,
   profilePreloadWarning,
   accountsPreloadWarning,
+  externalSaveAction = false,
 }: ProfileSettingsFormProps) {
   const router = useRouter()
   const { toast } = useToast()
@@ -142,6 +144,8 @@ export function ProfileSettingsForm({
 
   const handleSaveProfile = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+
+    if (savingProfile || uploadingAvatar || removingAvatar) return
 
     if (profileLocked) {
       showProfileLockedWarning()
@@ -316,7 +320,7 @@ export function ProfileSettingsForm({
         )
       }
     >
-      <form onSubmit={handleSaveProfile} className="space-y-4">
+      <form id="settings-profile-form" onSubmit={handleSaveProfile} className="space-y-4" aria-busy={savingProfile}>
         {profilePreloadWarning ? <PreloadWarningBox warning={profilePreloadWarning} /> : null}
         {accountsPreloadWarning ? <PreloadWarningBox warning={accountsPreloadWarning} /> : null}
 
@@ -484,13 +488,15 @@ export function ProfileSettingsForm({
         </SettingsSubsection>
 
         <div className="flex flex-wrap items-center gap-3 pt-1">
-          <Button
-            type="submit"
-            loading={savingProfile}
-            disabled={profileLocked || uploadingAvatar || removingAvatar}
-          >
-            Guardar cambios
-          </Button>
+          {!externalSaveAction ? (
+            <Button
+              type="submit"
+              loading={savingProfile}
+              disabled={profileLocked || uploadingAvatar || removingAvatar}
+            >
+              Guardar cambios
+            </Button>
+          ) : null}
           <p className="text-[12px] leading-5 text-[var(--c-text-muted)]">
             Los cambios se reflejan inmediatamente en toda la app.
           </p>

@@ -8,6 +8,7 @@ import { createClient }              from '@/lib/supabase.server'
 import { CategoryKeys }              from '@/lib/constants/category-keys'
 import { TransactionService }        from '@/modules/transactions/transaction.service'
 import { resolveAccountingUsdPenExchangeRate } from '@/lib/server/exchange-rate'
+import { getVerifiedUsdPenRate } from '@/lib/finance/exchange-rate-verification'
 import {
   apiCreated,
   apiError,
@@ -58,7 +59,7 @@ function normalizePayableRow<T extends PayableResponseRow>(row: T) {
 }
 
 async function resolveUserCategoryIdBySystemKey(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   systemKey: string,
 ) {
@@ -76,7 +77,7 @@ async function resolveUserCategoryIdBySystemKey(
 }
 
 export async function GET(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
@@ -111,7 +112,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
@@ -191,7 +192,13 @@ export async function POST(req: NextRequest) {
     allowPrior: true,
     ensureForToday: true,
   })
-  const exchangeRate = exchangeSnapshot.rate
+  const verifiedRate = currency === 'USD' ? getVerifiedUsdPenRate(exchangeSnapshot) : null
+  if (currency === 'USD' && verifiedRate === null) {
+    return apiError({
+      code: 'VALIDATION_ERROR',
+      message: 'No hay un tipo de cambio verificado para registrar este préstamo en USD.',
+    })
+  }
 
   const service = new TransactionService(supabase)
   const transactionResult = await service.createTransaction(userId, {
@@ -199,7 +206,7 @@ export async function POST(req: NextRequest) {
     source_account_id,
     amount,
     currency,
-    exchange_rate: currency === 'USD' ? exchangeRate : undefined,
+    exchange_rate: verifiedRate ?? undefined,
     description: concept ?? `Pago a ${creditor.name}`,
     transaction_date: issue_date,
     category_id: payableCategoryId,
@@ -224,18 +231,6 @@ export async function POST(req: NextRequest) {
       code: 'ATOMICITY_FAILURE',
       message: 'La operación principal se guardó, pero no se generó la cuenta por pagar vinculada.',
     })
-  }
-
-  const { error: payableUpdateError } = await supabase
-    .from('accounts_payable')
-    .update({
-      creditor_id,
-    })
-    .eq('id', payableId)
-    .eq('user_id', userId)
-
-  if (payableUpdateError) {
-    return apiError({ code: 'DATABASE_ERROR', message: payableUpdateError.message })
   }
 
   const recurringTemplate = await createRecurringTemplate({
@@ -292,7 +287,7 @@ async function createRecurringTemplate({
   description,
   notes,
 }: {
-  supabase: ReturnType<typeof createClient>
+  supabase: Awaited<ReturnType<typeof createClient>>
   userId: string
   saveRecurring: boolean
   recurringName: string

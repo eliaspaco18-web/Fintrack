@@ -8,7 +8,7 @@ export async function getNavBadgesForUser(userId: string): Promise<Partial<Recor
   return measureServerOperation(
     'dashboard.nav-badges',
     async () => {
-      const supabase = createClient()
+      const supabase = await createClient()
       const today = new Date().toISOString().split('T')[0]
 
       const [

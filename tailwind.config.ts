@@ -14,6 +14,7 @@ const config: Config = {
         body:    ['Geist', '"SF Pro Display"', 'system-ui', 'sans-serif'],
         sans:    ['Geist', '"SF Pro Display"', 'system-ui', 'sans-serif'],
         mono:    ['"Geist Mono"', '"SF Mono"', '"JetBrains Mono"', 'monospace'],
+        v3:      ['var(--ft-font-body)', 'system-ui', 'sans-serif'],
       },
       colors: {
         // Canonical semantic roles for new redesign work.
@@ -63,6 +64,10 @@ const config: Config = {
         surface: 'var(--ft-radius-surface)',
         panel: 'var(--ft-radius-panel)',
         modal: 'var(--ft-radius-modal)',
+        badge: 'var(--ft-radius-badge)',
+        inset: 'var(--ft-radius-inset)',
+        menu: 'var(--ft-radius-menu)',
+        workspace: 'var(--ft-radius-workspace)',
       },
       transitionDuration: {
         instant: 'var(--ft-duration-instant)',

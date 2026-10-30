@@ -6,7 +6,9 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
+  type RefObject,
 } from 'react'
 import Link from 'next/link'
 import { FocusTrap } from '@/components/ui/accessibility'
@@ -521,6 +523,7 @@ export function ConfirmDialog({
   testId,
   cancelTestId,
   confirmTestId,
+  overlayClassName,
 }: {
   open: boolean
   title: string
@@ -534,6 +537,7 @@ export function ConfirmDialog({
   testId?: string
   cancelTestId?: string
   confirmTestId?: string
+  overlayClassName?: string
 }) {
   const titleId = useId()
   const descriptionId = useId()
@@ -541,7 +545,7 @@ export function ConfirmDialog({
   if (!open) return null
 
   return (
-    <ModalOverlayPortal className="z-modal" data-testid={testId} onClick={() => {
+    <ModalOverlayPortal className={`z-modal ${overlayClassName ?? ''}`.trim()} data-testid={testId} onClick={() => {
       if (!loading) onCancel()
     }}>
       <FocusTrap active={open} onEscape={() => {
@@ -606,6 +610,10 @@ export function DetailDrawer({
   width = 520,
   side = 'right',
   inset = false,
+  focusTrapActive = true,
+  preserveFocusOnResume = false,
+  focusReturnTargetRef,
+  reliableExitLifecycle = false,
 }: {
   open: boolean
   title: string
@@ -616,14 +624,42 @@ export function DetailDrawer({
   width?: number
   side?: 'right' | 'left'
   inset?: boolean
+  focusTrapActive?: boolean
+  preserveFocusOnResume?: boolean
+  focusReturnTargetRef?: RefObject<HTMLElement | null>
+  reliableExitLifecycle?: boolean
 }) {
   const titleId = useId()
   const descriptionId = useId()
   const [mounted, setMounted] = useState(open)
+  const focusReturnRef = useRef<HTMLElement | null>(null)
+  const panelRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     if (open) setMounted(true)
   }, [open])
+
+  useEffect(() => {
+    if (!reliableExitLifecycle || open || !mounted || !panelRef.current) return
+    const computed = getComputedStyle(panelRef.current)
+    const timeToMs = (value: string) => {
+      const amount = Number.parseFloat(value)
+      if (!Number.isFinite(amount)) return 0
+      return value.trim().endsWith('ms') ? amount : amount * 1000
+    }
+    const durationMs = Math.max(0, ...computed.transitionDuration.split(',').map(timeToMs))
+    const delayMs = Math.max(0, ...computed.transitionDelay.split(',').map(timeToMs))
+    const fallbackMs = durationMs + delayMs
+    if (fallbackMs === 0) {
+      setMounted(false)
+      return
+    }
+
+    // transitionend is the primary lifecycle signal; this derived fallback also
+    // handles interrupted/unsupported transitions and reduced-motion styles.
+    const timeout = window.setTimeout(() => setMounted(false), fallbackMs + 50)
+    return () => window.clearTimeout(timeout)
+  }, [mounted, open, reliableExitLifecycle])
 
   if (!open && !mounted) return null
 
@@ -631,15 +667,27 @@ export function DetailDrawer({
     <ModalOverlayPortal
       className="z-overlay"
       onClick={() => onClose()}
-      onTransitionEnd={() => {
-        if (!open) setMounted(false)
-      }}
+      onTransitionEnd={!reliableExitLifecycle ? () => { if (!open) setMounted(false) } : undefined}
     >
-      <FocusTrap active={open} onEscape={onClose}>
+      <FocusTrap
+        active={open && focusTrapActive}
+        onEscape={focusTrapActive ? onClose : undefined}
+        initialFocusRef={preserveFocusOnResume ? focusReturnTargetRef ?? focusReturnRef : undefined}
+        preserveFocusIfAlreadyWithin={preserveFocusOnResume}
+      >
         <div
           className={`flex min-h-full w-screen ${side === 'right' ? 'justify-end' : 'justify-start'} ${inset ? 'p-3 sm:p-4' : ''}`}
         >
           <aside
+            ref={panelRef}
+            onTransitionEnd={reliableExitLifecycle ? event => {
+              if (!open && event.target === event.currentTarget && event.propertyName === 'opacity') setMounted(false)
+            } : undefined}
+            onFocusCapture={event => {
+              if (preserveFocusOnResume && event.target instanceof HTMLElement) {
+                focusReturnRef.current = event.target
+              }
+            }}
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}

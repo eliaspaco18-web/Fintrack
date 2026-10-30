@@ -11,15 +11,14 @@
 
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useToast } from '@/lib/toast/toast'
 import { FormActions, FormField, FormSection } from '@/components/forms/primitives'
 import { CountrySelect, COUNTRIES } from '@/components/ui/CountrySelect'
 import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
-import { ActionIconButton } from '@/components/ui/ActionIconButton'
 import { AppSelect } from '@/components/ui/AppSelect'
 import { Button } from '@/components/ui/Button'
-import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
 import {
   ConfirmDialog,
   DataSearchField,
@@ -30,6 +29,7 @@ import {
   CatalogEmptyState,
   CatalogIdentity,
   CatalogRow,
+  CatalogRowActions,
   CatalogTable,
 } from '@/components/management/catalog'
 import {
@@ -83,6 +83,9 @@ function resolveCountryLabel(country: string | null): string {
 // ─── COMPONENT ────────────────────────────────────────────────────────────────
 
 export function CurrenciesManager() {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const { toast } = useToast()
   const [items, setItems] = useState<CurrencyItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -95,6 +98,8 @@ export function CurrenciesManager() {
   const [form, setForm] = useState<CurrencyForm>(EMPTY_FORM)
   const [modalOpen, setModalOpen] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<CurrencyItem | null>(null)
+  const handledQueryOpen = useRef(false)
+  const openFromHeroQuery = searchParams.get('new') === 'currency'
 
   // ─── DATA ─────────────────────────────────────────────────────────────────
 
@@ -147,11 +152,29 @@ export function CurrenciesManager() {
     setModalOpen(true)
   }, [resetForm])
 
+  useEffect(() => {
+    if (!openFromHeroQuery) {
+      handledQueryOpen.current = false
+      return
+    }
+    if (handledQueryOpen.current) return
+    handledQueryOpen.current = true
+    openCreateModal()
+  }, [openCreateModal, openFromHeroQuery])
+
+  const clearCreateQueryParam = useCallback(() => {
+    if (searchParams.get('new') !== 'currency') return
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete('new')
+    router.replace(params.toString() ? `${pathname}?${params.toString()}` : pathname, { scroll: false })
+  }, [pathname, router, searchParams])
+
   const closeModal = useCallback(() => {
     if (saving) return
     setModalOpen(false)
     resetForm()
-  }, [resetForm, saving])
+    clearCreateQueryParam()
+  }, [clearCreateQueryParam, resetForm, saving])
 
   const startEdit = useCallback((item: CurrencyItem) => {
     if (item.is_system) return
@@ -254,8 +277,7 @@ export function CurrenciesManager() {
   return (
     <div className="space-y-5">
       <CatalogTable
-        title="Catálogo de monedas"
-        description="Disponibilidad monetaria para portafolios, transacciones y reportes base."
+        title="Monedas"
         count={filteredItems.length}
         summary={(
           <>
@@ -263,9 +285,6 @@ export function CurrenciesManager() {
             <StatusBadge tone="info">{customCount} personalizadas</StatusBadge>
             <StatusBadge tone="primary">{defaultCount} predeterminadas</StatusBadge>
           </>
-        )}
-        primaryAction={(
-          <CreateModuleButton onClick={openCreateModal} label="Nueva moneda" />
         )}
         search={(
           <DataSearchField
@@ -300,21 +319,18 @@ export function CurrenciesManager() {
             {[...Array(4)].map((_, index) => (
               <div
                 key={index}
-                className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1.7fr)_200px_180px_auto] md:items-center"
+                className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1fr)_100px_100px_120px] lg:grid-cols-[minmax(0,1.6fr)_150px_120px_120px] md:items-center"
               >
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 animate-pulse rounded-lg bg-[var(--c-surface-2)]" />
+                  <div className="h-7 w-7 animate-pulse rounded-md bg-[var(--ft-surface-muted)]" />
                   <div className="min-w-0 flex-1 space-y-2">
-                    <div className="h-4 w-40 animate-pulse rounded bg-[var(--c-surface-2)]" />
-                    <div className="h-3 w-24 animate-pulse rounded bg-[var(--c-surface-2)]" />
+                    <div className="h-4 w-40 animate-pulse rounded bg-[var(--ft-surface-muted)]" />
+                    <div className="h-3 w-24 animate-pulse rounded bg-[var(--ft-surface-muted)]" />
                   </div>
                 </div>
-                <div className="h-4 w-24 animate-pulse rounded bg-[var(--c-surface-2)]" />
-                <div className="h-7 w-32 animate-pulse rounded-md bg-[var(--c-surface-2)]" />
-                <div className="flex gap-2 md:justify-end">
-                  <div className="h-8 w-8 animate-pulse rounded-lg bg-[var(--c-surface-2)]" />
-                  <div className="h-8 w-8 animate-pulse rounded-lg bg-[var(--c-surface-2)]" />
-                </div>
+                <div className="h-4 w-20 animate-pulse rounded bg-[var(--ft-surface-muted)]" />
+                <div className="h-5 w-20 animate-pulse rounded bg-[var(--ft-surface-muted)]" />
+                <div className="ml-auto h-8 w-24 animate-pulse rounded bg-[var(--ft-surface-muted)]" />
               </div>
             ))}
           </div>
@@ -325,11 +341,6 @@ export function CurrenciesManager() {
             description={query.trim().length > 0
               ? 'Prueba otra búsqueda o cambia el estado para revisar el catálogo completo.'
               : 'Crea la primera moneda personalizada para ampliar el catálogo disponible.'}
-            action={(
-              <Button type="button" onClick={openCreateModal} variant="secondary" size="md">
-                Nueva moneda
-              </Button>
-            )}
           />
         )}
         columns={[
@@ -338,26 +349,25 @@ export function CurrenciesManager() {
           { label: 'Estado' },
           { label: 'Acciones', align: 'right' },
         ]}
-        gridClassName="md:grid-cols-[minmax(0,1.7fr)_200px_180px_auto] md:items-center"
+        gridClassName="md:grid-cols-[minmax(0,1fr)_100px_100px_120px] lg:grid-cols-[minmax(0,1.6fr)_150px_120px_120px] md:items-center"
       >
         {filteredItems.map(item => (
           <CatalogRow
             key={item.id}
-            gridClassName="md:grid-cols-[minmax(0,1.7fr)_200px_180px_auto] md:items-center"
-            accentColor={item.is_default ? 'var(--c-primary)' : undefined}
+            gridClassName="md:grid-cols-[minmax(0,1fr)_100px_100px_120px] lg:grid-cols-[minmax(0,1.6fr)_150px_120px_120px] md:items-center"
             muted={!item.is_active}
           >
             <CatalogCell label="Moneda">
               <CatalogIdentity
                 icon={(
-                  <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--c-primary-border)] bg-[var(--c-primary-soft)] font-mono text-sm font-semibold text-[var(--c-primary)]">
+                  <span aria-hidden="true" className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-[var(--ft-surface-muted)] text-[12px] font-semibold text-[var(--ft-text-muted)]">
                     {item.symbol}
                   </span>
                 )}
                 title={`${item.code} — ${item.name}`}
                 meta={(
                   <>
-                    {item.is_system ? <StatusBadge tone="muted">Sistema</StatusBadge> : null}
+                    <StatusBadge tone="muted">{item.is_system ? 'Sistema' : 'Personalizada'}</StatusBadge>
                     {item.is_default ? <StatusBadge tone="primary">Predeterminada</StatusBadge> : null}
                   </>
                 )}
@@ -371,40 +381,31 @@ export function CurrenciesManager() {
             </CatalogCell>
 
             <CatalogCell label="Estado">
-              <div className="flex flex-wrap items-center gap-2">
-                <StatusBadge tone={item.is_active ? 'success' : 'danger'}>
-                  {item.is_active ? 'Activa' : 'Inactiva'}
-                </StatusBadge>
-                {!item.is_system ? (
-                  <StatusBadge tone="info">Editable</StatusBadge>
-                ) : null}
-              </div>
+              <StatusBadge tone={item.is_active ? 'success' : 'danger'}>
+                {item.is_active ? 'Activa' : 'Inactiva'}
+              </StatusBadge>
             </CatalogCell>
 
             <CatalogCell label="Acciones" align="right">
               {!item.is_system ? (
-                <div className="flex items-center gap-1.5 md:justify-end">
-                  <ActionIconButton
-                    onClick={() => startEdit(item)}
-                    disabled={Boolean(rowActionId)}
-                    icon="edit"
-                    label="Editar moneda"
-                  />
-                  <ActionIconButton
-                    onClick={() => void toggleStatus(item)}
-                    disabled={Boolean(rowActionId)}
-                    icon={item.is_active ? 'deactivate' : 'reactivate'}
-                    label={item.is_active ? 'Desactivar' : 'Activar'}
-                    variant={item.is_active ? 'danger' : 'success'}
-                  />
-                  <ActionIconButton
-                    onClick={() => setPendingDelete(item)}
-                    disabled={Boolean(rowActionId)}
-                    icon="delete"
-                    label="Eliminar moneda"
-                    variant="danger"
-                  />
-                </div>
+                <CatalogRowActions
+                  label={`${item.code} — ${item.name}`}
+                  onEdit={() => startEdit(item)}
+                  disabled={Boolean(rowActionId)}
+                  actions={[
+                    {
+                      id: 'status',
+                      label: item.is_active ? 'Desactivar' : 'Activar',
+                      onSelect: () => void toggleStatus(item),
+                    },
+                    {
+                      id: 'delete',
+                      label: 'Eliminar',
+                      destructive: true,
+                      onSelect: () => setPendingDelete(item),
+                    },
+                  ]}
+                />
               ) : (
                 <div className="md:text-right">
                   <StatusBadge tone="muted">Bloqueada</StatusBadge>

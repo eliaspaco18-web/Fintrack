@@ -16,7 +16,7 @@ import {
 } from '@/lib/api/response'
 
 interface Params {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }
 
 const zUpdateBudgetPeriodSchema = z.object({
@@ -27,8 +27,9 @@ const zUpdateBudgetPeriodSchema = z.object({
   message: 'Debes enviar al menos un campo para actualizar.',
 })
 
-export async function PATCH(req: NextRequest, { params }: Params) {
-  const supabase = createClient()
+export async function PATCH(req: NextRequest, props: Params) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 

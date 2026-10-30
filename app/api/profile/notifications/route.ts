@@ -32,7 +32,7 @@ const DEFAULT_PREFS: NotifPrefs = {
 }
 
 export async function GET() {
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) return apiUnauthorized()
 
@@ -52,7 +52,7 @@ export async function GET() {
 }
 
 export async function PATCH(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) return apiUnauthorized()
 

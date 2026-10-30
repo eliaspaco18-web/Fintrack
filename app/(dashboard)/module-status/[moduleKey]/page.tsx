@@ -45,11 +45,12 @@ function launchFeatures(moduleInfo: AppControlModule) {
   ]
 }
 
-export default function ModuleStatusPage({
-  params,
-}: {
-  params: { moduleKey: string }
-}) {
+export default async function ModuleStatusPage(
+  props: {
+    params: Promise<{ moduleKey: string }>
+  }
+) {
+  const params = await props.params;
   const moduleInfo = findControlledModuleByKey(params.moduleKey)
 
   if (!moduleInfo) notFound()

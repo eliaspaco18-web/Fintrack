@@ -52,6 +52,7 @@ export function FormField({
   label,
   optional = false,
   optionalLabel = 'Opcional',
+  labelAdornment,
   hint,
   description,
   error,
@@ -65,6 +66,7 @@ export function FormField({
   label: string
   optional?: boolean
   optionalLabel?: string
+  labelAdornment?: ReactNode
   hint?: string
   description?: string
   error?: string
@@ -87,17 +89,34 @@ export function FormField({
   return (
     <div className={joinClasses('flex flex-col gap-[var(--ft-form-label-gap)]', className)}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <label
-          htmlFor={controlId}
-          className="text-[13px] font-semibold leading-[1.3] tracking-[-0.01em] text-[var(--ft-text-strong)]"
-        >
-          {label}
-          {optional ? (
-            <span className="ml-2 text-[12px] font-medium text-[var(--ft-form-muted)]">
-              {optionalLabel}
-            </span>
-          ) : null}
-        </label>
+        {labelAdornment ? (
+          <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+            <label
+              htmlFor={controlId}
+              className="text-[13px] font-semibold leading-[1.3] tracking-[-0.01em] text-[var(--ft-text-strong)]"
+            >
+              {label}
+              {optional ? (
+                <span className="ml-2 text-[12px] font-medium text-[var(--ft-form-muted)]">
+                  {optionalLabel}
+                </span>
+              ) : null}
+            </label>
+            {labelAdornment}
+          </div>
+        ) : (
+          <label
+            htmlFor={controlId}
+            className="text-[13px] font-semibold leading-[1.3] tracking-[-0.01em] text-[var(--ft-text-strong)]"
+          >
+            {label}
+            {optional ? (
+              <span className="ml-2 text-[12px] font-medium text-[var(--ft-form-muted)]">
+                {optionalLabel}
+              </span>
+            ) : null}
+          </label>
+        )}
         {hint ? (
           <p id={hintId} className="text-[12px] leading-[1.4] text-[var(--ft-form-muted)]">
             {hint}

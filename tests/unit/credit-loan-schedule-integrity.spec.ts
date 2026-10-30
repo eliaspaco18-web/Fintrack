@@ -11,6 +11,7 @@ import {
   getManualScheduleSubmissionIssue,
   resizeScheduleRows,
   zManualLoanInstallmentInput,
+  zManualLoanInstallmentsInput,
   type LoanScheduleRow,
   type ManualLoanInstallmentInput,
 } from '@/modules/credits/loan-schedule-integrity'
@@ -163,6 +164,26 @@ test.describe('Credits loan schedule preservation', () => {
         other_charges: 0,
       }).success).toBe(false)
     }
+  })
+
+  test('bounds externally supplied manual schedules to the API installment limit', () => {
+    const row: ManualLoanInstallmentInput = {
+      installment_number: 1,
+      due_date: '2026-09-25',
+      principal_amount: 1,
+      interest_amount: 0,
+      insurance_amount: 0,
+      other_charges: 0,
+    }
+
+    expect(zManualLoanInstallmentsInput.safeParse(Array.from({ length: 600 }, (_, index) => ({
+      ...row,
+      installment_number: index + 1,
+    }))).success).toBe(true)
+    expect(zManualLoanInstallmentsInput.safeParse(Array.from({ length: 601 }, (_, index) => ({
+      ...row,
+      installment_number: index + 1,
+    }))).success).toBe(false)
   })
 
   test('returns controlled truthful states without inventing missing installments', () => {

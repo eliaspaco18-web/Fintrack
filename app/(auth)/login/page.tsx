@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 }
 
 interface LoginPageProps {
-  searchParams?: Record<string, string | string[] | undefined>
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
 }
 
 function firstValue(value: string | string[] | undefined): string | undefined {
@@ -34,7 +34,9 @@ function resolveInitialMode(value: string | undefined): AuthMode {
   return 'login'
 }
 
-function resolveInitialNotice(searchParams: LoginPageProps['searchParams']): AuthNotice | null {
+function resolveInitialNotice(
+  searchParams: Record<string, string | string[] | undefined> | undefined,
+): AuthNotice | null {
   const authMessage = firstValue(searchParams?.authMessage)
   const authError = firstValue(searchParams?.authError)
 
@@ -62,7 +64,8 @@ function resolveInitialNotice(searchParams: LoginPageProps['searchParams']): Aut
   return null
 }
 
-export default function LoginPage({ searchParams }: LoginPageProps) {
+export default async function LoginPage(props: LoginPageProps) {
+  const searchParams = await props.searchParams
   const initialMode = resolveInitialMode(firstValue(searchParams?.mode))
   const nextPath = sanitizeRelativePath(firstValue(searchParams?.next))
   const initialNotice = resolveInitialNotice(searchParams)

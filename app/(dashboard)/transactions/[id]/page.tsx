@@ -12,15 +12,16 @@ import { getTransactionFormOptions } from '@/lib/server/transaction-form-options
 import { TransactionService }     from '@/modules/transactions/transaction.service'
 import { TransactionDetailClient } from '@/components/detail/TransactionDetailClient'
 
-interface Props { params: { id: string } }
+interface Props { params: Promise<{ id: string }> }
 const SERVER_QUERY_TIMEOUT_MS = 4_000
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return { title: 'Transacción' }
 }
 
-export default async function TransactionDetailPage({ params }: Props) {
-  const supabase = createClient()
+export default async function TransactionDetailPage(props: Props) {
+  const params = await props.params;
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 

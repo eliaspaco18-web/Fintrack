@@ -18,6 +18,7 @@ import {
 } from '@/lib/constants/visual-options'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
+import transactionStyles from '@/components/tables/TransactionsRound07.module.css'
 
 type BankEntityRef = {
   id: string
@@ -261,7 +262,7 @@ export function NestedAccountCreateModal({
       title="Nuevo portafolio"
       subtitle="Crea una cuenta sin salir del registro de transacciones."
       widthClassName="max-w-[min(96vw,520px)]"
-      overlayClassName="z-[132]"
+      overlayClassName={`${transactionStyles.formOverlay} z-[132]`}
       footer={(
         <FormActions
           secondaryAction={(
@@ -515,7 +516,7 @@ export function NestedCategoryCreateModal({
       title="Nueva categoria"
       subtitle="Crea la categoria y continua sin salir del registro."
       widthClassName="max-w-[min(96vw,440px)]"
-      overlayClassName="z-[132]"
+      overlayClassName={`${transactionStyles.formOverlay} z-[132]`}
       footer={(
         <FormActions
           secondaryAction={(

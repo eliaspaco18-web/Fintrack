@@ -54,7 +54,7 @@ async function ensureUserState(releaseId: string, userId: string) {
 }
 
 export async function GET() {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
@@ -82,7 +82,7 @@ export async function GET() {
 }
 
 export async function PATCH() {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 

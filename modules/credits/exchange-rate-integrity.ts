@@ -9,8 +9,7 @@ const MAX_USD_PEN_EXCHANGE_RATE = 100
 export const zCreditSubmissionCurrency = z.enum(['PEN', 'USD'])
 
 export const zCreditExchangeRate = z.number({
-  required_error: USD_CREDIT_EXCHANGE_RATE_ERROR,
-  invalid_type_error: USD_CREDIT_EXCHANGE_RATE_ERROR,
+  error: USD_CREDIT_EXCHANGE_RATE_ERROR,
 }).refine(
   value => Number.isFinite(value)
     && value >= MIN_USD_PEN_EXCHANGE_RATE

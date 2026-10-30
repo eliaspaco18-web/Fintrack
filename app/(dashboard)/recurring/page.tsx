@@ -9,8 +9,8 @@ import type { Metadata } from 'next'
 import { RecurringWorkspace } from '@/components/recurring/RecurringWorkspace'
 
 export const metadata: Metadata = {
-  title: 'Recurrentes | FinTrack',
-  description: 'Gestiona tus plantillas de transacciones recurrentes guardadas.',
+  title: 'Plantillas | FinTrack',
+  description: 'Reutiliza un movimiento y revisa los datos antes de registrarlo.',
 }
 
 export default function RecurringPage() {

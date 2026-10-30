@@ -1,0 +1,165 @@
+{
+  "startedAt": "2026-09-22T22:09:27.372Z",
+  "finishedAt": "2026-09-22T22:09:33.276Z",
+  "checks": [
+    {
+      "label": "Month hover exposes exact income, expense and result",
+      "pass": true
+    },
+    {
+      "label": "Hover changes only the chart reading, not current month totals",
+      "pass": true
+    },
+    {
+      "label": "Click pins the exact month reading",
+      "pass": true
+    },
+    {
+      "label": "Chart supports roving keyboard focus",
+      "pass": true
+    },
+    {
+      "label": "Escape hides tooltip and retains pinned month",
+      "pass": true
+    },
+    {
+      "label": "Operation menu includes all eight existing operations",
+      "pass": true
+    },
+    {
+      "label": "Menu remains within viewport",
+      "pass": true
+    },
+    {
+      "label": "Menu Escape restores focus",
+      "pass": true
+    },
+    {
+      "label": "Context docking uses 260ms and delayed 180ms content",
+      "pass": true
+    },
+    {
+      "label": "Context view explains actual record and report semantics",
+      "pass": true
+    },
+    {
+      "label": "Read to edit preserves exact workbench geometry",
+      "pass": true
+    },
+    {
+      "label": "Back-to-record cannot silently discard draft",
+      "pass": true
+    },
+    {
+      "label": "Keep editing retains draft value",
+      "pass": true
+    },
+    {
+      "label": "Explicit discard returns to original record",
+      "pass": true
+    },
+    {
+      "label": "Confirmation uses 24px radius",
+      "pass": true
+    },
+    {
+      "label": "Interrupted close cannot unmount a reopened panel",
+      "pass": true
+    },
+    {
+      "label": "Keyboard close is immediate",
+      "pass": true
+    },
+    {
+      "label": "Keyboard opening has no active motion",
+      "pass": true
+    },
+    {
+      "label": "Focus returns to exact register trigger",
+      "pass": true
+    },
+    {
+      "label": "OS reduced motion opens without transform animation",
+      "pass": true
+    },
+    {
+      "label": "OS reduced motion closes immediately",
+      "pass": true
+    },
+    {
+      "label": "Mobile panel retains all four rounded corners and 8px inset",
+      "pass": true
+    },
+    {
+      "label": "Mobile close and record navigation are 44px targets",
+      "pass": true
+    },
+    {
+      "label": "Mobile workbench does not overflow",
+      "pass": true
+    },
+    {
+      "label": "Workbench 320: body and controls fit",
+      "pass": true
+    },
+    {
+      "label": "Workbench 375: body and controls fit",
+      "pass": true
+    },
+    {
+      "label": "Workbench 768: body and controls fit",
+      "pass": true
+    },
+    {
+      "label": "Workbench 834: body and controls fit",
+      "pass": true
+    },
+    {
+      "label": "Skeleton resolves to exact values, never count-up",
+      "pass": true
+    },
+    {
+      "label": "Skeleton to content retains region geometry",
+      "pass": true
+    },
+    {
+      "label": "Workshop controls operate the isolated preview",
+      "pass": true
+    },
+    {
+      "label": "Workshop reduced mode immediately closes panel",
+      "pass": true
+    },
+    {
+      "label": "No browser errors or external requests",
+      "pass": true
+    }
+  ],
+  "errors": [],
+  "observations": {
+    "insetColor": "oklch(0.965 0.008 155)",
+    "openTimings": [
+      {
+        "duration": 260,
+        "delay": 0,
+        "easing": "cubic-bezier(0.32, 0.72, 0, 1)"
+      },
+      {
+        "duration": 180,
+        "delay": 36,
+        "easing": "cubic-bezier(0.22, 1, 0.36, 1)"
+      }
+    ],
+    "loadingGeometry": {
+      "skeletonBox": {
+        "y": 353,
+        "height": 527
+      },
+      "contentBox": {
+        "y": 353,
+        "height": 527
+      }
+    }
+  },
+  "failure": null
+}

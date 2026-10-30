@@ -6,819 +6,483 @@ import { mutate } from 'swr'
 import { useToast } from '@/lib/toast/toast'
 import { useAssets } from '@/lib/hooks/useModules'
 import { formatCurrency, formatDateLabel } from '@/lib/contracts/ui.contracts'
-import { ActionIconButton } from '@/components/ui/ActionIconButton'
+import { AnchoredActionMenu } from '@/components/ui/AnchoredActionMenu'
 import { AppSelect } from '@/components/ui/AppSelect'
 import { Button } from '@/components/ui/Button'
 import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
 import { NumericInput } from '@/components/ui/NumericInput'
-import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
-import { ViewToggle } from '@/components/ui/ViewToggle'
+import { RecordModal } from '@/components/ui/RecordModal'
 import { FormActions, FormField, FormSection } from '@/components/forms/primitives'
-import {
-  AmountCell,
-  ConfirmDialog,
-  ControlsBar,
-  DataErrorBanner,
-  DataFilterPreset,
-  DataSearchField,
-  DataTable,
-  EmptyState,
-  FilterBar,
-  RegisterModule,
-  StatCard,
-  StatGrid,
-  StatusBadge,
-} from '@/components/finance'
+import { ConfirmDialog, DataErrorBanner, DataSearchField, EmptyState, PageLayout } from '@/components/finance'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
+import movementStyles from '@/components/tables/TransactionsRound07.module.css'
+import { AssetRecordContent } from '@/components/assets/AssetRecordContent'
 import {
   getAssetStatusPresentation,
+  getAssetPurchaseValue,
   getAssetTypePresentation,
+  getRecordedAssetValue,
   matchesAssetStatusFilter,
+  summarizeActiveAssetValues,
   type AssetStatusFilter,
   type AssetWithTypeInfo,
 } from '@/modules/assets/asset-presentation'
+import styles from './AssetsListPanel.module.css'
 
-type ViewMode = 'list' | 'cards'
-type AssetTypeOption = { id: string; name: string; color: string | null; icon: string | null }
-type AssetEditForm = {
-  name: string
-  current_value: string
-  recipient: string
-  notes: string
+type AssetTypeOption = { id: string; name: string }
+const EMPTY_ASSET_TYPES: AssetTypeOption[] = []
+type EditForm = { name: string; current_value: string; recipient: string; notes: string }
+type CurrencySummary = { currency: string; amount: number; count: number; invalidCount: number }
+type AssetTransaction = { id: string; description: string | null; source_account?: { id: string; name: string } | null } | null
+type TransactionLoadState = { assetId: string; status: 'loading' | 'loaded' | 'unavailable' | 'absent'; transaction: AssetTransaction }
+
+function currencyLabel(currency: string) {
+  if (currency === 'PEN' || currency === 'USD') return currency
+  return currency === 'UNVERIFIED' ? 'Moneda no verificable' : currency
 }
 
-function resolveErrorMessage(error: unknown): string | null {
+function amountLabel(amount: number, currency: string) {
+  if (currency === 'PEN' || currency === 'USD') return formatCurrency(amount, currency)
+  return `${currencyLabel(currency)} ${new Intl.NumberFormat('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)}`
+}
+
+function getErrorMessage(error: unknown) {
   if (!error) return null
-  if (typeof error === 'string') return error
   if (error instanceof Error) return error.message
-  if (typeof error === 'object') {
-    const candidate = error as { message?: string; detail?: string; root?: string }
-    return candidate.message ?? candidate.detail ?? candidate.root ?? 'Ocurrio un error inesperado.'
-  }
-  return 'Ocurrio un error inesperado.'
+  if (typeof error === 'string') return error
+  return 'Ocurrió un error inesperado.'
 }
 
-function cubeIcon() {
+function statusTab(status: AssetStatusFilter, label: string, selected: AssetStatusFilter, onSelect: (value: AssetStatusFilter) => void) {
   return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
+    <button
+      type="button"
+      aria-pressed={selected === status}
+      className={styles.tab}
+      data-active={selected === status}
+      onClick={() => onSelect(status)}
     >
-      <path d="m12 2 9 4.5v11L12 22 3 17.5v-11L12 2Z" />
-      <path d="M12 22V12" />
-      <path d="m21 6.5-9 5.5-9-5.5" />
-    </svg>
+      {label}
+    </button>
   )
 }
 
-function withAlpha(color: string | null | undefined, alpha: string, fallback: string) {
-  if (color && /^#[0-9a-f]{6}$/i.test(color)) return `${color}${alpha}`
-  return fallback
-}
-
-export function AssetsListPanel({ onCreate }: { onCreate: () => void }) {
+export function AssetsListPanel({
+  onCreate,
+  demoMode = false,
+  demoAssets = [],
+  demoTypes,
+  onExitDemo,
+}: {
+  onCreate: () => void
+  demoMode?: boolean
+  demoAssets?: AssetWithTypeInfo[]
+  demoTypes?: AssetTypeOption[]
+  onExitDemo?: () => void
+}) {
   const router = useRouter()
   const { toast } = useToast()
-
-  const [viewMode, setViewMode] = useState<ViewMode>('list')
+  const resolvedDemoTypes = demoTypes ?? EMPTY_ASSET_TYPES
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
+  const [currencyFilter, setCurrencyFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState<AssetStatusFilter>('ACTIVE')
   const [assetTypes, setAssetTypes] = useState<AssetTypeOption[]>([])
+  const [assetTypesError, setAssetTypesError] = useState<string | null>(null)
   const [editingAsset, setEditingAsset] = useState<AssetWithTypeInfo | null>(null)
-  const [editForm, setEditForm] = useState<AssetEditForm>({
-    name: '',
-    current_value: '',
-    recipient: '',
-    notes: '',
-  })
+  const [editForm, setEditForm] = useState<EditForm>({ name: '', current_value: '', recipient: '', notes: '' })
+  const [editDiscardOpen, setEditDiscardOpen] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<AssetWithTypeInfo | null>(null)
+  const [selectedAsset, setSelectedAsset] = useState<AssetWithTypeInfo | null>(null)
+  const [transactionState, setTransactionState] = useState<TransactionLoadState | null>(null)
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const { assets, isLoading: assetsLoading, error: hookError, refetch } = useAssets({ status: '' }, !demoMode)
+  const rows = demoMode ? demoAssets : assets as AssetWithTypeInfo[]
+  const isLoading = demoMode ? false : assetsLoading
 
-  const {
-    assets,
-    isLoading,
-    error: hookError,
-    refetch,
-  } = useAssets({ status: '' })
-
-  useEffect(() => {
-    fetch('/api/asset-types', { cache: 'no-store' })
-      .then(response => response.json())
-      .then(json => {
-        if (json?.ok) setAssetTypes(json.data ?? [])
-      })
-      .catch(() => null)
+  const loadTypes = useCallback(async (signal?: AbortSignal) => {
+    setAssetTypesError(null)
+    try {
+      const response = await fetch('/api/asset-types', { cache: 'no-store', signal })
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.ok) throw new Error(getApiErrorMessage(json, 'No se pudieron cargar los tipos de activo.'))
+      if (!signal?.aborted) setAssetTypes((json.data as AssetTypeOption[]) ?? [])
+    } catch (error) {
+      if (!signal?.aborted) setAssetTypesError(getErrorMessage(error))
+    }
   }, [])
 
-  const typedAssets = assets as AssetWithTypeInfo[]
+  useEffect(() => {
+    if (demoMode) return
+    const controller = new AbortController()
+    void loadTypes(controller.signal)
+    return () => controller.abort()
+  }, [demoMode, loadTypes])
+
+  useEffect(() => {
+    if (demoMode) {
+      setAssetTypesError(null)
+      setAssetTypes(resolvedDemoTypes)
+      return
+    }
+    setAssetTypes([])
+  }, [demoMode, resolvedDemoTypes])
+
+  useEffect(() => {
+    if (!selectedAsset) {
+      setTransactionState(null)
+      return
+    }
+    const asset = selectedAsset
+    if (demoMode) {
+      setTransactionState({ assetId: asset.id, status: 'absent', transaction: null })
+      return
+    }
+    if (!asset.transaction_id) {
+      setTransactionState({ assetId: asset.id, status: 'absent', transaction: null })
+      return
+    }
+
+    const controller = new AbortController()
+    setTransactionState({ assetId: asset.id, status: 'loading', transaction: null })
+    void fetch(`/api/transactions/${encodeURIComponent(asset.transaction_id)}`, { cache: 'no-store', signal: controller.signal })
+      .then(async response => {
+        const json = await response.json().catch(() => null)
+        if (!response.ok || !json?.ok || json.data?.id !== asset.transaction_id) {
+          throw new Error('No se pudo verificar el movimiento vinculado.')
+        }
+        const sourceAccount = json.data.source_account
+        const transaction: AssetTransaction = {
+          id: json.data.id,
+          description: typeof json.data.description === 'string' ? json.data.description : null,
+          source_account: sourceAccount && typeof sourceAccount.id === 'string' && typeof sourceAccount.name === 'string'
+            ? { id: sourceAccount.id, name: sourceAccount.name }
+            : null,
+        }
+        setTransactionState({ assetId: asset.id, status: 'loaded', transaction })
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setTransactionState({ assetId: asset.id, status: 'unavailable', transaction: null })
+      })
+    return () => controller.abort()
+  }, [demoMode, selectedAsset])
+
+  const statusCounts = useMemo(() => ({
+    active: rows.filter(asset => asset.status === 'ACTIVE').length,
+    sold: rows.filter(asset => asset.status === 'SOLD').length,
+    depreciated: rows.filter(asset => asset.status === 'DEPRECIATED').length,
+    unknown: rows.filter(asset => !getAssetStatusPresentation(asset.status).isVerified).length,
+    all: rows.length,
+  }), [rows])
+  const summaries = useMemo(() => summarizeActiveAssetValues(rows), [rows])
+  const knownCurrencySummaries = summaries.filter(summary => summary.currency !== 'UNVERIFIED')
+  const displayedSummaries: CurrencySummary[] = [
+    ...['PEN', 'USD'].map(currency => knownCurrencySummaries.find(summary => summary.currency === currency)
+      ?? { currency, amount: 0, count: 0, invalidCount: 0 }),
+    ...knownCurrencySummaries.filter(summary => summary.currency !== 'PEN' && summary.currency !== 'USD'),
+  ]
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-
-    return typedAssets.filter(asset => {
-      if (typeFilter && asset.asset_type_id !== typeFilter) return false
+    const query = search.trim().toLocaleLowerCase('es-PE')
+    return rows.filter(asset => {
       if (!matchesAssetStatusFilter(asset.status, statusFilter)) return false
-      if (dateFrom && asset.purchase_date < dateFrom) return false
-      if (dateTo && asset.purchase_date > dateTo) return false
-      if (!q) return true
-
-      return asset.name.toLowerCase().includes(q)
+      if (typeFilter && (demoMode ? asset.asset_type !== typeFilter : asset.asset_type_id !== typeFilter)) return false
+      if (currencyFilter && asset.currency !== currencyFilter) return false
+      return !query || [asset.name, asset.recipient, asset.location, asset.serial_number]
+        .some(value => value?.toLocaleLowerCase('es-PE').includes(query))
     })
-  }, [dateFrom, dateTo, search, statusFilter, typeFilter, typedAssets])
+  }, [currencyFilter, demoMode, rows, search, statusFilter, typeFilter])
 
-  const activeCount = useMemo(
-    () => typedAssets.filter(asset => asset.status === 'ACTIVE').length,
-    [typedAssets],
-  )
+  const dataError = demoMode ? null : hookError
+  const surfaceError = actionError ?? (dataError ? getErrorMessage(dataError) : null)
+  const hasFilters = Boolean(search || typeFilter || currencyFilter || statusFilter !== 'ACTIVE')
 
-  const soldCount = useMemo(
-    () => typedAssets.filter(asset => asset.status === 'SOLD').length,
-    [typedAssets],
-  )
-
-  const depreciatedCount = useMemo(
-    () => typedAssets.filter(asset => asset.status === 'DEPRECIATED').length,
-    [typedAssets],
-  )
-
-  const unverifiedStatusCount = useMemo(
-    () => typedAssets.filter(asset => !getAssetStatusPresentation(asset.status).isVerified).length,
-    [typedAssets],
-  )
-
-  const totalPen = useMemo(
-    () => typedAssets
-      .filter(asset => asset.status === 'ACTIVE' && asset.currency === 'PEN')
-      .reduce((sum, asset) => sum + Number(asset.current_value ?? asset.purchase_value ?? 0), 0),
-    [typedAssets],
-  )
-
-  const totalUsd = useMemo(
-    () => typedAssets
-      .filter(asset => asset.status === 'ACTIVE' && asset.currency === 'USD')
-      .reduce((sum, asset) => sum + Number(asset.current_value ?? asset.purchase_value ?? 0), 0),
-    [typedAssets],
-  )
-
-  const typeCount = useMemo(() => {
-    const names = new Set<string>()
-    for (const asset of typedAssets) {
-      const type = getAssetTypePresentation(asset)
-      if (type.isVerified) names.add(`${type.source}:${type.label}`)
-    }
-    return names.size
-  }, [typedAssets])
-
-  const surfaceError = actionError ?? resolveErrorMessage(hookError)
-
-  const openEditModal = useCallback((asset: AssetWithTypeInfo) => {
+  const openEdit = useCallback((asset: AssetWithTypeInfo) => {
     setActionError(null)
     setEditingAsset(asset)
     setEditForm({
       name: asset.name,
-      current_value: Number(asset.current_value ?? asset.purchase_value ?? 0).toFixed(2),
+      current_value: getRecordedAssetValue(asset)?.toFixed(2) ?? '',
       recipient: asset.recipient ?? '',
       notes: asset.notes ?? '',
     })
   }, [])
 
-  const closeEditModal = useCallback(() => {
+  const initialEditForm = useMemo(() => editingAsset ? ({
+    name: editingAsset.name,
+    current_value: getRecordedAssetValue(editingAsset)?.toFixed(2) ?? '',
+    recipient: editingAsset.recipient ?? '',
+    notes: editingAsset.notes ?? '',
+  }) : null, [editingAsset])
+  const editIsDirty = Boolean(initialEditForm && JSON.stringify(initialEditForm) !== JSON.stringify(editForm))
+
+  const closeEdit = useCallback(() => {
     if (actionLoadingId) return
+    if (editIsDirty) {
+      setEditDiscardOpen(true)
+      return
+    }
     setEditingAsset(null)
-    setEditForm({
-      name: '',
-      current_value: '',
-      recipient: '',
-      notes: '',
-    })
-  }, [actionLoadingId])
+  }, [actionLoadingId, editIsDirty])
 
-  const handleToggleStatus = useCallback(async (asset: AssetWithTypeInfo, nextStatus: 'ACTIVE' | 'SOLD') => {
-    if (actionLoadingId) return
-
+  const handleStatus = useCallback(async (asset: AssetWithTypeInfo, nextStatus: 'ACTIVE' | 'SOLD') => {
+    if (demoMode || actionLoadingId) return
     setActionLoadingId(asset.id)
     setActionError(null)
-
     try {
-      const res = await fetch(`/api/assets/${asset.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: nextStatus }),
+      const response = await fetch(`/api/assets/${asset.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: nextStatus }),
       })
-      const json = await res.json().catch(() => null)
-
-      if (!res.ok || !json?.ok) {
-        throw new Error(getApiErrorMessage(json, 'No se pudo actualizar el estado'))
-      }
-
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.ok) throw new Error(getApiErrorMessage(json, 'No se pudo actualizar el estado.'))
       await refetch()
       await mutate((key: unknown) => typeof key === 'string' && key.startsWith('/api/assets'))
       router.refresh()
-      toast.success(
-        nextStatus === 'ACTIVE' ? 'Activo reactivado' : 'Activo marcado como vendido',
-        asset.name,
-        { persist: false },
-      )
+      toast.success(nextStatus === 'ACTIVE' ? 'Activo reactivado' : 'Activo marcado como vendido', asset.name, { persist: false })
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Error al actualizar'
+      const message = getErrorMessage(error) ?? 'No se pudo actualizar el activo.'
       setActionError(message)
-      toast.error('Error', message)
+      toast.error('No se pudo actualizar el activo', message)
     } finally {
       setActionLoadingId(null)
     }
-  }, [actionLoadingId, refetch, router, toast])
+  }, [actionLoadingId, demoMode, refetch, router, toast])
 
   const handleDelete = useCallback(async () => {
-    if (!pendingDelete || actionLoadingId) return
-
+    if (demoMode || !pendingDelete || actionLoadingId) return
     setActionLoadingId(pendingDelete.id)
     setActionError(null)
-
     try {
-      const res = await fetch(`/api/assets/${pendingDelete.id}`, { method: 'DELETE' })
-
-      if (!res.ok && res.status !== 204) {
-        const json = await res.json().catch(() => null)
-        throw new Error(getApiErrorMessage(json, 'No se pudo eliminar el activo'))
+      const response = await fetch(`/api/assets/${pendingDelete.id}`, { method: 'DELETE' })
+      if (!response.ok && response.status !== 204) {
+        const json = await response.json().catch(() => null)
+        throw new Error(getApiErrorMessage(json, 'No se pudo eliminar el activo.'))
       }
-
       await refetch()
       await mutate((key: unknown) => typeof key === 'string' && key.startsWith('/api/assets'))
       router.refresh()
       toast.success('Activo eliminado', pendingDelete.name, { persist: false })
       setPendingDelete(null)
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Error al eliminar'
+      const message = getErrorMessage(error) ?? 'No se pudo eliminar el activo.'
       setActionError(message)
       toast.error('No se pudo eliminar', message)
     } finally {
       setActionLoadingId(null)
     }
-  }, [actionLoadingId, pendingDelete, refetch, router, toast])
+  }, [actionLoadingId, demoMode, pendingDelete, refetch, router, toast])
 
-  const handleSaveEdit = useCallback(async () => {
-    if (!editingAsset || actionLoadingId) return
-
-    const trimmedName = editForm.name.trim()
-    if (trimmedName.length < 2) {
-      const message = 'El nombre debe tener al menos 2 caracteres.'
-      setActionError(message)
-      toast.error('No se pudo actualizar el activo', message)
-      return
-    }
-
+  const saveEdit = useCallback(async () => {
+    if (demoMode || !editingAsset || actionLoadingId) return
+    const name = editForm.name.trim()
     const currentValue = roundToDecimals(parseNumericInput(editForm.current_value, Number.NaN), 2)
-    if (!Number.isFinite(currentValue) || currentValue <= 0) {
-      const message = 'El valor actual debe ser mayor a 0.'
-      setActionError(message)
-      toast.error('No se pudo actualizar el activo', message)
-      return
-    }
-
+    if (name.length < 2) { setActionError('El nombre debe tener al menos 2 caracteres.'); return }
+    if (!Number.isFinite(currentValue) || currentValue <= 0) { setActionError('El valor actual debe ser mayor a 0.'); return }
     setActionLoadingId(editingAsset.id)
     setActionError(null)
-
     try {
-      const res = await fetch(`/api/assets/${editingAsset.id}`, {
+      const response = await fetch(`/api/assets/${editingAsset.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: trimmedName,
-          current_value: currentValue,
-          recipient: editForm.recipient.trim() || null,
-          notes: editForm.notes.trim() || null,
-        }),
+        body: JSON.stringify({ name, current_value: currentValue, recipient: editForm.recipient.trim() || null, notes: editForm.notes.trim() || null }),
       })
-      const json = await res.json().catch(() => null)
-
-      if (!res.ok || !json?.ok) {
-        throw new Error(getApiErrorMessage(json, 'No se pudo actualizar el activo'))
-      }
-
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.ok) throw new Error(getApiErrorMessage(json, 'No se pudo actualizar el activo.'))
       await refetch()
       await mutate((key: unknown) => typeof key === 'string' && key.startsWith('/api/assets'))
       router.refresh()
-      toast.success('Activo actualizado', trimmedName, { persist: false })
-      closeEditModal()
+      setEditingAsset(null)
+      toast.success('Activo actualizado', name, { persist: false })
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'No se pudo actualizar el activo'
+      const message = getErrorMessage(error) ?? 'No se pudo actualizar el activo.'
       setActionError(message)
       toast.error('No se pudo actualizar el activo', message)
     } finally {
       setActionLoadingId(null)
     }
-  }, [actionLoadingId, closeEditModal, editForm, editingAsset, refetch, router, toast])
+  }, [actionLoadingId, demoMode, editForm, editingAsset, refetch, router, toast])
 
   return (
-    <>
-      <RegisterModule
-        eyebrow="Inventario patrimonial"
-        title="Activos"
-        description="Bienes, equipos e inversiones bajo un registro mas preciso, con lectura inmediata de valor, tipo y vigencia."
-        headerMode="content"
-        actions={(
-          <CreateModuleButton
-            onClick={onCreate}
-            label="Nuevo activo"
-            testId="assets-hero-create-button"
+    <PageLayout className={`max-w-none !gap-0 ${movementStyles.v3ModuleContent} ${styles.page}`}>
+      <div className={movementStyles.pageOverview} data-testid="assets-page-overview">
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h1 data-ft-route-heading="" tabIndex={-1} className="font-display text-[26px] font-semibold leading-8 tracking-[-0.035em] text-[var(--ft-text-strong)]">Activos</h1>
+            <p className="mt-0.5 max-w-2xl text-[12px] leading-5 text-[var(--ft-text-muted)]">Bienes registrados, organizados por tipo y estado.</p>
+          </div>
+          {demoMode ? <span className={styles.readOnlyBadge}>Solo lectura</span> : <CreateModuleButton onClick={onCreate} label="Registrar activo" className={`${movementStyles.v3ModulePrimaryAction} ${styles.createButton}`} testId="assets-create-button" />}
+        </header>
+        <section className={movementStyles.summary} aria-label="Resumen de activos registrados" data-testid="assets-summary">
+          {displayedSummaries.map(summary => (
+            <div key={summary.currency} className={movementStyles.summaryItem}>
+              <p>Valor registrado · {currencyLabel(summary.currency)}</p>
+              <div className={`${movementStyles.summaryValue} tabular-nums`}>
+                {isLoading || (dataError && rows.length === 0) ? '—' : summary.invalidCount && !summary.count ? 'No verificable' : amountLabel(summary.amount, summary.currency)}
+              </div>
+              <span className={movementStyles.summaryDetail}>
+                {isLoading ? 'Cargando resumen' : dataError && rows.length === 0 ? 'Resumen no disponible' : `${summary.count} activo${summary.count === 1 ? '' : 's'} vigente${summary.count === 1 ? '' : 's'}${summary.invalidCount ? ` · ${summary.invalidCount} sin valor verificable` : ''}`}
+              </span>
+            </div>
+          ))}
+          <div className={`${movementStyles.summaryItem} ${movementStyles.summaryQualitative}`}>
+            <p>Activos vigentes</p>
+            <div className={`${movementStyles.summaryValue} tabular-nums`}>{isLoading || (dataError && rows.length === 0) ? '—' : String(statusCounts.active)}</div>
+            <span className={movementStyles.summaryDetail}>{isLoading ? 'Cargando resumen' : dataError && rows.length === 0 ? 'Resumen no disponible' : `${statusCounts.sold} vendidos · ${statusCounts.depreciated} depreciados${statusCounts.unknown ? ` · ${statusCounts.unknown} sin verificar` : ''}`}</span>
+          </div>
+        </section>
+        {summaries.some(summary => summary.currency === 'UNVERIFIED' || summary.invalidCount > 0) ? (
+          <p className={styles.summaryNote} role="note" data-testid="assets-unverified-values-note">Algunos activos vigentes tienen una moneda o un valor que no se puede verificar; se mantienen fuera de los importes monetarios correspondientes.</p>
+        ) : null}
+      </div>
+
+      {demoMode ? (
+        <div className={styles.demoBanner} role="note" data-testid="assets-demo-banner">
+          <span><strong>Datos de demostración</strong><span>Seis registros ficticios · solo lectura · no se consultan ni modifican datos financieros.</span></span>
+          <Button type="button" variant="secondary" size="sm" onClick={onExitDemo} testId="assets-exit-demo">Salir de demostración</Button>
+        </div>
+      ) : null}
+
+      <nav aria-label="Filtrar activos por estado" className={`${movementStyles.tabs} ${styles.tabs}`} data-testid="assets-status-tabs">
+        {statusTab('ACTIVE', 'Activos', statusFilter, setStatusFilter)}
+        {statusTab('SOLD', 'Vendidos', statusFilter, setStatusFilter)}
+        {statusTab('DEPRECIATED', 'Depreciados', statusFilter, setStatusFilter)}
+        {statusCounts.unknown > 0 ? statusTab('UNKNOWN', 'Sin verificar', statusFilter, setStatusFilter) : null}
+        {statusTab('all', 'Todos', statusFilter, setStatusFilter)}
+      </nav>
+
+      <div className={`${movementStyles.controls} ${movementStyles.portfolioFilterBar} ${styles.toolbar}`} data-testid="assets-filter-toolbar">
+        <div className={movementStyles.controlsMain}>
+          <div className={styles.search}>
+            <DataSearchField value={search} onChange={setSearch} placeholder="Buscar activo por nombre" aria-label="Buscar activos" data-testid="assets-search" />
+          </div>
+          <AppSelect
+            value={typeFilter}
+            onChange={setTypeFilter}
+            compact
+            matchTriggerWidth
+            searchable
+            searchPlaceholder="Buscar tipo..."
+            className={`filters-control ${styles.typeSelect}`}
+            ariaLabel="Filtrar por tipo de activo"
+            testId="assets-type-filter"
+            options={[{ value: '', label: 'Todos los tipos' }, ...assetTypes.map(type => ({ value: type.id, label: type.name }))]}
           />
-        )}
-        stats={(
-          <StatGrid>
-            <StatCard
-              label="Valor PEN"
-              value={formatCurrency(totalPen, 'PEN')}
-              detail={`${activeCount} activo${activeCount === 1 ? '' : 's'}`}
-              caption="Valor consolidado de activos operativos en soles."
-            />
-            <StatCard
-              label="Valor USD"
-              value={formatCurrency(totalUsd, 'USD')}
-              detail={totalUsd === 0 ? 'Sin exposicion' : 'Exposicion dolarizada'}
-              caption="Activos vigentes valorizados en dolares."
-            />
-            <StatCard
-              label="Tipos activos"
-              value={String(typeCount)}
-              detail={soldCount > 0 || depreciatedCount > 0
-                ? `${soldCount} vendido${soldCount === 1 ? '' : 's'} · ${depreciatedCount} depreciado${depreciatedCount === 1 ? '' : 's'}`
-                : 'Sin vendidos ni depreciados'}
-              caption="Diversidad de clases en el inventario actual."
-            />
-            <StatCard
-              label="Inventario vigente"
-              value={String(activeCount)}
-              detail={`${typedAssets.length} total`}
-              caption="Registros activos disponibles para seguimiento patrimonial."
-            />
-          </StatGrid>
-        )}
-        controls={(
-          <ControlsBar
-            presets={(
-              <>
-                <DataFilterPreset
-                  label="Activos"
-                  active={statusFilter === 'ACTIVE'}
-                  count={activeCount}
-                  onClick={() => setStatusFilter('ACTIVE')}
-                />
-                <DataFilterPreset
-                  label="Vendidos"
-                  active={statusFilter === 'SOLD'}
-                  count={soldCount}
-                  onClick={() => setStatusFilter('SOLD')}
-                />
-                <DataFilterPreset
-                  label="Depreciados"
-                  active={statusFilter === 'DEPRECIATED'}
-                  count={depreciatedCount}
-                  onClick={() => setStatusFilter('DEPRECIATED')}
-                />
-                {unverifiedStatusCount > 0 ? (
-                  <DataFilterPreset
-                    label="Sin verificar"
-                    active={statusFilter === 'UNKNOWN'}
-                    count={unverifiedStatusCount}
-                    onClick={() => setStatusFilter('UNKNOWN')}
-                  />
-                ) : null}
-                <DataFilterPreset
-                  label="Todos"
-                  active={statusFilter === 'all'}
-                  count={typedAssets.length}
-                  onClick={() => setStatusFilter('all')}
-                />
-              </>
-            )}
-            search={(
-              <DataSearchField
-                value={search}
-                onChange={setSearch}
-                placeholder="Buscar activo por nombre"
-              />
-            )}
-            filters={(
-              <FilterBar>
-                <AppSelect
-                  value={typeFilter}
-                  onChange={setTypeFilter}
-                  compact
-                  className="w-[210px]"
-                  options={[
-                    { value: '', label: 'Tipo' },
-                    ...assetTypes.map(type => ({ value: type.id, label: type.name })),
-                  ]}
-                  searchPlaceholder="Buscar tipo..."
-                />
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={event => setDateFrom(event.target.value)}
-                  className="field-base h-[34px] w-[150px] py-1.5 text-[12px]"
-                />
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={event => setDateTo(event.target.value)}
-                  className="field-base h-[34px] w-[150px] py-1.5 text-[12px]"
-                />
-              </FilterBar>
-            )}
-            viewToggle={<ViewToggle value={viewMode} onChange={setViewMode} id="assets-view-toggle" />}
-            actions={(
-              <StatusBadge tone="muted" dot={false}>
-                {filtered.length} registro{filtered.length === 1 ? '' : 's'}
-              </StatusBadge>
-            )}
+          <AppSelect
+            value={currencyFilter}
+            onChange={setCurrencyFilter}
+            compact
+            matchTriggerWidth
+            searchable={false}
+            className={`filters-control ${styles.currencySelect}`}
+            ariaLabel="Filtrar por moneda"
+            testId="assets-currency-filter"
+            options={[{ value: '', label: 'Todas las monedas' }, ...[...new Set(rows.map(asset => asset.currency).filter(Boolean))].sort().map(currency => ({ value: currency, label: currencyLabel(currency) }))]}
           />
-        )}
-      >
-        {surfaceError ? <DataErrorBanner message={surfaceError} onRetry={refetch} /> : null}
+        </div>
+      </div>
+
+      {!demoMode && assetTypesError ? <DataErrorBanner message={assetTypesError} onRetry={() => void loadTypes()} /> : null}
+      {!demoMode && surfaceError ? <DataErrorBanner message={surfaceError} onRetry={() => { void refetch() }} /> : null}
+
+      <section className={styles.register} aria-labelledby="assets-register-title" data-testid="assets-register">
+        <div className={styles.registerHeader}>
+          <div className="min-w-0">
+            <h2 id="assets-register-title">Registro de activos</h2>
+            <p>Valores registrados por el usuario; no son estimaciones de mercado.</p>
+          </div>
+          <span className={styles.registerCount}>{filtered.length} registro{filtered.length === 1 ? '' : 's'}</span>
+        </div>
 
         {isLoading ? (
-          <div className="grid gap-3">
-            {[0, 1, 2].map(item => (
-              <div key={item} className="rounded-[14px] border border-[var(--c-border)] bg-[var(--c-surface)] px-4 py-4">
-                <div className="flex animate-pulse items-center justify-between gap-4">
-                  <div className="space-y-2">
-                    <div className="h-3 w-24 rounded-full bg-[var(--c-surface-2)]" />
-                    <div className="h-5 w-52 rounded-full bg-[var(--c-surface-2)]" />
-                  </div>
-                  <div className="h-10 w-32 rounded-full bg-[var(--c-surface-2)]" />
-                </div>
-              </div>
-            ))}
-          </div>
+          <div className={styles.loadingRows} aria-label="Cargando activos">{[0, 1, 2].map(index => <div className={styles.loadingRow} key={index} aria-hidden="true"><span /><span /><span /></div>)}</div>
         ) : filtered.length === 0 ? (
-          <EmptyState
-            title={search || typeFilter || dateFrom || dateTo || statusFilter !== 'ACTIVE'
-              ? 'No encontramos activos para esos filtros.'
-              : 'Todavia no tienes activos registrados.'}
-            description={search || typeFilter || dateFrom || dateTo || statusFilter !== 'ACTIVE'
-              ? 'Ajusta rango, tipo o estado para recuperar bienes e inversiones del inventario.'
-              : 'Crea tu primer activo para empezar a ordenar inventario patrimonial, valor actual y seguimiento.'}
-            action={search || typeFilter || dateFrom || dateTo || statusFilter !== 'ACTIVE'
-              ? {
-                  label: 'Limpiar filtros',
-                  onClick: () => {
-                    setSearch('')
-                    setTypeFilter('')
-                    setDateFrom('')
-                    setDateTo('')
-                    setStatusFilter('ACTIVE')
-                  },
-                }
-              : {
-                  label: 'Nuevo activo',
-                  onClick: onCreate,
-                }}
-          />
-        ) : viewMode === 'list' ? (
-          <DataTable className="overflow-hidden">
-            <div className="hidden border-b border-[var(--c-border)] bg-[var(--c-surface-2)] px-4 py-3 md:grid md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(180px,0.9fr)_auto] md:items-center md:gap-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Activo</p>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Tipo y estado</p>
-              <p className="text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Valor</p>
-              <p className="text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--c-text-faint)]">Acciones</p>
-            </div>
-
-            <div className="divide-y divide-[var(--c-border)]">
-              {filtered.map(asset => {
-                const status = getAssetStatusPresentation(asset.status)
-                const isActive = status.status === 'ACTIVE'
-                const typeColor = asset.asset_type_info?.color ?? 'var(--c-primary)'
-                const typeName = getAssetTypePresentation(asset).label
-                const currentValue = asset.current_value ?? asset.purchase_value
-
-                return (
-                  <article
-                    key={asset.id}
-                    data-testid={`asset-row-${asset.id}`}
-                    className="px-4 py-4 transition-[background-color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[var(--c-surface-2)]"
-                  >
-                    <div className="grid gap-4 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(180px,0.9fr)_auto] md:items-center">
-                      <div className="min-w-0">
-                        <div className="flex items-start gap-3">
-                          <div
-                            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border"
-                            style={{
-                              borderColor: withAlpha(asset.asset_type_info?.color, '24', 'rgba(13,107,94,0.18)'),
-                              backgroundColor: withAlpha(asset.asset_type_info?.color, '12', 'rgba(13,107,94,0.08)'),
-                              color: asset.asset_type_info?.color ?? 'var(--c-primary)',
-                            }}
-                          >
-                            {cubeIcon()}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="truncate text-[15px] font-semibold tracking-[-0.02em] text-[var(--c-text)]">
-                              {asset.name}
-                            </p>
-                            <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">
-                              Compra {formatDateLabel(asset.purchase_date)}
-                              {asset.recipient ? ` · ${asset.recipient}` : ''}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <StatusBadge tone={status.tone}>
-                            {status.label}
-                          </StatusBadge>
-                          <StatusBadge tone="primary" dot={false} className="max-w-full">
-                            {typeName}
-                          </StatusBadge>
-                        </div>
-                        <p className="mt-2 text-[12px] text-[var(--c-text-muted)]">
-                          Compra {formatCurrency(asset.purchase_value, asset.currency as 'PEN' | 'USD')}
-                        </p>
-                      </div>
-
-                      <AmountCell
-                        label="Valor actual"
-                        value={formatCurrency(currentValue, asset.currency as 'PEN' | 'USD')}
-                        meta={asset.currency}
-                        align="right"
-                        className="md:justify-self-end"
-                      />
-
-                      <div className="flex shrink-0 items-center gap-1.5 md:justify-self-end">
-                        <ActionIconButton
-                          icon="edit"
-                          label="Editar"
-                          disabled={Boolean(actionLoadingId)}
-                          testId={`asset-edit-${asset.id}`}
-                          onClick={() => openEditModal(asset)}
-                        />
-                        <ActionIconButton
-                          icon={isActive ? 'deactivate' : 'reactivate'}
-                          label={status.isVerified
-                            ? isActive ? 'Marcar como vendido' : 'Reactivar'
-                            : 'Estado no verificable'}
-                          variant={isActive ? 'danger' : 'success'}
-                          disabled={Boolean(actionLoadingId) || !status.isVerified}
-                          testId={isActive ? `asset-deactivate-${asset.id}` : `asset-reactivate-${asset.id}`}
-                          onClick={() => void handleToggleStatus(asset, isActive ? 'SOLD' : 'ACTIVE')}
-                        />
-                        <ActionIconButton
-                          icon="delete"
-                          label="Eliminar"
-                          variant="danger"
-                          disabled={Boolean(actionLoadingId)}
-                          testId={`asset-delete-${asset.id}`}
-                          onClick={() => {
-                            setActionError(null)
-                            setPendingDelete(asset)
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </article>
-                )
-              })}
-            </div>
-          </DataTable>
+          <div className={styles.empty}><EmptyState title={hasFilters ? 'No encontramos activos para esos filtros.' : demoMode ? 'No hay registros para mostrar.' : 'Todavía no tienes activos registrados.'} description={hasFilters ? 'Ajusta la búsqueda o los filtros para ver otros registros.' : demoMode ? 'La demostración no contiene activos en este estado.' : 'Registra un activo para mantener su compra y valor actual en un solo lugar.'} action={hasFilters ? { label: 'Limpiar filtros', onClick: () => { setSearch(''); setTypeFilter(''); setCurrencyFilter(''); setStatusFilter('ACTIVE') } } : !demoMode ? { label: 'Registrar activo', onClick: onCreate } : undefined} /></div>
         ) : (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className={styles.table} data-testid="assets-table">
+            <div className={`${styles.tableRow} ${styles.tableHead}`} aria-hidden="true">
+              <span>Activo</span><span>Tipo / estado</span><span>Fecha y valor de compra</span><span>Valor actual registrado</span><span className="text-right">Acciones</span>
+            </div>
             {filtered.map(asset => {
               const status = getAssetStatusPresentation(asset.status)
-              const isActive = status.status === 'ACTIVE'
-              const typeName = getAssetTypePresentation(asset).label
-              const typeColor = asset.asset_type_info?.color ?? 'var(--c-primary)'
-              const currentValue = asset.current_value ?? asset.purchase_value
-
+              const type = getAssetTypePresentation(asset)
+              const current = getRecordedAssetValue(asset)
+              const purchase = getAssetPurchaseValue(asset)
+              const active = status.status === 'ACTIVE'
               return (
-                <article
-                  key={asset.id}
-                  data-testid={`asset-card-${asset.id}`}
-                  className="rounded-[16px] border border-[var(--c-border)] bg-[var(--c-surface-2)] p-1"
-                >
-                  <div className="rounded-[12px] bg-[var(--c-surface)] p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <div
-                          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border"
-                          style={{
-                            borderColor: withAlpha(asset.asset_type_info?.color, '24', 'rgba(13,107,94,0.18)'),
-                            backgroundColor: withAlpha(asset.asset_type_info?.color, '12', 'rgba(13,107,94,0.08)'),
-                            color: typeColor,
-                          }}
-                        >
-                          {cubeIcon()}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="truncate text-[15px] font-semibold tracking-[-0.02em] text-[var(--c-text)]">
-                            {asset.name}
-                          </p>
-                          <p className="mt-1 text-[12px] text-[var(--c-text-muted)]">{typeName}</p>
-                        </div>
-                      </div>
-                      <StatusBadge tone={status.tone}>
-                        {status.label}
-                      </StatusBadge>
+                <article key={asset.id} className={`${styles.tableRow} ${styles.assetRow}`} data-testid={`asset-row-${asset.id}`}>
+                  <div className={styles.assetIdentity}>
+                    <span className={styles.assetIcon} aria-hidden="true"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m12 2 9 4.5v11L12 22 3 17.5v-11L12 2Z"/><path d="M12 22V12m9-5.5-9 5.5-9-5.5"/></svg></span>
+                    <div className="min-w-0">
+                      <button type="button" onClick={() => setSelectedAsset(asset)} className={styles.assetName} data-testid={`asset-view-${asset.id}`}>{asset.name}</button>
+                      <p>{asset.recipient || type.label}</p>
                     </div>
-
-                    <div className="mt-5">
-                      <AmountCell
-                        label="Valor actual"
-                        value={formatCurrency(currentValue, asset.currency as 'PEN' | 'USD')}
-                        meta={`Compra ${formatCurrency(asset.purchase_value, asset.currency as 'PEN' | 'USD')}`}
-                        align="left"
-                      />
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap items-center gap-2">
-                      <StatusBadge tone="primary" dot={false}>
-                        {typeName}
-                      </StatusBadge>
-                      <StatusBadge tone="muted" dot={false}>
-                        {formatDateLabel(asset.purchase_date)}
-                      </StatusBadge>
-                    </div>
-
-                    <div className="mt-4 border-t border-[var(--c-border)] pt-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="truncate text-[12px] text-[var(--c-text-muted)]">
-                          {asset.recipient ?? 'Sin destinatario'}
-                        </p>
-                        <div className="flex items-center gap-1.5">
-                          <ActionIconButton
-                            icon="edit"
-                            label="Editar"
-                            disabled={Boolean(actionLoadingId)}
-                            testId={`asset-edit-card-${asset.id}`}
-                            onClick={() => openEditModal(asset)}
-                          />
-                          <ActionIconButton
-                            icon={isActive ? 'deactivate' : 'reactivate'}
-                            label={status.isVerified
-                              ? isActive ? 'Marcar como vendido' : 'Reactivar'
-                              : 'Estado no verificable'}
-                            variant={isActive ? 'danger' : 'success'}
-                            disabled={Boolean(actionLoadingId) || !status.isVerified}
-                            testId={isActive ? `asset-deactivate-card-${asset.id}` : `asset-reactivate-card-${asset.id}`}
-                            onClick={() => void handleToggleStatus(asset, isActive ? 'SOLD' : 'ACTIVE')}
-                          />
-                          <ActionIconButton
-                            icon="delete"
-                            label="Eliminar"
-                            variant="danger"
-                            disabled={Boolean(actionLoadingId)}
-                            testId={`asset-delete-card-${asset.id}`}
-                            onClick={() => {
-                              setActionError(null)
-                              setPendingDelete(asset)
-                            }}
-                          />
-                        </div>
-                      </div>
-                    </div>
+                  </div>
+                  <div className={styles.statusCell}>
+                    <span className={`${styles.badge} ${status.isVerified ? styles.verified : styles.warning}`}>{status.label}</span>
+                    <span className={styles.typeLabel}>{type.label}{type.source === 'CUSTOM' ? ' · Personalizado' : ''}</span>
+                  </div>
+                  <div className={styles.purchaseCell}>
+                    <strong>{purchase === null ? 'No verificable' : amountLabel(purchase, asset.currency)}</strong>
+                    <span>{formatDateLabel(asset.purchase_date)}</span>
+                  </div>
+                  <div className={styles.currentCell}>
+                    <strong>{current === null ? 'No verificable' : amountLabel(current, asset.currency)}</strong>
+                    <span>{asset.currency || 'Moneda no verificable'}</span>
+                  </div>
+                  <div className={styles.actions}>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedAsset(asset)} testId={`asset-view-action-${asset.id}`}>Ver activo</Button>
+                    {!demoMode ? <AnchoredActionMenu
+                      label={`Más acciones de ${asset.name}`}
+                      triggerContent={<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg>}
+                      className="h-8 w-8 rounded-control text-[var(--ft-text-muted)] hover:bg-[var(--ft-surface-hover)] hover:text-[var(--ft-text-strong)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]"
+                      disabled={Boolean(actionLoadingId)}
+                      align="end"
+                      actions={[
+                        { id: 'edit', label: 'Editar activo', onSelect: () => openEdit(asset) },
+                        { id: 'status', label: active ? 'Marcar como vendido' : 'Reactivar activo', disabled: !status.isVerified || status.status === 'DEPRECIATED', onSelect: () => void handleStatus(asset, active ? 'SOLD' : 'ACTIVE') },
+                        { id: 'delete', label: 'Eliminar activo', destructive: true, onSelect: () => { setActionError(null); setPendingDelete(asset) } },
+                      ]}
+                    /> : null}
                   </div>
                 </article>
               )
             })}
           </div>
         )}
-      </RegisterModule>
+      </section>
 
-      <RecordModal
-        open={Boolean(editingAsset)}
-        onClose={closeEditModal}
-        eyebrow="Activos"
-        title="Editar activo"
-        subtitle="Ajusta la referencia operativa y el valor actual sin reabrir el registro completo."
-        widthClassName="w-[calc(100vw-32px)] max-w-[720px]"
-        testId="assets-edit-modal"
-      >
-        <div className="space-y-[var(--ft-form-section-gap)]">
-          <FormSection
-            title="Datos editables"
-            description="Mantén actualizado el nombre, el valor vigente y la lectura rápida del activo."
-            columns="2"
-            className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
-          >
-            <FormField label="Nombre" className="md:col-span-2">
-              <input
-                value={editForm.name}
-                onChange={event => setEditForm(prev => ({ ...prev, name: event.target.value }))}
-                className="field-base ft-form-input w-full"
-                disabled={Boolean(actionLoadingId)}
-                maxLength={150}
-              />
-            </FormField>
-
-            <FormField label="Valor actual">
-              <NumericInput
-                value={editForm.current_value}
-                onValueChange={value => setEditForm(prev => ({ ...prev, current_value: value }))}
-                step="0.01"
-                decimals={2}
-                min={0}
-                className="field-base ft-form-input w-full"
-                disabled={Boolean(actionLoadingId)}
-              />
-            </FormField>
-
-            <FormField label="Fecha de compra" optional>
-              <div className="field-base ft-form-input flex w-full items-center text-[var(--ft-form-muted)]">
-                {editingAsset ? formatDateLabel(editingAsset.purchase_date) : '—'}
-              </div>
-            </FormField>
-
-            <FormField label="Destinatario" optional className="md:col-span-2">
-              <input
-                value={editForm.recipient}
-                onChange={event => setEditForm(prev => ({ ...prev, recipient: event.target.value }))}
-                className="field-base ft-form-input w-full"
-                placeholder="Ej: Area de operaciones"
-                disabled={Boolean(actionLoadingId)}
-                maxLength={160}
-              />
-            </FormField>
-
-            <FormField label="Notas" optional className="md:col-span-2">
-              <textarea
-                value={editForm.notes}
-                onChange={event => setEditForm(prev => ({ ...prev, notes: event.target.value }))}
-                className="field-base ft-form-input min-h-[112px] w-full resize-y"
-                placeholder="Notas internas del activo"
-                disabled={Boolean(actionLoadingId)}
-                maxLength={500}
-              />
-            </FormField>
-          </FormSection>
-
-          {actionError ? (
-            <div className="rounded-[var(--ft-form-radius)] border border-[color:var(--ft-form-error)]/20 bg-[var(--ft-danger-soft)] px-3.5 py-3">
-              <p className="text-[12px] font-medium text-[var(--ft-form-error)]">{actionError}</p>
-            </div>
-          ) : null}
-        </div>
-
-        <RecordModalFooter>
-          <FormActions
-            secondaryAction={(
-              <Button
-                type="button"
-                onClick={closeEditModal}
-                disabled={Boolean(actionLoadingId)}
-                variant="secondary"
-                size="lg"
-              >
-                Cancelar
-              </Button>
-            )}
-            primaryAction={(
-              <Button
-                type="button"
-                onClick={() => void handleSaveEdit()}
-                disabled={Boolean(actionLoadingId)}
-                loading={Boolean(editingAsset && actionLoadingId === editingAsset.id)}
-                variant="primary"
-                size="lg"
-                testId="assets-edit-save-button"
-              >
-                Guardar cambios
-              </Button>
-            )}
-          />
-        </RecordModalFooter>
+      <RecordModal open={Boolean(selectedAsset)} onClose={() => setSelectedAsset(null)} presentation="workbench" size="xl" overlayClassName={styles.detailOverlay} bodyClassName={styles.detailBody} eyebrow="Detalle del activo" title={selectedAsset?.name ?? 'Activo'} subtitle="Registro original, estado y valores guardados." headerBadge={selectedAsset ? <span className={styles.headerBadge}>{getAssetStatusPresentation(selectedAsset.status).label}</span> : undefined} testId="assets-detail-modal">
+        {selectedAsset ? <AssetRecordContent
+          asset={selectedAsset}
+          demoMode={demoMode}
+          transactionState={transactionState?.assetId === selectedAsset.id ? transactionState : { assetId: selectedAsset.id, status: selectedAsset.transaction_id ? 'loading' : 'absent', transaction: null }}
+        /> : null}
       </RecordModal>
 
-      <ConfirmDialog
-        open={Boolean(pendingDelete)}
-        title="Eliminar activo"
-        message={(
-          <>
-            Se eliminara <span className="font-semibold text-[var(--c-text)]">{pendingDelete?.name}</span> y su
-            transaccion de egreso asociada. Esta accion no se puede deshacer.
-          </>
-        )}
-        onCancel={() => {
-          if (actionLoadingId) return
-          setPendingDelete(null)
-        }}
-        onConfirm={() => void handleDelete()}
-        loading={pendingDelete ? actionLoadingId === pendingDelete.id : false}
-        danger
-        confirmLabel="Eliminar"
-        testId="assets-delete-modal"
-        cancelTestId="assets-delete-cancel-button"
-        confirmTestId="assets-delete-confirm-button"
-      />
-    </>
+      <RecordModal open={Boolean(editingAsset)} onClose={closeEdit} presentation="workbench" size="lg" overlayClassName={styles.editOverlay} eyebrow="Activos" title="Editar activo" subtitle="Actualiza los campos permitidos sin crear otro movimiento de compra." testId="assets-edit-modal" focusTrapActive={!editDiscardOpen} preserveFocusOnResume footer={(
+        <FormActions
+          secondaryAction={<Button type="button" variant="secondary" onClick={closeEdit} disabled={Boolean(actionLoadingId)}>Cancelar</Button>}
+          primaryAction={<Button type="button" variant="primary" onClick={() => void saveEdit()} loading={Boolean(editingAsset && actionLoadingId === editingAsset.id)} disabled={Boolean(actionLoadingId)} testId="assets-edit-save-button">Guardar cambios</Button>}
+        />
+      )}>
+        {editingAsset ? (
+          <div className="space-y-4">
+            <FormSection title="Identificación y valor registrado" className="rounded-panel border border-[var(--ft-border)] bg-[var(--ft-surface)] p-4 sm:p-5">
+              <FormField label="Nombre"><input value={editForm.name} onChange={event => setEditForm(prev => ({ ...prev, name: event.target.value }))} className="field-base ft-form-input w-full" maxLength={150} /></FormField>
+              <FormField label={`Valor actual · ${editingAsset.currency}`}><NumericInput value={editForm.current_value} onValueChange={value => setEditForm(prev => ({ ...prev, current_value: value }))} step="0.01" decimals={2} min={0} className="field-base ft-form-input w-full" disabled={Boolean(actionLoadingId)} /></FormField>
+              <FormField label="Fecha de compra" description="La fecha original no se puede modificar desde esta pantalla."><div className="field-base ft-form-input flex w-full items-center text-[var(--ft-text-muted)]">{formatDateLabel(editingAsset.purchase_date)}</div></FormField>
+              <FormField label="Proveedor o destinatario" optional><input value={editForm.recipient} onChange={event => setEditForm(prev => ({ ...prev, recipient: event.target.value }))} className="field-base ft-form-input w-full" maxLength={160} /></FormField>
+              <FormField label="Notas" optional><textarea value={editForm.notes} onChange={event => setEditForm(prev => ({ ...prev, notes: event.target.value }))} className="field-base ft-form-input min-h-[96px] w-full resize-y" maxLength={500} /></FormField>
+            </FormSection>
+            {actionError ? <p role="alert" className="text-[12px] font-medium text-[var(--ft-danger)]">{actionError}</p> : null}
+          </div>
+        ) : null}
+      </RecordModal>
+
+      <ConfirmDialog open={editDiscardOpen} title="Descartar cambios" message="Hay cambios sin guardar. ¿Quieres cerrar sin aplicarlos?" onCancel={() => setEditDiscardOpen(false)} onConfirm={() => { setEditDiscardOpen(false); setEditingAsset(null) }} confirmLabel="Descartar cambios" cancelLabel="Seguir editando" testId="assets-edit-discard-modal" />
+      <ConfirmDialog open={Boolean(pendingDelete)} title="Eliminar activo" message={<>Se eliminará <strong>{pendingDelete?.name}</strong> y la transacción de egreso vinculada. Esta acción no se puede deshacer.</>} onCancel={() => { if (!actionLoadingId) setPendingDelete(null) }} onConfirm={() => void handleDelete()} loading={pendingDelete ? actionLoadingId === pendingDelete.id : false} danger confirmLabel="Eliminar" testId="assets-delete-modal" cancelTestId="assets-delete-cancel-button" confirmTestId="assets-delete-confirm-button" />
+    </PageLayout>
   )
 }

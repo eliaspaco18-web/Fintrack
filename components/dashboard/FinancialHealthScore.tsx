@@ -243,7 +243,7 @@ export function FinancialHealthScore() {
 
   const uniqueAssetTypes = useMemo(() => {
     const byType = fullDashboard?.assets.byType ?? []
-    const activeTypes = byType.filter((item) => item.count > 0 && item.totalPen > 0).length
+    const activeTypes = byType.filter((item) => item.count > 0 && item.totalPen !== null && item.totalPen > 0).length
 
     if (activeTypes > 0) return activeTypes
     return modules?.activos.count ? 1 : 0

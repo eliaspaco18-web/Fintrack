@@ -12,12 +12,13 @@ import {
   storeFinancialAttachment,
 } from '@/modules/attachments/attachment-integrity'
 
-type Params = { params: { id: string } }
+type Params = { params: Promise<{ id: string }> }
 
 const ATTACHMENT_BUCKET = 'transaction-documents'
 
-export async function POST(req: NextRequest, { params }: Params) {
-  const supabase = createClient()
+export async function POST(req: NextRequest, props: Params) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 

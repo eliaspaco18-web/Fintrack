@@ -10,6 +10,9 @@ interface CreateModuleButtonProps {
   testId?: string
   prefetch?: boolean
   scroll?: boolean
+  ariaHasPopup?: 'menu' | 'dialog'
+  ariaExpanded?: boolean
+  ariaControls?: string
 }
 
 const BASE_CLASS = 'module-create-btn'
@@ -30,6 +33,9 @@ export function CreateModuleButton({
   testId,
   prefetch = true,
   scroll = true,
+  ariaHasPopup,
+  ariaExpanded,
+  ariaControls,
 }: CreateModuleButtonProps) {
   const classes = `${BASE_CLASS} ${className}`.trim()
 
@@ -55,6 +61,9 @@ export function CreateModuleButton({
       type="button"
       onClick={onClick}
       testId={testId}
+      aria-haspopup={ariaHasPopup}
+      aria-expanded={ariaExpanded}
+      aria-controls={ariaControls}
       variant="primary"
       size="md"
       className={classes}

@@ -34,6 +34,7 @@ import {
   hasUnsupportedAttachmentWrite,
 } from '@/modules/attachments/attachment-integrity'
 import { getBillingCyclesSubmissionIssue } from '@/modules/credits/billing-cycle-integrity'
+import { readBoundedJsonBody } from '@/lib/api/read-bounded-json-body'
 
 export const dynamic = 'force-dynamic'
 
@@ -117,11 +118,9 @@ function summarizeCycle(params: {
   }
 }
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const supabase = createClient()
+export async function GET(_req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
@@ -191,11 +190,9 @@ export async function GET(
   return apiOk(enriched)
 }
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const supabase = createClient()
+export async function POST(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
@@ -218,12 +215,14 @@ export async function POST(
     })
   }
 
-  let body: unknown
-  try {
-    body = await req.json()
-  } catch {
+  const bodyResult = await readBoundedJsonBody(req)
+  if (!bodyResult.ok && bodyResult.reason === 'too_large') {
+    return apiError({ code: 'PAYLOAD_TOO_LARGE', message: 'La solicitud supera el tamaño máximo permitido' })
+  }
+  if (!bodyResult.ok) {
     return apiError({ code: 'VALIDATION_ERROR', message: 'Body JSON inválido' })
   }
+  const body = bodyResult.value
 
   if (hasUnsupportedAttachmentWrite(body, ['statement_url', 'statement_file', 'attachment'])) {
     return apiError({
@@ -286,11 +285,9 @@ export async function POST(
   return apiCreated(data)
 }
 
-export async function PUT(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const supabase = createClient()
+export async function PUT(req: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
@@ -312,12 +309,14 @@ export async function PUT(
     })
   }
 
-  let body: unknown
-  try {
-    body = await req.json()
-  } catch {
+  const bodyResult = await readBoundedJsonBody(req)
+  if (!bodyResult.ok && bodyResult.reason === 'too_large') {
+    return apiError({ code: 'PAYLOAD_TOO_LARGE', message: 'La solicitud supera el tamaño máximo permitido' })
+  }
+  if (!bodyResult.ok) {
     return apiError({ code: 'VALIDATION_ERROR', message: 'Body JSON inválido' })
   }
+  const body = bodyResult.value
 
   if (hasUnsupportedAttachmentWrite(body, ['statement_url', 'statement_file', 'attachment'])) {
     return apiError({
@@ -406,8 +405,9 @@ export async function PUT(
 
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  props: { params: Promise<{ id: string }> }
 ) {
+  const params = await props.params
   // params.id aquí es el credit_id — se necesitaría un route distinto para el cycle id
   // Por diseño PRD, se elimina al eliminar el crédito completo
   return apiError({ code: 'METHOD_NOT_ALLOWED', message: 'Elimina el ciclo desde el detalle del crédito' })

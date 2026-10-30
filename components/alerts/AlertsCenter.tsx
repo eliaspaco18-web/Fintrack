@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useCurrency, useDashboard } from '@/lib/hooks/useDashboard'
-import { formatCurrency, formatPercent, toPenAmount } from '@/lib/contracts/ui.contracts'
+import { formatCurrency, formatCurrencyOrUnavailable, formatPercent, toPenAmount } from '@/lib/contracts/ui.contracts'
 import {
   WidgetShell,
   SectionHeader,
@@ -306,7 +306,9 @@ export function AlertsCenter() {
             <div className="space-y-2">
               {alerts.map(item => {
                 const amountPen = toPenAmount(item.amount, item.currency, exchangeRate)
-                const formatted = formatCurrency(format(amountPen), preferred)
+                const formatted = amountPen === null
+                  ? formatCurrency(item.amount, item.currency)
+                  : formatCurrencyOrUnavailable(format(amountPen), preferred)
                 return (
                   <Link
                     key={`${item.type}-${item.id}`}

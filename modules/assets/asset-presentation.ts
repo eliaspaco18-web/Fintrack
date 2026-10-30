@@ -15,6 +15,53 @@ export type AssetWithTypeInfo = Asset & {
   asset_type_info?: AssetTypeInfo | null
 }
 
+export type AssetValueSummary = {
+  currency: string
+  amount: number
+  count: number
+  invalidCount: number
+}
+
+/** Return the recorded value without substituting an invalid value with zero. */
+export function getRecordedAssetValue(asset: Pick<AssetWithTypeInfo, 'current_value' | 'purchase_value'>): number | null {
+  const value = asset.current_value ?? asset.purchase_value
+  const amount = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(amount) && amount >= 0 ? amount : null
+}
+
+export function getAssetPurchaseValue(asset: Pick<AssetWithTypeInfo, 'purchase_value'>): number | null {
+  if (asset.purchase_value === null || asset.purchase_value === undefined) return null
+  const amount = typeof asset.purchase_value === 'number' ? asset.purchase_value : Number(asset.purchase_value)
+  return Number.isFinite(amount) && amount >= 0 ? amount : null
+}
+
+/** Summarize active assets in their persisted currencies; never convert or combine currencies. */
+export function summarizeActiveAssetValues(assets: readonly AssetWithTypeInfo[]): AssetValueSummary[] {
+  const summaries = new Map<string, AssetValueSummary>()
+
+  for (const asset of assets) {
+    if (asset.status !== 'ACTIVE') continue
+    const currency = typeof asset.currency === 'string' ? asset.currency.trim().toUpperCase() : ''
+    const key = currency || 'UNVERIFIED'
+    const summary = summaries.get(key) ?? { currency: key, amount: 0, count: 0, invalidCount: 0 }
+    const value = getRecordedAssetValue(asset)
+    if (!currency || value === null) {
+      summary.invalidCount += 1
+    } else {
+      const total = summary.amount + value
+      if (!Number.isFinite(total)) {
+        summary.invalidCount += 1
+      } else {
+        summary.amount = total
+        summary.count += 1
+      }
+    }
+    summaries.set(key, summary)
+  }
+
+  return [...summaries.values()].sort((a, b) => a.currency.localeCompare(b.currency))
+}
+
 export type AssetStatusPresentation = {
   status: AssetStatus | null
   label: string

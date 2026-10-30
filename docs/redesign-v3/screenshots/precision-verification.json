@@ -1,0 +1,212 @@
+{
+  "startedAt": "2026-09-24T02:16:19.997Z",
+  "finishedAt": "2026-09-24T02:16:40.208Z",
+  "checks": [
+    {
+      "label": "No visible scale selection or scope banner",
+      "pass": true
+    },
+    {
+      "label": "Twelve natural products, including the closed one",
+      "pass": true
+    },
+    {
+      "label": "47-credits-neutral-all-products: no overflow",
+      "pass": true
+    },
+    {
+      "label": "Status selection really filters",
+      "pass": true
+    },
+    {
+      "label": "Seven-day agenda includes five registered commitments",
+      "pass": true
+    },
+    {
+      "label": "Thirty-day agenda reconciles all eleven known commitments",
+      "pass": true
+    },
+    {
+      "label": "New due drilldown uses its own loan",
+      "pass": true
+    },
+    {
+      "label": "Search starts with selected option, not a prefilled search",
+      "pass": true
+    },
+    {
+      "label": "Medium list has bounded scroll and all options",
+      "pass": true
+    },
+    {
+      "label": "48-searchable-category-select: no overflow",
+      "pass": true
+    },
+    {
+      "label": "Search ignores accents",
+      "pass": true
+    },
+    {
+      "label": "Keyboard commits and restores trigger focus",
+      "pass": true
+    },
+    {
+      "label": "No match state does not invent a record",
+      "pass": true
+    },
+    {
+      "label": "49-select-no-results: no overflow",
+      "pass": true
+    },
+    {
+      "label": "First Escape closes only select",
+      "pass": true
+    },
+    {
+      "label": "Account options include native currency metadata",
+      "pass": true
+    },
+    {
+      "label": "Loading is not empty",
+      "pass": true
+    },
+    {
+      "label": "Reference load error retains previous selection",
+      "pass": true
+    },
+    {
+      "label": "Retry restores options",
+      "pass": true
+    },
+    {
+      "label": "Busy immediately prevents double submission",
+      "pass": true
+    },
+    {
+      "label": "Save feedback preserves exact original input",
+      "pass": true
+    },
+    {
+      "label": "50-contextual-save-receipt: no overflow",
+      "pass": true
+    },
+    {
+      "label": "Category draft gets dirty-cancel protection",
+      "pass": true
+    },
+    {
+      "label": "Create inserts a real local row",
+      "pass": true
+    },
+    {
+      "label": "Create returns focus to the created record",
+      "pass": true
+    },
+    {
+      "label": "51-created-row-and-receipt: no overflow",
+      "pass": true
+    },
+    {
+      "label": "Edit replaces the intended record",
+      "pass": true
+    },
+    {
+      "label": "Supported entity deactivation retains its row",
+      "pass": true
+    },
+    {
+      "label": "52-deactivated-context: no overflow",
+      "pass": true
+    },
+    {
+      "label": "Entity activation restores state without duplicates",
+      "pass": true
+    },
+    {
+      "label": "Linked category deletion is blocked",
+      "pass": true
+    },
+    {
+      "label": "53-linked-deletion-blocked: no overflow",
+      "pass": true
+    },
+    {
+      "label": "Delete removes only the confirmed local record",
+      "pass": true
+    },
+    {
+      "label": "No false undo offered after permanent deletion",
+      "pass": true
+    },
+    {
+      "label": "Failed write preserves text and existing rows",
+      "pass": true
+    },
+    {
+      "label": "54-action-error-preserves-draft: no overflow",
+      "pass": true
+    },
+    {
+      "label": "Unknown result blocks blind resubmission",
+      "pass": true
+    },
+    {
+      "label": "55-unknown-write-result: no overflow",
+      "pass": true
+    },
+    {
+      "label": "Explicit mock reconciliation releases retry",
+      "pass": true
+    },
+    {
+      "label": "56-select-graphite-dark: no overflow",
+      "pass": true
+    },
+    {
+      "label": "57-mobile-searchable-select: no overflow",
+      "pass": true
+    },
+    {
+      "label": "Mobile options are 48px minimum",
+      "pass": true
+    },
+    {
+      "label": "58-mobile-action-register: no overflow",
+      "pass": true
+    },
+    {
+      "label": "Mobile save inserts local record",
+      "pass": true
+    },
+    {
+      "label": "59-mobile-save-feedback: no overflow",
+      "pass": true
+    },
+    {
+      "label": "Reduced-motion drawer opens without animations",
+      "pass": true
+    },
+    {
+      "label": "Reduced-motion select has no animations",
+      "pass": true
+    },
+    {
+      "label": "Selection layer fits 320px",
+      "pass": true
+    },
+    {
+      "label": "Selection layer fits 768px",
+      "pass": true
+    },
+    {
+      "label": "Selection layer fits 1024px",
+      "pass": true
+    },
+    {
+      "label": "No browser exceptions or network calls",
+      "pass": true
+    }
+  ],
+  "errors": [],
+  "failure": null
+}

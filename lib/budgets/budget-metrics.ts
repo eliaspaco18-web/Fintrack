@@ -23,10 +23,12 @@ export type BudgetMetricTransaction = {
 export type BudgetMetrics = {
   period_start: string
   period_end: string
-  spent_amount: number
-  remaining_amount: number
-  progress_percent: number
-  over_limit: boolean
+  spent_amount: number | null
+  remaining_amount: number | null
+  progress_percent: number | null
+  over_limit: boolean | null
+  metrics_complete: boolean
+  missing_conversion_count: number
 }
 
 function parseISODate(date: string): Date {
@@ -151,13 +153,12 @@ export function convertBudgetAmount(
   sourceCurrency: CurrencyCode,
   targetCurrency: CurrencyCode,
   exchangeRate: number | null,
-): number {
-  const safeRate = exchangeRate && exchangeRate > 0 ? exchangeRate : 3.7
-
+): number | null {
   if (sourceCurrency === targetCurrency) return amount
-  if (sourceCurrency === 'USD' && targetCurrency === 'PEN') return amount * safeRate
-  if (sourceCurrency === 'PEN' && targetCurrency === 'USD') return amount / safeRate
-  return amount
+  if (!Number.isFinite(exchangeRate) || exchangeRate === null || exchangeRate <= 0) return null
+  if (sourceCurrency === 'USD' && targetCurrency === 'PEN') return amount * exchangeRate
+  if (sourceCurrency === 'PEN' && targetCurrency === 'USD') return amount / exchangeRate
+  return null
 }
 
 export function buildBudgetMetrics(
@@ -169,18 +170,38 @@ export function buildBudgetMetrics(
   const startAt = parseISODate(window.start).getTime()
   const endAt = parseISODate(window.end).getTime()
 
-  const spent = transactions.reduce((sum, tx) => {
+  let spent = 0
+  let missingConversionCount = 0
+  transactions.forEach(tx => {
     const txDate = parseISODate(tx.transaction_date).getTime()
-    if (txDate < startAt || txDate > endAt) return sum
-    if (tx.budget_id !== budget.id) return sum
+    if (txDate < startAt || txDate > endAt) return
+    if (tx.budget_id !== budget.id) return
 
-    return sum + convertBudgetAmount(
+    const converted = convertBudgetAmount(
       Number(tx.amount ?? 0),
       tx.currency,
       budget.currency,
       tx.exchange_rate,
     )
-  }, 0)
+    if (converted === null || !Number.isFinite(converted)) {
+      missingConversionCount += 1
+      return
+    }
+    spent += converted
+  })
+
+  if (missingConversionCount > 0) {
+    return {
+      period_start: window.start,
+      period_end: window.end,
+      spent_amount: null,
+      remaining_amount: null,
+      progress_percent: null,
+      over_limit: null,
+      metrics_complete: false,
+      missing_conversion_count: missingConversionCount,
+    }
+  }
 
   const total = Number(budget.amount ?? 0)
   const safeSpent = clamp2(spent)
@@ -194,5 +215,7 @@ export function buildBudgetMetrics(
     remaining_amount: remaining,
     progress_percent: progress,
     over_limit: safeSpent > total,
+    metrics_complete: true,
+    missing_conversion_count: 0,
   }
 }

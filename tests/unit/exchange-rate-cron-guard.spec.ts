@@ -114,4 +114,24 @@ test.describe('exchange-rate cron host and secret guard', () => {
       source: snapshot.source,
     })
   })
+
+  test('does not report a successful refresh when the source returns no verified rate', async () => {
+    const refresh = async () => ({
+      refreshed: true,
+      rate: null,
+      fetched_at: null,
+      source: 'fallback',
+    })
+
+    const response = await runExchangeRateCron(
+      new Request('https://fintrack-eta-silk.vercel.app/api/cron/exchange-rate', {
+        headers: { host: 'fintrack-eta-silk.vercel.app', authorization: 'Bearer cron-test' },
+      }),
+      'cron-test',
+      refresh,
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ ok: false, rate: null, source: 'fallback' })
+  })
 })

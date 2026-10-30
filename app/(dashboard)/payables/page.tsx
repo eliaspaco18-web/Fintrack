@@ -7,7 +7,6 @@
 
 import type { Metadata } from 'next'
 import { Suspense }      from 'react'
-import { resolveLiveUsdPenExchangeRate } from '@/lib/server/exchange-rate'
 import { PayablesWorkspace } from '@/components/payables/PayablesWorkspace'
 
 export const metadata: Metadata = {
@@ -15,13 +14,10 @@ export const metadata: Metadata = {
   description: 'Gestiona el dinero que debes a terceros. Controla acreedores y el progreso de pago.',
 }
 
-export default async function PayablesPage() {
-  // Tipo de cambio para equivalencias
-  const exchangeSnapshot = await resolveLiveUsdPenExchangeRate()
-
+export default function PayablesPage() {
   return (
     <Suspense fallback={<PayablesSkeleton />}>
-      <PayablesWorkspace exchangeRate={Number(exchangeSnapshot.rate)} />
+      <PayablesWorkspace />
     </Suspense>
   )
 }

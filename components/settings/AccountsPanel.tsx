@@ -91,10 +91,10 @@ export function AccountsPanel({
               Total PEN
             </p>
             <p className="mt-2 text-[16px] font-semibold tabular-nums text-[var(--c-text)]">
-              {formatAmount(totalPen, 'PEN')}
+              {accountsPreloadWarning ? 'No disponible' : formatAmount(totalPen, 'PEN')}
             </p>
             <p className="mt-1 text-[12px] leading-5 text-[var(--c-text-muted)]">
-              {accountsPreloadWarning ? 'Saldo temporal hasta recargar las cuentas.' : 'Saldo consolidado en moneda local.'}
+              {accountsPreloadWarning ? 'No se pudo confirmar el saldo.' : 'Saldo consolidado en moneda local.'}
             </p>
           </div>
           <div className="rounded-[20px] border border-[var(--c-border)] bg-[var(--c-surface-2)] px-4 py-4">
@@ -102,10 +102,10 @@ export function AccountsPanel({
               Total USD
             </p>
             <p className="mt-2 text-[16px] font-semibold tabular-nums text-[var(--c-text)]">
-              {formatAmount(totalUsd, 'USD')}
+              {accountsPreloadWarning ? 'No disponible' : formatAmount(totalUsd, 'USD')}
             </p>
             <p className="mt-1 text-[12px] leading-5 text-[var(--c-text-muted)]">
-              {accountsPreloadWarning ? 'Saldo temporal hasta recargar las cuentas.' : 'Saldo consolidado en moneda extranjera.'}
+              {accountsPreloadWarning ? 'No se pudo confirmar el saldo.' : 'Saldo consolidado en moneda extranjera.'}
             </p>
           </div>
         </div>

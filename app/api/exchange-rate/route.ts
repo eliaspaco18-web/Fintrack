@@ -18,7 +18,7 @@ import { measureServerOperation } from '@/lib/server/observability'
 
 export async function GET(req: NextRequest) {
   return measureServerOperation('api.exchange-rate', async () => {
-    const supabase = createClient()
+    const supabase = await createClient()
     const userId = await getSessionUserId(supabase)
     if (!userId) return apiUnauthorized()
 

@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
   const type = url.searchParams.get('type') as EmailOtpType | null
   const nextPath = sanitizeRelativePath(url.searchParams.get('next'))
 
-  const supabase = createClient()
+  const supabase = await createClient()
 
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code)

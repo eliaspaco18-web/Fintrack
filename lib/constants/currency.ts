@@ -3,5 +3,6 @@
 // Valores y helpers compartidos para conversiones de moneda.
 // =============================================================================
 
-export const DEFAULT_USD_PEN_EXCHANGE_RATE = 3.7
+// No numeric default is provided: conversions require a persisted or manually
+// supplied exchange-rate observation with verifiable provenance.
 

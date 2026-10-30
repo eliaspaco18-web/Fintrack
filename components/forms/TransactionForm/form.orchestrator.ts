@@ -19,6 +19,7 @@ import type {
 }                                   from '@/lib/contracts/ui.contracts'
 import type { OperationType }       from '@/components/transactions/OperationTypeSelector'
 import { getModuleTrigger }         from '@/lib/constants/category-keys'
+import { buildAssetPurchaseModulePayload } from '@/modules/assets/asset-purchase-payload'
 import { zCreateTransactionSchema } from '@/lib/schemas/transaction.schemas'
 import type { CreateTransactionResult }
   from '@/modules/transactions/transaction.service.types'
@@ -157,14 +158,7 @@ export function buildPayload(
     ...base,
     type: 'EXPENSE',
     budget_id: values.budget_id || undefined,
-    asset: sections.assetModule ? {
-      name: values.asset_name!,
-      asset_type: values.asset_type ?? 'OTHER',
-      asset_type_id: values.asset_type_id || undefined,
-      purchase_value: Number(values.amount),
-      serial_number: values.asset_serial || undefined,
-      location: values.asset_location || undefined,
-    } : undefined,
+    asset: sections.assetModule ? buildAssetPurchaseModulePayload(values) : undefined,
     credit: sections.creditModule ? {
       credit_type: values.credit_type ?? 'CREDIT_CARD',
       name: values.credit_name!,
@@ -194,6 +188,7 @@ export interface UseFormOrchestratorReturn {
   sections:        SectionVisibility
   submitState:     ActionState<CreateTransactionResult>
   categoryOptions: { income: CategoryOption[]; expense: CategoryOption[] }
+  resetVersion:    number
   submit:          () => void
   resetForm:       () => void
   setType:         (t: TransactionFormValues['type']) => void
@@ -207,15 +202,21 @@ export function useFormOrchestrator(
 ): UseFormOrchestratorReturn {
   const [submitState, setSubmitState] =
     useState<ActionState<CreateTransactionResult>>({ status: 'idle' })
+  const [resetVersion, setResetVersion] = useState(0)
 
   const form = useForm<TransactionFormValues>({
     defaultValues: { ...FORM_DEFAULTS, ...initialValues },
     mode:          'onBlur',
   })
 
-  useEffect(() => {
+  const resetToInitialValues = useCallback(() => {
     form.reset({ ...FORM_DEFAULTS, ...initialValues })
+    setResetVersion(version => version + 1)
   }, [form, initialValues])
+
+  useEffect(() => {
+    resetToInitialValues()
+  }, [resetToInitialValues])
 
   const type              = useWatch({ control: form.control, name: 'type' })
   const currency          = useWatch({ control: form.control, name: 'currency' })
@@ -266,9 +267,9 @@ export function useFormOrchestrator(
   }, [form])
 
   const resetForm = useCallback(() => {
-    form.reset({ ...FORM_DEFAULTS, ...initialValues })
+    resetToInitialValues()
     setSubmitState({ status: 'idle' })
-  }, [form, initialValues])
+  }, [resetToInitialValues])
 
   const submit = form.handleSubmit(async (values) => {
     setSubmitState({ status: 'loading' })
@@ -334,7 +335,7 @@ export function useFormOrchestrator(
         onSuccess?.(result.data)
         setTimeout(() => {
           setSubmitState({ status: 'idle' })
-          form.reset({ ...FORM_DEFAULTS, ...initialValues })
+          resetToInitialValues()
         }, 3000)
       } else {
         setSubmitState({ status: 'error', error: result.error as FormError })
@@ -359,6 +360,7 @@ export function useFormOrchestrator(
     form,
     sections,
     submitState,
+    resetVersion,
     categoryOptions: {
       income:  options.categories.income,
       expense: options.categories.expense,

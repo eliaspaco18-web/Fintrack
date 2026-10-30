@@ -96,7 +96,7 @@ type RecurringInsertPayload = {
 // ─── HELPER INTERNO ───────────────────────────────────────────────────────────
 
 async function getServiceAndUser() {
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data: { user }, error } = await supabase.auth.getUser()
 
   if (error || !user) {
@@ -111,7 +111,7 @@ async function getServiceAndUser() {
 }
 
 async function resolveUserCategoryIdBySystemKey(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   systemKey: string,
 ): Promise<Result<string>> {

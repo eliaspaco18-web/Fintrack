@@ -10,7 +10,7 @@ import { useRouter }           from 'next/navigation'
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useCredits, useAssets } from '@/lib/hooks/useModules'
 import { useCurrency }         from '@/lib/hooks/useDashboard'
-import { formatCurrency, formatPercent, toPenAmount } from '@/lib/contracts/ui.contracts'
+import { formatCurrency, formatCurrencyOrUnavailable, formatPercent, toPenAmount } from '@/lib/contracts/ui.contracts'
 import { FocusTrap } from '@/components/ui/accessibility'
 import { ModalOverlayPortal } from '@/components/ui/ModalOverlayPortal'
 import { useToast } from '@/lib/toast/toast'
@@ -513,12 +513,12 @@ export function CreditsTable() {
                     </Td>
                     <Td right muted className="hidden md:table-cell">
                         <span className="text-[12px] tabular-nums">
-                        {formatCurrency(format(credit.credit_limit), preferred)}
+                        {formatCurrencyOrUnavailable(format(credit.credit_limit), preferred)}
                       </span>
                     </Td>
                     <Td right>
                       <span className="text-sm font-bold tabular-nums text-[var(--c-primary)]">
-                        {formatCurrency(format(credit.available_amount ?? 0), preferred)}
+                        {formatCurrencyOrUnavailable(credit.available_amount === null ? null : format(credit.available_amount), preferred)}
                       </span>
                     </Td>
                     <Td muted className="hidden lg:table-cell">
@@ -1153,8 +1153,8 @@ export function AssetsTable() {
 
   const totalValue = filtered.reduce((s, a) => {
     const pen = toPenAmount(a.current_value, a.currency, exchangeRate)
-    return s + pen
-  }, 0)
+    return pen === null ? null : s === null ? null : s + pen
+  }, 0 as number | null)
 
   return (
     <TableShell>
@@ -1162,12 +1162,15 @@ export function AssetsTable() {
         <FilterPill label="Activos"     active={activeStatus === 'ACTIVE'}  onClick={() => setActiveStatus('ACTIVE')}  color="#8b5cf6"/>
         <FilterPill label="Todos"       active={activeStatus === ''}        onClick={() => setActiveStatus('')}/>
         <FilterPill label="Vendidos"    active={activeStatus === 'SOLD'}    onClick={() => setActiveStatus('SOLD')}    color="#6b7280"/>
-        {totalValue > 0 && (
+        {totalValue !== null && totalValue > 0 && (
           <span className="text-[11px] text-white/25 tabular-nums hidden sm:inline">
             Total: <strong className="text-purple-400">
-              {formatCurrency(format(totalValue), preferred)}
+              {formatCurrencyOrUnavailable(format(totalValue), preferred)}
             </strong>
           </span>
+        )}
+        {totalValue === null && filtered.length > 0 && (
+          <span className="text-[11px] text-[var(--c-text-muted)] hidden sm:inline">Total: <strong>No disponible</strong></span>
         )}
         <SearchInput value={search} onChange={setSearch} placeholder="Buscar activos…" className="filters-search xl:ml-auto"/>
       </Toolbar>
@@ -1207,9 +1210,9 @@ export function AssetsTable() {
               filtered.map((asset, index) => {
                 const valuePen    = toPenAmount(asset.current_value, asset.currency, exchangeRate)
                 const purchasePen = toPenAmount(asset.purchase_value, asset.currency, exchangeRate)
-                const gainPct     = purchasePen > 0
+                const gainPct     = purchasePen !== null && valuePen !== null && purchasePen > 0
                   ? ((valuePen - purchasePen) / purchasePen) * 100
-                  : 0
+                  : null
                 const status      = ASSET_STATUS_MAP[asset.status] ?? { label: asset.status, variant: 'closed' as const }
 
                 return (
@@ -1227,15 +1230,15 @@ export function AssetsTable() {
                     </Td>
                     <Td right muted className="hidden md:table-cell">
                       <span className="text-[12px] tabular-nums">
-                        {formatCurrency(format(purchasePen), preferred)}
+                        {purchasePen === null || format(purchasePen) === null ? 'No disponible' : formatCurrency(format(purchasePen)!, preferred)}
                       </span>
                     </Td>
                     <Td right>
                       <div>
                         <p className="text-sm font-bold tabular-nums text-purple-400">
-                          {formatCurrency(format(valuePen), preferred)}
+                          {valuePen === null || format(valuePen) === null ? 'No disponible' : formatCurrency(format(valuePen)!, preferred)}
                         </p>
-                        {Math.abs(gainPct) > 0.5 && (
+                        {gainPct !== null && Math.abs(gainPct) > 0.5 && (
                           <p className={`text-[10px] tabular-nums ${gainPct >= 0 ? 'text-[var(--c-primary)]/70' : 'text-red-400/70'}`}>
                             {formatPercent(gainPct, { fractionDigits: 1, signed: true })}
                           </p>

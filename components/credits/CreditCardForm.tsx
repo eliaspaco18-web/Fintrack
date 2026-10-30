@@ -6,7 +6,9 @@ import { AppSelect } from '@/components/ui/AppSelect'
 import { NumericInput } from '@/components/ui/NumericInput'
 import { FormActions, FormField, FormSection } from '@/components/forms/primitives'
 import { RecordModalFooter } from '@/components/ui/RecordModal'
-import { CreditCardScheduleEditor, type BillingCycleRow } from '@/components/credits/CreditCardScheduleModal'
+import { CreditInfoHint } from '@/components/credits/CreditInfoHint'
+import incomeStyles from '@/components/forms/TransactionForm/IncomeTransactionForm.module.css'
+import { CreditCardScheduleModal, type BillingCycleRow } from '@/components/credits/CreditCardScheduleModal'
 import {
   formatBillingCycleLabel,
 } from '@/components/credits/credits-schedule.constants'
@@ -17,7 +19,10 @@ import { formatNumber } from '@/lib/contracts/ui.contracts'
 import type { CreditListItem } from '@/lib/credits/display-type'
 import { ATTACHMENT_UPDATE_BLOCKED_MESSAGE } from '@/modules/attachments/attachment-integrity'
 import { getBillingCyclesSubmissionIssue } from '@/modules/credits/billing-cycle-integrity'
-import { requestAttachmentUpload } from '@/modules/attachments/attachment-client'
+import {
+  getAttachmentAvailabilityOutcome,
+  requestAttachmentUpload,
+} from '@/modules/attachments/attachment-client'
 
 type BankEntityOption = {
   id: string
@@ -65,7 +70,7 @@ type CardFormState = {
 interface CreditCardFormProps {
   mode?: 'create' | 'edit'
   credit?: CreditListItem | null
-  onSuccess: (creditName: string) => void
+  onSuccess: (creditName: string, followUpIssue?: string, creditId?: string) => void
   onCancel: () => void
   onLayoutPreferenceChange?: (nextSize: 'lg' | 'xl' | 'full-form') => void
   onNestedModalOpenChange?: (open: boolean) => void
@@ -125,12 +130,11 @@ export function CreditCardForm({
 
   const [cycles, setCycles] = useState<BillingCycleRow[]>([newCycleRow()])
   const [cyclesDirty, setCyclesDirty] = useState(false)
+  const [cyclesLoading, setCyclesLoading] = useState(mode === 'edit')
+  const [cyclesLoadError, setCyclesLoadError] = useState(false)
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
   const [statementUploadCycleId, setStatementUploadCycleId] = useState<string | null>(null)
 
-  const selectedBankEntity = useMemo(
-    () => bankEntities.find(entity => entity.id === form.bank_entity_id) ?? null,
-    [bankEntities, form.bank_entity_id],
-  )
   const currencyLabel = form.currency === 'USD' ? 'Dólares (USD)' : 'Soles (PEN)'
 
   const creditLimitValue = roundToDecimals(parseNumericInput(form.credit_limit, 0) || 0, 2)
@@ -217,6 +221,8 @@ export function CreditCardForm({
     if (mode !== 'edit' || !credit?.id) return
 
     const loadCycles = async () => {
+      setCyclesLoading(true)
+      setCyclesLoadError(false)
       try {
         const res = await fetch(`/api/credits/${credit.id}/billing-cycles`, { cache: 'no-store' })
         const json = await res.json().catch(() => null)
@@ -255,7 +261,10 @@ export function CreditCardForm({
         setCycles(loaded.length > 0 ? loaded : [newCycleRow()])
         setCyclesDirty(false)
       } catch (caught) {
+        setCyclesLoadError(true)
         setError(caught instanceof Error ? caught.message : 'Error cargando ciclos de facturación')
+      } finally {
+        setCyclesLoading(false)
       }
     }
 
@@ -277,11 +286,28 @@ export function CreditCardForm({
     setCycles(prev => prev.map(cycle => (cycle.id === id ? { ...cycle, ...patch } : cycle)))
   }, [])
 
+  const openScheduleModal = useCallback(() => {
+    onNestedModalOpenChange?.(true)
+    setIsScheduleModalOpen(true)
+  }, [onNestedModalOpenChange])
+
+  const closeScheduleModal = useCallback(() => {
+    setIsScheduleModalOpen(false)
+  }, [])
+  const finishScheduleClose = useCallback(() => {
+    onNestedModalOpenChange?.(false)
+    document.getElementById('credit-card-schedule-trigger')?.focus({ preventScroll: true })
+  }, [onNestedModalOpenChange])
+
   const uploadStatement = useCallback(async (cycleId: string, file: File) => {
-    if (mode !== 'edit' || !credit?.id) {
-      setError('Guarda primero la tarjeta antes de adjuntar un estado de cuenta.')
+    if (mode === 'create') {
+      setCycles(current => current.map(cycle => cycle.id === cycleId
+        ? { ...cycle, statement_file: file }
+        : cycle))
+      setError(null)
       return
     }
+    if (!credit?.id) return
 
     setStatementUploadCycleId(cycleId)
     setError(null)
@@ -384,6 +410,7 @@ export function CreditCardForm({
 
     setSaving(true)
 
+    let persistedCreditId: string | null = null
     try {
       const payload = {
         name: trimmedName,
@@ -409,6 +436,9 @@ export function CreditCardForm({
       }
 
       const creditId = (mode === 'edit' ? credit?.id : json.data?.credit?.id) as string
+      if (!creditId) throw new Error('No se recibió el identificador de la tarjeta guardada.')
+      persistedCreditId = creditId || null
+      const attachmentIssues: string[] = []
       if (mode === 'edit' && cyclesDirty) {
         const cycleRes = await fetch(`/api/credits/${creditId}/billing-cycles`, {
           method: 'PUT',
@@ -431,7 +461,7 @@ export function CreditCardForm({
       } else if (mode === 'create') {
         for (const cycle of cycles) {
           const totalToPay = roundToDecimals(parseNumericInput(cycle.total_to_pay || '0', 0), 2)
-          await fetch(`/api/credits/${creditId}/billing-cycles`, {
+          const cycleRes = await fetch(`/api/credits/${creditId}/billing-cycles`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -443,12 +473,40 @@ export function CreditCardForm({
               total_to_pay: totalToPay,
             }),
           })
+          const cycleJson = await cycleRes.json().catch(() => null)
+          if (!cycleRes.ok || !cycleJson?.ok || typeof cycleJson.data?.id !== 'string') {
+            throw new Error(getApiErrorMessage(cycleJson, 'La tarjeta se creó, pero no se pudo guardar uno de sus ciclos.'))
+          }
+
+          if (cycle.statement_file) {
+            try {
+              const uploadResult = await requestAttachmentUpload(
+                `/api/credits/${creditId}/billing-cycles/${cycleJson.data.id}/statement`,
+                cycle.statement_file,
+              )
+              const availability = getAttachmentAvailabilityOutcome(uploadResult)
+              if (availability.message) attachmentIssues.push(`${formatBillingCycleLabel(cycle.billing_month, cycle.billing_year)}: ${availability.message}`)
+            } catch (uploadError) {
+              const message = uploadError instanceof Error ? uploadError.message : 'no se pudo adjuntar el archivo'
+              attachmentIssues.push(`${formatBillingCycleLabel(cycle.billing_month, cycle.billing_year)}: ${message}`)
+            }
+          }
         }
       }
 
-      onSuccess(trimmedName)
+      onSuccess(trimmedName, attachmentIssues.length > 0 ? attachmentIssues.join(' ') : undefined, creditId)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'No se pudo guardar la tarjeta de crédito')
+      if (mode === 'create' && persistedCreditId) {
+        onSuccess(
+          trimmedName,
+          caught instanceof Error
+            ? `La tarjeta fue registrada, pero quedó un paso pendiente: ${caught.message}`
+            : 'La tarjeta fue registrada, pero no se pudo completar el cronograma.',
+          persistedCreditId,
+        )
+      } else {
+        setError(caught instanceof Error ? caught.message : 'No se pudo guardar la tarjeta de crédito')
+      }
     } finally {
       setSaving(false)
     }
@@ -469,16 +527,16 @@ export function CreditCardForm({
         </div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 items-start gap-4 overflow-y-auto pr-1 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] xl:overflow-visible xl:pr-0">
+      <div className="grid min-h-0 flex-1 grid-cols-1 items-start gap-4 overflow-y-auto pr-1 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] xl:pr-0">
         <FormSection
           title="Datos esenciales"
-          description="Define la tarjeta por su banco emisor. FinTrack creará internamente la cuenta técnica necesaria para registrar consumos."
+          description="Identidad y línea aprobada."
           columns="2"
           className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
         >
           <FormField
             label="Entidad bancaria emisora"
-            description="Banco o entidad que emitió la tarjeta."
+            labelAdornment={<CreditInfoHint label="Ayuda sobre la entidad emisora">La entidad identifica quién emitió la tarjeta y permite asociar su ciclo de facturación.</CreditInfoHint>}
             className="md:col-span-2"
           >
             {loadingOptions ? (
@@ -497,6 +555,7 @@ export function CreditCardForm({
                       label: entity.name,
                     }))}
                 searchPlaceholder="Buscar entidad..."
+                matchTriggerWidth
               />
             )}
           </FormField>
@@ -522,26 +581,24 @@ export function CreditCardForm({
             />
           </FormField>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:col-span-2">
-            <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
-              <p className="text-[11px] font-medium text-[var(--ft-form-muted)]">Entidad bancaria</p>
-              <p className="mt-1 text-sm font-semibold text-[var(--ft-text)]">
-                {selectedBankEntity ? selectedBankEntity.name : 'Selecciona una entidad'}
-              </p>
-            </div>
-            <div className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3">
-              <p className="text-[11px] font-medium text-[var(--ft-form-muted)]">Moneda de la línea</p>
-              <div className="mt-2 grid grid-cols-2 gap-1.5">
+          <FormField
+            label="Moneda de la línea"
+            labelAdornment={<CreditInfoHint label="Ayuda sobre la moneda de la línea">La moneda define el límite aprobado. Los consumos iniciales se registran por separado en PEN y USD.</CreditInfoHint>}
+            className="md:col-span-2"
+          >
+            <div role="group" aria-label="Moneda de la línea" className="inline-flex w-full max-w-[280px] rounded-[var(--ft-radius-control)] border border-[var(--ft-control-border)] bg-[var(--ft-surface-muted)] p-1">
+              <div className="grid w-full grid-cols-2 gap-1.5">
                 {(['PEN', 'USD'] as const).map(currency => (
                   <button
                     key={currency}
                     type="button"
                     disabled={isDisabled}
+                    aria-pressed={form.currency === currency}
                     onClick={() => setForm(prev => ({ ...prev, currency }))}
-                    className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                    className={`min-h-9 rounded-[calc(var(--ft-radius-control)-2px)] px-3 text-[13px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                       form.currency === currency
-                        ? 'border-[var(--ft-primary)] bg-[var(--ft-primary-soft)] text-[var(--ft-primary)]'
-                        : 'border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] text-[var(--ft-form-muted)] hover:text-[var(--ft-text)]'
+                        ? 'bg-[var(--ft-surface)] text-[var(--ft-primary)] shadow-sm'
+                        : 'bg-transparent text-[var(--ft-form-muted)] hover:text-[var(--ft-text)]'
                     }`}
                   >
                     {currency}
@@ -549,18 +606,16 @@ export function CreditCardForm({
                 ))}
               </div>
             </div>
-          </div>
+          </FormField>
         </FormSection>
 
         <section className="space-y-3 rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h3 className="text-[15px] font-semibold tracking-[-0.02em] text-[var(--c-text)]">
-                Saldo inicial
-              </h3>
-              <p className="text-[12px] leading-5 text-[var(--ft-form-muted)]">
-                Línea aprobada y deuda pendiente al registrar la tarjeta.
-              </p>
+              <div className="flex items-center gap-2">
+                <h3 className="text-[15px] font-semibold tracking-[-0.02em] text-[var(--ft-text-strong)]">Saldo inicial</h3>
+                <CreditInfoHint label="Ayuda sobre el saldo inicial">Registra la línea aprobada y las deudas existentes por moneda. Los saldos se muestran en su moneda original.</CreditInfoHint>
+              </div>
             </div>
             <span className="mt-0.5 inline-flex h-7 items-center rounded-[var(--ft-radius-control)] border border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-2.5 text-[11px] font-semibold text-[var(--ft-form-muted)]">
               {form.currency}
@@ -568,7 +623,7 @@ export function CreditCardForm({
           </div>
 
           <div className="grid gap-3 md:grid-cols-3">
-            <FormField label="Línea de crédito">
+            <FormField label="Línea de crédito" labelAdornment={<CreditInfoHint label="Ayuda sobre la línea de crédito">El límite aprobado de la tarjeta. No representa dinero propio ni saldo disponible en cuentas.</CreditInfoHint>}>
               <NumericInput
                 step="0.01"
                 decimals={2}
@@ -642,27 +697,55 @@ export function CreditCardForm({
           </div>
         </section>
 
-        <div className="min-h-0 rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 xl:col-span-2">
-          <CreditCardScheduleEditor
-            cycles={cycles}
-            duplicateCycleKeys={duplicateCycleKeys}
-            duplicateCycleLabels={duplicateCycleLabels}
-            yearOptions={YEARS}
-            disabled={isDisabled}
-            compact
-            onAddCycle={addCycle}
-            onRemoveCycle={removeCycle}
-            onUpdateCycle={updateCycle}
-            onStatementUpload={mode === 'edit' ? uploadStatement : undefined}
-            onStatementOpen={mode === 'edit' ? openStatement : undefined}
-            statementUploadCycleId={statementUploadCycleId}
-            onMovementModalOpenChange={onNestedModalOpenChange}
-          />
-        </div>
+        <section className="min-w-0 rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 xl:col-span-2" aria-labelledby="credit-card-cycles-heading">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h3 id="credit-card-cycles-heading" className="text-[14px] font-semibold leading-5 text-[var(--ft-text-strong)]">Ciclos de facturación</h3>
+                <CreditInfoHint label="Ayuda sobre los ciclos de facturación">Define el período de consumo y la fecha de pago de cada ciclo. Los importes y documentos se mantienen por ciclo.</CreditInfoHint>
+              </div>
+              <p className="mt-1 text-[12px] leading-[1.45] text-[var(--ft-form-muted)]">
+                {cyclesLoading ? 'Cargando ciclos…' : cyclesLoadError ? 'Ciclos no disponibles' : `${cycles.length} ciclo${cycles.length === 1 ? '' : 's'} · ${cycles.slice(0, 2).map(cycle => formatBillingCycleLabel(cycle.billing_month, cycle.billing_year)).join(' · ')}${cycles.length > 2 ? ` · +${cycles.length - 2}` : ''}`}
+              </p>
+              {duplicateCycleLabels.length > 0 ? (
+                <p className="mt-1 text-[11px] font-medium text-[var(--ft-form-error)]">{duplicateCycleLabels.join(', ')}: revisa períodos duplicados.</p>
+              ) : null}
+            </div>
+            <Button
+              id="credit-card-schedule-trigger"
+              type="button"
+              variant="secondary"
+              size="md"
+              onClick={openScheduleModal}
+              disabled={isDisabled || cyclesLoading || cyclesLoadError}
+              className="shrink-0"
+            >
+              Revisar ciclos
+            </Button>
+          </div>
+        </section>
       </div>
+
+      <CreditCardScheduleModal
+        open={isScheduleModalOpen}
+        onClose={closeScheduleModal}
+        onExitComplete={finishScheduleClose}
+        cycles={cycles}
+        duplicateCycleKeys={duplicateCycleKeys}
+        duplicateCycleLabels={duplicateCycleLabels}
+        yearOptions={YEARS}
+        disabled={isDisabled || cyclesLoading || cyclesLoadError}
+        onAddCycle={addCycle}
+        onRemoveCycle={removeCycle}
+        onUpdateCycle={updateCycle}
+        onStatementUpload={uploadStatement}
+        onStatementOpen={mode === 'edit' ? openStatement : undefined}
+        statementUploadCycleId={statementUploadCycleId}
+      />
 
       <RecordModalFooter>
         <FormActions
+          className={incomeStyles.operationFormActions}
           secondaryAction={(
             <Button type="button" variant="secondary" size="lg" onClick={onCancel} disabled={saving}>
               Cancelar

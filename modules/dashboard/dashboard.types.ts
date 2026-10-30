@@ -7,16 +7,16 @@
 // ─── KPIs ─────────────────────────────────────────────────────────────────────
 
 export interface NetWorth {
-  pen: number
-  usd: number
+  pen: number | null
+  usd: number | null
 }
 
 export interface MonthMetrics {
   incomePen:  number
   expensePen: number
   netPen:     number
-  incomeUsd:  number
-  expenseUsd: number
+  incomeUsd:  number | null
+  expenseUsd: number | null
 }
 
 // ─── CUENTAS ──────────────────────────────────────────────────────────────────
@@ -27,8 +27,8 @@ export interface AccountBalance {
   type:       string
   currency:   string
   balance:    number   // en moneda original
-  balancePen: number   // consolidado en PEN
-  balanceUsd: number   // consolidado en USD
+  balancePen: number | null   // null when cross-currency conversion is unavailable
+  balanceUsd: number | null
   color:      string
   icon:       string
 }
@@ -113,15 +113,15 @@ export interface PayableItem extends PendingItem {
 }
 
 export interface ReceivablesSummary {
-  totalPendingPen: number
-  totalPendingUsd: number
+  totalPendingPen: number | null
+  totalPendingUsd: number | null
   count:           number
   items:           ReceivableItem[]
 }
 
 export interface PayablesSummary {
-  totalPendingPen: number
-  totalPendingUsd: number
+  totalPendingPen: number | null
+  totalPendingUsd: number | null
   count:           number
   items:           PayableItem[]
 }
@@ -130,13 +130,13 @@ export interface PayablesSummary {
 
 export interface AssetsByType {
   assetType: string
-  totalPen:  number
+  totalPen:  number | null
   count:     number
 }
 
 export interface AssetsSummary {
-  totalValuePen: number
-  totalValueUsd: number
+  totalValuePen: number | null
+  totalValueUsd: number | null
   count:         number
   byType:        AssetsByType[]
 }
@@ -144,7 +144,8 @@ export interface AssetsSummary {
 // ─── META ─────────────────────────────────────────────────────────────────────
 
 export interface DashboardMeta {
-  exchangeRateUsdPen: number
+  exchangeRateUsdPen: number | null
+  exchangeRateVerified: boolean
   calculatedAt:       string
   currentMonth:       string
 }

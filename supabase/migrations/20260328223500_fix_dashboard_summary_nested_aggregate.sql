@@ -14,21 +14,20 @@ AS $$
 DECLARE
   v_result         jsonb;
   v_current_month  date    := date_trunc('month', CURRENT_DATE)::date;
-  v_exchange_rate  numeric := COALESCE(fn_latest_exchange_rate('USD', 'PEN'), 3.7);
+  v_exchange_rate  numeric := fn_latest_exchange_rate('USD', 'PEN');
 BEGIN
   SELECT jsonb_build_object(
-    'net_worth_pen', (
-      SELECT COALESCE(SUM(
-        CASE
-          WHEN currency = 'PEN' THEN balance
-          ELSE balance * v_exchange_rate
-        END
+    'net_worth_pen', CASE
+      WHEN v_exchange_rate IS NULL AND EXISTS (
+        SELECT 1 FROM accounts
+        WHERE user_id = p_user_id AND is_active = true AND include_in_net_worth = true AND currency = 'USD'
+      ) THEN NULL
+      ELSE COALESCE((
+        SELECT SUM(CASE WHEN currency = 'PEN' THEN balance ELSE balance * v_exchange_rate END)
+        FROM accounts
+        WHERE user_id = p_user_id AND is_active = true AND include_in_net_worth = true
       ), 0)
-      FROM accounts
-      WHERE user_id = p_user_id
-        AND is_active = true
-        AND include_in_net_worth = true
-    ),
+    END,
 
     'current_month', jsonb_build_object(
       'income_pen', COALESCE((
@@ -58,16 +57,14 @@ BEGIN
             'type',        type,
             'currency',    currency,
             'balance',     balance,
-            'balance_pen', CASE
-              WHEN currency = 'PEN' THEN balance
-              ELSE balance * v_exchange_rate
-            END,
+            'balance_pen', CASE WHEN currency = 'PEN' THEN balance ELSE balance * v_exchange_rate END,
             'color',       color,
             'icon',        icon
           )
           ORDER BY
             CASE
               WHEN currency = 'PEN' THEN balance
+              WHEN v_exchange_rate IS NULL THEN NULL
               ELSE balance * v_exchange_rate
             END DESC
         ),
@@ -171,12 +168,13 @@ BEGIN
 
     'receivables', (
       SELECT jsonb_build_object(
-        'total_pending_pen', COALESCE(SUM(
-          CASE
-            WHEN currency = 'PEN' THEN pending_amount
-            ELSE pending_amount * v_exchange_rate
-          END
-        ), 0),
+        'total_pending_pen', CASE
+          WHEN v_exchange_rate IS NULL AND EXISTS (
+            SELECT 1 FROM v_receivables_summary check_row
+            WHERE check_row.user_id = p_user_id AND check_row.currency = 'USD'
+          ) THEN NULL
+          ELSE COALESCE(SUM(CASE WHEN currency = 'PEN' THEN pending_amount ELSE pending_amount * v_exchange_rate END), 0)
+        END,
         'count', COUNT(*),
         'items', COALESCE(
           jsonb_agg(
@@ -199,12 +197,13 @@ BEGIN
 
     'payables', (
       SELECT jsonb_build_object(
-        'total_pending_pen', COALESCE(SUM(
-          CASE
-            WHEN currency = 'PEN' THEN pending_amount
-            ELSE pending_amount * v_exchange_rate
-          END
-        ), 0),
+        'total_pending_pen', CASE
+          WHEN v_exchange_rate IS NULL AND EXISTS (
+            SELECT 1 FROM v_payables_summary check_row
+            WHERE check_row.user_id = p_user_id AND check_row.currency = 'USD'
+          ) THEN NULL
+          ELSE COALESCE(SUM(CASE WHEN currency = 'PEN' THEN pending_amount ELSE pending_amount * v_exchange_rate END), 0)
+        END,
         'count', COUNT(*),
         'items', COALESCE(
           jsonb_agg(
@@ -227,12 +226,13 @@ BEGIN
 
     'assets', (
       SELECT jsonb_build_object(
-        'total_value_pen', COALESCE(SUM(
-          CASE
-            WHEN currency = 'PEN' THEN current_value
-            ELSE current_value * v_exchange_rate
-          END
-        ), 0),
+        'total_value_pen', CASE
+          WHEN v_exchange_rate IS NULL AND EXISTS (
+            SELECT 1 FROM assets check_row
+            WHERE check_row.user_id = p_user_id AND check_row.status = 'ACTIVE' AND check_row.currency = 'USD'
+          ) THEN NULL
+          ELSE COALESCE(SUM(CASE WHEN currency = 'PEN' THEN current_value ELSE current_value * v_exchange_rate END), 0)
+        END,
         'count', COUNT(*),
         'by_type', (
           SELECT COALESCE(
@@ -249,12 +249,9 @@ BEGIN
           FROM (
             SELECT
               asset_type,
-              SUM(
-                CASE
-                  WHEN currency = 'PEN' THEN current_value
-                  ELSE current_value * v_exchange_rate
-                END
-              ) AS total_pen,
+              CASE WHEN v_exchange_rate IS NULL AND BOOL_OR(currency = 'USD') THEN NULL
+                   ELSE SUM(CASE WHEN currency = 'PEN' THEN current_value ELSE current_value * v_exchange_rate END)
+              END AS total_pen,
               COUNT(*) AS item_count
             FROM assets
             WHERE user_id = p_user_id
@@ -270,6 +267,7 @@ BEGIN
 
     'meta', jsonb_build_object(
       'exchange_rate_usd_pen', v_exchange_rate,
+      'exchange_rate_verified', v_exchange_rate IS NOT NULL,
       'calculated_at', now(),
       'current_month', to_char(CURRENT_DATE, 'YYYY-MM')
     )

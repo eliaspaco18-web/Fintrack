@@ -41,6 +41,7 @@ async function createPortfolioAccount(page: Page, accountName: string) {
 
 async function createCategory(page: Page, categoryName: string) {
   await page.goto('/admin')
+  await page.getByTestId('categories-create-button').click()
   await expect(page.getByTestId('categories-form')).toBeVisible()
 
   await page.getByTestId('categories-name-input').fill(categoryName)
@@ -192,19 +193,19 @@ async function createPayable(page: Page, creditorName: string, accountName: stri
   await expect(page.getByTestId('payables-new-btn')).toBeVisible()
 
   await page.getByTestId('payables-new-btn').click()
-  await expect(page.getByTestId('payable-form')).toBeVisible()
+  await expect(page).toHaveURL('/transactions?new=transaction&module=payable&type=INCOME')
+  const dialog = page.getByRole('dialog', { name: 'Recibir préstamo' })
+  await expect(dialog).toBeVisible()
+  await expect(page.getByRole('menu', { name: 'Registrar una operación' })).toHaveCount(0)
 
-  await page.getByTestId('payable-creditor-select').click()
-  await page.getByRole('option', { name: creditorName }).click()
+  await dialog.getByTestId('transaction-payable-creditor-select').selectOption({ label: creditorName })
+  await dialog.getByTestId('transaction-source-account-select').selectOption({ label: accountName })
+  await dialog.getByTestId('transaction-amount-input').fill('210')
+  await dialog.getByTestId('transaction-description-input').fill(concept)
+  await dialog.getByTestId('transaction-submit-button').click()
 
-  await page.getByTestId('payable-account-select').click()
-  await page.getByRole('option', { name: accountName }).click()
-
-  await page.getByTestId('payable-amount-input').fill('210')
-  await page.getByTestId('payable-concept-input').fill(concept)
-  await page.getByTestId('payable-save-btn').click()
-
-  await expect(page.getByTestId('payable-form')).toHaveCount(0, { timeout: 20_000 })
+  await expect(page.getByTestId('transaction-success-summary')).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByTestId('transaction-success-summary')).toContainText(concept)
 }
 
 async function createManualAlert(page: Page, title: string) {
@@ -385,7 +386,7 @@ test.describe('authenticated management connectivity', () => {
     await expect(page.getByTestId('portfolio-form')).toBeVisible()
 
     await page.getByTestId('portfolio-initial-balance-input').fill('400')
-    await page.getByTestId('portfolio-initial-balance-date-input').fill('2026-01-01')
+    await page.getByTestId('portfolio-initial-balance-date-input').fill('01/01/2026')
     await page.getByTestId('portfolio-submit-button').click()
 
     await expect(row).toContainText('S/ 400.00', { timeout: 20_000 })
@@ -475,14 +476,15 @@ test.describe('authenticated management connectivity', () => {
     const card = page.locator('article').filter({ hasText: creditName }).first()
     await expect(card).toBeVisible({ timeout: 15_000 })
 
-    const deleteButton = card.locator('[data-testid^="credit-delete-"]').first()
-    await deleteButton.click()
+    const moreActions = card.getByRole('button', { name: `Más acciones de ${creditName}` })
+    await moreActions.click()
+    await page.getByRole('menuitem', { name: 'Eliminar' }).click()
     await expect(page.getByTestId('credits-delete-modal')).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('credits-delete-modal')).toHaveCount(0)
-    await expect(deleteButton).toBeFocused()
 
-    await deleteButton.click()
+    await moreActions.click()
+    await page.getByRole('menuitem', { name: 'Eliminar' }).click()
     await expect(page.getByTestId('credits-delete-modal')).toBeVisible()
     await page.getByTestId('credits-delete-confirm-button').click()
     await expect(page.getByTestId('credits-delete-modal')).toHaveCount(0, { timeout: 20_000 })
@@ -521,7 +523,7 @@ test.describe('authenticated management connectivity', () => {
     })
   })
 
-  test('can create and resolve a manual alert', async ({ page }) => {
+  test('can create and mark a manual alert as read', async ({ page }) => {
     await loginViaUI(page, credentials!)
 
     const alertTitle = `E2E Manual Alert ${Date.now()}`
@@ -530,9 +532,9 @@ test.describe('authenticated management connectivity', () => {
     const row = page.locator('[data-testid^="alert-row-"]').filter({ hasText: alertTitle }).first()
     await expect(row).toBeVisible({ timeout: 15_000 })
 
-    const resolveButton = row.locator('[data-testid^="alert-toggle-"]')
-    await resolveButton.click()
-    await expect(row.getByText('Resuelta')).toBeVisible({ timeout: 15_000 })
+    const markReadButton = row.locator('[data-testid^="alert-toggle-"]')
+    await markReadButton.click()
+    await expect(row.getByText('Leído')).toBeVisible({ timeout: 15_000 })
   })
 
   test('new receivable keeps linked portfolio visible in debtor detail', async ({ page }) => {

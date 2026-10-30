@@ -16,7 +16,7 @@ import type { BudgetPeriod } from '@/types/database.types'
 import { z } from 'zod'
 
 interface Params {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }
 
 type BudgetSeriesRow = {
@@ -84,8 +84,9 @@ const continuationSchema = z.object({
   notes: z.string().trim().nullable().optional(),
 })
 
-export async function POST(req: Request, { params }: Params) {
-  const supabase = createClient()
+export async function POST(req: Request, props: Params) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 

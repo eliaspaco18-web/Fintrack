@@ -12,17 +12,17 @@ import { usePathname }      from 'next/navigation'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { getActiveNavItem } from '@/lib/constants/nav'
 import { useTheme } from '@/lib/hooks/useTheme'
+import { useCurrency } from '@/lib/hooks/useDashboard'
 import { CURRENT_RELEASE } from '@/lib/release/current-release'
+import { FTMark } from './FTMark'
 import {
   IconBell,
   IconChevronRight,
   IconLogOut,
   IconMenu,
   IconMoon,
-  IconPlus,
   IconSun,
   IconUser,
-  NavIcon,
 } from './LayoutIcons'
 
 function resolveCrumbs(pathname: string) {
@@ -47,7 +47,8 @@ interface TopbarProps {
   user: { email: string; name?: string | null; avatar?: string | null }
   navBadges?: Partial<Record<string, number>>
   lastSyncedAt?: string | null
-  onMenuClick: () => void
+  onNavigationToggle: (source: 'pointer' | 'keyboard') => void
+  navigationExpanded: boolean
   onSignOut: () => void
 }
 
@@ -69,9 +70,8 @@ function TopbarIconButton({
       title={label}
       onClick={onClick}
       className={`
-        ui-pressable relative inline-flex h-9 w-9 items-center justify-center
-        rounded-control border border-[var(--ft-border)]
-        bg-[var(--ft-surface)] text-[var(--ft-text-muted)]
+        ui-pressable ft-topbar-utility relative inline-flex h-9 w-9 items-center justify-center
+        rounded-control text-[var(--ft-text-muted)]
         transition-[background-color,border-color,color,transform] duration-fast
         ease-[var(--ft-ease-out)] motion-reduce:transition-none
         hover:border-[var(--ft-border-strong)] hover:bg-[var(--ft-surface-hover)]
@@ -89,12 +89,11 @@ function TopbarIconButton({
 }
 
 export function Topbar(props: TopbarProps) {
-  const { user, navBadges = {}, lastSyncedAt, onMenuClick, onSignOut } = props
+  const { user, navBadges = {}, onNavigationToggle, navigationExpanded, onSignOut } = props
   const pathname = usePathname()
   const { mounted, theme, toggleTheme } = useTheme()
-  const [quickOpen, setQuickOpen] = useState(false)
+  const { preferred, toggle: toggleCurrency } = useCurrency()
   const [profileOpen, setProfileOpen] = useState(false)
-  const [isOnline, setIsOnline] = useState(true)
   const { activeItem, title, detailLabel } = resolveCrumbs(pathname)
   const alertCount = navBadges.alerts ?? 0
   const isLight = mounted && theme === 'light'
@@ -114,30 +113,9 @@ export function Topbar(props: TopbarProps) {
     [displayName],
   )
 
-  const connectionLabel = !isOnline
-    ? 'Sin conexión'
-    : lastSyncedAt
-      ? `Actualizado ${lastSyncedAt}`
-      : 'Conectado'
-
   useEffect(() => {
-    setQuickOpen(false)
     setProfileOpen(false)
   }, [pathname])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-
-    const handleOnline = () => setIsOnline(window.navigator.onLine)
-    handleOnline()
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOnline)
-
-    return () => {
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOnline)
-    }
-  }, [])
 
   return (
     <header className="
@@ -145,32 +123,27 @@ export function Topbar(props: TopbarProps) {
       border-b border-[var(--ft-border)]
       bg-[var(--ft-topbar-bg)]
     ">
-      <div className="flex h-full min-w-0 items-center justify-between gap-3 px-4 md:px-6 xl:px-8">
+      <div className="ft-topbar-inner flex h-full min-w-0 items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          {activeItem ? (
-            <span className="hidden shrink-0 text-[12px] font-medium text-[var(--ft-text-subtle)] md:inline">
-              FinTrack
-            </span>
-          ) : null}
-
-          {activeItem ? (
-            <IconChevronRight
-              size={13}
-              className="hidden shrink-0 text-[var(--ft-text-subtle)] md:block"
-            />
-          ) : null}
+          <Link href="/dashboard" aria-label="Ir a Inicio" prefetch={false} className="mr-1 inline-flex shrink-0 rounded-control focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)] md:hidden">
+            <FTMark size={27} />
+          </Link>
+          <button
+            type="button"
+            onClick={event => onNavigationToggle(event.detail === 0 ? 'keyboard' : 'pointer')}
+            aria-controls="ft-primary-navigation"
+            aria-expanded={navigationExpanded}
+            aria-label={navigationExpanded ? 'Contraer navegación' : 'Expandir navegación'}
+            title={navigationExpanded ? 'Contraer navegación' : 'Expandir navegación'}
+            className="ft-navigation-toggle hidden h-9 w-9 shrink-0 items-center justify-center rounded-control text-[var(--ft-text-muted)] hover:bg-[var(--ft-surface-hover)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)] md:inline-flex"
+          >
+            <IconMenu size={18} />
+          </button>
+          {activeItem ? <span className="hidden shrink-0 text-[12px] font-medium text-[var(--ft-text-muted)] md:inline">Espacio personal</span> : null}
+          {activeItem ? <span aria-hidden="true" className="hidden px-1 text-[12px] text-[var(--ft-text-subtle)] md:inline">/</span> : null}
 
           <div className="flex min-w-0 items-center gap-2">
-            {activeItem ? (
-              <NavIcon
-                name={activeItem.icon}
-                size={15}
-                strokeWidth={1.75}
-                className="shrink-0 text-[var(--ft-primary)]"
-              />
-            ) : null}
-
-            <h1 className="truncate text-[15px] font-semibold leading-none tracking-[-0.015em] text-[var(--ft-text-strong)]">
+            <h1 tabIndex={-1} className="truncate text-[12px] font-semibold leading-none tracking-[-0.01em] text-[var(--ft-text-strong)]">
               {title}
             </h1>
 
@@ -189,35 +162,14 @@ export function Topbar(props: TopbarProps) {
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
-          <button
-            type="button"
-            onClick={onMenuClick}
-            aria-label="Abrir módulos"
-            title="Módulos"
-            className="
-              ui-pressable inline-flex h-9 shrink-0 items-center justify-center gap-1.5
-              rounded-control border border-[var(--ft-primary-border)]
-              bg-[var(--ft-primary-soft)] px-2.5 text-[11px] font-semibold
-              text-[var(--ft-primary)] transition-[background-color,border-color,transform]
-              duration-fast ease-[var(--ft-ease-out)] motion-reduce:transition-none
-              hover:border-[var(--ft-primary)] hover:bg-[var(--ft-primary-soft)]
-              active:scale-[0.98] focus-visible:outline-none focus-visible:ring-[3px]
-              focus-visible:ring-[var(--ft-focus-ring-color)] md:hidden
-            "
-          >
-            <IconMenu size={15} />
-            <span className="hidden min-[360px]:inline">Módulos</span>
-          </button>
-
           <Link
             href="/alerts"
             prefetch={false}
             aria-label={alertCount > 0 ? `${alertCount} alertas críticas` : 'Alertas'}
             title="Alertas"
             className="
-              ui-pressable relative inline-flex h-9 w-9 items-center justify-center
-              rounded-control border border-[var(--ft-border)]
-              bg-[var(--ft-surface)] text-[var(--ft-text-muted)]
+              ui-pressable ft-topbar-utility relative inline-flex h-9 w-9 items-center justify-center
+              rounded-control text-[var(--ft-text-muted)]
               transition-[background-color,border-color,color,transform] duration-fast
               ease-[var(--ft-ease-out)] motion-reduce:transition-none
               hover:border-[var(--ft-border-strong)] hover:bg-[var(--ft-surface-hover)]
@@ -241,79 +193,6 @@ export function Topbar(props: TopbarProps) {
             ) : null}
           </Link>
 
-          <div className="relative hidden sm:block">
-            <button
-              type="button"
-              onClick={() => setQuickOpen(open => !open)}
-              aria-expanded={quickOpen}
-              aria-haspopup="true"
-              className="
-                ui-pressable inline-flex h-9 items-center gap-2
-                rounded-control border border-transparent bg-[var(--ft-primary)]
-                pl-3 pr-2 text-[12px] font-semibold
-                text-[var(--ft-text-on-primary)]
-                shadow-elevation-sm transition-[background-color,transform] duration-fast
-                ease-[var(--ft-ease-out)] motion-reduce:transition-none hover:bg-[var(--ft-primary-hover)]
-                active:scale-[0.98]
-                focus-visible:outline-none focus-visible:ring-[3px]
-                focus-visible:ring-[var(--ft-focus-ring-color)]
-              "
-            >
-              Nueva
-              <span className="flex h-5 w-5 items-center justify-center rounded-[6px] bg-white/15">
-                <IconPlus size={13} />
-              </span>
-            </button>
-
-            {quickOpen ? (
-              <div
-                className="
-                  absolute right-0 top-[calc(100%+8px)] z-dropdown w-60 rounded-surface
-                  border border-[var(--ft-border)] bg-[var(--ft-surface)]
-                  p-1.5 shadow-elevation-md
-                "
-              >
-                <Link className="topbar-menu-item" href="/transactions?new=transaction" prefetch={false}>
-                  Nueva transacción
-                </Link>
-                <Link className="topbar-menu-item" href="/portfolio?new=portfolio" prefetch={false}>
-                  Nuevo portafolio
-                </Link>
-                <Link className="topbar-menu-item" href="/budgets?new=budget" prefetch={false}>
-                  Nuevo presupuesto
-                </Link>
-                <Link className="topbar-menu-item" href="/recurring?new=template" prefetch={false}>
-                  Nuevo recurrente
-                </Link>
-              </div>
-            ) : null}
-          </div>
-
-          <div
-            className="
-              hidden h-9 items-center gap-2 rounded-control
-              border border-[var(--ft-border)] bg-[var(--ft-surface)]
-              px-2.5 text-[11px] font-medium text-[var(--ft-text-muted)]
-              lg:flex
-            "
-            title={connectionLabel}
-          >
-            <span className={`h-1.5 w-1.5 rounded-[var(--radius-pill)] ${isOnline ? 'bg-[var(--ft-success)]' : 'bg-[var(--ft-danger)]'}`} />
-            <span>{connectionLabel}</span>
-          </div>
-
-          <div
-            className="
-              hidden h-9 items-center rounded-control
-              border border-[var(--ft-border)] bg-[var(--ft-surface)]
-              px-2.5 text-[11px] font-semibold text-[var(--ft-text-muted)]
-              lg:flex
-            "
-            title={`Versión actual ${CURRENT_RELEASE.version}`}
-          >
-            {CURRENT_RELEASE.version}
-          </div>
-
           <TopbarIconButton
             label={isLight ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro'}
             onClick={toggleTheme}
@@ -330,9 +209,9 @@ export function Topbar(props: TopbarProps) {
               aria-expanded={profileOpen}
               aria-haspopup="true"
               className="
-                ui-pressable flex h-9 items-center gap-2 rounded-control
+                ui-pressable ft-topbar-profile flex h-9 w-9 items-center justify-center rounded-full
                 border border-[var(--ft-border)] bg-[var(--ft-surface)]
-                px-1.5 pr-2 text-[var(--ft-text-strong)]
+                text-[var(--ft-text-strong)]
                 transition-[background-color,border-color,transform] duration-fast
                 ease-[var(--ft-ease-out)] motion-reduce:transition-none hover:border-[var(--ft-border-strong)]
                 hover:bg-[var(--ft-surface-hover)] active:scale-[0.98]
@@ -340,7 +219,7 @@ export function Topbar(props: TopbarProps) {
                 focus-visible:ring-[var(--ft-focus-ring-color)]
               "
             >
-              <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-[6px] bg-[var(--ft-primary-soft)] text-[10px] font-semibold text-[var(--ft-primary)]">
+              <span className="flex h-[30px] w-[30px] items-center justify-center overflow-hidden rounded-full bg-[var(--ft-surface-muted)] text-[10px] font-semibold text-[var(--ft-text-muted)]">
                 {user.avatar ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={user.avatar} alt="" className="h-full w-full object-cover" />
@@ -349,9 +228,6 @@ export function Topbar(props: TopbarProps) {
                 ) : (
                   <IconUser size={13} />
                 )}
-              </span>
-              <span className="hidden max-w-[120px] truncate text-[12px] font-medium md:inline">
-                {displayName}
               </span>
             </button>
 
@@ -375,6 +251,9 @@ export function Topbar(props: TopbarProps) {
                   className="topbar-menu-item w-full sm:hidden"
                 >
                   {isLight ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro'}
+                </button>
+                <button type="button" onClick={toggleCurrency} className="topbar-menu-item w-full">
+                  Vista de importes: {preferred} · cambiar a {preferred === 'PEN' ? 'USD' : 'PEN'}
                 </button>
                 <Link className="topbar-menu-item" href="/settings?tab=profile" prefetch={false}>
                   Configuración

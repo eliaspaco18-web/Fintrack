@@ -1,0 +1,140 @@
+.workspace {
+  color: var(--ft-text-strong);
+  font-family: Manrope, system-ui, sans-serif;
+}
+
+.workspace :global(.ft-settings-panel) {
+  width: 100%;
+  max-width: none !important;
+  overflow: hidden;
+  border-radius: 12px;
+  border-color: var(--ft-border);
+  box-shadow: none;
+}
+
+.workspace :global(.ft-settings-panel-header) {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom-color: var(--ft-border);
+  background: var(--ft-surface);
+  padding: 18px 20px;
+}
+
+.workspace :global(.ft-settings-panel-title) {
+  margin-top: 0;
+  font-size: 17px;
+  line-height: 24px;
+  letter-spacing: -0.02em;
+}
+
+.workspace :global(.ft-settings-panel-description) {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.workspace :global(.ft-settings-panel-body) {
+  padding: 14px 20px 20px;
+}
+
+.workspace :global(.ft-settings-subsection) {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.workspace :global(.ft-settings-subsection + .ft-settings-subsection) {
+  border-top: 1px solid var(--ft-border);
+}
+
+.workspace :global(.ft-settings-subsection-header) {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  padding: 13px 0 8px;
+}
+
+.workspace :global(.ft-settings-subsection-body) {
+  padding: 0 0 10px;
+}
+
+.workspace :global(.ft-settings-subsection-title) {
+  font-size: 13px;
+  line-height: 19px;
+}
+
+.workspace :global(.ft-settings-subsection-description) {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.workspace :global(.ft-settings-row) {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-block: 11px;
+}
+
+.workspace :global(.ft-settings-row[data-variant='compact']) {
+  padding-block: 9px;
+}
+
+.workspace :global(.ft-settings-row-copy) {
+  align-items: center;
+  gap: 10px;
+}
+
+.workspace :global(.ft-settings-row-icon) {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+}
+
+.workspace :global(.ft-settings-row-title) {
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.workspace :global(.ft-settings-row-description) {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+@media (max-width: 767px) {
+  .workspace :global(.ft-settings-panel-header) {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 15px 16px;
+  }
+
+  .workspace :global(.ft-settings-panel-body) {
+    padding: 10px 16px 16px;
+  }
+
+  .workspace :global(.ft-settings-subsection-header) {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .workspace :global(.ft-settings-row),
+  .workspace :global(.ft-settings-row[data-variant='compact']) {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .workspace :global(.ft-settings-row-action) {
+    align-self: flex-end;
+  }
+}

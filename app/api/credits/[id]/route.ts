@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase.server'
+import { readBoundedJsonBody } from '@/lib/api/read-bounded-json-body'
 import {
   apiError,
   apiNoContent,
@@ -245,13 +246,13 @@ function hasInitialCurrencyColumns(credit: Record<string, unknown>): boolean {
 
 export async function GET(
   _req: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
-  const creditId = context.params.id
+  const creditId = (await context.params).id
   const { data: credit, error: creditError } = await supabase
     .from('credits')
     .select('*')
@@ -401,23 +402,25 @@ export async function GET(
 
 export async function PATCH(
   req: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
-  let body: unknown
-  try {
-    body = await req.json()
-  } catch {
+  const bodyResult = await readBoundedJsonBody(req)
+  if (!bodyResult.ok && bodyResult.reason === 'too_large') {
+    return apiError({ code: 'PAYLOAD_TOO_LARGE', message: 'La solicitud supera el tamaño máximo permitido' })
+  }
+  if (!bodyResult.ok) {
     return apiError({ code: 'VALIDATION_ERROR', message: 'Body JSON inválido' })
   }
+  const body = bodyResult.value
 
   const parsed = zUpdateCreditSchema.safeParse(body)
   if (!parsed.success) return apiZodError(parsed.error)
 
-  const creditId = context.params.id
+  const creditId = (await context.params).id
   const { data: credit, error: creditError } = await supabase
     .from('credits')
     .select('*')
@@ -938,13 +941,13 @@ export async function PATCH(
 
 export async function DELETE(
   _req: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
-  const supabase = createClient()
+  const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
-  const creditId = context.params.id
+  const creditId = (await context.params).id
   const { data: credit, error: creditError } = await supabase
     .from('credits')
     .select('id, name, account_id, transaction_id, credit_type, notes')

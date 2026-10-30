@@ -33,6 +33,10 @@ export const zManualLoanInstallmentInput = z.object({
   other_charges: zScheduleMoney.default(0),
 })
 
+// Keep the externally supplied manual schedule bounded to the same maximum
+// installment count accepted by the credit API and the loan contract.
+export const zManualLoanInstallmentsInput = z.array(zManualLoanInstallmentInput).max(600)
+
 export type ManualLoanInstallmentInput = z.infer<typeof zManualLoanInstallmentInput>
 
 export type LoanScheduleRow = Readonly<{

@@ -7,15 +7,14 @@
 // =============================================================================
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import useSWR from 'swr'
 import { useState, useCallback,
          useDeferredValue,
          useEffect,
          useMemo,
          useRef,
-         type ReactNode,
-         type RefObject }            from 'react'
+         type ReactNode }            from 'react'
 import { useTransactions }           from '@/lib/hooks/useTransactions'
-import { useCurrency }               from '@/lib/hooks/useDashboard'
 import { fetchWithTimeout }          from '@/lib/client/fetch-with-timeout'
 import { formatCurrency }            from '@/lib/contracts/ui.contracts'
 import {
@@ -24,6 +23,14 @@ import {
   type TransactionListItem,
   type TransactionListParams,
 }                                    from '@/lib/contracts/ui.contracts'
+import {
+  getQuickFilterDateOverrides,
+  getQuickFilterParamPatch,
+} from '@/modules/transactions/quick-filter-query'
+import {
+  buildTransactionSearchQuery,
+  resolveTransactionUrlSyncAction,
+} from '@/modules/transactions/transaction-url-sync'
 import {
   ConfirmDialog,
   DataErrorBanner,
@@ -39,16 +46,16 @@ import {
   EmptyState as FinanceEmptyState,
   SavedViewsToolbar,
 }                                    from '@/components/finance'
-import {
-  AmountCell,
-  DateCell,
-}                                    from './primitives'
+import { DateCell }                  from './primitives'
 import { FocusTrap }                 from '@/components/ui/accessibility'
 import { ModalOverlayPortal }        from '@/components/ui/ModalOverlayPortal'
 import { AppSelect }                 from '@/components/ui/AppSelect'
 import { Button }                    from '@/components/ui/Button'
-import { FinancialIcon }             from '@/components/ui/FinancialIcon'
+import { RecordModal, RecordModalFooter } from '@/components/ui/RecordModal'
+import { AnchoredActionMenu }        from '@/components/ui/AnchoredActionMenu'
 import { TransactionEditModal }      from '@/components/forms/TransactionEditModal'
+import { OperationTypeIcon, resolveTransactionOperationIconType } from '@/components/transactions/OperationTypeIcon'
+import styles                       from './TransactionsRound07.module.css'
 import type { TransactionType }      from '@/types/database.types'
 import type { TransactionFormOptions } from '@/lib/contracts/ui.contracts'
 
@@ -81,26 +88,16 @@ const TYPE_CONFIG: Record<TransactionType, { label: string; prefix: string; clas
   EXPENSE: {
     label: 'Egreso',
     prefix: '−',
-    className: 'text-[var(--ft-text-muted)]',
+    className: 'text-[var(--ft-danger)]',
   },
   TRANSFER: {
     label: 'Transferencia',
     prefix: '⇄',
-    className: 'text-[var(--ft-info)]',
+    className: 'text-[var(--ft-text-muted)]',
   },
 }
 
 // ─── TYPE BADGE ───────────────────────────────────────────────────────────────
-
-function TypeBadge({ type }: { type: TransactionType }) {
-  const cfg = TYPE_CONFIG[type]
-  return (
-    <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${cfg.className}`}>
-      <span aria-hidden="true" className="font-mono text-[12px]">{cfg.prefix}</span>
-      {cfg.label}
-    </span>
-  )
-}
 
 // ─── MODULE BADGES ────────────────────────────────────────────────────────────
 
@@ -131,19 +128,30 @@ function ModuleBadges({ tx }: {
   )
 }
 
-function TransactionIdentityMark({ transaction }: { transaction: TransactionListItem }) {
-  const identity = transaction.category ?? transaction.sourceAccount ?? transaction.destinationAccount
-  const iconName = identity?.icon || (transaction.type === 'TRANSFER' ? 'wallet' : 'tag')
-  const iconColor = identity?.color || 'var(--ft-text-muted)'
+function TransactionContext({ transaction }: { transaction: TransactionListItem }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-4 text-[var(--ft-text-muted)]">
+      {transaction.category ? <span>{normalizeCategoryLabel(transaction.category.name)}</span> : null}
+      <span className={`font-medium ${TYPE_CONFIG[transaction.type].className}`}>{TYPE_CONFIG[transaction.type].label}</span>
+      {!transaction.affectsReports ? <span className="text-[var(--ft-warning)]">No afecta reportes</span> : null}
+      <ModuleBadges tx={transaction} />
+    </div>
+  )
+}
 
+function TransactionIdentityMark({ transaction }: { transaction: TransactionListItem }) {
+  const operationType = resolveTransactionOperationIconType(transaction)
+  const tone = transaction.type === 'INCOME'
+    ? styles.identityIncome
+    : transaction.type === 'EXPENSE'
+      ? styles.identityExpense
+      : styles.identityTransfer
   return (
     <span
       aria-hidden="true"
-      className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-surface border border-[var(--ft-border)] bg-[var(--ft-surface-muted)]"
+      className={`inline-flex h-7 w-7 shrink-0 items-center justify-center border border-[var(--ft-border)] ${styles.identityMark} ${tone}`}
     >
-      <span style={{ color: iconColor }}>
-        <FinancialIcon name={iconName} size={17} />
-      </span>
+      <OperationTypeIcon operationType={operationType} size={16} />
     </span>
   )
 }
@@ -153,39 +161,21 @@ function TransactionAccountPath({ transaction }: { transaction: TransactionListI
   const destinationName = transaction.destinationAccount?.name
 
   return (
-    <div className="min-w-0 text-[12px] leading-5">
-      <p className="truncate font-medium text-[var(--ft-text-strong)]">{sourceName}</p>
+    <div className="flex min-w-0 items-center gap-1 text-[12px] leading-5 text-[var(--ft-text-strong)]">
+      <span className="truncate font-medium">{sourceName}</span>
       {destinationName ? (
-        <p className="flex min-w-0 items-center gap-1 text-[var(--ft-text-muted)]">
+        <span className="flex min-w-0 items-center gap-1 text-[var(--ft-text-muted)]">
           <span aria-hidden="true" className="shrink-0 text-[var(--ft-text-subtle)]">→</span>
           <span className="truncate">{destinationName}</span>
-        </p>
-      ) : null}
-    </div>
-  )
-}
-
-function TransactionContext({ transaction }: { transaction: TransactionListItem }) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-4 text-[var(--ft-text-muted)]">
-      {transaction.category ? (
-        <span>{normalizeCategoryLabel(transaction.category.name)}</span>
-      ) : null}
-      <TypeBadge type={transaction.type} />
-      {!transaction.affectsReports ? (
-        <span className="inline-flex items-center gap-1 text-[var(--ft-warning)]">
-          <span aria-hidden="true" className="h-1 w-1 rounded-full bg-current" />
-          No afecta reportes
         </span>
       ) : null}
-      <ModuleBadges tx={transaction} />
     </div>
   )
 }
 
 function MobileTransactionSkeletons() {
   return (
-    <div aria-hidden="true" className="divide-y divide-[var(--ft-border)] xl:hidden">
+    <div aria-hidden="true" className="divide-y divide-[var(--ft-border)] md:hidden">
       {Array.from({ length: 6 }).map((_, index) => (
         <div key={index} className="space-y-3 px-4 py-4 sm:px-5">
           <div className="flex items-start gap-3">
@@ -208,7 +198,7 @@ function MobileTransactionSkeletons() {
 
 function DesktopLedgerSkeletons() {
   return (
-    <div aria-hidden="true" className="hidden xl:block">
+    <div aria-hidden="true" className="hidden md:block">
       <div className="divide-y divide-[var(--ft-border)]">
         {Array.from({ length: 8 }).map((_, index) => (
           <div key={index} className="grid min-h-[82px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-5 py-3">
@@ -239,61 +229,11 @@ function DesktopLedgerSkeletons() {
   )
 }
 
-function LedgerColumnHeader({
-  allVisibleSelected,
-  selectAllRef,
-  onToggleSelectVisible,
-  sortBy,
-  sortDir,
-  onSort,
-}: {
-  allVisibleSelected: boolean
-  selectAllRef: RefObject<HTMLInputElement>
-  onToggleSelectVisible: () => void
-  sortBy: TransactionListParams['sort_by']
-  sortDir: 'asc' | 'desc'
-  onSort: (value: string) => void
-}) {
+function ReviewFactRow({ label, children, className = '' }: { label: string; children: ReactNode; className?: string }) {
   return (
-    <div className="hidden min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-t border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-5 text-[11px] font-medium text-[var(--ft-text-muted)] xl:grid">
-      <input
-        ref={selectAllRef}
-        type="checkbox"
-        checked={allVisibleSelected}
-        onChange={onToggleSelectVisible}
-        aria-label="Seleccionar transacciones visibles"
-        className="h-4 w-4 rounded border border-[var(--ft-border)] text-[var(--ft-primary)] accent-[var(--ft-primary)]"
-      />
-      <div className="grid min-w-0 grid-cols-[92px_minmax(0,1.45fr)_minmax(0,0.85fr)_minmax(120px,0.6fr)] items-center gap-4">
-        <button
-          type="button"
-          onClick={() => onSort(`transaction_date-${sortBy === 'transaction_date' && sortDir === 'desc' ? 'asc' : 'desc'}`)}
-          aria-pressed={sortBy === 'transaction_date'}
-          className="justify-self-start rounded-control px-2 py-1.5 transition-colors duration-fast hover:bg-[var(--ft-surface-hover)] hover:text-[var(--ft-text-strong)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)] motion-reduce:transition-none"
-        >
-          Fecha {sortBy === 'transaction_date' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
-        </button>
-        <span id="transactions-ledger-heading">Movimiento</span>
-        <span className="truncate">Cuenta / ruta</span>
-        <button
-          type="button"
-          onClick={() => onSort(`amount-${sortBy === 'amount' && sortDir === 'desc' ? 'asc' : 'desc'}`)}
-          aria-pressed={sortBy === 'amount'}
-          className="justify-self-end rounded-control px-2 py-1.5 text-right transition-colors duration-fast hover:bg-[var(--ft-surface-hover)] hover:text-[var(--ft-text-strong)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)] motion-reduce:transition-none"
-        >
-          Monto {sortBy === 'amount' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
-        </button>
-      </div>
-      <span className="w-[112px] text-right">Acciones</span>
-    </div>
-  )
-}
-
-function ReviewFactRow({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="grid grid-cols-[104px_minmax(0,1fr)] gap-4 py-3.5">
-      <dt className="text-[11px] font-medium text-[var(--ft-text-muted)]">{label}</dt>
-      <dd className="min-w-0 break-words text-right text-[12px] font-medium text-[var(--ft-text-strong)]">
+    <div className={`min-w-0 ${className}`}>
+      <dt className="mb-1 text-[11px] leading-4 text-[var(--ft-text-muted)]">{label}</dt>
+      <dd className="min-w-0 break-words text-[12px] font-semibold leading-5 text-[var(--ft-text-strong)]">
         {children}
       </dd>
     </div>
@@ -306,6 +246,7 @@ interface TransactionTableProps {
   initialParams?: Partial<TransactionListParams>
   options: TransactionFormOptions
   workspaceHeader?: ReactNode
+  toolbarActions?: ReactNode
 }
 
 type FilterOption = { value: string; label: string }
@@ -331,6 +272,8 @@ interface TableControlState {
   categoryId: string
   page: number
   perPage: number
+  dateFrom: string
+  dateTo: string
   txParams: Partial<TransactionListParams>
 }
 
@@ -353,6 +296,40 @@ interface SavedTransactionView {
   id: string
   name: string
   state: SavedTransactionViewState
+}
+
+interface TransactionTypeCounts {
+  all: number
+  income: number
+  expense: number
+  transfer: number
+}
+
+async function fetchTransactionTypeCounts(scopeKey: string): Promise<TransactionTypeCounts> {
+  const scope = JSON.parse(scopeKey) as Partial<TransactionListParams>
+  const countFor = async (type?: TransactionType) => {
+    const query = new URLSearchParams({ page: '1', per_page: '1' })
+    if (type) query.set('type', type)
+    Object.entries(scope).forEach(([name, value]) => {
+      if (value !== undefined && value !== null && value !== '') query.set(name, String(value))
+    })
+
+    const response = await fetchWithTimeout(`/api/transactions?${query.toString()}`)
+    const payload = await response.json()
+    const total = payload?.data?.pagination?.total
+    if (!response.ok || payload?.ok !== true || !Number.isInteger(total) || total < 0) {
+      throw new Error('TRANSACTION_COUNT_UNAVAILABLE')
+    }
+    return total as number
+  }
+
+  const [all, income, expense, transfer] = await Promise.all([
+    countFor(),
+    countFor('INCOME'),
+    countFor('EXPENSE'),
+    countFor('TRANSFER'),
+  ])
+  return { all, income, expense, transfer }
 }
 
 const QUICK_FILTER_SET = new Set<QuickFilter>(
@@ -416,6 +393,16 @@ function normalizeCategoryLabel(raw: string): string {
   const withoutPrefix = clean.replace(prefixPattern, '')
   const normalized = withoutPrefix.replace(/\s+/g, ' ').trim()
   return normalized.length > 0 ? normalized : clean
+}
+
+function TransactionDate({ date }: { date: string }) {
+  if (!date) return <span className="whitespace-nowrap text-[12px] tabular-nums text-[var(--ft-text-muted)]">—</span>
+  const normalized = date.includes('T') ? date : `${date}T12:00:00`
+  const value = new Date(normalized)
+  const formatted = Number.isNaN(value.getTime())
+    ? '—'
+    : value.toLocaleDateString('es-PE', { day: 'numeric', month: 'short', year: 'numeric' })
+  return <span className="whitespace-nowrap text-[12px] tabular-nums text-[var(--ft-text-muted)]">{formatted}</span>
 }
 
 function isSortValue(value: string): boolean {
@@ -575,6 +562,9 @@ function resolveInitialControlState(
   const rawPerPage = Number(searchParams.get('per_page') ?? initialParams.per_page ?? 20)
   const page = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : 1
   const perPage = Number.isInteger(rawPerPage) && rawPerPage > 0 && rawPerPage <= 100 ? rawPerPage : 20
+  const queryDateFrom = searchParams.get('date_from') ?? initialParams.date_from
+  const queryDateTo = searchParams.get('date_to') ?? initialParams.date_to
+  const dateOverrides = getQuickFilterDateOverrides(activeFilter, queryDateFrom, queryDateTo)
 
   return {
     activeFilter,
@@ -584,8 +574,9 @@ function resolveInitialControlState(
     categoryId,
     page,
     perPage,
+    ...dateOverrides,
     txParams: {
-      ...QuickFilterParams[activeFilter],
+      ...getQuickFilterParamPatch(activeFilter, queryDateFrom, queryDateTo),
       search: search || undefined,
       account_id: accountId || undefined,
       category_id: categoryId || undefined,
@@ -601,15 +592,16 @@ export function TransactionTable({
   initialParams = {},
   options,
   workspaceHeader,
+  toolbarActions,
 }: TransactionTableProps) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const { preferred, format, exchangeRate } = useCurrency()
 
   const initialControlRef = useRef<TableControlState | null>(null)
   const baseInitialParamsRef = useRef(initialParams)
   const lastSyncedQueryRef = useRef(searchParams.toString())
+  const popStatePendingRef = useRef(false)
   if (!initialControlRef.current) {
     initialControlRef.current = resolveInitialControlState(initialParams, searchParams)
   }
@@ -620,8 +612,8 @@ export function TransactionTable({
   const [sort,         setSort]         = useState(initialControl.sort)
   const [accountId,    setAccountId]    = useState(initialControl.accountId)
   const [categoryId,   setCategoryId]   = useState(initialControl.categoryId)
-  const [dateFrom,     setDateFrom]     = useState('')
-  const [dateTo,       setDateTo]       = useState('')
+  const [dateFrom,     setDateFrom]     = useState(initialControl.dateFrom)
+  const [dateTo,       setDateTo]       = useState(initialControl.dateTo)
   const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false)
   const [accountOptions, setAccountOptions] = useState<FilterOption[]>([])
   const [categoryOptions, setCategoryOptions] = useState<FilterOption[]>([])
@@ -640,6 +632,7 @@ export function TransactionTable({
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([])
   const [focusedTransactionId, setFocusedTransactionId] = useState<string | null>(null)
   const [reviewPanelVisible, setReviewPanelVisible] = useState(false)
+  const [reviewTab, setReviewTab] = useState<'detail' | 'context'>('detail')
   const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false)
   const initializedFiltersRef = useRef(false)
   const suspendControlToParamsSyncRef = useRef(false)
@@ -652,6 +645,22 @@ export function TransactionTable({
   const reviewReturnFocusRef = useRef<HTMLElement | null>(null)
 
   const deferredSearch = useDeferredValue(search)
+
+  const typeCountScopeKey = useMemo(() => {
+    const quickScope = QuickFilterParams[activeFilter]
+    return JSON.stringify({
+      search: deferredSearch || undefined,
+      account_id: accountId || undefined,
+      category_id: categoryId || undefined,
+      date_from: dateFrom || quickScope.date_from,
+      date_to: dateTo || quickScope.date_to,
+    })
+  }, [accountId, activeFilter, categoryId, dateFrom, dateTo, deferredSearch])
+  const { data: transactionTypeCounts } = useSWR<TransactionTypeCounts>(
+    typeCountScopeKey,
+    fetchTransactionTypeCounts,
+    { revalidateOnFocus: false, dedupingInterval: 30_000 },
+  )
 
   const [sortBy, sortDir] = sort.split('-') as [TransactionListParams['sort_by'], 'asc' | 'desc']
   const selectedSavedView = useMemo(
@@ -770,6 +779,7 @@ export function TransactionTable({
     }
 
     setFocusedTransactionId(id)
+    setReviewTab('detail')
     if (reviewPanelVisible) return
 
     setReviewPanelVisible(false)
@@ -780,18 +790,14 @@ export function TransactionTable({
   }, [reviewPanelVisible])
 
   const activateTransactionRow = useCallback((id: string) => {
-    if (window.matchMedia('(min-width: 1360px)').matches) {
-      openTransactionReview(id)
-      return
-    }
-
-    router.push(`/transactions/${id}`)
-  }, [openTransactionReview, router])
+    openTransactionReview(id)
+  }, [openTransactionReview])
 
   const moveTransactionReview = useCallback((direction: -1 | 1) => {
     const nextTransaction = transactions[focusedTransactionIndex + direction]
     if (!nextTransaction) return
     setFocusedTransactionId(nextTransaction.id)
+    setReviewTab('detail')
     const nextTrigger = document.querySelector<HTMLElement>(
       `[data-review-trigger-id="${nextTransaction.id}"]`
     )
@@ -858,58 +864,53 @@ export function TransactionTable({
       return
     }
 
-    const quickDateParams = QuickFilterParams[activeFilter]
+    if (popStatePendingRef.current) return
+
     setParams({
       search:   deferredSearch || undefined,
       account_id: accountId || undefined,
       category_id: categoryId || undefined,
       sort_by:  sortBy,
       sort_dir: sortDir,
-      ...quickDateParams,
-      // PRD: explicit date pickers override quick-filter dates
-      ...(dateFrom ? { date_from: dateFrom } : {}),
-      ...(dateTo ? { date_to: dateTo } : {}),
+      // Pass all quick-filter keys explicitly because setParams merges partial
+      // input and omitted keys would retain stale type/date constraints.
+      ...getQuickFilterParamPatch(activeFilter, dateFrom, dateTo),
     })
   }, [activeFilter, accountId, categoryId, dateFrom, dateTo, deferredSearch, sortBy, sortDir, setParams])
 
   useEffect(() => {
-    const next = new URLSearchParams(searchParams.toString())
-    const activeQuickFilterParams = QuickFilterParams[activeFilter]
-
-    const setOrDelete = (key: string, value: string | undefined) => {
-      if (!value) {
-        next.delete(key)
-        return
-      }
-      next.set(key, value)
-    }
-
-    setOrDelete('qf', activeFilter !== 'all' ? activeFilter : undefined)
-    setOrDelete('search', deferredSearch || undefined)
-    setOrDelete('account_id', accountId || undefined)
-    setOrDelete('category_id', categoryId || undefined)
-    setOrDelete('type', activeQuickFilterParams.type)
-    setOrDelete('date_from', dateFrom || activeQuickFilterParams.date_from)
-    setOrDelete('date_to', dateTo || activeQuickFilterParams.date_to)
-
-    if (sort === 'transaction_date-desc') {
-      next.delete('sort_by')
-      next.delete('sort_dir')
-    } else {
-      next.set('sort_by', sortBy ?? 'transaction_date')
-      next.set('sort_dir', sortDir)
-    }
-
+    const actualQuery = new URLSearchParams(window.location.search).toString()
     const currentPage = params.page ?? 1
     const currentPerPage = params.per_page ?? 20
-    setOrDelete('page', currentPage > 1 ? String(currentPage) : undefined)
-    setOrDelete('per_page', currentPerPage !== 20 ? String(currentPerPage) : undefined)
+    const nextQuery = buildTransactionSearchQuery({
+      currentQuery: actualQuery,
+      activeFilter,
+      search: deferredSearch,
+      accountId,
+      categoryId,
+      dateFrom,
+      dateTo,
+      sort,
+      sortBy,
+      sortDir,
+      page: currentPage,
+      perPage: currentPerPage,
+    })
+    const action = resolveTransactionUrlSyncAction({
+      actualQuery,
+      renderedQuery: searchParams.toString(),
+      desiredQuery: nextQuery,
+      lastSyncedQuery: lastSyncedQueryRef.current,
+      popStatePending: popStatePendingRef.current,
+    })
 
-    const nextQuery = next.toString()
-    const currentQuery = searchParams.toString()
-    if (nextQuery !== currentQuery) {
+    if (action === 'replace-url') {
       lastSyncedQueryRef.current = nextQuery
-      router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false })
+      const nextUrl = nextQuery ? `${pathname}?${nextQuery}` : pathname
+      // Filter changes only update query state; an App Router navigation here
+      // is asynchronous and can publish an older selection after a newer one.
+      // Next.js patches native history methods to keep useSearchParams in sync.
+      window.history.replaceState(null, '', nextUrl)
     }
   }, [
     activeFilter,
@@ -919,7 +920,6 @@ export function TransactionTable({
     dateTo,
     deferredSearch,
     pathname,
-    router,
     searchParams,
     sort,
     sortBy,
@@ -927,6 +927,15 @@ export function TransactionTable({
     params.page,
     params.per_page,
   ])
+
+  useEffect(() => {
+    const handlePopState = () => {
+      popStatePendingRef.current = true
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
 
   useEffect(() => {
     if (loadedPrefsRef.current) return
@@ -970,10 +979,25 @@ export function TransactionTable({
   }, [])
 
   useEffect(() => {
-    const currentQuery = searchParams.toString()
-    if (currentQuery === lastSyncedQueryRef.current) return
+    const actualQuery = new URLSearchParams(window.location.search).toString()
+    const renderedQuery = searchParams.toString()
+    const action = resolveTransactionUrlSyncAction({
+      actualQuery,
+      renderedQuery,
+      desiredQuery: lastSyncedQueryRef.current,
+      lastSyncedQuery: lastSyncedQueryRef.current,
+      popStatePending: popStatePendingRef.current,
+    })
 
-    const fromUrl = resolveInitialControlState(baseInitialParamsRef.current, searchParams)
+    if (action === 'wait' || action === 'replace-url') return
+    if (action === 'stable') {
+      popStatePendingRef.current = false
+      return
+    }
+    popStatePendingRef.current = false
+
+    const currentSearchParams = new URLSearchParams(actualQuery)
+    const fromUrl = resolveInitialControlState(baseInitialParamsRef.current, currentSearchParams)
 
     suspendControlToParamsSyncRef.current = true
     setActiveFilter(fromUrl.activeFilter)
@@ -981,9 +1005,11 @@ export function TransactionTable({
     setSort(fromUrl.sort)
     setAccountId(fromUrl.accountId)
     setCategoryId(fromUrl.categoryId)
+    setDateFrom(fromUrl.dateFrom)
+    setDateTo(fromUrl.dateTo)
     setParams(fromUrl.txParams)
 
-    lastSyncedQueryRef.current = currentQuery
+    lastSyncedQueryRef.current = actualQuery
   }, [searchParams, setParams])
 
   useEffect(() => {
@@ -1108,6 +1134,7 @@ export function TransactionTable({
       category_id: undefined,
       date_from: undefined,
       date_to: undefined,
+      type: undefined,
       ...QuickFilterParams.all,
     })
   }, [setParams])
@@ -1217,8 +1244,10 @@ export function TransactionTable({
     setSort(`${nextSortBy}-${nextSortDir}`)
     setAccountId(selected.state.accountId)
     setCategoryId(selected.state.categoryId)
+    setDateFrom('')
+    setDateTo('')
     setParams({
-      ...QuickFilterParams[selected.state.activeFilter],
+      ...getQuickFilterParamPatch(selected.state.activeFilter),
       search: selected.state.search || undefined,
       account_id: selected.state.accountId || undefined,
       category_id: selected.state.categoryId || undefined,
@@ -1320,75 +1349,68 @@ export function TransactionTable({
       ) : null}
     </div>
   )
-  const isIntegratedReviewOpen = Boolean(focusedTransaction && reviewPanelVisible)
+  const isReviewOpen = Boolean(focusedTransaction && reviewPanelVisible)
 
   return (
-    <div className="space-y-0">
-      <div
-        data-testid="transactions-review-panel-layer"
-        className={`grid items-start transition-[grid-template-columns,gap] duration-slow ease-[var(--ft-ease-out)] motion-reduce:transition-none ${
-          isIntegratedReviewOpen
-            ? 'grid-cols-[minmax(0,1fr)_0px] gap-0 min-[1360px]:grid-cols-[minmax(0,1fr)_360px] min-[1360px]:gap-3 2xl:grid-cols-[minmax(0,1fr)_400px]'
-            : 'grid-cols-[minmax(0,1fr)_0px] gap-0'
-        }`}
-      >
-        <div className="min-w-0">
-          {/* Persistent orientation and command surface on roomy viewports. */}
-          <div className="lg:sticky lg:top-0 lg:z-sticky lg:-mt-5 lg:bg-[var(--ft-canvas)] lg:pt-5 xl:-mt-6 xl:pt-6">
-            <section
-              aria-label="Espacio de trabajo de movimientos"
-              className="rounded-panel border border-[var(--ft-border)] bg-[var(--ft-surface)] shadow-elevation-md"
-            >
-            {workspaceHeader}
+    <div className={`space-y-0 ${styles.workspace}`}>
+      {workspaceHeader ? <div>{workspaceHeader}</div> : null}
+      <div data-testid="transactions-review-panel-layer" className="min-w-0">
+          {/* Astra's filters scroll with the ledger; they do not overlay rows. */}
+          <section
+            aria-label="Espacio de trabajo de movimientos"
+            className="bg-transparent"
+          >
             {filterOptionsError && (
               <DataErrorBanner
                 message={filterOptionsError}
                 onRetry={() => setFilterOptionsReloadTick(prev => prev + 1)}
               />
             )}
-            <DataToolbar className="border-b-0 bg-transparent px-4 py-3 sm:px-5">
-          <div className={`flex flex-col gap-3 ${isIntegratedReviewOpen ? '' : 'xl:flex-row xl:items-center xl:justify-between'}`}>
-            <SavedViewsToolbar
-              value={selectedSavedViewId}
-              onChange={nextId => {
-                if (!nextId) {
-                  setSelectedSavedViewId('')
-                  return
-                }
-                applySavedView(nextId)
-              }}
-              onSave={openSaveViewModal}
-              onDelete={openDeleteSavedViewModal}
-              deleteDisabled={!selectedSavedViewId}
-              selectTestId="transactions-saved-view-select"
-              saveTestId="transactions-save-view-button"
-              deleteTestId="transactions-delete-view-button"
-              className={isIntegratedReviewOpen ? 'w-full' : 'xl:w-auto xl:shrink-0'}
-              options={[
-                { value: '', label: 'Vistas guardadas' },
-                ...savedViews.map(view => ({ value: view.id, label: view.name })),
-              ]}
-            />
+            <DataToolbar compact className={`${styles.toolbar} border-y border-[var(--ft-border)] bg-transparent px-0 py-1.5`}>
+          <div role="group" aria-label="Tipo de movimiento" className={`${styles.tabs} flex min-w-0 max-w-full items-center gap-1 overflow-x-auto border-b border-[var(--ft-border)]`}>
+            {QUICK_FILTERS.filter(filter => ['all', 'income', 'expense', 'transfer'].includes(filter.key)).map(filter => {
+              const countKey = filter.key === 'all' ? 'all' : filter.key
+              const count = transactionTypeCounts?.[countKey as keyof TransactionTypeCounts]
+              const active = filter.key === 'all'
+                ? !['income', 'expense', 'transfer'].includes(activeFilter)
+                : activeFilter === filter.key
+              return (
+                <button
+                  key={filter.key}
+                  type="button"
+                  data-testid={`transactions-quick-filter-${filter.key}`}
+                  aria-pressed={active}
+                  onClick={() => handleQuickFilter(filter.key)}
+                  className={`inline-flex h-9 shrink-0 items-center gap-1.5 border-b-2 px-2.5 text-[12px] font-medium transition-colors duration-fast motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ft-focus-ring-color)] ${active ? 'border-[var(--ft-primary)] text-[var(--ft-primary)]' : 'border-transparent text-[var(--ft-text-muted)] hover:text-[var(--ft-text-strong)]'}`}
+                >
+                  {filter.label}
+                  <span className={`text-[10px] tabular-nums ${active ? 'text-[var(--ft-primary)]' : 'text-[var(--ft-text-subtle)]'}`}>
+                    {count ?? '—'}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
 
-            <div className={`flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center ${isIntegratedReviewOpen ? 'w-full' : 'xl:ml-auto xl:w-full xl:max-w-[520px]'}`}>
+          <div className={`${styles.controls} min-w-0`}>
+            <div className={`${styles.controlsMain} min-w-0`}>
               <DataSearchField
                 value={search}
                 onChange={setSearch}
-                placeholder="Buscar por descripción…"
+                placeholder="Buscar un movimiento"
                 aria-label="Buscar movimientos por descripción"
                 data-testid="transactions-search-input"
-                className="w-full sm:min-w-[240px]"
+                className={`${styles.searchControl} min-w-[200px] flex-[1_1_230px]`}
               />
-              <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
                 <Button
                   type="button"
                   onClick={() => setAdvancedFiltersOpen(open => !open)}
                   aria-expanded={advancedFiltersOpen}
                   aria-controls="transactions-advanced-filters"
                   testId="transactions-advanced-filters-button"
-                  variant={advancedFiltersOpen || advancedFilterCount > 0 ? 'secondary' : 'ghost'}
+                  variant="secondary"
                   size="sm"
-                  className="w-full sm:w-auto"
+                  className={`${styles.filterButton} shrink-0`}
                   leadingIcon={(
                     <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                       <path d="M4 6h16M7 12h10M10 18h4" />
@@ -1404,57 +1426,66 @@ export function TransactionTable({
                     ) : null}
                   </span>
                 </Button>
-                <Button
-                  type="button"
-                  onClick={resetAllFilters}
-                  testId="transactions-reset-filters-button"
-                  variant={hasAdjustedControls ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className="w-full sm:w-auto"
-                >
+              <Button
+                type="button"
+                onClick={() => handleQuickFilter('this_month')}
+                aria-pressed={activeFilter === 'this_month'}
+                testId="transactions-current-month-view-button"
+                variant="secondary"
+                size="sm"
+                className={styles.monthViewButton}
+                trailingIcon={(
+                  <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m7 10 5 5 5-5" />
+                  </svg>
+                )}
+              >
+                Vista del mes
+              </Button>
+              <SavedViewsToolbar
+                value={selectedSavedViewId}
+                onChange={nextId => {
+                  if (!nextId) {
+                    setSelectedSavedViewId('')
+                    return
+                  }
+                  applySavedView(nextId)
+                }}
+                onSave={openSaveViewModal}
+                onDelete={openDeleteSavedViewModal}
+                deleteDisabled={!selectedSavedViewId}
+                selectTestId="transactions-saved-view-select"
+                saveTestId="transactions-save-view-button"
+                deleteTestId="transactions-delete-view-button"
+                className={styles.savedViews}
+                options={[
+                  { value: '', label: 'Vistas guardadas' },
+                  ...savedViews.map(view => ({ value: view.id, label: view.name })),
+                ]}
+              />
+              {hasAdjustedControls ? (
+                <Button type="button" onClick={resetAllFilters} testId="transactions-reset-filters-button" variant="ghost" size="sm">
                   Limpiar
                 </Button>
-              </div>
+              ) : null}
             </div>
+            {toolbarActions ? <div className={styles.controlsActions}>{toolbarActions}</div> : null}
           </div>
 
-          <div className="flex min-w-0 flex-col gap-2 border-t border-[var(--ft-border)] pt-3 sm:flex-row sm:items-center sm:justify-between">
-            <DataToolbarRow className="filters-row-tight min-w-0 flex-nowrap overflow-x-auto pb-1">
-              {QUICK_FILTERS.map(filter => (
-                <DataFilterPreset
-                  key={filter.key}
-                  label={filter.label}
-                  active={activeFilter === filter.key}
-                  onClick={() => handleQuickFilter(filter.key)}
-                  testId={`transactions-quick-filter-${filter.key}`}
-                />
-              ))}
-            </DataToolbarRow>
-            <p className="shrink-0 text-[11px] font-medium tabular-nums text-[var(--ft-text-muted)]">
-              {isLoading
-                ? 'Cargando movimientos…'
-                : pagination
-                  ? `${pagination.total} movimiento${pagination.total === 1 ? '' : 's'}`
-                  : 'Movimientos'}
-            </p>
-          </div>
-
-          {activeContextLabels.length > 0 ? (
-            <div
-              aria-label="Contexto activo del registro"
-              className="flex flex-wrap items-center gap-1.5 border-t border-[var(--ft-border)] pt-3"
-            >
-              <span className="mr-1 text-[11px] font-medium text-[var(--ft-text-muted)]">Contexto activo</span>
+          <div className={`${styles.context} flex min-w-0 flex-wrap items-center gap-1.5 text-[10px]`} aria-label="Contexto activo del registro">
+              <span className="mr-1 font-medium text-[var(--ft-text-muted)]">{activeContextLabels.length ? 'Contexto activo' : 'Todos los movimientos'}</span>
               {activeContextLabels.map(label => (
                 <span
                   key={label}
-                  className="rounded-control border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-2 py-1 text-[11px] text-[var(--ft-text-muted)]"
+                  className="rounded-full border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-2 py-0.5 text-[10px] text-[var(--ft-text-muted)]"
                 >
                   {label}
                 </span>
               ))}
-            </div>
-          ) : null}
+              <span className="ml-auto shrink-0 tabular-nums text-[var(--ft-text-muted)]">
+                {isLoading ? 'Cargando…' : pagination ? `${pagination.total} movimiento${pagination.total === 1 ? '' : 's'}` : '—'}
+              </span>
+          </div>
 
           {selectedTransactionIds.length > 0 ? (
             <DataToolbarRow className="items-center justify-between gap-3 rounded-surface border border-[var(--ft-primary-border)] bg-[var(--ft-primary-soft)] px-3 py-2.5">
@@ -1483,25 +1514,40 @@ export function TransactionTable({
           ) : null}
             </DataToolbar>
 
-            {!isLoading && !isEmpty ? (
-              <LedgerColumnHeader
-                allVisibleSelected={allVisibleSelected}
-                selectAllRef={selectAllRef}
-                onToggleSelectVisible={toggleSelectVisible}
-                sortBy={sortBy}
-                sortDir={sortDir}
-                onSort={setSort}
-              />
-            ) : null}
-            </section>
-          </div>
+          </section>
 
-          {advancedFiltersOpen ? (
+          <RecordModal
+            open={advancedFiltersOpen}
+            onClose={() => setAdvancedFiltersOpen(false)}
+            title="Filtrar movimientos"
+            subtitle="Ajusta el registro sin cambiar los totales del periodo."
+            eyebrow="Movimientos"
+            testId="transactions-filter-drawer"
+            closeTestId="transactions-filter-drawer-close"
+            presentation="workbench"
+            motionSource="pointer"
+            overlayClassName={styles.astraOverlay}
+            bodyClassName="ft-v3-filter-fields"
+          >
             <section
               id="transactions-advanced-filters"
               aria-label="Filtros avanzados de movimientos"
-              className={`mt-3 grid gap-3 rounded-panel border border-[var(--ft-border)] bg-[var(--ft-surface)] px-4 py-4 shadow-elevation-sm sm:grid-cols-2 sm:px-5 ${isIntegratedReviewOpen ? '' : 'xl:grid-cols-6'}`}
+              className="grid gap-4 sm:grid-cols-2"
             >
+              <div role="group" aria-label="Periodo rápido" className="sm:col-span-2">
+                <p className="mb-2 text-[12px] font-medium text-[var(--ft-text-muted)]">Período</p>
+                <div className="flex flex-wrap gap-2">
+                  {QUICK_FILTERS.filter(filter => filter.key === 'this_month' || filter.key === 'last_month').map(filter => (
+                    <DataFilterPreset
+                      key={filter.key}
+                      label={filter.label}
+                      active={activeFilter === filter.key}
+                      onClick={() => handleQuickFilter(filter.key)}
+                      testId={`transactions-quick-filter-${filter.key}`}
+                    />
+                  ))}
+                </div>
+              </div>
               <div className="block min-w-0 space-y-1.5 xl:col-span-1">
                 <span className="text-[12px] font-medium text-[var(--ft-text-muted)]">Cuenta</span>
                 <AppSelect
@@ -1593,16 +1639,26 @@ export function TransactionTable({
                 />
               </div>
             </section>
-          ) : null}
+            <RecordModalFooter>
+              <div className="flex items-center justify-between gap-3">
+                <Button type="button" onClick={resetAllFilters} variant="secondary" size="sm" testId="transactions-filter-drawer-reset">
+                  Restablecer
+                </Button>
+                <Button type="button" onClick={() => setAdvancedFiltersOpen(false)} variant="primary" size="sm" testId="transactions-filter-drawer-done">
+                  Listo
+                </Button>
+              </div>
+            </RecordModalFooter>
+          </RecordModal>
 
-          <DataTable className="mt-3 min-w-0 shadow-elevation-sm">
+          <DataTable className="mt-3 min-w-0 shadow-elevation-sm" density="movement">
             <h2 className="sr-only">Libro de movimientos</h2>
 
         {/* ── REGISTROS RESPONSIVE ─────────────────────────────────────── */}
         {isLoading ? (
           <MobileTransactionSkeletons />
         ) : isEmpty ? (
-          <div className="xl:hidden">
+          <div className="md:hidden">
             <FinanceEmptyState
               icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"/></svg>}
               title={hasFilteringCriteria ? 'Sin coincidencias' : 'Sin transacciones'}
@@ -1612,7 +1668,7 @@ export function TransactionTable({
             />
           </div>
         ) : (
-          <div className="xl:hidden">
+          <div className="md:hidden">
             <div className="flex items-center justify-between gap-3 border-b border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-4 py-2.5 sm:px-5">
               <label className="inline-flex min-h-9 items-center gap-2 text-[11px] font-medium text-[var(--ft-text-muted)]">
                 <input
@@ -1649,7 +1705,7 @@ export function TransactionTable({
                     </div>
                     <button
                       type="button"
-                      onClick={() => router.push(`/transactions/${tx.id}`)}
+                      onClick={() => openTransactionReview(tx.id)}
                       aria-label={`Ver detalle de ${tx.description}`}
                       className="grid min-w-0 flex-1 grid-cols-[40px_minmax(0,1fr)_auto] items-start gap-3 rounded-control text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]"
                     >
@@ -1662,22 +1718,10 @@ export function TransactionTable({
                           <TransactionContext transaction={tx} />
                         </div>
                       </div>
-                      <AmountCell
-                        amountPen={tx.amountPen}
-                        original={tx.currency !== 'PEN'
-                          ? { amount: tx.amount, currency: tx.currency }
-                          : undefined
-                        }
-                        variant={
-                          tx.type === 'INCOME' ? 'income'
-                            : tx.type === 'EXPENSE' ? 'expense'
-                              : 'neutral'
-                        }
-                        preferred={preferred}
-                        exchangeRate={exchangeRate}
-                        format={format}
-                        formatter={(n, c) => formatCurrency(n, c as 'PEN' | 'USD')}
-                      />
+                      <span className={`whitespace-nowrap pt-0.5 text-right font-mono text-[12px] font-semibold tabular-nums ${TYPE_CONFIG[tx.type].className}`}>
+                        {tx.type === 'TRANSFER' ? '' : TYPE_CONFIG[tx.type].prefix}
+                        {formatCurrency(Math.abs(tx.amount), tx.currency as 'PEN' | 'USD')}
+                      </span>
                     </button>
                   </div>
 
@@ -1711,7 +1755,7 @@ export function TransactionTable({
 
         {/* ── FALLBACK RESPONSIVE: PAGINACIÓN ──────────────────────────── */}
         {pagination ? (
-          <div className="xl:hidden">
+          <div className="md:hidden">
             <DataPagination
               page={pagination.page}
               totalPages={totalPages}
@@ -1726,7 +1770,7 @@ export function TransactionTable({
         {isLoading ? (
           <DesktopLedgerSkeletons />
         ) : isEmpty ? (
-          <div className="hidden xl:block">
+          <div className="hidden md:block">
             <FinanceEmptyState
               icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"/></svg>}
               title={hasFilteringCriteria ? 'Sin coincidencias' : 'Sin transacciones'}
@@ -1735,19 +1779,53 @@ export function TransactionTable({
             />
           </div>
         ) : (
-          <section aria-labelledby="transactions-ledger-heading" className="hidden min-w-0 xl:block">
-            <div role="list" aria-label="Registro de movimientos" className="divide-y divide-[var(--ft-border)]">
+          <section aria-labelledby="transactions-ledger-heading" className="hidden min-w-0 md:block">
+            <div className="overflow-x-auto">
+              <table className={`desktop-table w-full table-fixed border-collapse text-left ${styles.astraLedger}`} aria-label="Registro de movimientos">
+                <colgroup>
+                  <col className="w-[5%]" />
+                  <col className="w-[24%]" />
+                  <col className="col-account w-[17%]" />
+                  <col className="col-category w-[18%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[7%]" />
+                </colgroup>
+                {!isLoading && !isEmpty ? (
+                  <thead className="border-b border-[var(--ft-border)] bg-[var(--ft-surface-muted)] text-[11px] font-semibold text-[var(--ft-text-muted)]">
+                    <tr className="h-[34px]">
+                      <th scope="col" className="px-3">
+                        <input ref={selectAllRef} type="checkbox" checked={allVisibleSelected} onChange={toggleSelectVisible} aria-label="Seleccionar transacciones visibles" className="h-4 w-4 rounded border border-[var(--ft-border)] accent-[var(--ft-primary)]" />
+                      </th>
+                      <th scope="col" id="transactions-ledger-heading" className="px-3">Movimiento</th>
+                      <th scope="col" className="col-account px-2">Cuenta / ruta</th>
+                      <th scope="col" className="col-category px-2">Categoría</th>
+                      <th scope="col" aria-sort={sortBy === 'transaction_date' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} className="px-2">
+                        <button type="button" onClick={() => setSort(`transaction_date-${sortBy === 'transaction_date' && sortDir === 'desc' ? 'asc' : 'desc'}`)} className="rounded-control py-1 text-left hover:text-[var(--ft-text-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ft-focus-ring-color)]">
+                          Fecha {sortBy === 'transaction_date' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
+                        </button>
+                      </th>
+                      <th scope="col" aria-sort={sortBy === 'amount' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} className="px-3 text-right">
+                        <button type="button" onClick={() => setSort(`amount-${sortBy === 'amount' && sortDir === 'desc' ? 'asc' : 'desc'}`)} className="rounded-control py-1 text-right hover:text-[var(--ft-text-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ft-focus-ring-color)]">
+                          Importe original {sortBy === 'amount' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
+                        </button>
+                      </th>
+                      <th scope="col" className="px-2 text-right">Acciones</th>
+                    </tr>
+                  </thead>
+                ) : null}
+                <tbody className="divide-y divide-[var(--ft-border)]">
               {transactions.map(tx => {
                 const isFocused = focusedTransaction?.id === tx.id
                 const isSelected = selectedTransactionIds.includes(tx.id)
 
                 return (
-                  <article
+                  <tr
                     key={tx.id}
-                    role="listitem"
                     data-testid={`transactions-row-${tx.id}`}
-                    className={`group/row grid min-h-[82px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-5 py-3 transition-[background-color,box-shadow] duration-fast motion-reduce:transition-none ${isFocused ? 'bg-[var(--ft-surface-muted)] shadow-[inset_3px_0_0_var(--ft-primary)]' : isSelected ? 'bg-[var(--ft-primary-soft)]' : 'bg-[var(--ft-surface)] hover:bg-[var(--ft-surface-hover)]'}`}
+                    className={`group/row h-12 transition-colors duration-fast motion-reduce:transition-none ${isFocused ? 'bg-[var(--ft-surface-muted)] shadow-[inset_3px_0_0_var(--ft-primary)]' : isSelected ? 'bg-[var(--ft-primary-soft)]' : 'bg-[var(--ft-surface)] hover:bg-[var(--ft-surface-hover)]'}`}
                   >
+                    <td className="px-3 align-middle">
                     <input
                       type="checkbox"
                       checked={isSelected}
@@ -1755,73 +1833,66 @@ export function TransactionTable({
                       aria-label={`Seleccionar ${tx.description}`}
                       className="h-4 w-4 rounded border border-[var(--ft-border)] text-[var(--ft-primary)] accent-[var(--ft-primary)]"
                     />
-
+                    </td>
+                    <td className="px-3 py-0 align-middle">
                     <button
                       type="button"
                       onClick={() => activateTransactionRow(tx.id)}
                       data-review-trigger-id={tx.id}
-                      aria-controls="transactions-review-pane"
+                      aria-controls="transactions-review-panel"
                       aria-expanded={isFocused && reviewPanelVisible}
                       aria-label={`Revisar ${tx.description}`}
-                      className="grid min-w-0 grid-cols-[92px_minmax(0,1.45fr)_minmax(0,0.85fr)_minmax(120px,0.6fr)] items-center gap-4 rounded-control text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]"
+                      className="tx-cell flex min-h-8 min-w-0 items-center gap-2.5 rounded-control text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]"
                     >
-                      <div className="text-[var(--ft-text-muted)]">
-                        <DateCell date={tx.transactionDate} />
+                      <TransactionIdentityMark transaction={tx} />
+                      <div className="min-w-0">
+                        <p className="row-button truncate text-[13px] font-semibold leading-4 text-[var(--ft-text-strong)]">{tx.description}</p>
+                        <span className={`${styles.desktopDescriptionType} ${TYPE_CONFIG[tx.type].className}`}>
+                          {TYPE_CONFIG[tx.type].label}
+                        </span>
                       </div>
-                      <div className="flex min-w-0 items-center gap-3">
-                        <TransactionIdentityMark transaction={tx} />
-                        <div className="min-w-0">
-                          <p className="truncate text-[13px] font-semibold leading-5 text-[var(--ft-text-strong)]">
-                            {tx.description}
-                          </p>
-                          <div className="mt-1.5">
-                            <TransactionContext transaction={tx} />
-                          </div>
-                        </div>
-                      </div>
-                      <TransactionAccountPath transaction={tx} />
-                      <AmountCell
-                        amountPen={tx.amountPen}
-                        original={tx.currency !== 'PEN'
-                          ? { amount: tx.amount, currency: tx.currency }
-                          : undefined
-                        }
-                        variant={
-                          tx.type === 'INCOME' ? 'income'
-                            : tx.type === 'EXPENSE' ? 'expense'
-                              : 'neutral'
-                        }
-                        preferred={preferred}
-                        exchangeRate={exchangeRate}
-                        format={format}
-                        formatter={(n, c) => formatCurrency(n, c as 'PEN' | 'USD')}
-                      />
                     </button>
-
-                    <div className="w-[112px] opacity-70 transition-opacity duration-fast group-hover/row:opacity-100 focus-within:opacity-100 motion-reduce:transition-none">
-                      <DataRowActions actions={[
-                        {
-                          label: 'Ver detalle',
-                          onClick: () => router.push(`/transactions/${tx.id}`),
-                          testId: `transactions-row-detail-${tx.id}`,
-                        },
-                        {
-                          label: 'Editar',
-                          onClick: () => setEditTransactionId(tx.id),
-                          testId: `transactions-row-edit-${tx.id}`,
-                        },
-                        {
-                          label: 'Eliminar',
-                          variant: 'danger',
-                          disabled: deleteState.status === 'loading',
-                          onClick: () => openDeleteTransactionModal(tx.id),
-                          testId: `transactions-row-delete-${tx.id}`,
-                        },
-                      ]} />
+                    </td>
+                    <td className="col-account px-2 py-0 align-middle"><TransactionAccountPath transaction={tx} /></td>
+                    <td className="col-category px-2 py-0 align-middle">
+                      {tx.category ? <p className="truncate text-[12px] font-medium text-[var(--ft-text-strong)]">{normalizeCategoryLabel(tx.category.name)}</p> : <p className="text-[12px] text-[var(--ft-text-subtle)]">Sin categoría</p>}
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                        <ModuleBadges tx={tx} />
+                        {!tx.affectsReports ? <span className="text-[10px] text-[var(--ft-warning)]">No reportable</span> : null}
+                      </div>
+                    </td>
+                    <td className="px-2 py-0 align-middle text-[var(--ft-text-muted)]"><TransactionDate date={tx.transactionDate} /></td>
+                    <td className="px-3 py-0 align-middle text-right">
+                      <p className={`whitespace-nowrap text-[13px] font-semibold tabular-nums ${TYPE_CONFIG[tx.type].className}`}>
+                        {tx.type === 'TRANSFER' ? '' : TYPE_CONFIG[tx.type].prefix}
+                        {formatCurrency(Math.abs(tx.amount), tx.currency as 'PEN' | 'USD')}
+                      </p>
+                      <span className={styles.desktopAmountCurrency}>{tx.currency}</span>
+                    </td>
+                    <td className="px-2 align-middle">
+                    <div className="flex justify-end gap-1 opacity-80 transition-opacity duration-fast group-hover/row:opacity-100 focus-within:opacity-100 motion-reduce:transition-none">
+                      <button type="button" onClick={() => setEditTransactionId(tx.id)} data-testid={`transactions-row-edit-${tx.id}`} className={`${styles.rowEditAction} rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ft-focus-ring-color)]`}>Editar</button>
+                      <AnchoredActionMenu
+                        label={`Más acciones de ${tx.description}`}
+                        focusFirstOnPointer={false}
+                        triggerContent={(
+                          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" />
+                          </svg>
+                        )}
+                        className="h-8 w-8 rounded-control text-[var(--ft-text-muted)] hover:bg-[var(--ft-surface-hover)] hover:text-[var(--ft-text-strong)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]"
+                        actions={[
+                          { id: 'detail', label: 'Ver detalle', onSelect: () => router.push(`/transactions/${tx.id}`) },
+                          { id: 'delete', label: 'Eliminar', destructive: true, disabled: deleteState.status === 'loading', onSelect: () => openDeleteTransactionModal(tx.id) },
+                        ]}
+                      />
                     </div>
-                  </article>
+                    </td>
+                  </tr>
                 )
               })}
+                </tbody>
+              </table>
             </div>
 
             {pagination ? (
@@ -1840,15 +1911,9 @@ export function TransactionTable({
           open={Boolean(editTransactionId)}
           transactionId={editTransactionId}
           options={options}
-          initialTransaction={selectedTransactionForEdit ? {
-            id: selectedTransactionForEdit.id,
-            type: selectedTransactionForEdit.type,
-            amount: selectedTransactionForEdit.amount,
-            amount_pen: selectedTransactionForEdit.amountPen,
-            currency: selectedTransactionForEdit.currency,
-            description: selectedTransactionForEdit.description,
-            transaction_date: selectedTransactionForEdit.transactionDate,
-          } : null}
+          initialOperationType={selectedTransactionForEdit
+            ? resolveTransactionOperationIconType(selectedTransactionForEdit)
+            : null}
           onClose={() => setEditTransactionId(null)}
           onUpdated={() => {
             setEditTransactionId(null)
@@ -1860,205 +1925,214 @@ export function TransactionTable({
         {/* Refresh indicator */}
         <DataRefreshIndicator show={isValidating && !isLoading} />
           </DataTable>
-        </div>
 
-      {focusedTransaction ? (
-        <aside
-          id="transactions-review-pane"
-          role="region"
-          aria-labelledby="transactions-review-title"
-          aria-describedby="transactions-review-description"
-          data-testid="transactions-review-panel"
-          className={`sticky top-6 flex h-[min(760px,calc(100dvh_-_var(--topbar-height)_-_40px))] min-h-[480px] min-w-0 self-start overflow-hidden rounded-panel border border-[var(--ft-border)] bg-[var(--ft-surface)] shadow-elevation-md transition-[transform,opacity] duration-slow ease-[var(--ft-ease-out)] motion-reduce:translate-x-0 motion-reduce:transition-none ${reviewPanelVisible ? 'translate-x-0 opacity-100' : 'translate-x-4 opacity-0'}`}
-        >
-          <div className="flex min-w-[340px] flex-1 flex-col 2xl:min-w-[380px]">
-            <header className="flex shrink-0 items-start justify-between gap-4 border-b border-[var(--ft-border)] bg-[var(--ft-surface)] px-5 py-5">
-              <div className="flex min-w-0 items-start gap-3">
-                <span
-                  aria-hidden="true"
-                  className="mt-0.5 h-10 w-1 shrink-0 rounded-[var(--radius-pill)] bg-[var(--ft-primary)]"
-                />
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <p className="text-[11px] font-semibold tracking-[0.02em] text-[var(--ft-primary)]">
-                      Revisión de movimiento
-                    </p>
-                    <span className="text-[11px] tabular-nums text-[var(--ft-text-subtle)]">
-                      {focusedTransactionPosition} de {transactions.length}
-                    </span>
-                  </div>
-                  <h2 id="transactions-review-title" className="mt-1.5 break-words text-lg font-semibold leading-6 tracking-[-0.025em] text-[var(--ft-text-strong)]">
-                    {focusedTransaction.description}
-                  </h2>
-                </div>
-              </div>
-              <Button
-                type="button"
-                onClick={closeTransactionReview}
-                ariaLabel="Cerrar revisión contextual"
-                variant="ghost"
-                size="icon-md"
-                className="shrink-0 border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] focus-visible:ring-offset-[var(--ft-surface)]"
-                testId="transactions-review-close"
-              >
-                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d="M18 6 6 18M6 6l12 12" />
-                </svg>
-              </Button>
-            </header>
-
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5" aria-live="polite">
-              <p id="transactions-review-description" className="sr-only">
-                Revisión contextual del movimiento seleccionado sin abandonar el registro.
-              </p>
-              <div className="flex items-start gap-3">
-                <TransactionIdentityMark transaction={focusedTransaction} />
-                <div className="min-w-0 pt-0.5">
-                  <p className="text-[11px] font-medium text-[var(--ft-text-muted)]">Identidad y clasificación</p>
-                  <div className="mt-1.5">
-                    <TransactionContext transaction={focusedTransaction} />
-                  </div>
-                </div>
-              </div>
-
-              <div className="-mx-5 mt-5 border-y border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-5 py-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-[11px] font-medium text-[var(--ft-text-muted)]">Monto</p>
-                    <p className="mt-1 text-[11px] leading-4 text-[var(--ft-text-subtle)]">En tu moneda preferida</p>
-                  </div>
-                  <div className="[&>div>p:first-child]:text-[25px] [&>div>p:first-child]:leading-8 [&>div>p:first-child]:tracking-[-0.04em]">
-                    <AmountCell
-                      amountPen={focusedTransaction.amountPen}
-                      original={focusedTransaction.currency !== 'PEN'
-                        ? { amount: focusedTransaction.amount, currency: focusedTransaction.currency }
-                        : undefined
-                      }
-                      variant={
-                        focusedTransaction.type === 'INCOME' ? 'income'
-                          : focusedTransaction.type === 'EXPENSE' ? 'expense'
-                            : 'neutral'
-                      }
-                      preferred={preferred}
-                      exchangeRate={exchangeRate}
-                      format={format}
-                      formatter={(n, c) => formatCurrency(n, c as 'PEN' | 'USD')}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-5 flex items-center justify-between gap-3">
-                <p className="text-[11px] font-semibold text-[var(--ft-text-strong)]">Datos del movimiento</p>
-                <span className="text-[10px] text-[var(--ft-text-subtle)]">Solo campos disponibles</span>
-              </div>
-              <dl className="mt-2 divide-y divide-[var(--ft-border)] border-y border-[var(--ft-border)]">
-                {focusedTransaction.transactionDate ? (
-                  <ReviewFactRow label="Fecha">
-                    <DateCell date={focusedTransaction.transactionDate} />
-                  </ReviewFactRow>
-                ) : null}
-                {focusedTransaction.sourceAccount?.name ? (
-                  <ReviewFactRow label={focusedTransaction.destinationAccount ? 'Origen' : 'Cuenta'}>
-                    {focusedTransaction.sourceAccount.name}
-                  </ReviewFactRow>
-                ) : null}
-                {focusedTransaction.destinationAccount?.name ? (
-                  <ReviewFactRow label="Destino">
-                    {focusedTransaction.destinationAccount.name}
-                  </ReviewFactRow>
-                ) : null}
-                {focusedTransaction.category?.name ? (
-                  <ReviewFactRow label="Categoría">
-                    {normalizeCategoryLabel(focusedTransaction.category.name)}
-                  </ReviewFactRow>
-                ) : null}
-                {focusedTransaction.currency ? (
-                  <ReviewFactRow label="Moneda">
-                    <span className="font-mono tabular-nums">{focusedTransaction.currency}</span>
-                  </ReviewFactRow>
-                ) : null}
-                <ReviewFactRow label="Reportes">
-                  <span className={focusedTransaction.affectsReports ? 'text-[var(--ft-text-strong)]' : 'text-[var(--ft-warning)]'}>
-                    {focusedTransaction.affectsReports ? 'Afecta reportes' : 'No afecta reportes'}
-                  </span>
-                </ReviewFactRow>
-                {focusedTransactionHasModuleContext ? (
-                  <ReviewFactRow label="Relaciones">
-                    <span className="flex justify-end text-right">
-                      <ModuleBadges tx={focusedTransaction} />
-                    </span>
-                  </ReviewFactRow>
-                ) : null}
-              </dl>
+      <RecordModal
+        open={isReviewOpen}
+        onClose={closeTransactionReview}
+        title={focusedTransaction?.description ?? 'Detalle del movimiento'}
+        subtitle={focusedTransaction
+          ? <><TransactionDate date={focusedTransaction.transactionDate} /> · Movimiento registrado</>
+          : undefined}
+        headerNavigation={focusedTransaction ? (
+          <div className="flex min-w-0 items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2 text-[11px] text-[var(--ft-text-muted)]">
+              <span aria-hidden="true" className="font-semibold text-[var(--ft-primary)]">⇄</span>
+              <span>Movimientos</span><span aria-hidden="true">/</span><span>Detalle</span>
             </div>
-
-            <footer className="shrink-0 border-t border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-5 py-4">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <Button
-                  type="button"
-                  onClick={() => moveTransactionReview(-1)}
-                  disabled={focusedTransactionIndex <= 0}
-                  variant="ghost"
-                  size="sm"
-                  testId="transactions-review-previous"
-                  leadingIcon={<span aria-hidden="true">←</span>}
+            <nav aria-label="Recorrer movimientos visibles" className="flex shrink-0 items-center gap-1">
+              <Button type="button" onClick={() => moveTransactionReview(-1)} disabled={focusedTransactionIndex <= 0}
+                ariaLabel="Movimiento anterior" variant="secondary" size="icon-sm" testId="transactions-review-previous"
+                className="h-11 w-11 sm:h-8 sm:w-8"><span aria-hidden="true">←</span></Button>
+              <span className="min-w-9 text-center text-[10px] tabular-nums text-[var(--ft-text-muted)]" aria-live="polite">
+                {focusedTransactionPosition}/{transactions.length}
+              </span>
+              <Button type="button" onClick={() => moveTransactionReview(1)} disabled={focusedTransactionIndex >= transactions.length - 1}
+                ariaLabel="Movimiento siguiente" variant="secondary" size="icon-sm" testId="transactions-review-next"
+                className="h-11 w-11 sm:h-8 sm:w-8"><span aria-hidden="true">→</span></Button>
+            </nav>
+          </div>
+        ) : undefined}
+        testId="transactions-review-panel"
+        dialogId="transactions-review-panel"
+        closeTestId="transactions-review-close"
+        presentation="workbench"
+        motionSource="pointer"
+        overlayClassName={styles.astraOverlay}
+        focusTrapActive={isReviewOpen}
+        bodyClassName={styles.reviewBody}
+      >
+        {focusedTransaction ? (
+          <div key={focusedTransaction.id} className="ft-v3-review-record-content">
+            <section className={styles.panelSummary} aria-label="Importe y clasificación">
+              <div className={styles.summaryEyebrow}>
+                <span>Importe original · {focusedTransaction.currency}</span>
+                <span className="rounded-control bg-[var(--ft-surface-muted)] px-2 py-0.5 text-[10px] font-medium text-[var(--ft-text-muted)]">
+                  {TYPE_CONFIG[focusedTransaction.type].label}
+                </span>
+              </div>
+              <p className={`whitespace-nowrap tabular-nums ${styles.summaryAmount} ${TYPE_CONFIG[focusedTransaction.type].className}`} aria-live="polite">
+                {focusedTransaction.type === 'TRANSFER' ? '' : TYPE_CONFIG[focusedTransaction.type].prefix}
+                {formatCurrency(Math.abs(focusedTransaction.amount), focusedTransaction.currency as 'PEN' | 'USD')}
+              </p>
+              <p className={styles.summaryCaption}>
+                {focusedTransaction.destinationAccount
+                  ? 'Entre cuentas propias'
+                  : `Registrado en ${focusedTransaction.sourceAccount?.name ?? 'cuenta no disponible'}`}
+              </p>
+              <div className={styles.recordPath}>
+                <div className="min-w-0">
+                  <small>
+                    {focusedTransaction.destinationAccount ? 'Cuenta origen' : 'Cuenta'}
+                  </small>
+                  <strong className="block truncate text-[var(--ft-text-strong)]">
+                    {focusedTransaction.sourceAccount?.name ?? 'No disponible'}
+                  </strong>
+                </div>
+                <span aria-hidden="true" className="text-[var(--ft-text-subtle)]">›</span>
+                <div className="min-w-0">
+                  <small>
+                    {focusedTransaction.destinationAccount ? 'Cuenta destino' : 'Clasificación'}
+                  </small>
+                  <strong className="block truncate text-[var(--ft-text-strong)]">
+                    {focusedTransaction.destinationAccount?.name
+                      ?? (focusedTransaction.category?.name
+                        ? normalizeCategoryLabel(focusedTransaction.category.name)
+                        : 'Sin categoría')}
+                  </strong>
+                </div>
+              </div>
+            </section>
+            <div className={styles.reviewTabs} role="tablist" aria-label="Vista del movimiento">
+              {(['detail', 'context'] as const).map(tab => (
+                <button key={tab} type="button" role="tab"
+                  id={`transactions-review-tab-${tab}`}
+                  aria-controls="transactions-review-tabpanel"
+                  aria-selected={reviewTab === tab}
+                  tabIndex={reviewTab === tab ? 0 : -1}
+                  onClick={() => setReviewTab(tab)}
+                  onKeyDown={event => {
+                    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+                    event.preventDefault()
+                    const next = event.key === 'Home' ? 'detail'
+                      : event.key === 'End' ? 'context'
+                        : tab === 'detail' ? 'context' : 'detail'
+                    setReviewTab(next)
+                    document.getElementById(`transactions-review-tab-${next}`)?.focus()
+                  }}
+                  className="min-h-11 border-b-2 border-transparent pb-2 text-[12px] font-semibold text-[var(--ft-text-muted)] transition-colors hover:text-[var(--ft-text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ft-primary)] aria-selected:border-[var(--ft-primary)] aria-selected:text-[var(--ft-primary)] motion-reduce:transition-none"
                 >
-                  Anterior
-                </Button>
+                  {tab === 'detail' ? 'Detalle' : 'Contexto financiero'}
+                </button>
+              ))}
+            </div>
+            <div key={reviewTab} role="tabpanel" id="transactions-review-tabpanel"
+              aria-labelledby={`transactions-review-tab-${reviewTab}`}
+              className="ft-v3-review-tab-panel pt-5" tabIndex={0}>
+              {reviewTab === 'detail' ? (
+                <>
+                  <dl className={styles.reviewFacts}>
+                    <ReviewFactRow label="Fecha del movimiento"><TransactionDate date={focusedTransaction.transactionDate} /></ReviewFactRow>
+                    <ReviewFactRow label="Moneda original">
+                      <span className="tabular-nums">{focusedTransaction.currency}</span>
+                      {focusedTransaction.currency === 'PEN' ? ' · Sol peruano' : focusedTransaction.currency === 'USD' ? ' · Dólar estadounidense' : null}
+                    </ReviewFactRow>
+                    <ReviewFactRow label="En los reportes">
+                      {focusedTransaction.affectsReports
+                        ? `Incluido como ${focusedTransaction.type === 'INCOME' ? 'ingreso' : 'egreso'}`
+                        : focusedTransaction.type === 'TRANSFER' ? 'Excluido · transferencia interna' : 'No incluido'}
+                    </ReviewFactRow>
+                    {focusedTransactionHasModuleContext ? (
+                      <ReviewFactRow label="Módulos vinculados"><ModuleBadges tx={focusedTransaction} /></ReviewFactRow>
+                    ) : null}
+                    <ReviewFactRow label="Descripción" className={styles.wideFact}>{focusedTransaction.description}</ReviewFactRow>
+                  </dl>
+                  <div className={styles.contextExplanation}>
+                    <h3 className="text-[12px] font-semibold text-[var(--ft-text-strong)]">El importe y su significado, juntos</h3>
+                    <p className="mt-1.5 text-[12px] leading-5 text-[var(--ft-text-muted)]">
+                      Se muestra el importe original del registro. La cuenta, la clasificación y su participación en reportes se conservan por separado.
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <div className="divide-y divide-[var(--ft-border)]">
+                  <div className="flex gap-3 py-4 first:pt-0">
+                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-surface border border-[var(--ft-border)] text-[11px] text-[var(--ft-primary)]">1</span>
+                    <div><h3 className="text-[12px] font-semibold">Importe original, sin reinterpretar</h3><p className="mt-1 text-[11px] leading-5 text-[var(--ft-text-muted)]">Registrado en {focusedTransaction.currency}; aquí no se presenta una conversión ni un saldo calculado.</p></div>
+                  </div>
+                  <div className="flex gap-3 py-4">
+                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-surface border border-[var(--ft-border)] text-[11px] text-[var(--ft-primary)]">2</span>
+                    <div><h3 className="text-[12px] font-semibold">{focusedTransaction.affectsReports ? 'Participa en los reportes' : 'No afecta los reportes'}</h3>
+                      <p className="mt-1 text-[11px] leading-5 text-[var(--ft-text-muted)]">
+                        {focusedTransaction.affectsReports
+                          ? `Este registro figura como ${focusedTransaction.type === 'INCOME' ? 'ingreso' : 'egreso'}.`
+                          : 'Este registro no se suma a ingresos ni egresos de los reportes.'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-3 py-4">
+                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-surface border border-[var(--ft-border)] text-[11px] text-[var(--ft-primary)]">3</span>
+                    <div><h3 className="text-[12px] font-semibold">Relaciones del registro</h3>
+                      <p className="mt-1 text-[11px] leading-5 text-[var(--ft-text-muted)]">
+                        {focusedTransaction.destinationAccount
+                          ? 'Movimiento entre las cuentas de origen y destino indicadas arriba.'
+                          : 'Cuenta y clasificación indicadas arriba.'}
+                      </p>
+                      {focusedTransactionHasModuleContext ? <div className="mt-2"><ModuleBadges tx={focusedTransaction} /></div> : null}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
+        <RecordModalFooter>
+          {focusedTransaction ? (
+            <div className={styles.reviewFooter}>
+              <div className={styles.reviewFooterMeta}>
+                <p className="text-[10px] text-[var(--ft-text-muted)]">Inspección del registro · sin cambios</p>
                 <Button
-                  type="button"
-                  onClick={() => moveTransactionReview(1)}
-                  disabled={focusedTransactionIndex >= transactions.length - 1}
+                  href={`/transactions/${focusedTransaction.id}`}
+                  prefetch
                   variant="ghost"
                   size="sm"
-                  testId="transactions-review-next"
+                  testId={`transactions-review-detail-${focusedTransaction.id}`}
                   trailingIcon={<span aria-hidden="true">→</span>}
+                  className="h-8 px-1"
                 >
-                  Siguiente
+                  Detalle completo
                 </Button>
               </div>
-              <Button
-                href={`/transactions/${focusedTransaction.id}`}
-                prefetch
-                variant="primary"
-                size="md"
-                fullWidth
-                testId={`transactions-review-detail-${focusedTransaction.id}`}
-                trailingIcon={<span aria-hidden="true">→</span>}
-              >
-                Abrir detalle completo
-              </Button>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <Button
-                  type="button"
-                  onClick={() => setEditTransactionId(focusedTransaction.id)}
-                  variant="secondary"
-                  size="sm"
-                  testId={`transactions-review-edit-${focusedTransaction.id}`}
-                >
-                  Editar
-                </Button>
+              <div className={styles.reviewFooterActions}>
                 <Button
                   type="button"
                   onClick={() => openDeleteTransactionModal(focusedTransaction.id)}
                   disabled={deleteState.status === 'loading'}
-                  variant="danger"
+                  variant="secondary"
                   size="sm"
                   testId={`transactions-review-delete-${focusedTransaction.id}`}
+                  className="text-[var(--ft-danger)]"
                 >
                   Eliminar
                 </Button>
+                <Button
+                  type="button"
+                  onClick={() => setEditTransactionId(focusedTransaction.id)}
+                  variant="primary"
+                  size="sm"
+                  testId={`transactions-review-edit-${focusedTransaction.id}`}
+                >
+                  Editar movimiento
+                </Button>
               </div>
-            </footer>
-          </div>
-        </aside>
-      ) : null}
+            </div>
+          ) : null}
+        </RecordModalFooter>
+      </RecordModal>
       </div>
 
       {saveViewModalOpen && (
         <ModalOverlayPortal
-          className="z-[80]"
+          className={`${styles.astraOverlay} z-[80]`}
           onClick={closeSaveViewModal}
           data-testid="transactions-save-view-modal"
         >
@@ -2153,6 +2227,7 @@ export function TransactionTable({
         cancelTestId="transactions-delete-view-cancel-button"
         confirmTestId="transactions-delete-view-confirm-button"
         confirmLabel="Eliminar"
+        overlayClassName={styles.astraOverlay}
       />
 
       <ConfirmDialog
@@ -2182,6 +2257,7 @@ export function TransactionTable({
         cancelTestId="transactions-delete-cancel-button"
         confirmTestId="transactions-delete-confirm-button"
         confirmLabel="Eliminar"
+        overlayClassName={styles.astraOverlay}
       />
 
       <ConfirmDialog
@@ -2210,6 +2286,7 @@ export function TransactionTable({
         cancelTestId="transactions-bulk-delete-cancel-button"
         confirmTestId="transactions-bulk-delete-confirm-button"
         confirmLabel="Eliminar seleccionadas"
+        overlayClassName={styles.astraOverlay}
       />
     </div>
   )

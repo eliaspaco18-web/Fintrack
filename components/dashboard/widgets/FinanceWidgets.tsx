@@ -7,7 +7,7 @@
 
 import Link                          from 'next/link'
 import { useCurrency }               from '@/lib/hooks/useDashboard'
-import { formatCurrency } from '@/lib/contracts/ui.contracts'
+import { formatCurrencyOrUnavailable } from '@/lib/contracts/ui.contracts'
 import {
   WidgetShell,
   SectionHeader,
@@ -83,7 +83,7 @@ export function AssetsWidget({ assets, loading }: AssetsWidgetProps) {
                   Valor total
                 </p>
                 <p className="text-[1.45rem] font-semibold tabular-nums text-[var(--c-primary)]">
-                  {formatCurrency(format(assets.totalValuePen), preferred)}
+                  {formatCurrencyOrUnavailable(assets.totalValuePen === null ? null : format(assets.totalValuePen), preferred)}
                 </p>
                 <p className="text-[11px] text-[var(--c-text-faint)] mt-0.5">
                   {assets.count} activo{assets.count !== 1 ? 's' : ''} activo{assets.count !== 1 ? 's' : ''}
@@ -94,6 +94,7 @@ export function AssetsWidget({ assets, loading }: AssetsWidgetProps) {
               {assets.byType.length > 0 && (
                 <div className="space-y-2.5">
                   {assets.byType.map(item => {
+                    if (item.totalPen === null || assets.totalValuePen === null) return null
                     const color = ASSET_TYPE_COLORS[item.assetType] ?? '#6b7280'
                     const pct   = assets.totalValuePen > 0
                       ? (item.totalPen / assets.totalValuePen) * 100
@@ -109,7 +110,7 @@ export function AssetsWidget({ assets, loading }: AssetsWidgetProps) {
                             </span>
                           </div>
                           <span className="text-[11px] text-[var(--c-text-faint)] tabular-nums">
-                            {formatCurrency(format(item.totalPen), preferred)}
+                            {formatCurrencyOrUnavailable(format(item.totalPen), preferred)}
                           </span>
                         </div>
                         <ProgressBar value={pct} color={color} height={3}/>

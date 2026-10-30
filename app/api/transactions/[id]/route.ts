@@ -18,12 +18,13 @@ import {
   getSessionUserId,
 }                                        from '@/lib/api/response'
 
-type Params = { params: { id: string } }
+type Params = { params: Promise<{ id: string }> }
 
 // ─── GET /api/transactions/:id ────────────────────────────────────────────────
 
-export async function GET(_req: NextRequest, { params }: Params) {
-  const supabase = createClient()
+export async function GET(_req: NextRequest, props: Params) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
@@ -34,8 +35,9 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
 // ─── PATCH /api/transactions/:id ──────────────────────────────────────────────
 
-export async function PATCH(req: NextRequest, { params }: Params) {
-  const supabase = createClient()
+export async function PATCH(req: NextRequest, props: Params) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
@@ -53,8 +55,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
 // ─── DELETE /api/transactions/:id ─────────────────────────────────────────────
 
-export async function DELETE(req: NextRequest, { params }: Params) {
-  const supabase = createClient()
+export async function DELETE(req: NextRequest, props: Params) {
+  const params = await props.params;
+  const supabase = await createClient()
   const userId   = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 

@@ -1,0 +1,54 @@
+/* Credit-only workbench sizing. The application-wide 580px ordinary drawer
+   remains unchanged for every approved module and every other modal. */
+.creditFormOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
+  width: min(1120px, calc(100vw - 24px));
+}
+
+.creditScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
+  width: min(1240px, calc(100vw - 24px));
+}
+
+/* The card-cycle workbench uses the same full-height shell as approved V3
+   drawers; its cycle list owns scrolling between the fixed header and footer. */
+.creditCardScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper:has([data-ft-workbench='schedule'])) {
+  width: min(1240px, calc(100vw - 24px));
+  height: calc(100dvh - 24px);
+  max-height: calc(100dvh - 24px);
+  align-self: center;
+}
+
+.creditCardScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-ft-workbench='schedule']) {
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
+}
+
+.creditCardScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-ft-workbench='schedule'] [data-record-modal-body]) {
+  flex: 1 1 0%;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+}
+
+@media (max-width: 767px) {
+  .creditFormOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper),
+  .creditScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper) {
+    width: calc(100vw - 16px);
+  }
+
+  .creditCardScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global(.ft-v3-workbench-wrapper:has([data-ft-workbench='schedule'])) {
+    width: calc(100vw - 16px);
+    height: calc(100dvh - 16px);
+    max-height: calc(100dvh - 16px);
+    margin: 8px;
+  }
+
+  .creditCardScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-ft-workbench='schedule']) {
+    height: 100%;
+    max-height: 100%;
+  }
+
+  .creditCardScheduleOverlay:global([data-ft-v3][data-ft-workbench-overlay]) :global([data-ft-workbench='schedule'] [data-record-modal-body]) {
+    max-height: none;
+  }
+}

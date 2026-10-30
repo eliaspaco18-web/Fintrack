@@ -13,6 +13,7 @@ import {
   useCallback,
   type ReactNode,
   type KeyboardEvent,
+  type RefObject,
 }              from 'react'
 import { useRouter } from 'next/navigation'
 
@@ -59,10 +60,23 @@ interface FocusTrapProps {
   active:    boolean
   children:  ReactNode
   onEscape?: () => void
+  className?: string
+  selectPortalHost?: boolean
+  initialFocusRef?: RefObject<HTMLElement | null>
+  deferRestoreFocus?: boolean
+  preserveFocusIfAlreadyWithin?: boolean
+  preserveFocusOnDeactivate?: boolean
 }
 
-export function FocusTrap({ active, children, onEscape }: FocusTrapProps) {
+export function FocusTrap({ active, children, onEscape, className, selectPortalHost = false, initialFocusRef, deferRestoreFocus = false, preserveFocusIfAlreadyWithin = false, preserveFocusOnDeactivate = false }: FocusTrapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const onEscapeRef = useRef(onEscape)
+  const preserveFocusOnDeactivateRef = useRef(preserveFocusOnDeactivate)
+  preserveFocusOnDeactivateRef.current = preserveFocusOnDeactivate
+
+  useEffect(() => {
+    onEscapeRef.current = onEscape
+  }, [onEscape])
 
   useEffect(() => {
     if (!active) return
@@ -73,13 +87,21 @@ export function FocusTrap({ active, children, onEscape }: FocusTrapProps) {
     // Guardar el elemento que tenía foco antes de abrir
     const previouslyFocused = document.activeElement as HTMLElement
 
-    // Enfocar el primer elemento focusable
+    // A nested workbench can temporarily suspend this trap. When it resumes,
+    // preserve focus restored by the child if it is still inside this dialog.
     const firstFocusable = container.querySelector<HTMLElement>(FOCUSABLE)
-    firstFocusable?.focus()
+    const currentFocusIsWithin = document.activeElement instanceof HTMLElement && container.contains(document.activeElement)
+    if (!preserveFocusIfAlreadyWithin || !currentFocusIsWithin) {
+      if (initialFocusRef?.current && container.contains(initialFocusRef.current)) {
+        initialFocusRef.current.focus()
+      } else {
+        firstFocusable?.focus()
+      }
+    }
 
     const handleKeyDown = (e: globalThis.KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onEscape?.()
+        onEscapeRef.current?.()
         return
       }
 
@@ -93,7 +115,7 @@ export function FocusTrap({ active, children, onEscape }: FocusTrapProps) {
       if (!first || !last) return
 
       if (e.shiftKey) {
-        if (document.activeElement === first) {
+        if (document.activeElement === first || document.activeElement === initialFocusRef?.current) {
           e.preventDefault()
           last.focus()
         }
@@ -110,11 +132,18 @@ export function FocusTrap({ active, children, onEscape }: FocusTrapProps) {
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
       // Restaurar foco al cerrar
-      previouslyFocused?.focus?.()
+      if (deferRestoreFocus) {
+        queueMicrotask(() => {
+          if (preserveFocusOnDeactivateRef.current) return
+          if (previouslyFocused?.isConnected && !previouslyFocused.closest('[inert]')) previouslyFocused.focus()
+        })
+      } else if (!preserveFocusOnDeactivateRef.current) {
+        previouslyFocused?.focus?.()
+      }
     }
-  }, [active, onEscape])
+  }, [active, initialFocusRef, deferRestoreFocus, preserveFocusIfAlreadyWithin])
 
-  return <div ref={containerRef}>{children}</div>
+  return <div ref={containerRef} className={className} data-app-select-portal-root={selectPortalHost ? '' : undefined}>{children}</div>
 }
 
 // ─── KEYBOARD SHORTCUTS ───────────────────────────────────────────────────────

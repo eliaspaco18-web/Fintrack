@@ -280,6 +280,8 @@ AS $$
   FROM   exchange_rates
   WHERE  from_currency = p_from
     AND  to_currency   = p_to
+    AND  rate > 0
+    AND  lower(source) <> 'fallback'
   ORDER  BY fetched_at DESC
   LIMIT  1;
 $$;
@@ -296,7 +298,7 @@ SELECT
   SUM(
     CASE
       WHEN a.currency = 'PEN' THEN a.balance
-      ELSE a.balance * COALESCE(fn_latest_exchange_rate(a.currency, 'PEN'), 1)
+      ELSE a.balance * fn_latest_exchange_rate(a.currency, 'PEN')
     END
   ) AS net_worth_pen,
   COUNT(*) FILTER (WHERE a.is_active) AS active_accounts
