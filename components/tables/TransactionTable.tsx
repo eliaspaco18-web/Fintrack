@@ -6,6 +6,7 @@
 // ordenamiento por columna y paginación.
 // =============================================================================
 
+import { monthBounds } from '@/lib/transactions-month-summary'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
 import { useState, useCallback,
@@ -161,7 +162,7 @@ function TransactionAccountPath({ transaction }: { transaction: TransactionListI
   const destinationName = transaction.destinationAccount?.name
 
   return (
-    <div className="flex min-w-0 items-center gap-1 text-[12px] leading-5 text-[var(--ft-text-strong)]">
+    <div title={[sourceName, destinationName].filter(Boolean).join(' → ')} className="flex min-w-0 items-center gap-1 text-[12px] leading-5 text-[var(--ft-text-strong)]">
       <span className="truncate font-medium">{sourceName}</span>
       {destinationName ? (
         <span className="flex min-w-0 items-center gap-1 text-[var(--ft-text-muted)]">
@@ -245,7 +246,7 @@ function ReviewFactRow({ label, children, className = '' }: { label: string; chi
 interface TransactionTableProps {
   initialParams?: Partial<TransactionListParams>
   options: TransactionFormOptions
-  workspaceHeader?: ReactNode
+  workspaceHeader?: ReactNode | ((scope: { month: string; selectMonth: (month: string) => void }) => ReactNode)
   toolbarActions?: ReactNode
 }
 
@@ -1108,8 +1109,24 @@ export function TransactionTable({
   }, [selectedSavedViewId])
 
   const handleQuickFilter = useCallback((qf: QuickFilter) => {
+    if (qf === 'this_month' || qf === 'last_month' || qf === 'this_year') {
+      setDateFrom(''); setDateTo('')
+    } else if (['this_month', 'last_month', 'this_year'].includes(activeFilter)) {
+      setDateFrom(dateFrom || QuickFilterParams[activeFilter].date_from || '')
+      setDateTo(dateTo || QuickFilterParams[activeFilter].date_to || '')
+    }
     setActiveFilter(qf)
-  }, [])
+  }, [activeFilter, dateFrom, dateTo])
+
+  const selectMonth = useCallback((month: string) => {
+    const bounds = monthBounds(month)
+    if (!bounds) return
+    if (['this_month', 'last_month', 'this_year'].includes(activeFilter)) setActiveFilter('all')
+    setDateFrom(bounds.start)
+    setDateTo(bounds.end)
+    setSelectedSavedViewId('')
+    setPage(1)
+  }, [activeFilter, setPage])
 
   const handleSortChange = useCallback((val: string) => {
     setSort(val)
@@ -1353,7 +1370,7 @@ export function TransactionTable({
 
   return (
     <div className={`space-y-0 ${styles.workspace}`}>
-      {workspaceHeader ? <div>{workspaceHeader}</div> : null}
+      {workspaceHeader ? <div>{typeof workspaceHeader === 'function' ? workspaceHeader({ month: monthBounds((dateFrom || QuickFilterParams[activeFilter].date_from || '').slice(0, 7)) ? (dateFrom || QuickFilterParams[activeFilter].date_from || '').slice(0, 7) : new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit' }).format(new Date()), selectMonth }) : workspaceHeader}</div> : null}
       <div data-testid="transactions-review-panel-layer" className="min-w-0">
           {/* Astra's filters scroll with the ledger; they do not overlay rows. */}
           <section
@@ -1711,7 +1728,7 @@ export function TransactionTable({
                     >
                       <TransactionIdentityMark transaction={tx} />
                       <div className="min-w-0 pt-0.5">
-                        <p className="break-words text-[14px] font-semibold leading-5 text-[var(--ft-text-strong)]">
+                        <p className="[overflow-wrap:anywhere] text-[14px] font-semibold leading-5 text-[var(--ft-text-strong)]">
                           {tx.description}
                         </p>
                         <div className="mt-1.5">
@@ -1842,7 +1859,7 @@ export function TransactionTable({
                       aria-controls="transactions-review-panel"
                       aria-expanded={isFocused && reviewPanelVisible}
                       aria-label={`Revisar ${tx.description}`}
-                      className="tx-cell flex min-h-8 min-w-0 items-center gap-2.5 rounded-control text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]"
+                      className="tx-cell flex w-full min-h-8 min-w-0 items-center gap-2.5 rounded-control text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]"
                     >
                       <TransactionIdentityMark transaction={tx} />
                       <div className="min-w-0">

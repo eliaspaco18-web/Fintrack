@@ -37,7 +37,7 @@ import {
   BUDGET_SCOPE_REQUIRED_ERROR,
   createBudgetRecordActionScope,
 } from '@/modules/budgets/budget-action-scope'
-import { budgetRowsForSelectedMonth, displayBudgetProgress, formatBudgetCurrency, summarizeBudgetCurrencies } from '@/lib/budgets/presentation'
+import { budgetRowsForSelectedMonth, displayBudgetProgress, formatBudgetCurrency, budgetSummaryForDisplay } from '@/lib/budgets/presentation'
 import { resolveBudgetPeriodEditTarget, resolveBudgetPeriodIdentity } from '@/lib/budgets/period-record'
 
 type BudgetCategoryRef = {
@@ -826,8 +826,8 @@ export function BudgetsManager() {
   )
 
   const periodSummary = useMemo(
-    () => summarizeBudgetCurrencies(currentPeriodRows),
-    [currentPeriodRows],
+    () => budgetSummaryForDisplay(currentPeriodRows, currencyFilter === 'all' ? 'PEN' : currencyFilter),
+    [currentPeriodRows, currencyFilter],
   )
 
   const budgetCurrencyOptions = useMemo(() => {
@@ -1141,7 +1141,9 @@ export function BudgetsManager() {
             </header>
 
             <section aria-label={`Resumen de presupuestos: ${periodMonthLabel}`} data-ft-route-group="summary" className={`${movementPageStyles.summary} ${styles.budgetSummary}`}>
-              {!periodRowsReady && !periodRowsError ? (showPeriodSkeleton ? [0, 1, 2].map(item => (
+              {periodRowsError ? (
+                <p className={styles.summaryUnavailable}>Resumen no disponible para este período.</p>
+              ) : !periodRowsReady || periodRowsLoading ? (showPeriodSkeleton ? [0, 1, 2].map(item => (
                 <div key={item} aria-hidden="true" className={styles.summarySkeletonItem}>
                   <div className="h-3 w-24 animate-pulse rounded-full bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />
                   <div className="h-7 w-36 animate-pulse rounded-full bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />
