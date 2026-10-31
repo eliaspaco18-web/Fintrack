@@ -4,6 +4,8 @@ import {
   buildTransactionSearchQuery,
   resolveTransactionUrlSyncAction,
 } from '@/modules/transactions/transaction-url-sync'
+import { monthBounds } from '@/lib/transactions-month-summary'
+import { isCompleteMovementMonth } from '@/modules/transactions/movement-period'
 
 function simulateQuickFilterReplacements(filters: QuickFilter[]) {
   let actualQuery = ''
@@ -146,4 +148,56 @@ test('Back/Forward URL changes are adopted after the rendered query catches up',
     lastSyncedQuery: '',
     popStatePending: true,
   })).toBe('adopt-url')
+})
+
+test('selecting a movement month synchronizes table dates, summary month, search and page reset', () => {
+  const bounds = monthBounds('2024-02')!
+  const query = buildTransactionSearchQuery({
+    currentQuery: 'search=coffee&page=4&per_page=50&view=recent',
+    activeFilter: 'all',
+    search: 'coffee',
+    accountId: '',
+    categoryId: '',
+    dateFrom: bounds.start,
+    dateTo: bounds.end,
+    sort: 'transaction_date-desc',
+    sortBy: 'transaction_date',
+    sortDir: 'desc',
+    page: 1,
+    perPage: 50,
+  })
+  const params = new URLSearchParams(query)
+  expect(params.get('date_from')).toBe('2024-02-01')
+  expect(params.get('date_to')).toBe('2024-02-29')
+  expect(params.get('search')).toBe('coffee')
+  expect(params.get('per_page')).toBe('50')
+  expect(params.has('page')).toBe(false)
+  expect(params.get('view')).toBe('recent')
+  expect(isCompleteMovementMonth(params.get('date_from')!, params.get('date_to')!)).toBe('2024-02')
+})
+
+test('custom multi-month ranges keep URL filters and do not qualify for a monthly summary', () => {
+  const query = buildTransactionSearchQuery({
+    currentQuery: 'page=2&sort_by=amount&sort_dir=asc',
+    activeFilter: 'transfer',
+    search: 'rent',
+    accountId: '',
+    categoryId: '',
+    dateFrom: '2024-12-20',
+    dateTo: '2025-01-15',
+    sort: 'amount-asc',
+    sortBy: 'amount',
+    sortDir: 'asc',
+    page: 1,
+    perPage: 20,
+  })
+  const params = new URLSearchParams(query)
+  expect(params.get('type')).toBe('TRANSFER')
+  expect(params.get('date_from')).toBe('2024-12-20')
+  expect(params.get('date_to')).toBe('2025-01-15')
+  expect(params.get('search')).toBe('rent')
+  expect(params.get('sort_by')).toBe('amount')
+  expect(params.get('sort_dir')).toBe('asc')
+  expect(params.has('page')).toBe(false)
+  expect(isCompleteMovementMonth(params.get('date_from')!, params.get('date_to')!)).toBeNull()
 })

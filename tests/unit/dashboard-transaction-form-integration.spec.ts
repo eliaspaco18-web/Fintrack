@@ -132,7 +132,7 @@ function browserMocks(): string {
     window.__fintrackModules['@/components/management/BudgetMonthPicker'] = { BudgetMonthPicker: () => null };
     window.__fintrackModules['@/lib/transactions-month-summary'] = { monthBounds: month => ({ start: month + '-01', end: month + '-31' }) };
     window.__fintrackModules['@/components/tables/TransactionTable'] = {
-      TransactionTable: ({ workspaceHeader, toolbarActions }) => React.createElement('div', { 'data-testid': 'transaction-table-stub' }, typeof workspaceHeader === 'function' ? workspaceHeader({ month: '2026-10', selectMonth: () => {} }) : workspaceHeader, toolbarActions),
+      TransactionTable: ({ workspaceHeader, toolbarActions }) => React.createElement('div', { 'data-testid': 'transaction-table-stub' }, typeof workspaceHeader === 'function' ? workspaceHeader({ month: '2026-10', periodLabel: '2026-10-01 – 2026-10-31', completeMonth: true, selectMonth: () => {} }) : workspaceHeader, toolbarActions),
     };
     window.__fintrackModules['@/components/assets/AssetsListPanel'] = {
       AssetsListPanel: ({ onCreate }) => React.createElement('button', { type: 'button', 'data-testid': 'assets-create-button', onClick: onCreate }, 'Registrar activo'),

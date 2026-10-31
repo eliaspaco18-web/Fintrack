@@ -91,22 +91,29 @@ const EXPORT_FORMAT_OPTIONS: Array<{ value: ExportFormat; label: string; hint: s
 type MonthSummary = { ingresos_mes: number | null; egresos_mes: number | null; resultado_mensual: number | null }
 const summaryFetcher = (url: string) => fetchDashboardData<MonthSummary>(url)
 
-function MovementSummary({ month }: { month: string }) {
-  const summary = useSWR(`/api/transactions/month-summary?month=${month}`, summaryFetcher, { revalidateOnFocus: false })
+function MovementSummary({ month, completeMonth, periodLabel }: { month: string; completeMonth: boolean; periodLabel: string }) {
+  const summary = useSWR(completeMonth ? `/api/transactions/month-summary?month=${month}` : null, summaryFetcher, { revalidateOnFocus: false })
   const bounds = monthBounds(month)!
+  const items = [
+    { label: 'Ingresos', value: summary.data?.ingresos_mes, type: 'INCOME' as const },
+    { label: 'Egresos', value: summary.data?.egresos_mes, type: 'EXPENSE' as const },
+    { label: 'Resultado', value: summary.data?.resultado_mensual, type: null },
+  ]
   return <>
-    <section aria-label={`Resumen del mes: ${month}`} className={styles.summary}>
-      {([['Ingresos', summary.data?.ingresos_mes, 'INCOME'], ['Egresos', summary.data?.egresos_mes, 'EXPENSE'], ['Resultado', summary.data?.resultado_mensual, null]] as const).map(([label, value, type]) => (
-        <div key={label} className={`${styles.summaryItem} min-w-0`}>
-          <p>{label}{label === 'Resultado' ? ' del mes' : ''} · PEN</p>
-          <div className={`${styles.summaryValue} font-display tabular-nums`}>
-            {summary.error ? 'No disponible' : value === undefined ? 'Cargando…' : value === null ? 'Incompleto' : type ? <a href={`/transactions?type=${type}&date_from=${bounds.start}&date_to=${bounds.end}&page=1`}>{formatCurrency(value, 'PEN')}</a> : formatCurrency(value, 'PEN')}
-          </div>
-          {label === 'Resultado' ? <small className={styles.summaryNote}>Excluye transferencias internas · Los filtros no cambian estos totales</small> : null}
+    <section aria-label={completeMonth ? `Resumen del mes: ${month}` : `Resumen no disponible para el rango ${periodLabel}`} className={styles.summary}>
+      {items.map(item => (
+        <div key={item.label} className={`${styles.summaryItem} min-w-0`}>
+          <p><span>{item.label}{item.label === 'Resultado' ? ' del mes' : ''} · PEN</span></p>
+          {!completeMonth ? <div className={`${styles.summaryValue} font-display tabular-nums text-[var(--ft-text-muted)]`}>No aplica al rango</div>
+            : summary.error ? <div className={`${styles.summaryValue} font-display tabular-nums text-[var(--ft-danger)]`}>No disponible</div>
+            : summary.isLoading || !summary.data ? 'Cargando…'
+            : item.value == null ? <div className={`${styles.summaryValue} font-display tabular-nums text-[var(--ft-warning)]`}>Incompleto</div>
+            : <div className={`${styles.summaryValue} font-display tabular-nums`}>{item.type ? <a className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ft-focus-ring-color)]" href={`/transactions?type=${item.type}&date_from=${bounds.start}&date_to=${bounds.end}&page=1`}>{formatCurrency(item.value, 'PEN')}</a> : formatCurrency(item.value, 'PEN')}</div>}
+          {item.label === 'Resultado' ? <small className={styles.summaryNote}>{completeMonth ? 'Excluye transferencias internas · Los filtros no cambian estos totales' : `El rango ${periodLabel} no corresponde a un mes completo.`}</small> : null}
         </div>
       ))}
     </section>
-    {summary.error ? <p role="alert">No se pudo cargar el resumen mensual. <button type="button" onClick={() => void summary.mutate()}>Reintentar</button></p> : null}
+    {completeMonth && summary.error ? <p className="-mt-2 flex items-center gap-2 text-[11px] text-[var(--ft-danger)]" role="alert">No se pudo cargar el resumen mensual. <button type="button" onClick={() => void summary.mutate()} className="font-semibold underline underline-offset-2">Reintentar</button></p> : null}
   </>
 }
 
@@ -568,7 +575,7 @@ export function TransactionsWorkspace({
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5" /><path d="M12 15V3" /></svg>
           )}>Exportar</Button>
         )}
-        workspaceHeader={({ month, selectMonth }) => (
+        workspaceHeader={({ month, periodLabel, completeMonth, selectMonth }) => (
       <div className={styles.pageOverview} data-testid="transactions-page-overview">
             <header aria-labelledby="transactions-workspace-heading" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
@@ -580,7 +587,7 @@ export function TransactionsWorkspace({
                 </p>
               </div>
               <div className="flex w-full items-center gap-2 sm:w-auto sm:shrink-0">
-                <BudgetMonthPicker value={month} onChange={selectMonth} testId="transactions-header-period-select" />
+                <><span aria-live="polite" className="text-[11px] font-medium text-[var(--ft-text-muted)]">{completeMonth ? null : periodLabel}</span><BudgetMonthPicker value={month} onChange={selectMonth} testId="transactions-header-period-select" /></>
                 <div ref={operationMenuAnchorRef} className="w-full sm:w-auto">
                   <CreateModuleButton
                     onClick={openCreateModal}
@@ -597,7 +604,7 @@ export function TransactionsWorkspace({
               </div>
             </header>
 
-            <MovementSummary month={month} />
+            <MovementSummary month={month} completeMonth={completeMonth} periodLabel={periodLabel} />
           </div>
         )}
       />

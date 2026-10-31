@@ -28,6 +28,7 @@ import {
   getQuickFilterDateOverrides,
   getQuickFilterParamPatch,
 } from '@/modules/transactions/quick-filter-query'
+import { isCompleteMovementMonth, resolveInitialMovementRange } from '@/modules/transactions/movement-period'
 import {
   buildTransactionSearchQuery,
   resolveTransactionUrlSyncAction,
@@ -246,7 +247,7 @@ function ReviewFactRow({ label, children, className = '' }: { label: string; chi
 interface TransactionTableProps {
   initialParams?: Partial<TransactionListParams>
   options: TransactionFormOptions
-  workspaceHeader?: ReactNode | ((scope: { month: string; selectMonth: (month: string) => void }) => ReactNode)
+  workspaceHeader?: ReactNode | ((scope: { month: string; periodLabel: string; completeMonth: boolean; selectMonth: (month: string) => void }) => ReactNode)
   toolbarActions?: ReactNode
 }
 
@@ -563,8 +564,15 @@ function resolveInitialControlState(
   const rawPerPage = Number(searchParams.get('per_page') ?? initialParams.per_page ?? 20)
   const page = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : 1
   const perPage = Number.isInteger(rawPerPage) && rawPerPage > 0 && rawPerPage <= 100 ? rawPerPage : 20
-  const queryDateFrom = searchParams.get('date_from') ?? initialParams.date_from
-  const queryDateTo = searchParams.get('date_to') ?? initialParams.date_to
+  let queryDateFrom = searchParams.get('date_from') ?? initialParams.date_from
+  let queryDateTo = searchParams.get('date_to') ?? initialParams.date_to
+  const hasExplicitScope = Boolean(queryType || queryQuickFilter || searchParams.get('search') || searchParams.get('account_id') || searchParams.get('category_id'))
+  if (!hasDateRange && !queryDateFrom && !queryDateTo && !hasExplicitScope && activeFilter === 'all') {
+    const month = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit' }).format(new Date())
+    const initialRange = resolveInitialMovementRange({ month, hasExplicitDateRange: false, hasOtherScope: false })
+    queryDateFrom = initialRange?.dateFrom
+    queryDateTo = initialRange?.dateTo
+  }
   const dateOverrides = getQuickFilterDateOverrides(activeFilter, queryDateFrom, queryDateTo)
 
   return {
@@ -955,6 +963,8 @@ export function TransactionTable({
 
     if (!hasQuickFilterInUrl && prefs.quickFilter && prefs.quickFilter !== activeFilter) {
       setActiveFilter(prefs.quickFilter)
+      setDateFrom('')
+      setDateTo('')
     }
     if (!hasSortInUrl && prefs.sort && prefs.sort !== sort) {
       setSort(prefs.sort)
@@ -1370,7 +1380,7 @@ export function TransactionTable({
 
   return (
     <div className={`space-y-0 ${styles.workspace}`}>
-      {workspaceHeader ? <div>{typeof workspaceHeader === 'function' ? workspaceHeader({ month: monthBounds((dateFrom || QuickFilterParams[activeFilter].date_from || '').slice(0, 7)) ? (dateFrom || QuickFilterParams[activeFilter].date_from || '').slice(0, 7) : new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit' }).format(new Date()), selectMonth }) : workspaceHeader}</div> : null}
+      {workspaceHeader ? <div>{typeof workspaceHeader === 'function' ? (() => { const from = dateFrom || QuickFilterParams[activeFilter].date_from || ''; const to = dateTo || QuickFilterParams[activeFilter].date_to || ''; const complete = isCompleteMovementMonth(from, to); const month = complete ?? new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit' }).format(new Date()); const periodLabel = from || to ? `${from || '…'} – ${to || '…'}` : 'Historial completo'; return workspaceHeader({ month, periodLabel, completeMonth: complete !== null, selectMonth }) })() : workspaceHeader}</div> : null}
       <div data-testid="transactions-review-panel-layer" className="min-w-0">
           {/* Astra's filters scroll with the ledger; they do not overlay rows. */}
           <section
