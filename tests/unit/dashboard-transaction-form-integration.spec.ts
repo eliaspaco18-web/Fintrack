@@ -106,7 +106,7 @@ function browserMocks(): string {
     window.__fintrackModules['swr'] = {
       default: key => {
         let data = [];
-        if (typeof key === 'string' && key.includes('/dashboard/summary')) data = summary;
+        if (typeof key === 'string' && (key.includes('/dashboard/summary') || key.includes('/transactions/month-summary'))) data = summary;
         else if (typeof key === 'string' && key.includes('/dashboard/money-flow')) data = { series: [] };
         else if (typeof key === 'string' && key.includes('/dashboard/sidebar')) data = { ingresos_categoria: [], egresos_categoria: [] };
         else if (typeof key === 'string' && key.includes('/transactions?')) data = { data: [], pagination: { has_more: false } };
@@ -129,8 +129,10 @@ function browserMocks(): string {
     window.__fintrackModules['./DashboardRound07.module.css'] = window.__fintrackModules['@/components/dashboard/DashboardRound07.module.css'];
     window.__fintrackModules['@/components/forms/TransactionForm/IncomeTransactionForm.module.css'] = { default: moduleProxy };
     window.__fintrackModules['./IncomeTransactionForm.module.css'] = window.__fintrackModules['@/components/forms/TransactionForm/IncomeTransactionForm.module.css'];
+    window.__fintrackModules['@/components/management/BudgetMonthPicker'] = { BudgetMonthPicker: () => null };
+    window.__fintrackModules['@/lib/transactions-month-summary'] = { monthBounds: month => ({ start: month + '-01', end: month + '-31' }) };
     window.__fintrackModules['@/components/tables/TransactionTable'] = {
-      TransactionTable: ({ workspaceHeader, toolbarActions }) => React.createElement('div', { 'data-testid': 'transaction-table-stub' }, workspaceHeader, toolbarActions),
+      TransactionTable: ({ workspaceHeader, toolbarActions }) => React.createElement('div', { 'data-testid': 'transaction-table-stub' }, typeof workspaceHeader === 'function' ? workspaceHeader({ month: '2026-10', periodLabel: '2026-10-01 – 2026-10-31', completeMonth: true, selectMonth: () => {} }) : workspaceHeader, toolbarActions),
     };
     window.__fintrackModules['@/components/assets/AssetsListPanel'] = {
       AssetsListPanel: ({ onCreate }) => React.createElement('button', { type: 'button', 'data-testid': 'assets-create-button', onClick: onCreate }, 'Registrar activo'),

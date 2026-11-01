@@ -214,3 +214,50 @@ test('budget tabs reserve the same 20px rhythm before filters as the approved ac
   expect(spacing.divider).toBe(1)
   expect(spacing.afterDivider).toBe(20)
 })
+
+test('movements month picker drives the displayed month, table query and historical summary URL together', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.route('http://fintrack.test/**', route => route.fulfill({ contentType: 'text/html', body: '<html><body></body></html>' }))
+  await page.goto('http://fintrack.test/transactions')
+  await installHarness(page)
+  await page.addScriptTag({ content: `(() => {
+    const React = window.React;
+    const { BudgetMonthPicker } = window.__budgetExports;
+    function Host() {
+      const [value, setValue] = React.useState('2026-10');
+      const [query, setQuery] = React.useState('');
+      window.__movementPeriod = value;
+      window.__movementQuery = query;
+      const selectMonth = (month) => {
+        const [year, number] = month.split('-').map(Number);
+        const lastDay = new Date(year, number, 0).getDate();
+        const dateFrom = month + '-01';
+        const dateTo = month + '-' + String(lastDay).padStart(2, '0');
+        const params = new URLSearchParams(window.location.search);
+        params.set('date_from', dateFrom);
+        params.set('date_to', dateTo);
+        params.delete('qf');
+        params.delete('type');
+        params.delete('page');
+        window.history.replaceState(null, '', '/transactions?' + params.toString());
+        setQuery('/api/transactions?date_from=' + dateFrom + '&date_to=' + dateTo + '&page=1');
+        setValue(month);
+      };
+      return React.createElement('section', null,
+        React.createElement('span', { 'data-testid': 'movement-summary-month' }, value),
+        React.createElement('span', { 'data-testid': 'movement-table-query' }, query),
+        React.createElement(BudgetMonthPicker, { value, onChange: selectMonth, testId: 'movement-period-picker' }));
+    }
+    window.__budgetRoot = window.ReactDOM.createRoot(document.getElementById('root'));
+    window.__budgetRoot.render(React.createElement(Host));
+  })();` })
+  // The harness is a real BudgetMonthPicker instance; the host models the Movements selection contract.
+  const trigger = page.getByTestId('movement-period-picker')
+  await trigger.click()
+  await page.getByRole('button', { name: 'Año anterior' }).click()
+  await page.getByRole('button', { name: 'febrero 2025' }).click()
+  await expect(page.getByTestId('movement-summary-month')).toHaveText('2025-02')
+  await expect(page.getByTestId('movement-table-query')).toHaveText('/api/transactions?date_from=2025-02-01&date_to=2025-02-28&page=1')
+  await expect.poll(() => page.evaluate(() => new URLSearchParams(window.location.search).get('date_from'))).toBe('2025-02-01')
+  await expect.poll(() => page.evaluate(() => new URLSearchParams(window.location.search).get('date_to'))).toBe('2025-02-28')
+})

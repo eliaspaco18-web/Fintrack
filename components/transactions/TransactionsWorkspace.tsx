@@ -12,7 +12,8 @@ import { CreateModuleButton } from '@/components/ui/CreateModuleButton'
 import { useToast } from '@/lib/toast/toast'
 import { formatCurrency, type TransactionFormOptions, type TransactionFormValues } from '@/lib/contracts/ui.contracts'
 import type { CreateTransactionResult } from '@/modules/transactions/transaction.service.types'
-import type { DashboardSummary } from '@/lib/dashboard/types'
+import { BudgetMonthPicker } from '@/components/management/BudgetMonthPicker'
+import { monthBounds } from '@/lib/transactions-month-summary'
 import { fetchDashboardData } from '@/components/dashboard/api'
 import {
   OperationTypePopover,
@@ -87,14 +88,34 @@ const EXPORT_FORMAT_OPTIONS: Array<{ value: ExportFormat; label: string; hint: s
   { value: 'csv', label: 'CSV', hint: 'Plano y compatible con herramientas analíticas.' },
 ]
 
-const summaryFetcher = (url: string) => fetchDashboardData<DashboardSummary>(url)
+type MonthSummary = { ingresos_mes: number | null; egresos_mes: number | null; resultado_mensual: number | null }
+const summaryFetcher = (url: string) => fetchDashboardData<MonthSummary>(url)
 
-function currentLimaDate() {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(new Date())
-  const value = (type: string) => parts.find(part => part.type === type)?.value ?? ''
-  return `${value('year')}-${value('month')}-${value('day')}`
+function MovementSummary({ month, completeMonth, periodLabel }: { month: string; completeMonth: boolean; periodLabel: string }) {
+  const summary = useSWR(completeMonth ? `/api/transactions/month-summary?month=${month}` : null, summaryFetcher, { revalidateOnFocus: false })
+  const bounds = monthBounds(month)!
+  const items = [
+    { label: 'Ingresos', value: summary.data?.ingresos_mes, type: 'INCOME' as const, tone: 'text-[var(--ft-success)]' },
+    { label: 'Egresos', value: summary.data?.egresos_mes, type: 'EXPENSE' as const, tone: 'text-[var(--ft-danger)]' },
+    { label: 'Resultado', value: summary.data?.resultado_mensual, type: null, tone: summary.data?.resultado_mensual != null && summary.data.resultado_mensual < 0 ? 'text-[var(--ft-danger)]' : 'text-[var(--ft-text-strong)]' },
+  ]
+  return <>
+    <section aria-label={completeMonth ? `Resumen del mes: ${month}` : `Resumen no disponible para el rango ${periodLabel}`} className={styles.summary}>
+      {items.map(item => (
+        <div key={item.label} className={`${styles.summaryItem} min-w-0`}>
+          <p><span>{item.label}{item.label === 'Resultado' ? ' del mes' : ''} · PEN</span></p>
+          {!completeMonth ? <div className={`${styles.summaryValue} font-display tabular-nums text-[var(--ft-text-muted)]`}>No aplica al rango</div>
+            : summary.data && item.value != null ? <div className={`mt-1.5 font-display text-[20px] font-semibold leading-7 tracking-[-0.035em] tabular-nums ${item.tone}`}>{item.type ? <a className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ft-focus-ring-color)]" href={`/transactions?type=${item.type}&date_from=${bounds.start}&date_to=${bounds.end}&page=1`} aria-label={`Ver ${item.label.toLowerCase()} del mes`}>{formatCurrency(item.value, 'PEN')}</a> : formatCurrency(item.value, 'PEN')}</div>
+            : summary.data ? <div className={`${styles.summaryValue} font-display tabular-nums text-[var(--ft-warning)]`}>Incompleto</div>
+            : summary.error ? <div className={`${styles.summaryValue} font-display tabular-nums text-[var(--ft-danger)]`}>No disponible</div>
+            : summary.isLoading || !summary.data ? <div className="mt-2 h-6 w-32 animate-pulse rounded bg-[var(--ft-surface-muted)] motion-reduce:animate-none" role="status" aria-label="Cargando resumen mensual" />
+            : null}
+          {item.label === 'Resultado' ? <small className={styles.summaryNote}>{completeMonth ? 'Excluye transferencias internas · Los filtros no cambian estos totales' : `El rango ${periodLabel} no corresponde a un mes completo.`}</small> : null}
+        </div>
+      ))}
+    </section>
+    {completeMonth && summary.error ? <p className="-mt-2 flex items-center gap-2 text-[11px] text-[var(--ft-danger)]" role={summary.data ? 'status' : 'alert'}>{summary.data ? 'No se pudo actualizar el resumen; se muestran los últimos datos cargados.' : 'No se pudo cargar el resumen mensual.'} <button type="button" onClick={() => void summary.mutate()} className="font-semibold underline underline-offset-2">Reintentar</button></p> : null}
+  </>
 }
 
 function toNextUrl(pathname: string, params: URLSearchParams): string {
@@ -154,10 +175,7 @@ export function TransactionsWorkspace({
   const router = useRouter()
   const searchParams = useSearchParams()
   const { toast } = useToast()
-  const monthSummary = useSWR('/api/dashboard/summary', summaryFetcher, {
-    revalidateOnFocus: false,
-    dedupingInterval: 30_000,
-  })
+
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isOperationPopoverOpen, setIsOperationPopoverOpen] = useState(false)
@@ -356,12 +374,6 @@ export function TransactionsWorkspace({
     return Array.from({ length: 8 }, (_, index) => String(currentYear - index))
   }, [])
 
-  const reportDate = currentLimaDate()
-  const reportMonth = reportDate.slice(0, 7)
-  const reportMonthLabel = new Intl.DateTimeFormat('es-PE', {
-    month: 'long', year: 'numeric', timeZone: 'America/Lima',
-  }).format(new Date(`${reportMonth}-15T12:00:00-05:00`))
-  const reportStart = `${reportMonth}-01`
 
   const [exportYears, setExportYears] = useState<string[]>(fallbackExerciseOptions)
   const [exportPortfolios, setExportPortfolios] = useState<ExportPortfolioOption[]>(fallbackPortfolioOptions)
@@ -564,7 +576,7 @@ export function TransactionsWorkspace({
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5" /><path d="M12 15V3" /></svg>
           )}>Exportar</Button>
         )}
-        workspaceHeader={(
+        workspaceHeader={({ month, periodLabel, completeMonth, selectMonth }) => (
       <div className={styles.pageOverview} data-testid="transactions-page-overview">
             <header aria-labelledby="transactions-workspace-heading" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
@@ -576,10 +588,7 @@ export function TransactionsWorkspace({
                 </p>
               </div>
               <div className="flex w-full items-center gap-2 sm:w-auto sm:shrink-0">
-                <span className={`${styles.monthScope} inline-flex items-center`}>
-                  <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></svg>
-                  <span className="capitalize">{reportMonthLabel}</span>
-                </span>
+                <><span aria-live="polite" className="text-[11px] font-medium text-[var(--ft-text-muted)]">{completeMonth ? null : periodLabel}</span><BudgetMonthPicker value={month} onChange={selectMonth} testId="transactions-header-period-select" /></>
                 <div ref={operationMenuAnchorRef} className="w-full sm:w-auto">
                   <CreateModuleButton
                     onClick={openCreateModal}
@@ -596,33 +605,7 @@ export function TransactionsWorkspace({
               </div>
             </header>
 
-            <section aria-label={`Resumen del mes: ${reportMonthLabel}`} className={styles.summary}>
-              {[
-                { label: 'Ingresos', value: monthSummary.data?.ingresos_mes, type: 'INCOME' as const, tone: 'text-[var(--ft-success)]' },
-                { label: 'Egresos', value: monthSummary.data?.egresos_mes, type: 'EXPENSE' as const, tone: 'text-[var(--ft-text-strong)]' },
-                { label: 'Resultado', value: monthSummary.data?.resultado_mensual, type: null, tone: monthSummary.data && monthSummary.data.resultado_mensual < 0 ? 'text-[var(--ft-danger)]' : 'text-[var(--ft-text-strong)]' },
-              ].map(item => (
-                <div key={item.label} className={`${styles.summaryItem} min-w-0`}>
-                  <p>
-                    <span>{item.label}{item.label === 'Resultado' ? ' del mes' : ''} · PEN</span>
-                  </p>
-                  {monthSummary.data ? (
-                    <div className={`${styles.summaryValue} font-display tabular-nums ${item.tone}`}>
-                      {item.type ? <a className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ft-focus-ring-color)]" href={`/transactions?type=${item.type}&date_from=${reportStart}&date_to=${reportDate}&page=1`} aria-label={`Ver ${item.label.toLowerCase()} del mes`}>{formatCurrency(item.value ?? 0, 'PEN')}</a> : `${(item.value ?? 0) > 0 ? '+' : ''}${formatCurrency(item.value ?? 0, 'PEN')}`}
-                    </div>
-                  ) : (
-                    <div className="mt-2 h-6 w-32 animate-pulse rounded bg-[var(--ft-surface-muted)] motion-reduce:animate-none" role="status" aria-label={monthSummary.error ? 'Resumen mensual no disponible' : 'Cargando resumen mensual'} />
-                  )}
-                  {item.label === 'Resultado' ? <small className={styles.summaryNote} title={`Período: ${reportMonthLabel}. Los filtros no cambian estos totales.`}>Excluye transferencias internas</small> : null}
-                </div>
-              ))}
-            </section>
-            {monthSummary.error ? (
-              <p className="-mt-2 flex items-center gap-2 text-[11px] text-[var(--ft-danger)]" role={monthSummary.data ? 'status' : 'alert'}>
-                {monthSummary.data ? 'No se pudo actualizar el resumen; se muestran los últimos datos cargados.' : 'No se pudo cargar el resumen mensual.'}
-                <button type="button" onClick={() => void monthSummary.mutate()} className="font-semibold underline underline-offset-2">Reintentar</button>
-              </p>
-            ) : null}
+            <MovementSummary month={month} completeMonth={completeMonth} periodLabel={periodLabel} />
           </div>
         )}
       />

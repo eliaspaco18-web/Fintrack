@@ -96,6 +96,7 @@ async function mountRealCreditModals(
 ) {
   const runtimeErrors: string[] = []
   page.on('pageerror', error => runtimeErrors.push(error.message))
+  await page.clock.setFixedTime(new Date('2026-10-15T12:00:00.000Z'))
   await page.setViewportSize(viewport)
   await page.setContent('<div class="fin-shell" data-ft-v3-shell><div id="root"></div></div>')
   await page.addScriptTag({ content: "let creditFixtureId = 0; Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: () => creditFixtureId++ === 0 ? 'credits-test-id' : `credits-test-id-${creditFixtureId}` })" })

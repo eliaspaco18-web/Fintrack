@@ -75,6 +75,14 @@ export function summarizeBudgetCurrencies(
   )
 }
 
+/** Use the application's default currency only when a successful period has no rows. */
+export function budgetSummaryForDisplay(rows: BudgetPeriodSummaryRow[], emptyCurrency: CurrencyCode = 'PEN'): BudgetCurrencySummary[] {
+  const summaries = summarizeBudgetCurrencies(rows)
+  return summaries.length ? summaries : [{
+    currency: emptyCurrency, assigned: 0, spent: 0, available: 0, metrics_complete: true,
+  }]
+}
+
 /** Display-only formatter that preserves non-PEN/USD currency codes. */
 export function formatBudgetCurrency(amount: number | null | undefined, currency: CurrencyCode): string {
   if (amount === null || amount === undefined || !Number.isFinite(Number(amount))) return 'No disponible'

@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import {
   budgetRowsForSelectedMonth,
+  budgetSummaryForDisplay,
   clampBudgetProgress,
   countBudgetStatuses,
   displayBudgetProgress,
@@ -56,4 +57,15 @@ test('status counts follow the records represented by the selected workspace vie
 
   expect(countBudgetStatuses(series)).toEqual({ active: 2, inactive: 1, total: 3 })
   expect(countBudgetStatuses(displayedMonthRows.map(row => row.budget))).toEqual({ active: 0, inactive: 2, total: 2 })
+})
+
+test('empty period displays zero in PEN without masking incomplete currency metrics', () => {
+  expect(budgetSummaryForDisplay([])).toEqual([
+    { currency: 'PEN', assigned: 0, spent: 0, available: 0, metrics_complete: true },
+  ])
+  expect(budgetSummaryForDisplay([
+    { amount: 50, spent_amount: null, remaining_amount: null, metrics_complete: false, budget: { currency: 'USD' } },
+  ])).toEqual([
+    { currency: 'USD', assigned: 50, spent: null, available: null, metrics_complete: false },
+  ])
 })

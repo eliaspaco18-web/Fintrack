@@ -131,7 +131,7 @@ export function useTransactions(
   >(url, fetcher, {
     revalidateOnFocus: false,
     dedupingInterval:  CacheTTL.transactions * 1000,
-    keepPreviousData:  true,
+    keepPreviousData:  false,
   })
 
   const setParams = useCallback((next: Partial<TransactionListParams>) => {
