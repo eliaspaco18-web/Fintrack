@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test'
-import { readdirSync, readFileSync, mkdirSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 for (const width of [390, 1440]) {
-  test(`long movement text stays in its column at ${width}px`, async ({ page }) => {
+  test(`long movement text stays in its column at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 800 })
     const root = join(process.cwd(), '.next/static/css')
     const css = readdirSync(root, { recursive: true }).map(String).filter(f => f.endsWith('.css')).map(f => readFileSync(join(root, f), 'utf8')).join('\n')
@@ -17,7 +17,6 @@ for (const width of [390, 1440]) {
     })
     expect(metrics.buttonRight).toBeLessThanOrEqual(metrics.secondLeft + 1)
     expect(await page.locator('main > p').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
-    mkdirSync('/private/tmp/fintrack-v3-evidence', { recursive: true })
-    await page.screenshot({ path: `/private/tmp/fintrack-v3-evidence/overflow-fixture-${width}.png` })
+    await page.screenshot({ path: testInfo.outputPath(`overflow-fixture-${width}.png`) })
   })
 }

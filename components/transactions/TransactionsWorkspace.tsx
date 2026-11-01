@@ -95,9 +95,9 @@ function MovementSummary({ month, completeMonth, periodLabel }: { month: string;
   const summary = useSWR(completeMonth ? `/api/transactions/month-summary?month=${month}` : null, summaryFetcher, { revalidateOnFocus: false })
   const bounds = monthBounds(month)!
   const items = [
-    { label: 'Ingresos', value: summary.data?.ingresos_mes, type: 'INCOME' as const },
-    { label: 'Egresos', value: summary.data?.egresos_mes, type: 'EXPENSE' as const },
-    { label: 'Resultado', value: summary.data?.resultado_mensual, type: null },
+    { label: 'Ingresos', value: summary.data?.ingresos_mes, type: 'INCOME' as const, tone: 'text-[var(--ft-success)]' },
+    { label: 'Egresos', value: summary.data?.egresos_mes, type: 'EXPENSE' as const, tone: 'text-[var(--ft-danger)]' },
+    { label: 'Resultado', value: summary.data?.resultado_mensual, type: null, tone: summary.data?.resultado_mensual != null && summary.data.resultado_mensual < 0 ? 'text-[var(--ft-danger)]' : 'text-[var(--ft-text-strong)]' },
   ]
   return <>
     <section aria-label={completeMonth ? `Resumen del mes: ${month}` : `Resumen no disponible para el rango ${periodLabel}`} className={styles.summary}>
@@ -105,15 +105,16 @@ function MovementSummary({ month, completeMonth, periodLabel }: { month: string;
         <div key={item.label} className={`${styles.summaryItem} min-w-0`}>
           <p><span>{item.label}{item.label === 'Resultado' ? ' del mes' : ''} · PEN</span></p>
           {!completeMonth ? <div className={`${styles.summaryValue} font-display tabular-nums text-[var(--ft-text-muted)]`}>No aplica al rango</div>
+            : summary.data && item.value != null ? <div className={`mt-1.5 font-display text-[20px] font-semibold leading-7 tracking-[-0.035em] tabular-nums ${item.tone}`}>{item.type ? <a className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ft-focus-ring-color)]" href={`/transactions?type=${item.type}&date_from=${bounds.start}&date_to=${bounds.end}&page=1`} aria-label={`Ver ${item.label.toLowerCase()} del mes`}>{formatCurrency(item.value, 'PEN')}</a> : formatCurrency(item.value, 'PEN')}</div>
+            : summary.data ? <div className={`${styles.summaryValue} font-display tabular-nums text-[var(--ft-warning)]`}>Incompleto</div>
             : summary.error ? <div className={`${styles.summaryValue} font-display tabular-nums text-[var(--ft-danger)]`}>No disponible</div>
-            : summary.isLoading || !summary.data ? 'Cargando…'
-            : item.value == null ? <div className={`${styles.summaryValue} font-display tabular-nums text-[var(--ft-warning)]`}>Incompleto</div>
-            : <div className={`${styles.summaryValue} font-display tabular-nums`}>{item.type ? <a className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ft-focus-ring-color)]" href={`/transactions?type=${item.type}&date_from=${bounds.start}&date_to=${bounds.end}&page=1`}>{formatCurrency(item.value, 'PEN')}</a> : formatCurrency(item.value, 'PEN')}</div>}
+            : summary.isLoading || !summary.data ? <div className="mt-2 h-6 w-32 animate-pulse rounded bg-[var(--ft-surface-muted)] motion-reduce:animate-none" role="status" aria-label="Cargando resumen mensual" />
+            : null}
           {item.label === 'Resultado' ? <small className={styles.summaryNote}>{completeMonth ? 'Excluye transferencias internas · Los filtros no cambian estos totales' : `El rango ${periodLabel} no corresponde a un mes completo.`}</small> : null}
         </div>
       ))}
     </section>
-    {completeMonth && summary.error ? <p className="-mt-2 flex items-center gap-2 text-[11px] text-[var(--ft-danger)]" role="alert">No se pudo cargar el resumen mensual. <button type="button" onClick={() => void summary.mutate()} className="font-semibold underline underline-offset-2">Reintentar</button></p> : null}
+    {completeMonth && summary.error ? <p className="-mt-2 flex items-center gap-2 text-[11px] text-[var(--ft-danger)]" role={summary.data ? 'status' : 'alert'}>{summary.data ? 'No se pudo actualizar el resumen; se muestran los últimos datos cargados.' : 'No se pudo cargar el resumen mensual.'} <button type="button" onClick={() => void summary.mutate()} className="font-semibold underline underline-offset-2">Reintentar</button></p> : null}
   </>
 }
 

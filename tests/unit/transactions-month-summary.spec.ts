@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { monthBounds, summarizeMonth } from '@/lib/transactions-month-summary'
 import { budgetSummaryForDisplay } from '@/lib/budgets/presentation'
 import { readCompleteMonthRows } from '@/lib/transactions/month-summary-query'
+import { resolveInitialMovementRange, isCompleteMovementMonth } from '@/modules/transactions/movement-period'
 
 test('month boundaries support leap years and reject invalid periods', () => {
   expect(monthBounds('2024-02')).toEqual({ start: '2024-02-01', end: '2024-02-29' })
@@ -67,7 +68,6 @@ test('historical query fails closed when the database count changes between page
 })
 
 test('initial movements scope defaults to the current month only without another explicit scope', async () => {
-  const { resolveInitialMovementRange, isCompleteMovementMonth } = await import('@/modules/transactions/movement-period')
   expect(resolveInitialMovementRange({ month: '2026-10', hasExplicitDateRange: false, hasOtherScope: false })).toEqual({ dateFrom: '2026-10-01', dateTo: '2026-10-31' })
   expect(resolveInitialMovementRange({ month: '2026-10', hasExplicitDateRange: true, hasOtherScope: false })).toBeNull()
   expect(resolveInitialMovementRange({ month: '2026-10', hasExplicitDateRange: false, hasOtherScope: true })).toBeNull()
