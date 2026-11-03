@@ -504,7 +504,9 @@ test('deep links wait for delayed form options, safely block incomplete forms an
       accounts: [], creditCards: [], creditors: [], debtors: [], pendingReceivables: [], pendingPayables: [],
       assetTypes: [], currencies: [], categories: { income: [], expense: [] },
     }
-    window.__navigateMock?.('/transactions?new=transaction&module=asset&type=EXPENSE')
+    const path = '/transactions?new=transaction&module=asset&type=EXPENSE'
+    history.pushState({}, '', path)
+    window.__navigateMock?.(path)
   })
 
   await expect(page).toHaveURL(/\/transactions\?new=transaction&module=asset&type=EXPENSE/)
@@ -526,7 +528,12 @@ test('deep links wait for delayed form options, safely block incomplete forms an
     window.__navigateMock?.('/dashboard')
   })
   await page.getByRole('button', { name: 'Nuevo movimiento' }).waitFor()
-  await page.evaluate(() => window.__navigateMock?.('/transactions?new=transaction&module=payable&type=INCOME'))
+  await page.evaluate(() => {
+    const path = '/transactions?new=transaction&module=payable&type=INCOME'
+    history.pushState({}, '', path)
+    window.dispatchEvent(new Event('popstate'))
+    window.__navigateMock?.(path)
+  })
   await expect(page).toHaveURL(/\/transactions\?new=transaction&module=payable&type=INCOME/)
   await expect(page.getByRole('alert').filter({ hasText: 'No se pudieron cargar las opciones para registrar movimientos.' })).toBeVisible()
   await expect(page.getByTestId('transaction-form')).toHaveCount(0)
