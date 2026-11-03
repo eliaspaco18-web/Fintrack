@@ -22,6 +22,7 @@ import {
   type OperationType,
 } from '@/components/transactions/OperationTypeSelector'
 import { useTransactionModalInitialValues } from '@/components/transactions/use-transaction-modal-initial-values'
+import { fetchWithTimeout } from '@/lib/client/fetch-with-timeout'
 
 export interface TransactionPreloadWarning {
   area: 'options' | 'initialValues'
@@ -32,6 +33,7 @@ export interface TransactionPreloadWarning {
 
 interface TransactionsWorkspaceProps {
   options: TransactionFormOptions
+  optionsLoaded?: boolean
   initialValues: Partial<TransactionFormValues>
   preloadWarnings?: TransactionPreloadWarning[]
 }
@@ -168,6 +170,7 @@ function parseDownloadFilename(contentDisposition: string | null, fallback: stri
 
 export function TransactionsWorkspace({
   options,
+  optionsLoaded = true,
   initialValues,
   preloadWarnings = [],
 }: TransactionsWorkspaceProps) {
@@ -178,6 +181,11 @@ export function TransactionsWorkspace({
 
 
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [transactionOptions, setTransactionOptions] = useState(options)
+  const [hasLoadedOptions, setHasLoadedOptions] = useState(optionsLoaded)
+  const [isLoadingOptions, setIsLoadingOptions] = useState(false)
+  const [lazyOptionsWarning, setLazyOptionsWarning] = useState<TransactionPreloadWarning | null>(null)
+  const optionsRequestRef = useRef<Promise<boolean> | null>(null)
   const [isOperationPopoverOpen, setIsOperationPopoverOpen] = useState(false)
   const [isDesktopOperationSelector, setIsDesktopOperationSelector] = useState(false)
   const operationMenuAnchorRef = useRef<HTMLDivElement>(null)
@@ -193,9 +201,38 @@ export function TransactionsWorkspace({
   const [allPortfolios, setAllPortfolios] = useState(true)
   const [selectedPortfolioIds, setSelectedPortfolioIds] = useState<string[]>([])
   const handledQueryOpenRef = useRef(false)
-  const primaryPreloadWarning = preloadWarnings[0] ?? null
-  const optionsLoadWarning =
-    preloadWarnings.find(warning => warning.area === 'options') ?? null
+  const primaryPreloadWarning = preloadWarnings.find(warning => warning.area !== 'options' || !hasLoadedOptions) ?? null
+  const optionsLoadWarning = hasLoadedOptions ? null : lazyOptionsWarning ?? preloadWarnings.find(warning => warning.area === 'options') ?? null
+
+  const ensureTransactionOptions = useCallback(async () => {
+    if (hasLoadedOptions) return true
+    if (optionsRequestRef.current) return optionsRequestRef.current
+    const request = (async () => {
+      setIsLoadingOptions(true)
+      setLazyOptionsWarning(null)
+      try {
+        const response = await fetchWithTimeout('/api/transactions/form-options', { cache: 'no-store' })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok || payload?.ok !== true || !payload.data) throw new Error('FORM_OPTIONS_UNAVAILABLE')
+        setTransactionOptions(payload.data as TransactionFormOptions)
+        setHasLoadedOptions(true)
+        return true
+      } catch {
+        setLazyOptionsWarning({
+          area: 'options',
+          message: 'No se pudieron cargar las opciones para registrar movimientos.',
+          detail: 'Comprueba tu conexión y vuelve a intentarlo. Tus datos no se han modificado.',
+          affectedOptions: ['accounts', 'categories', 'credit_cards', 'counterparties', 'pending_documents', 'asset_types'],
+        })
+        return false
+      } finally {
+        setIsLoadingOptions(false)
+        optionsRequestRef.current = null
+      }
+    })()
+    optionsRequestRef.current = request
+    return request
+  }, [hasLoadedOptions])
 
   // PRD: flujo de 2 pasos para crear transacción
   const [modalStep, setModalStep] = useState<'select_type' | 'form'>('select_type')
@@ -270,17 +307,22 @@ export function TransactionsWorkspace({
   }, [isModalOpen])
 
   const retryPreload = useCallback(() => {
+    if (optionsLoadWarning?.area === 'options' && !hasLoadedOptions) {
+      void ensureTransactionOptions()
+      return
+    }
     router.refresh()
-  }, [router])
+  }, [ensureTransactionOptions, hasLoadedOptions, optionsLoadWarning, router])
 
   // PRD: cuando el usuario elige un tipo de operación, pasar al formulario
-  const handleOperationTypeSelected = useCallback((opType: OperationType) => {
+  const handleOperationTypeSelected = useCallback(async (opType: OperationType) => {
     setIsOperationPopoverOpen(false)
     setSelectedOperationType(opType)
     setFormInstanceKey(previous => previous + 1)
     setModalStep('form')
     setIsModalOpen(true)
-  }, [])
+    await ensureTransactionOptions()
+  }, [ensureTransactionOptions])
 
   const handleBackToTypeSelection = useCallback(() => {
     setModalStep('select_type')
@@ -360,13 +402,13 @@ export function TransactionsWorkspace({
 
   const fallbackPortfolioOptions = useMemo<ExportPortfolioOption[]>(
     () =>
-      options.accounts.map(account => ({
+      transactionOptions.accounts.map(account => ({
         id: account.value,
         name: account.label,
         currency: account.meta?.currency === 'USD' ? 'USD' : 'PEN',
         is_active: true,
       })),
-    [options.accounts],
+    [transactionOptions.accounts],
   )
 
   const fallbackExerciseOptions = useMemo(() => {
@@ -570,7 +612,8 @@ export function TransactionsWorkspace({
 
       {/* ── REGISTRO CON FILTROS Y REVISIÓN CONTEXTUAL ──────────────── */}
       <TransactionTable
-        options={options}
+        options={transactionOptions}
+        onEnsureOptions={ensureTransactionOptions}
         toolbarActions={(
           <Button type="button" onClick={openExportModal} variant="secondary" size="sm" className="shrink-0" testId="transactions-summary-export-button" leadingIcon={(
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5" /><path d="M12 15V3" /></svg>
@@ -633,6 +676,20 @@ export function TransactionsWorkspace({
       >
         {modalStep === 'select_type' ? (
           <OperationTypeSelector onSelect={handleOperationTypeSelected} />
+        ) : isLoadingOptions ? (
+          <div className="flex min-h-36 items-center justify-center gap-2 text-sm text-[var(--ft-text-muted)]" role="status">
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--ft-border)] border-t-[var(--ft-primary)] motion-reduce:animate-none" aria-hidden="true" />
+            Cargando opciones del formulario…
+          </div>
+        ) : optionsLoadWarning && !hasLoadedOptions ? (
+          <div className="space-y-4 rounded-panel border border-[color-mix(in_srgb,var(--ft-danger)_24%,var(--ft-border))] bg-[var(--ft-danger-soft)] p-4 text-sm text-[var(--ft-danger)]" role="alert">
+            <p className="font-semibold">{optionsLoadWarning.message}</p>
+            <p className="text-[12px] leading-5 text-[var(--ft-text-muted)]">{optionsLoadWarning.detail}</p>
+            <div className="flex gap-2">
+              <Button type="button" variant="secondary" size="sm" onClick={() => void ensureTransactionOptions()}>Reintentar</Button>
+              <Button type="button" variant="ghost" size="sm" onClick={handleBackToTypeSelection}>Volver</Button>
+            </div>
+          </div>
         ) : (
           <div>
             {/* Botón volver al selector de tipo */}
@@ -649,7 +706,7 @@ export function TransactionsWorkspace({
             </button>
             <TransactionForm
               key={formInstanceKey}
-              options={options}
+              options={transactionOptions}
               initialValues={modalInitialValues}
               showSuccessSummary={false}
               onSuccess={handleSuccess}

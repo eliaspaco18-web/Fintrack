@@ -17,6 +17,7 @@ import { useState, useCallback,
          type ReactNode }            from 'react'
 import { useTransactions }           from '@/lib/hooks/useTransactions'
 import { fetchWithTimeout }          from '@/lib/client/fetch-with-timeout'
+import { fetchTransactionTypeCounts, type TransactionTypeCounts } from '@/lib/transactions/transaction-type-counts'
 import { formatCurrency }            from '@/lib/contracts/ui.contracts'
 import {
   QuickFilterParams,
@@ -205,7 +206,7 @@ function DesktopLedgerSkeletons() {
         {Array.from({ length: 8 }).map((_, index) => (
           <div key={index} className="grid min-h-[82px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-5 py-3">
             <div className="h-4 w-4 animate-pulse rounded bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />
-            <div className="grid grid-cols-[92px_minmax(0,1.45fr)_minmax(0,0.85fr)_minmax(120px,0.6fr)] items-center gap-4">
+            <div className="grid grid-cols-[clamp(76px,10vw,132px)_minmax(0,1.7fr)_minmax(0,0.85fr)_minmax(120px,0.6fr)] items-center gap-4">
               <div className="h-3 w-16 animate-pulse rounded bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />
               <div className="flex items-center gap-3">
                 <div className="h-10 w-10 shrink-0 animate-pulse rounded-surface bg-[var(--ft-surface-muted)] motion-reduce:animate-none" />
@@ -247,6 +248,7 @@ function ReviewFactRow({ label, children, className = '' }: { label: string; chi
 interface TransactionTableProps {
   initialParams?: Partial<TransactionListParams>
   options: TransactionFormOptions
+  onEnsureOptions?: () => Promise<boolean>
   workspaceHeader?: ReactNode | ((scope: { month: string; periodLabel: string; completeMonth: boolean; selectMonth: (month: string) => void }) => ReactNode)
   toolbarActions?: ReactNode
 }
@@ -298,40 +300,6 @@ interface SavedTransactionView {
   id: string
   name: string
   state: SavedTransactionViewState
-}
-
-interface TransactionTypeCounts {
-  all: number
-  income: number
-  expense: number
-  transfer: number
-}
-
-async function fetchTransactionTypeCounts(scopeKey: string): Promise<TransactionTypeCounts> {
-  const scope = JSON.parse(scopeKey) as Partial<TransactionListParams>
-  const countFor = async (type?: TransactionType) => {
-    const query = new URLSearchParams({ page: '1', per_page: '1' })
-    if (type) query.set('type', type)
-    Object.entries(scope).forEach(([name, value]) => {
-      if (value !== undefined && value !== null && value !== '') query.set(name, String(value))
-    })
-
-    const response = await fetchWithTimeout(`/api/transactions?${query.toString()}`)
-    const payload = await response.json()
-    const total = payload?.data?.pagination?.total
-    if (!response.ok || payload?.ok !== true || !Number.isInteger(total) || total < 0) {
-      throw new Error('TRANSACTION_COUNT_UNAVAILABLE')
-    }
-    return total as number
-  }
-
-  const [all, income, expense, transfer] = await Promise.all([
-    countFor(),
-    countFor('INCOME'),
-    countFor('EXPENSE'),
-    countFor('TRANSFER'),
-  ])
-  return { all, income, expense, transfer }
 }
 
 const QUICK_FILTER_SET = new Set<QuickFilter>(
@@ -600,6 +568,7 @@ function resolveInitialControlState(
 export function TransactionTable({
   initialParams = {},
   options,
+  onEnsureOptions,
   workspaceHeader,
   toolbarActions,
 }: TransactionTableProps) {
@@ -629,6 +598,7 @@ export function TransactionTable({
   const [loadingFilterOptions, setLoadingFilterOptions] = useState(true)
   const [filterOptionsError, setFilterOptionsError] = useState<string | null>(null)
   const [filterOptionsReloadTick, setFilterOptionsReloadTick] = useState(0)
+  const filterOptionsLoadedRef = useRef(false)
   const [savedViews, setSavedViews] = useState<SavedTransactionView[]>([])
   const [selectedSavedViewId, setSelectedSavedViewId] = useState('')
   const [saveViewModalOpen, setSaveViewModalOpen] = useState(false)
@@ -638,6 +608,10 @@ export function TransactionTable({
   const [deleteTransactionModalOpen, setDeleteTransactionModalOpen] = useState(false)
   const [deleteTransactionId, setDeleteTransactionId] = useState<string | null>(null)
   const [editTransactionId, setEditTransactionId] = useState<string | null>(null)
+  const openEditTransaction = useCallback(async (id: string) => {
+    if (onEnsureOptions && !(await onEnsureOptions())) return
+    setEditTransactionId(id)
+  }, [onEnsureOptions])
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([])
   const [focusedTransactionId, setFocusedTransactionId] = useState<string | null>(null)
   const [reviewPanelVisible, setReviewPanelVisible] = useState(false)
@@ -1024,6 +998,12 @@ export function TransactionTable({
   }, [searchParams, setParams])
 
   useEffect(() => {
+    if (filterOptionsLoadedRef.current) return
+    if (!advancedFiltersOpen && !accountId && !categoryId) {
+      setLoadingFilterOptions(false)
+      return
+    }
+
     let cancelled = false
 
     const loadFilterOptions = async () => {
@@ -1074,6 +1054,7 @@ export function TransactionTable({
         setAccountOptions(nextAccounts)
         setCategoryOptions(nextCategories)
         setFilterOptionsError(null)
+        filterOptionsLoadedRef.current = true
       } catch {
         if (cancelled) return
         setAccountOptions([])
@@ -1089,7 +1070,7 @@ export function TransactionTable({
     return () => {
       cancelled = true
     }
-  }, [filterOptionsReloadTick])
+  }, [accountId, advancedFiltersOpen, categoryId, filterOptionsReloadTick])
 
   useEffect(() => {
     if (!selectedSavedView) return
@@ -1761,7 +1742,7 @@ export function TransactionTable({
                       <DataRowActions actions={[
                         {
                           label: 'Editar',
-                          onClick: () => setEditTransactionId(tx.id),
+                          onClick: () => void openEditTransaction(tx.id),
                           testId: `transactions-mobile-row-edit-${tx.id}`,
                         },
                         {
@@ -1808,13 +1789,13 @@ export function TransactionTable({
         ) : (
           <section aria-labelledby="transactions-ledger-heading" className="hidden min-w-0 md:block">
             <div className="overflow-x-auto">
-              <table className={`desktop-table w-full table-fixed border-collapse text-left ${styles.astraLedger}`} aria-label="Registro de movimientos">
+              <table className={`desktop-table min-w-[900px] w-full table-fixed border-collapse text-left ${styles.astraLedger}`} aria-label="Registro de movimientos">
                 <colgroup>
                   <col className="w-[5%]" />
-                  <col className="w-[24%]" />
+                  <col className="w-[28%]" />
                   <col className="col-account w-[17%]" />
                   <col className="col-category w-[18%]" />
-                  <col className="w-[15%]" />
+                  <col className="w-[11%]" />
                   <col className="w-[14%]" />
                   <col className="w-[7%]" />
                 </colgroup>
@@ -1898,7 +1879,7 @@ export function TransactionTable({
                     </td>
                     <td className="px-2 align-middle">
                     <div className="flex justify-end gap-1 opacity-80 transition-opacity duration-fast group-hover/row:opacity-100 focus-within:opacity-100 motion-reduce:transition-none">
-                      <button type="button" onClick={() => setEditTransactionId(tx.id)} data-testid={`transactions-row-edit-${tx.id}`} className={`${styles.rowEditAction} rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ft-focus-ring-color)]`}>Editar</button>
+                      <button type="button" onClick={() => void openEditTransaction(tx.id)} data-testid={`transactions-row-edit-${tx.id}`} className={`${styles.rowEditAction} rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ft-focus-ring-color)]`}>Editar</button>
                       <AnchoredActionMenu
                         label={`Más acciones de ${tx.description}`}
                         focusFirstOnPointer={false}
@@ -2143,7 +2124,7 @@ export function TransactionTable({
                 </Button>
                 <Button
                   type="button"
-                  onClick={() => setEditTransactionId(focusedTransaction.id)}
+                  onClick={() => void openEditTransaction(focusedTransaction.id)}
                   variant="primary"
                   size="sm"
                   testId={`transactions-review-edit-${focusedTransaction.id}`}

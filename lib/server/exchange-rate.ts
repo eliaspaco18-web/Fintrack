@@ -10,10 +10,13 @@ import 'server-only'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { withTimeout } from '@/lib/server/promise-timeout'
 import { createClient, createServiceClient } from '@/lib/supabase.server'
+import { createExchangeRateSingleFlight } from '@/lib/server/exchange-rate-single-flight'
+import { DAILY_RATE_UPSERT_OPTIONS, insertDailyRateIfMissing } from '@/lib/server/daily-rate-idempotency'
+import { LIVE_EXCHANGE_RATE_CACHE_TTL_MS } from '@/lib/finance/exchange-rate-cache'
 
 const EXCHANGE_RATE_TIMEOUT_MS = 3_000
 const ACCOUNTING_TIMEZONE = 'America/Lima'
-const LIVE_EXCHANGE_RATE_TTL_MINUTES = 10
+const LIVE_EXCHANGE_RATE_TTL_MINUTES = LIVE_EXCHANGE_RATE_CACHE_TTL_MS / 60_000
 
 export interface ExchangeRateSnapshot {
   rate: number | null
@@ -413,9 +416,9 @@ async function persistDailyRateIfMissing(
   effectiveDate: string,
   fetchedAt?: string | null,
 ): Promise<ExchangeRateSnapshot | null> {
-  const existing = await getDailyRateByDate(effectiveDate)
-  if (existing) return existing
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return null
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return getDailyRateByDate(effectiveDate)
+  }
 
   try {
     const service = untyped(createServiceClient())
@@ -428,26 +431,28 @@ async function persistDailyRateIfMissing(
       fetched_at: fetchedAt ?? new Date().toISOString(),
     }
 
-    const { data, error } = await withTimeout(
-      service
-        .from('exchange_rates_daily')
-        .insert(payload)
-        .select('rate, fetched_at, source, effective_date')
-        .single(),
-      EXCHANGE_RATE_TIMEOUT_MS,
+    return await insertDailyRateIfMissing(
+      async () => {
+        const { data, error } = await withTimeout(
+          service
+            .from('exchange_rates_daily')
+            .upsert(payload, DAILY_RATE_UPSERT_OPTIONS)
+            .select('rate, fetched_at, source, effective_date')
+            .maybeSingle(),
+          EXCHANGE_RATE_TIMEOUT_MS,
+        )
+        if (error || !data) return null
+
+        return {
+          rate: Number(data.rate ?? rate),
+          fetched_at: typeof data.fetched_at === 'string' ? data.fetched_at : payload.fetched_at,
+          source: typeof data.source === 'string' ? data.source : source,
+          refreshed: false,
+          effective_date: typeof data.effective_date === 'string' ? data.effective_date : effectiveDate,
+        }
+      },
+      () => getDailyRateByDate(effectiveDate),
     )
-
-    if (error) {
-      return await getDailyRateByDate(effectiveDate)
-    }
-
-    return {
-      rate: Number(data?.rate ?? rate),
-      fetched_at: typeof data?.fetched_at === 'string' ? data.fetched_at : payload.fetched_at,
-      source: typeof data?.source === 'string' ? data.source : source,
-      refreshed: false,
-      effective_date: typeof data?.effective_date === 'string' ? data.effective_date : effectiveDate,
-    }
   } catch {
     return await getDailyRateByDate(effectiveDate)
   }
@@ -537,7 +542,7 @@ export async function resolveAccountingUsdPenExchangeRate(
   return fallbackSnapshot(effectiveDate)
 }
 
-export async function resolveLiveUsdPenExchangeRate(
+async function resolveLiveUsdPenExchangeRateOnce(
   opts: {
     forceRefresh?: boolean
     maxAgeMinutes?: number
@@ -579,6 +584,19 @@ export async function resolveLiveUsdPenExchangeRate(
   if (latestLegacy) return latestLegacy
 
   return fallbackSnapshot()
+}
+
+const resolveLiveRateSingleFlight = createExchangeRateSingleFlight(
+  resolveLiveUsdPenExchangeRateOnce,
+)
+
+export function resolveLiveUsdPenExchangeRate(
+  opts: {
+    forceRefresh?: boolean
+    maxAgeMinutes?: number
+  } = {},
+): Promise<ExchangeRateSnapshot> {
+  return resolveLiveRateSingleFlight(opts)
 }
 
 export async function resolveUsdPenExchangeRate(

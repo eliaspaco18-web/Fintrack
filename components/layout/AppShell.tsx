@@ -43,6 +43,7 @@ interface AppShellProps {
   user:            ShellUser
   /** Tipo de cambio inicial para el CurrencyProvider (viene del servidor) */
   exchangeRate:    number | null
+  initialRateSnapshot?: { rate: number; fetched_at: string; source: string } | null
   /** Badges de alertas por key de nav (cuotas vencidas, etc.) */
   navBadges?:      Partial<Record<string, number>>
   children:        React.ReactNode
@@ -255,10 +256,10 @@ function InnerShell({ user, navBadges = {}, children }: Omit<AppShellProps, 'exc
 
 // ─── SHELL PRINCIPAL (con providers) ─────────────────────────────────────────
 
-export function AppShell({ user, exchangeRate, navBadges, children }: AppShellProps) {
+export function AppShell({ user, exchangeRate, initialRateSnapshot, navBadges, children }: AppShellProps) {
   return (
     <LayoutProvider>
-      <CurrencyProvider initialRate={exchangeRate}>
+      <CurrencyProvider initialRate={exchangeRate} initialRateSnapshot={initialRateSnapshot}>
         <InnerShell user={user} navBadges={navBadges}>
           {children}
         </InnerShell>

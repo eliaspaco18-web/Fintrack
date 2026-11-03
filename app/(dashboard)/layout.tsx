@@ -54,6 +54,7 @@ async function getLayoutData(userId: string) {
       exchangeRateResult.status === 'fulfilled'
         ? exchangeRateResult.value
         : null
+    const verifiedExchangeRate = getVerifiedUsdPenRate(exchangeRateSnapshot)
 
     return {
       user: {
@@ -61,7 +62,14 @@ async function getLayoutData(userId: string) {
         name:   profile?.full_name ?? null,
         avatar: profile?.avatar_url ?? null,
       },
-      exchangeRate: getVerifiedUsdPenRate(exchangeRateSnapshot),
+      exchangeRate: verifiedExchangeRate,
+      initialRateSnapshot: verifiedExchangeRate !== null && exchangeRateSnapshot
+        ? {
+            rate: verifiedExchangeRate,
+            fetched_at: exchangeRateSnapshot.fetched_at!,
+            source: exchangeRateSnapshot.source,
+          }
+        : null,
     }
   }, { warnAtMs: 350, meta: { user_id: userId } })
 }
@@ -80,7 +88,7 @@ export default async function DashboardLayout({
 
   if (!user) redirect('/login')
 
-  const { user: profile, exchangeRate } =
+  const { user: profile, exchangeRate, initialRateSnapshot } =
     await getLayoutData(user.id)
 
   const metadataName = typeof user.user_metadata?.full_name === 'string'
@@ -88,22 +96,22 @@ export default async function DashboardLayout({
     : null
   const fallbackName = 'Usuario'
 
-  const AppShell = isV3ShellEnabled() ? V3AppShell : LegacyAppShell
-
-  return (
-    <AppShell
-      user={{
-        ...profile,
-        name: profile.name ?? metadataName ?? fallbackName,
-      }}
-      exchangeRate={exchangeRate}
-    >
-      {/* Suspense permite que las páginas hijas usen loading.tsx */}
-      <Suspense fallback={<PageSkeleton/>}>
-        {children}
-      </Suspense>
-    </AppShell>
+  const shellProps = {
+    user: {
+      ...profile,
+      name: profile.name ?? metadataName ?? fallbackName,
+    },
+    exchangeRate,
+  }
+  const shellContent = (
+    <Suspense fallback={<PageSkeleton/>}>
+      {children}
+    </Suspense>
   )
+
+  return isV3ShellEnabled()
+    ? <V3AppShell {...shellProps} initialRateSnapshot={initialRateSnapshot}>{shellContent}</V3AppShell>
+    : <LegacyAppShell {...shellProps}>{shellContent}</LegacyAppShell>
 }
 
 // ─── PAGE SKELETON ────────────────────────────────────────────────────────────
