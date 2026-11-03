@@ -157,6 +157,38 @@ export class TransactionRepository extends BaseRepository {
     }
   }
 
+  async countByScope(
+    userId: string,
+    filters: Omit<TransactionFilters, 'type' | 'page' | 'per_page' | 'sort_by' | 'sort_dir'> = {},
+  ): Promise<Result<{ all: number; income: number; expense: number; transfer: number }>> {
+    const countFor = async (type?: Transaction['type']) => {
+      let query = this.db.from('transactions').select('id', { count: 'exact', head: true }).eq('user_id', userId)
+      if (type) query = query.eq('type', type)
+      if (filters.account_id) query = query.or(`source_account_id.eq.${filters.account_id},destination_account_id.eq.${filters.account_id}`)
+      if (filters.category_id) query = query.eq('category_id', filters.category_id)
+      if (filters.currency) query = query.eq('currency', filters.currency)
+      if (filters.date_from) query = query.gte('transaction_date', filters.date_from)
+      if (filters.date_to) query = query.lte('transaction_date', filters.date_to)
+      if (filters.search) query = query.ilike('description', `%${filters.search.trim()}%`)
+      return query
+    }
+
+    try {
+      const [all, income, expense, transfer] = await Promise.all([
+        countFor(), countFor('INCOME'), countFor('EXPENSE'), countFor('TRANSFER'),
+      ])
+      const results = [all, income, expense, transfer]
+      const failed = results.find(result => result.error)
+      if (failed?.error) return Errors.database(failed.error.message)
+      if (results.some(result => !Number.isInteger(result.count) || result.count! < 0)) {
+        return Errors.database('Transaction type counts are incomplete')
+      }
+      return ok({ all: all.count!, income: income.count!, expense: expense.count!, transfer: transfer.count! })
+    } catch (error) {
+      return Errors.database(error instanceof Error ? error.message : 'Error desconocido')
+    }
+  }
+
   async findRecent(
     userId:  string,
     limit = 10

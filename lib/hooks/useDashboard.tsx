@@ -14,6 +14,7 @@ import { CacheTTL }                        from '@/lib/cache/cache.config'
 import { fetchWithTimeout }                from '@/lib/client/fetch-with-timeout'
 import { toDisplayAmount }                 from '@/lib/contracts/ui.contracts'
 import { getVerifiedUsdPenRate } from '@/lib/finance/exchange-rate-verification'
+import { canReuseInitialExchangeRateSnapshot, LIVE_EXCHANGE_RATE_CACHE_TTL_MS } from '@/lib/finance/exchange-rate-cache'
 import type { DashboardSummary }           from '@/modules/dashboard/dashboard.types'
 import type { FormError, DisplayCurrency } from '@/lib/contracts/ui.contracts'
 
@@ -45,10 +46,12 @@ const CurrencyContext = createContext<CurrencyContextValue>({
 export function CurrencyProvider({
   children,
   initialRate,
+  initialRateSnapshot,
   initialCurrency = 'PEN',
 }: {
   children:        ReactNode
   initialRate:     number | null
+  initialRateSnapshot?: { rate: number; fetched_at: string; source: string } | null
   initialCurrency?: DisplayCurrency
 }) {
   const [preferred, setPreferred] = useState<DisplayCurrency>(initialCurrency)
@@ -56,9 +59,11 @@ export function CurrencyProvider({
     '/api/exchange-rate?mode=live',
     fetcher,
     {
+      fallbackData: initialRateSnapshot ?? undefined,
+      revalidateOnMount: !canReuseInitialExchangeRateSnapshot(initialRateSnapshot),
       revalidateOnFocus: false,
       revalidateOnReconnect: true,
-      refreshInterval: 5 * 60 * 1000,
+      refreshInterval: LIVE_EXCHANGE_RATE_CACHE_TTL_MS,
       dedupingInterval: 60_000,
     },
   )

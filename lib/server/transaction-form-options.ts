@@ -44,6 +44,18 @@ function readQueryValue(value: string | string[] | undefined): string | undefine
   return trimmed.length > 0 ? trimmed : undefined
 }
 
+const TRANSACTION_PREFILL_KEYS = [
+  'type', 'source_account_id', 'account_id', 'currency', 'description', 'transaction_date',
+  'destination_account_id', 'sender', 'recipient', 'budget_id', 'recurring_name', 'module',
+  'credit_kind', 'loan_schedule', 'credit_card_id', 'category_id', 'from_recurring',
+  'receivable_id', 'payable_id',
+] as const
+
+export function shouldPreloadTransactionFormOptions(searchParams: TransactionSearchParamMap | undefined): boolean {
+  return readQueryValue(searchParams?.new) === 'transaction'
+    && TRANSACTION_PREFILL_KEYS.some(key => Boolean(readQueryValue(searchParams?.[key])))
+}
+
 function normalizeCategoryLabel(raw: string): string {
   const clean = raw.trim()
   if (!clean) return 'Sin categoría'

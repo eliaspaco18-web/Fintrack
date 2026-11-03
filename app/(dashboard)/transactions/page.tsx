@@ -5,6 +5,7 @@ import { withTimeout } from '@/lib/server/promise-timeout'
 import {
   getTransactionFormOptions,
   resolveTransactionInitialValues,
+  shouldPreloadTransactionFormOptions,
   type TransactionSearchParamMap,
 } from '@/lib/server/transaction-form-options'
 import {
@@ -74,42 +75,52 @@ export default async function TransactionsPage(
     searchParams?: Promise<TransactionSearchParamMap>
   }
 ) {
-  const searchParams = await props.searchParams;
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+  const searchParams = await props.searchParams
+  const needsFormOptions = shouldPreloadTransactionFormOptions(searchParams)
+  let formUserId: string | null = null
 
-  const optionsResult = await Promise.allSettled([
-    withTimeout(getTransactionFormOptions(user.id), SERVER_QUERY_TIMEOUT_MS),
-  ])
+  // The authenticated dashboard layout already guards the ordinary listing.
+  // Only resolve the user again when the server must load user-scoped form data.
+  if (needsFormOptions) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) redirect('/login')
+    formUserId = user.id
+  }
+  if (needsFormOptions && !formUserId) redirect('/login')
+
+  const optionsResult = formUserId
+    ? await Promise.allSettled([withTimeout(getTransactionFormOptions(formUserId), SERVER_QUERY_TIMEOUT_MS)])
+    : null
 
   const options =
-    optionsResult[0]?.status === 'fulfilled'
+    optionsResult?.[0]?.status === 'fulfilled'
       ? optionsResult[0].value
       : FALLBACK_TRANSACTION_OPTIONS
 
   const preloadWarnings: TransactionPreloadWarning[] = []
 
-  if (optionsResult[0]?.status === 'rejected') {
+  if (optionsResult?.[0]?.status === 'rejected') {
     preloadWarnings.push(buildTransactionPreloadWarning('options', optionsResult[0].reason))
   }
 
-  const initialValuesResult = await Promise.allSettled([
-    withTimeout(resolveTransactionInitialValues(searchParams, user.id, options), SERVER_QUERY_TIMEOUT_MS),
-  ])
+  const initialValuesResult = formUserId
+    ? await Promise.allSettled([withTimeout(resolveTransactionInitialValues(searchParams, formUserId, options), SERVER_QUERY_TIMEOUT_MS)])
+    : null
 
   const initialValues =
-    initialValuesResult[0]?.status === 'fulfilled'
+    initialValuesResult?.[0]?.status === 'fulfilled'
       ? initialValuesResult[0].value
       : {}
 
-  if (initialValuesResult[0]?.status === 'rejected') {
+  if (initialValuesResult?.[0]?.status === 'rejected') {
     preloadWarnings.push(buildTransactionPreloadWarning('initialValues', initialValuesResult[0].reason))
   }
 
   return (
     <TransactionsWorkspace
       options={options}
+      optionsLoaded={Boolean(optionsResult?.[0]?.status === 'fulfilled')}
       initialValues={initialValues}
       preloadWarnings={preloadWarnings}
     />
