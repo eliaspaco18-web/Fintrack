@@ -7,6 +7,7 @@ import { DataErrorBanner, DataSearchField, EmptyState } from '@/components/finan
 import { IncomeDatePicker } from '@/components/forms/TransactionForm/IncomeDatePicker'
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { formatCurrency } from '@/lib/contracts/ui.contracts'
+import { OperationTypeIcon } from '@/components/transactions/OperationTypeIcon'
 import {
   formatVerifiedObligationAmount,
   getObligationSettlementState,
@@ -127,6 +128,8 @@ export function DebtorDetail({ debtor }: Props) {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [dateError, setDateError] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
   const settlementState = getObligationSettlementState({
     summaries: debtor.currency_summaries,
     unverifiedRecordCount: debtor.unverified_currency_records,
@@ -196,6 +199,31 @@ export function DebtorDetail({ debtor }: Props) {
     setDateError(null)
   }, [])
 
+  const exportPdf = useCallback(async () => {
+    setExporting(true)
+    setExportError(null)
+    try {
+      const response = await fetch(`/api/debtors/${debtor.id}/export`, { cache: 'no-store' })
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null)
+        throw new Error(getApiErrorMessage(payload, 'No se pudo generar el reporte.'))
+      }
+      const blob = await response.blob()
+      const objectUrl = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = objectUrl
+      anchor.download = `fintrack-deudor-${debtor.name.trim().replace(/[^\p{L}\p{N}-]+/gu, '-').replace(/^-|-$/g, '').toLocaleLowerCase('es-PE') || 'reporte'}.pdf`
+      document.body.append(anchor)
+      anchor.click()
+      anchor.remove()
+      URL.revokeObjectURL(objectUrl)
+    } catch (caught) {
+      setExportError(caught instanceof Error ? caught.message : 'No se pudo generar el reporte.')
+    } finally {
+      setExporting(false)
+    }
+  }, [debtor.id, debtor.name])
+
   return (
     <div className={styles.detailLayout} data-testid="debtor-detail-content">
       <section className={styles.recoveryPanel} aria-labelledby="debtor-recovery-title">
@@ -246,7 +274,11 @@ export function DebtorDetail({ debtor }: Props) {
             <h3 id="debtor-ledger-title">Historial financiero</h3>
             <p>{filteredLedger.length} registro{filteredLedger.length === 1 ? '' : 's'} · {openAccountsCount} cuenta{openAccountsCount === 1 ? '' : 's'} pendiente{openAccountsCount === 1 ? '' : 's'}{overdueCount ? ` · ${overdueCount} vencida${overdueCount === 1 ? '' : 's'}` : ''}</p>
           </div>
+          <Button type="button" variant="ghost" size="icon-sm" onClick={() => void exportPdf()} disabled={exporting} loading={exporting} ariaLabel={exporting ? 'Generando PDF' : 'Exportar PDF'} title={exporting ? 'Generando reporte PDF' : 'Exportar historial completo, sin filtros'} testId="debtor-export-pdf" leadingIcon={<svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12m-5-5 5 5 5-5"/><path d="M5 17v3h14v-3"/></svg>}>
+            {''}
+          </Button>
         </div>
+        {exportError ? <p className={styles.exportError} role="alert">{exportError}</p> : null}
 
         <div className={`${movementStyles.controlsMain} ${movementStyles.portfolioFilterBar} ${styles.detailToolbar}`} data-testid="debtor-detail-filter-toolbar">
           <DataSearchField
@@ -283,16 +315,15 @@ export function DebtorDetail({ debtor }: Props) {
           />
         ) : !error ? (
           <div className={styles.ledgerList}>
-            <div className={styles.ledgerHead} aria-hidden="true"><span>Tipo</span><span>Descripción</span><span>Cuenta asociada</span><span>Fecha</span><span className="text-right">Importe</span><span>Estado</span></div>
+            <div className={styles.ledgerHead} aria-hidden="true"><span>Tipo</span><span>Descripción</span><span>Cuenta asociada</span><span>Fecha</span><span className="text-right">Importe</span></div>
             {filteredLedger.map(row => {
               const meta = financialHistoryMeta(row)
               return <article key={row.id} className={styles.ledgerRow} data-testid={`debtor-ledger-row-${row.id}`} data-history-source={row.source}>
-                <div><span className={`${styles.typeBadge} ${meta.tone}`}>{meta.label}</span></div>
-                <div className={styles.ledgerDescription}><strong>{row.description?.trim() || (row.source === 'obligation' ? 'Cuenta por cobrar' : 'Movimiento sin descripción')}</strong><span>{row.notes?.trim() || row.categoryName || (row.source === 'obligation' && row.date ? `Registrado ${formatDate(row.date)}` : meta.state)}</span>{row.attachmentUrl ? <a href={row.attachmentUrl} target="_blank" rel="noreferrer">Ver documento asociado</a> : null}</div>
+                <div className={`${styles.typeCell} ${meta.tone}`} role="img" aria-label={meta.label} title={meta.label}><span className={styles.typeIcon}><OperationTypeIcon operationType={row.type === 'INCOME' ? 'receivable_collect' : 'receivable_issue'} size={16} /></span><span className={styles.typeLabel}>{meta.label}</span></div>
+                <div className={styles.ledgerDescription}><strong>{row.description?.trim() || (row.source === 'obligation' ? 'Cuenta por cobrar' : 'Movimiento sin descripción')}</strong><span>{[row.notes?.trim() || row.categoryName, meta.state].filter(Boolean).join(' · ') || (row.source === 'obligation' && row.date ? `Registrado ${formatDate(row.date)}` : '')}</span>{row.attachmentUrl ? <a href={row.attachmentUrl} target="_blank" rel="noreferrer">Ver documento asociado</a> : null}</div>
                 <div className={styles.ledgerCell}>{row.accountName || 'Sin cuenta asociada'}</div>
                 <time className={styles.ledgerDate} dateTime={row.date}>{formatDate(row.date)}</time>
                 <strong className={`${styles.ledgerAmount} ${row.type === 'INCOME' ? styles.incomeAmount : styles.expenseAmount}`}>{meta.signedAmount}</strong>
-                <span className={`${styles.stateBadge} ${row.type === 'INCOME' ? styles.stateSuccess : styles.stateMuted}`}>{meta.state}</span>
               </article>
             })}
           </div>
