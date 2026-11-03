@@ -56,7 +56,7 @@ function compilePresenceHook() {
   return `(() => { const { useEffect, useLayoutEffect, useRef, useState } = window.React; ${compiled}\nwindow.__receivablesModules['@/lib/ui/use-v3-workbench-presence'] = { useV3WorkbenchPresence }; })();`
 }
 
-test('real debtor detail renders its history as the final workbench section without an action footer', async ({ page }) => {
+test('real debtor detail renders its history as the final workbench section without an action footer', async ({ page }, testInfo) => {
   page.on('pageerror', error => console.info('Receivables detail browser error:', error.stack ?? error.message))
   const cssRoot = join(process.cwd(), '.next/static/css')
   const css = readdirSync(cssRoot).filter(file => file.endsWith('.css')).sort().map(file => readFileSync(join(cssRoot, file), 'utf8')).join('\n')
@@ -68,12 +68,13 @@ test('real debtor detail renders its history as the final workbench section with
   await page.addStyleTag({ content: css })
   await page.addScriptTag({ path: reactPath })
   await page.addScriptTag({ path: reactDomPath })
-  await page.addScriptTag({ content: `window.React=React; window.__receivablesModules={};
+  await page.addScriptTag({ content: `window.React=React; window.__receivablesModules={}; window.__exportRequests=[]; window.__exportFailure=false; window.__exportDelay=false; window.__releaseExport=null;
     window.__receivablesModules.react=React; window.__receivablesModules['react-dom']={createPortal:ReactDOM.createPortal};
     window.__receivablesModules['@/lib/ui/v3-modal-background']={acquireV3ModalBackground:()=>()=>{}};
     window.__receivablesModules['@/components/tables/TransactionsRound07.module.css']={default:${JSON.stringify(movementClasses)}};
     window.__receivablesModules['next/link']={default:({href,children,...props})=>React.createElement('a',{...props,href},children)};
-    window.__receivablesModules['@/components/ui/Button']={Button:({children,testId,ariaLabel,leadingIcon,type='button',onClick,form,disabled,className})=>React.createElement('button',{type,onClick,form,disabled,className,'data-testid':testId,'aria-label':ariaLabel},leadingIcon,React.createElement('span',null,children))};
+    window.__receivablesModules['@/components/ui/Button']={Button:({children,testId,ariaLabel,leadingIcon,type='button',onClick,form,disabled,className,title,loading})=>React.createElement('button',{type,onClick,form,disabled,className,title,'aria-busy':loading||undefined,'data-testid':testId,'aria-label':ariaLabel},leadingIcon,React.createElement('span',null,children))};
+    window.__receivablesModules['@/components/transactions/OperationTypeIcon']={OperationTypeIcon:({operationType,size})=>React.createElement('svg',{width:size,height:size,viewBox:'0 0 24 24',fill:'none',stroke:'currentColor','stroke-width':'1.8','data-operation-icon':operationType,'aria-hidden':'true'},operationType==='receivable_collect'?React.createElement(React.Fragment,null,React.createElement('path',{d:'M6 3h12v18l-3-2-3 2-3-2-3 2V3Z'}),React.createElement('path',{d:'M15 13v4m-2-2 2 2 2-2'})):React.createElement(React.Fragment,null,React.createElement('circle',{cx:'8',cy:'15',r:'4'}),React.createElement('path',{d:'M13 11l7-7m-5 0h5v5'})))};
     window.__receivablesModules['@/components/ui/AppSelect']={AppSelect:({value,onChange,options,ariaLabel,className})=>React.createElement('select',{value,onChange:event=>onChange(event.target.value),'aria-label':ariaLabel,className},options.map(option=>React.createElement('option',{key:option.value,value:option.value},option.label)))};
     window.__receivablesModules['@/components/forms/primitives']={FormActions:({secondaryAction,primaryAction})=>React.createElement('div',{className:'flex justify-end gap-2'},secondaryAction,primaryAction)};
     window.__receivablesModules['@/components/finance']={ConfirmDialog:()=>null,DataErrorBanner:({message})=>React.createElement('p',{role:'alert'},message),DataSearchField:({value,onChange,placeholder,ariaLabel,className,...props})=>React.createElement('div',{className},React.createElement('input',{...props,value,onChange:event=>onChange(event.target.value),placeholder,'aria-label':ariaLabel})),EmptyState:({title,description})=>React.createElement('div',null,React.createElement('strong',null,title),React.createElement('p',null,description))};
@@ -94,6 +95,7 @@ test('real debtor detail renders its history as the final workbench section with
     window.__receivablesModules['./DebtorDetail.module.css']={default:${JSON.stringify(detailClasses)}};
     window.__fixtureDebtor={id:'debtor-1',name:'Lucía Andina',relationship:'Cliente recurrente',initial_debt:0,is_active:true,total_lent:1200,total_collected:450,pending_amount:750,progress_pct:37.5,all_collected:false,count_pending:2,receivables_count:2,currency_summaries:[{currency:'PEN',total:1000,settled:400,pending:600},{currency:'USD',total:200,settled:50,pending:150}],unverified_currency_records:0,unverified_open_currency_records:0,has_unverified_initial_debt:false};
     window.fetch=async url=>{
+      if(String(url).includes('/api/debtors/')&&String(url).endsWith('/export')){window.__exportRequests.push(String(url));if(window.__exportDelay)await new Promise(resolve=>window.__releaseExport=resolve);return {ok:!window.__exportFailure,status:window.__exportFailure?503:200,json:async()=>({ok:false,error:{message:'Reporte no disponible'}}),blob:async()=>new Blob(['%PDF-test'],{type:'application/pdf'})};}
       const data=String(url).includes('/api/receivables?')?[
         {id:'r-pen',transaction_id:'t-2',debtor_id:'debtor-1',debtor_name:'Lucía Andina',concept:'Servicio de consultoría',amount:1000,collected_amount:400,currency:'PEN',issue_date:'2026-09-01',due_date:'2026-10-15',notes:null,attachment_url:null,status:'PARTIAL',source_account:{id:'a-1',name:'Cuenta principal'}},
         {id:'r-usd',transaction_id:null,debtor_id:'debtor-1',debtor_name:'Lucía Andina',concept:'Licencia anual',amount:200,collected_amount:50,currency:'USD',issue_date:'2026-09-04',due_date:null,notes:null,attachment_url:null,status:'PENDING'}
@@ -142,6 +144,29 @@ test('real debtor detail renders its history as the final workbench section with
   await expect(page.getByTestId('debtor-ledger-row-obligation:r-pen')).toBeVisible()
   await expect(page.getByTestId('debtor-ledger-row-transaction:t-2')).toHaveCount(0)
   await expect(page.getByTestId('debtor-obligations')).toHaveCount(0)
+  const exportButton = page.getByTestId('debtor-export-pdf')
+  await expect(exportButton).toBeVisible()
+  await expect(exportButton).toHaveAttribute('aria-label', 'Exportar PDF')
+  await expect(exportButton).toHaveAttribute('title', 'Exportar historial completo, sin filtros')
+  await expect(exportButton).toHaveText('')
+  await expect(dialog.locator('[class*="ledgerHead"] span')).toHaveCount(5)
+  await expect(dialog.locator('[data-operation-icon="receivable_collect"]')).toBeVisible()
+  await expect(dialog.getByText('Servicios · Registrado')).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('debtor-detail-desktop.png') })
+  await exportButton.click()
+  await expect.poll(() => page.evaluate(() => (window as any).__exportRequests)).toEqual(['/api/debtors/debtor-1/export'])
+  await expect(exportButton).toBeEnabled()
+  await page.evaluate(() => { (window as any).__exportDelay = true })
+  await exportButton.click()
+  await expect(exportButton).toHaveAttribute('aria-busy', 'true')
+  await expect(exportButton).toHaveAttribute('aria-label', 'Generando PDF')
+  await expect(exportButton).toBeDisabled()
+  await page.evaluate(() => { (window as any).__releaseExport?.() })
+  await expect(exportButton).toHaveAttribute('aria-label', 'Exportar PDF')
+  await expect(exportButton).toBeEnabled()
+  await page.evaluate(() => { (window as any).__exportDelay = false; (window as any).__exportFailure = true })
+  await exportButton.click()
+  await expect(page.getByRole('alert').filter({ hasText: 'No se pudo generar el reporte.' })).toBeVisible()
 
   await page.evaluate(classes => {
     const reference = document.createElement('div')
@@ -157,6 +182,7 @@ test('real debtor detail renders its history as the final workbench section with
       runtime.React.createElement(Search, { value: '', onChange: () => {}, placeholder: 'Buscar por cuenta o entidad', 'aria-label': 'Buscar por cuenta o entidad', 'data-testid': 'portfolio-search-input', className: 'min-w-0 flex-[1_1_230px]' }),
       runtime.React.createElement(AppSelect, { value: 'all', onChange: () => {}, options: [{ value: 'all', label: 'Todas' }], ariaLabel: 'Filtrar cuentas por moneda', className: `${movement.portfolioFilter} ${movement.portfolioFilterCurrency} filters-control`, compact: true, searchable: false, testId: 'portfolio-reference-select' })))
   }, movementClasses)
+  await expect(page.getByTestId('portfolio-search-input')).toBeAttached()
 
   const desktop = await page.evaluate(() => {
     const modal = document.querySelector('[data-testid="debtor-detail-workbench"]')!
@@ -254,6 +280,7 @@ test('real debtor detail renders its history as the final workbench section with
     expect(geometry.hasFooter).toBe(false)
     expect(geometry.historyBottomGap).toBeLessThanOrEqual(18)
     expect(geometry.filterChildren.every(item => item.left >= 0 && item.right <= geometry.viewport)).toBe(true)
+    if (width === 390) await page.screenshot({ path: testInfo.outputPath('debtor-detail-mobile.png') })
   }
 
   const managerFileSource = readFileSync(join(process.cwd(), 'components/receivables/ReceivablesManager.tsx'), 'utf8')

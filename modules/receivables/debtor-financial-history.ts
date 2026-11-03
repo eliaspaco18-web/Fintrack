@@ -3,6 +3,7 @@ export type ReceivableHistoryDocument = {
   transaction_id?: string | null
   concept: string | null
   amount: number | string
+  collected_amount?: number | string
   currency: string
   issue_date: string
   status: string
