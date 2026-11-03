@@ -371,6 +371,7 @@ export function TransactionsWorkspace({
         setModalStep('form')
         setSelectedOperationType(prefilledOperationType)
         setIsModalOpen(true)
+        if (!hasLoadedOptions) void ensureTransactionOptions()
       } else {
         const usePopover = window.matchMedia('(min-width: 768px)').matches
         setIsOperationPopoverOpen(usePopover)
@@ -382,7 +383,7 @@ export function TransactionsWorkspace({
     }
 
     handledQueryOpenRef.current = false
-  }, [hasPrefillParams, openFromQuery, prefilledOperationType])
+  }, [ensureTransactionOptions, hasLoadedOptions, hasPrefillParams, openFromQuery, prefilledOperationType])
 
   const modalInitialValues = useTransactionModalInitialValues(
     initialValues,

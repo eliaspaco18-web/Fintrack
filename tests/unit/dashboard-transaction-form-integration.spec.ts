@@ -12,7 +12,9 @@ declare global {
     __fintrackFormOrchestrator: Record<string, unknown>
     __fintrackFallbackOptions: unknown
     __unexpectedSupabaseCalls: number
-    __serverOptionLoad: { delayMs: number; fail: boolean }
+    __serverOptionLoad: { delayMs: number; fail: boolean; optionsLoaded?: boolean }
+    __formOptionsRequests: number
+    __browserErrors: string[]
     __navigateMock?: (path: string) => void
     __mountAssetsWorkspace?: () => void
     __mountUsdTransactionForm?: () => void
@@ -214,7 +216,21 @@ function browserMocks(): string {
     window.__fintrackModules['@/modules/assets/asset-purchase-payload'] = {};
     window.__fintrackModules['@/lib/server/observability'] = { measureServerOperation: (_name, fn) => fn() };
     window.__unexpectedSupabaseCalls = 0;
-    window.__serverOptionLoad = { delayMs: 0, fail: false };
+    window.__formOptionsRequests = 0;
+    window.__browserErrors = [];
+    window.addEventListener('error', event => window.__browserErrors.push(event.message));
+    window.addEventListener('unhandledrejection', event => window.__browserErrors.push(String(event.reason)));
+    window.__fintrackModules['@/lib/client/fetch-with-timeout'] = {
+      fetchWithTimeout: async (input: string) => {
+        if (input !== '/api/transactions/form-options') throw new Error('Unexpected client request: ' + String(input));
+        window.__formOptionsRequests += 1;
+        const optionLoad = window.__serverOptionLoad;
+        if (optionLoad.delayMs > 0) await new Promise(resolve => window.setTimeout(resolve, optionLoad.delayMs));
+        if (optionLoad.fail) return { ok: false, json: async () => ({ ok: false }) };
+        return { ok: true, json: async () => ({ ok: true, data: window.__fintrackOptions }) };
+      },
+    };
+    window.__serverOptionLoad = { delayMs: 0, fail: false, optionsLoaded: true };
   `
 }
 
@@ -315,16 +331,18 @@ async function mountIntegratedFlow(page: Page) {
         return;
       }
       const params = Object.fromEntries(new URLSearchParams(new URL(path, location.href).search));
-      const optionLoad = window.__serverOptionLoad ?? { delayMs: 0, fail: false };
-      const routeOptions = optionLoad.fail ? window.__fintrackFallbackOptions : window.__fintrackOptions;
+      const optionLoad = window.__serverOptionLoad ?? { delayMs: 0, fail: false, optionsLoaded: true };
+      const optionsLoaded = optionLoad.optionsLoaded ?? true;
+      const routeOptions = optionsLoaded ? window.__fintrackOptions : window.__fintrackFallbackOptions;
       const renderWorkspace = () => window.__fintrackExports.resolveTransactionInitialValues(params, 'synthetic-user', routeOptions)
         .then(initialValues => root.render(React.createElement(window.__fintrackExports.TransactionsWorkspace, {
           options: routeOptions,
+          optionsLoaded,
           initialValues,
           preloadWarnings: optionLoad.fail ? [{ area: 'options', message: 'No se pudieron cargar las opciones de transacción.', detail: 'Las opciones sintéticas no están disponibles.', affectedOptions: ['accounts'] }] : [],
         })))
         .catch(error => { window.__routeError = String(error); });
-      window.setTimeout(renderWorkspace, optionLoad.delayMs);
+      window.setTimeout(renderWorkspace, 0);
     };
   })()` })
 
@@ -332,6 +350,10 @@ async function mountIntegratedFlow(page: Page) {
     throw new Error(`Integrated dashboard did not mount: ${pageErrors.join(' | ') || 'no browser exception captured'}`)
   })
   return pageErrors
+}
+
+async function expectNoBrowserErrors(page: Page) {
+  await expect.poll(() => page.evaluate(() => window.__browserErrors)).toEqual([])
 }
 
 test('Inicio navigation mounts the authentic TransactionForm for each of the eight operations', async ({ page }) => {
@@ -355,6 +377,7 @@ test('Inicio navigation mounts the authentic TransactionForm for each of the eig
 
     await expect(page).toHaveURL(new RegExp(`/transactions\\?new=transaction`))
     await expect(page.getByTestId('transaction-form')).toBeVisible()
+    await expectNoBrowserErrors(page)
     const dialog = page.getByRole('dialog', { name: operation.title })
     await expect(dialog).toBeVisible()
     const form = dialog.getByTestId('transaction-form')
@@ -398,6 +421,7 @@ test('receivables issue deep link mounts the approved Prestar dinero form withou
   await expect(page).toHaveURL(/\/transactions\?new=transaction&module=receivable&type=EXPENSE/)
   const dialog = page.getByRole('dialog', { name: 'Prestar dinero' })
   await expect(dialog).toBeVisible()
+  await expectNoBrowserErrors(page)
   const form = dialog.getByTestId('transaction-form')
   await expect(form).toHaveAttribute('data-operation-layout', 'receivable_issue')
   await expect(form.getByRole('region', { name: 'Cuenta por cobrar' })).toBeVisible()
@@ -418,6 +442,7 @@ test('payables issue deep link mounts the approved Recibir préstamo form withou
   await expect(page).toHaveURL(/\/transactions\?new=transaction&module=payable&type=INCOME/)
   const dialog = page.getByRole('dialog', { name: 'Recibir préstamo' })
   await expect(dialog).toBeVisible()
+  await expectNoBrowserErrors(page)
   const form = dialog.getByTestId('transaction-form')
   await expect(form).toHaveAttribute('data-operation-layout', 'payable_issue')
   await expect(form.getByRole('region', { name: 'Cuenta por pagar' })).toBeVisible()
@@ -459,6 +484,7 @@ test('Assets Registrar activo opens the approved Comprar activo form directly', 
   await expect(page).toHaveURL(/\/transactions\?new=transaction&module=asset&type=EXPENSE$/)
   const dialog = page.getByRole('dialog', { name: 'Comprar activo' })
   await expect(dialog).toBeVisible()
+  await expectNoBrowserErrors(page)
   const form = dialog.getByTestId('transaction-form')
   await expect(form).toHaveAttribute('data-operation-layout', 'asset_purchase')
   await expect(form.getByRole('region', { name: 'Activo' })).toBeVisible()
@@ -470,39 +496,49 @@ test('Assets Registrar activo opens the approved Comprar activo form directly', 
   expect(await page.evaluate(() => window.__unexpectedSupabaseCalls)).toBe(0)
 })
 
-test('delayed and failed option preload never silently mounts a different financial operation', async ({ page }) => {
+test('deep links wait for delayed form options, safely block incomplete forms and retry after an option error', async ({ page }) => {
   await mountIntegratedFlow(page)
   await page.evaluate(() => {
-    window.__serverOptionLoad = { delayMs: 300, fail: false }
+    window.__serverOptionLoad = { delayMs: 300, fail: false, optionsLoaded: false }
+    window.__fintrackFallbackOptions = {
+      accounts: [], creditCards: [], creditors: [], debtors: [], pendingReceivables: [], pendingPayables: [],
+      assetTypes: [], currencies: [], categories: { income: [], expense: [] },
+    }
+    window.__navigateMock?.('/transactions?new=transaction&module=asset&type=EXPENSE')
   })
 
-  await page.getByRole('button', { name: 'Nuevo movimiento' }).click()
-  await page.getByRole('menu', { name: 'Registrar una operación' }).getByRole('menuitem', { name: /^Comprar activo/ }).click()
-  await expect(page).toHaveURL(/\/transactions\?new=transaction/)
+  await expect(page).toHaveURL(/\/transactions\?new=transaction&module=asset&type=EXPENSE/)
+  await expect(page.getByRole('status').getByText('Cargando opciones del formulario…')).toBeVisible()
   await expect(page.getByTestId('transaction-form')).toHaveCount(0)
   const delayedForm = page.getByTestId('transaction-form')
   await expect(delayedForm).toBeVisible()
   await expect(delayedForm).toHaveAttribute('data-operation-layout', 'asset_purchase')
   await expect(page.getByRole('dialog', { name: 'Comprar activo' }).getByTestId('transaction-asset-name-input')).toBeVisible()
+  expect(await page.evaluate(() => window.__formOptionsRequests)).toBe(1)
+  await expectNoBrowserErrors(page)
 
   await page.getByRole('dialog', { name: 'Comprar activo' }).getByRole('button', { name: 'Cancelar' }).click()
   await expect(page.getByRole('dialog', { name: 'Comprar activo' })).toHaveCount(0)
   await page.evaluate(() => {
-    window.__serverOptionLoad = { delayMs: 0, fail: true }
+    window.__serverOptionLoad = { delayMs: 0, fail: true, optionsLoaded: false }
     history.pushState({}, '', '/dashboard')
     window.dispatchEvent(new Event('popstate'))
     window.__navigateMock?.('/dashboard')
-    window.__fintrackFallbackOptions = {
-      accounts: [], creditCards: [], creditors: [], debtors: [], pendingReceivables: [], pendingPayables: [],
-      assetTypes: [], currencies: [], categories: { income: [], expense: [] },
-    }
   })
   await page.getByRole('button', { name: 'Nuevo movimiento' }).waitFor()
-  await page.getByRole('button', { name: 'Nuevo movimiento' }).click()
-  await page.getByRole('menu', { name: 'Registrar una operación' }).getByRole('menuitem', { name: /^Recibir préstamo/ }).click()
+  await page.evaluate(() => window.__navigateMock?.('/transactions?new=transaction&module=payable&type=INCOME'))
+  await expect(page).toHaveURL(/\/transactions\?new=transaction&module=payable&type=INCOME/)
+  await expect(page.getByRole('alert').filter({ hasText: 'No se pudieron cargar las opciones para registrar movimientos.' })).toBeVisible()
+  await expect(page.getByTestId('transaction-form')).toHaveCount(0)
+  expect(await page.evaluate(() => window.__formOptionsRequests)).toBe(2)
+
+  await page.evaluate(() => { window.__serverOptionLoad = { delayMs: 0, fail: false, optionsLoaded: false } })
+  await page.getByRole('dialog', { name: 'Recibir préstamo' }).getByRole('button', { name: 'Reintentar' }).click()
   const failedLoadForm = page.getByTestId('transaction-form')
   await expect(failedLoadForm).toBeVisible()
   await expect(failedLoadForm).toHaveAttribute('data-operation-layout', 'payable_issue')
-  await expect(page.getByRole('alert').filter({ hasText: 'No se pudieron cargar las opciones de transacción.' })).toBeVisible()
+  await expect(page.getByTestId('transaction-payable-creditor-select')).toBeVisible()
+  expect(await page.evaluate(() => window.__formOptionsRequests)).toBe(3)
+  await expectNoBrowserErrors(page)
   expect(await page.evaluate(() => window.__unexpectedSupabaseCalls)).toBe(0)
 })
