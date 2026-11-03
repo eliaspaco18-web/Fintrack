@@ -221,7 +221,7 @@ function browserMocks(): string {
     window.addEventListener('error', event => window.__browserErrors.push(event.message));
     window.addEventListener('unhandledrejection', event => window.__browserErrors.push(String(event.reason)));
     window.__fintrackModules['@/lib/client/fetch-with-timeout'] = {
-      fetchWithTimeout: async (input: string) => {
+      fetchWithTimeout: async input => {
         if (input !== '/api/transactions/form-options') throw new Error('Unexpected client request: ' + String(input));
         window.__formOptionsRequests += 1;
         const optionLoad = window.__serverOptionLoad;
