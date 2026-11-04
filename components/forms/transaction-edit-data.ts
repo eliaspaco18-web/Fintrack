@@ -47,6 +47,8 @@ export type EditableTransaction = Pick<
   | 'sender'
   | 'recipient'
   | 'budget_id'
+  | 'sub_type'
+  | 'recurring_transaction_id'
   | 'source_account_id'
   | 'destination_account_id'
   | 'source_account'
@@ -56,6 +58,9 @@ export type EditableTransaction = Pick<
   linked_asset?: LinkedAssetSnapshot[] | LinkedAssetSnapshot | null
   linked_receivable?: LinkedReceivableSnapshot[] | LinkedReceivableSnapshot | null
   linked_payable?: LinkedPayableSnapshot[] | LinkedPayableSnapshot | null
+  linked_credit?: Array<{ id: string }> | { id: string } | null
+  linked_loan?: Array<{ id: string }> | { id: string } | null
+  credit_card_id?: string | null
 }
 
 export function firstLinkedRecord<T>(value: T[] | T | null | undefined): T | null {

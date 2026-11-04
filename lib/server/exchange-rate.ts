@@ -535,8 +535,8 @@ export async function resolveAccountingUsdPenExchangeRate(
   }
 
   const latestLegacy = await getLatestLegacyRateFromDb()
-  if (latestLegacy) {
-    return { ...latestLegacy, effective_date: effectiveDate }
+  if (latestLegacy?.effective_date === effectiveDate) {
+    return latestLegacy
   }
 
   return fallbackSnapshot(effectiveDate)

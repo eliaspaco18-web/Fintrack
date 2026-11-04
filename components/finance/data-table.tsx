@@ -433,8 +433,9 @@ interface DataRowAction {
   testId?: string
 }
 
-function iconFromActionLabel(label: string): 'view' | 'edit' | 'delete' | 'use' | 'deactivate' | 'reactivate' | 'settings' {
+function iconFromActionLabel(label: string): 'view' | 'edit' | 'delete' | 'use' | 'duplicate' | 'deactivate' | 'reactivate' | 'settings' {
   const normalized = label.toLowerCase()
+  if (normalized.includes('duplicar') || normalized.includes('duplicado')) return 'duplicate'
   if (normalized.includes('eliminar') || normalized.includes('borrar')) return 'delete'
   if (normalized.includes('desactivar') || normalized.includes('cerrar') || normalized.includes('bloquear')) return 'deactivate'
   if (normalized.includes('reactivar') || normalized.includes('activar')) return 'reactivate'
