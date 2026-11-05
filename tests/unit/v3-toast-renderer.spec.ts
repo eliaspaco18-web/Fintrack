@@ -45,7 +45,12 @@ async function mountToastHarness(page: import('@playwright/test').Page) {
       const { toast } = window.FinTrackToast.useToast();
       return React.createElement('div', { id: 'controls' },
         React.createElement('button', { id: 'success', onClick: () => toast.success('Cuenta creada', 'Ahorros · PEN', { persist: false }) }, 'Éxito'),
-        React.createElement('button', { id: 'persisted-success', onClick: () => toast.success('Cuenta guardada', 'Ahorros · PEN') }, 'Éxito persistido'),
+        React.createElement('button', { id: 'default-success', onClick: () => toast.success('Movimiento registrado', 'Gasto · PEN', { category: 'TRANSACTION', event: 'TRANSACTION_CREATED' }) }, 'Éxito temporal predeterminado'),
+        React.createElement('button', { id: 'persisted-success', onClick: () => toast.success('Evento explícito', 'Se conserva en actividad', { persist: true, category: 'SYSTEM', event: 'TEST_EXPLICIT_ACTIVITY', href: '/settings' }) }, 'Éxito persistido explícito'),
+        React.createElement('button', { id: 'persisted-import-rollback', onClick: () => toast.success('Importación revertida', 'Se conserva el resultado de la reversión', { persist: true, category: 'TRANSACTION', event: 'IMPORT_JOB_ROLLED_BACK', href: '/settings?tab=export' }) }, 'Reversión de importación persistida'),
+        React.createElement('button', { id: 'promise-success', onClick: () => { void toast.promise(Promise.resolve(true), { loading: 'Guardando…', success: 'Cambio guardado', error: 'No se pudo guardar' }) } }, 'Promesa temporal'),
+        React.createElement('button', { id: 'promise-persisted', onClick: () => { void toast.promise(Promise.resolve(true), { loading: 'Registrando…', success: 'Evento de fondo registrado', error: 'No se pudo registrar', persist: true, category: 'SYSTEM', event: 'TEST_PROMISE_ACTIVITY' }) } }, 'Promesa persistida explícita'),
+        React.createElement('button', { id: 'promise-error', onClick: () => { void toast.promise(Promise.reject(new Error('fallo sintético')), { loading: 'Guardando…', success: 'Cambio guardado', error: 'No se pudo guardar', persist: true }).catch(() => {}) } }, 'Promesa fallida'),
         React.createElement('button', { id: 'warning', onClick: () => toast.warning('Revisar cuenta', 'Falta una referencia') }, 'Aviso'),
         React.createElement('button', { id: 'error', onClick: () => toast.error('No se guardó', 'Conservamos el formulario') }, 'Error'),
         React.createElement('button', { id: 'info', onClick: () => toast.info('Sincronización disponible') }, 'Info'),
@@ -138,7 +143,7 @@ test('reduced motion keeps the message and textual lifetime without moving the s
   await expect(toast).toHaveCount(0)
 })
 
-test('existing success activity persists once on dispatch, not again on countdown or dismissal', async ({ page }) => {
+test('success confirmations and toast.promise stay temporary by default, including with activity metadata', async ({ page }) => {
   let notificationPosts = 0
   await page.route('https://fintrack-synthetic.test/**', async route => {
     if (route.request().url().endsWith('/api/notifications')) {
@@ -151,10 +156,65 @@ test('existing success activity persists once on dispatch, not again on countdow
   await page.goto('https://fintrack-synthetic.test/')
   await page.clock.install()
   await mountToastHarness(page)
+  await page.locator('#default-success').click()
+  await expect(page.getByRole('status').filter({ hasText: 'Movimiento registrado' })).toBeVisible()
+  await page.waitForTimeout(100)
+  expect(notificationPosts).toBe(0)
+
+  await page.locator('#promise-success').click()
+  await expect(page.getByRole('status').filter({ hasText: 'Cambio guardado' })).toBeVisible()
+  await page.waitForTimeout(100)
+  expect(notificationPosts).toBe(0)
+
+  await page.locator('#promise-error').click()
+  await expect(page.getByRole('alert').filter({ hasText: 'No se pudo guardar' })).toBeVisible()
+  await page.waitForTimeout(100)
+  expect(notificationPosts).toBe(0)
+})
+
+test('explicit success persistence opts in once and keeps its activity metadata', async ({ page }) => {
+  const notificationBodies: Array<Record<string, unknown>> = []
+  await page.route('https://fintrack-synthetic.test/**', async route => {
+    if (route.request().url().endsWith('/api/notifications')) {
+      notificationBodies.push(route.request().postDataJSON() as Record<string, unknown>)
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+      return
+    }
+    await route.fulfill({ status: 200, contentType: 'text/html', body: '<html><body></body></html>' })
+  })
+  await page.goto('https://fintrack-synthetic.test/')
+  await page.clock.install()
+  await mountToastHarness(page)
   await page.locator('#persisted-success').click()
-  await expect(page.getByRole('status').filter({ hasText: 'Cuenta guardada' })).toBeVisible()
-  await expect.poll(() => notificationPosts).toBe(1)
+  await expect(page.getByRole('status').filter({ hasText: 'Evento explícito' })).toBeVisible()
+  await expect.poll(() => notificationBodies.length).toBe(1)
+  expect(notificationBodies[0]).toMatchObject({
+    category: 'SYSTEM',
+    event: 'TEST_EXPLICIT_ACTIVITY',
+    title: 'Evento explícito',
+    message: 'Se conserva en actividad',
+    href: '/settings',
+  })
   await page.clock.runFor(4350)
-  await expect(page.getByRole('status').filter({ hasText: 'Cuenta guardada' })).toHaveCount(0)
-  expect(notificationPosts).toBe(1)
+  await expect(page.getByRole('status').filter({ hasText: 'Evento explícito' })).toHaveCount(0)
+  expect(notificationBodies).toHaveLength(1)
+
+  await page.locator('#promise-persisted').click()
+  await expect(page.getByRole('status').filter({ hasText: 'Evento de fondo registrado' })).toBeVisible()
+  await expect.poll(() => notificationBodies.length).toBe(2)
+  expect(notificationBodies[1]).toMatchObject({
+    category: 'SYSTEM',
+    event: 'TEST_PROMISE_ACTIVITY',
+    title: 'Evento de fondo registrado',
+  })
+
+  await page.locator('#persisted-import-rollback').click()
+  await expect(page.getByRole('status').filter({ hasText: 'Importación revertida' })).toBeVisible()
+  await expect.poll(() => notificationBodies.length).toBe(3)
+  expect(notificationBodies[2]).toMatchObject({
+    category: 'TRANSACTION',
+    event: 'IMPORT_JOB_ROLLED_BACK',
+    title: 'Importación revertida',
+    href: '/settings?tab=export',
+  })
 })

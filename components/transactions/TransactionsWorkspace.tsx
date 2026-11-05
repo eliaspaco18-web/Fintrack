@@ -336,11 +336,7 @@ export function TransactionsWorkspace({
     toast.success(
       'Transacción registrada',
       result.transaction.description,
-      {
-        category: 'TRANSACTION',
-        event: 'TRANSACTION_CREATED',
-        href: `/transactions/${result.transaction.id}`,
-      },
+      { persist: false },
     )
 
     if (result.recurring_template?.warning) {

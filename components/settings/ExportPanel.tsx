@@ -544,10 +544,12 @@ export function ExportPanel() {
           ? `FinTrack creó ${parts.join(', ')}.`
           : 'FinTrack terminó la importación y ya puedes revisar el resumen creado.',
         {
-        category: 'TRANSACTION',
-        event: 'IMPORT_JOB_COMMITTED',
-        href: '/settings?tab=export',
-      })
+          persist: true,
+          category: 'TRANSACTION',
+          event: 'IMPORT_JOB_COMMITTED',
+          href: '/settings?tab=export',
+        },
+      )
     } catch {
       const refreshed = await refreshImportJob(analysis.id)
       finishProgress({
@@ -582,6 +584,7 @@ export function ExportPanel() {
 
       setAnalysis(data.data as ImportJobWithRows)
       toast.success('Importación revertida', 'Los registros creados por esta importación fueron retirados de FinTrack.', {
+        persist: true,
         category: 'TRANSACTION',
         event: 'IMPORT_JOB_ROLLED_BACK',
         href: '/settings?tab=export',
