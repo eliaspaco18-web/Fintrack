@@ -16,7 +16,7 @@ import { AlertFilters, type TypeFilter, type ModuleFilter } from './AlertFilters
 import { AlertCard } from './AlertCard'
 import { moduleLabel, type AlertSeverity } from './AlertBadge'
 import styles from './AlertsWorkspace.module.css'
-import { filterAlertRows, isValidAlertHref, markAlertsReadIndividually } from './alerts-presentation'
+import { filterAlertRows, isValidAlertHref } from './alerts-presentation'
 
 export interface AlertRow {
   id: string
@@ -29,6 +29,15 @@ export interface AlertRow {
   is_read: boolean
   created_at: string
 }
+
+interface AlertCounts {
+  total: number
+  unread: number
+}
+
+type AlertLoadResult =
+  | { ok: true; data: AlertRow[]; counts: AlertCounts }
+  | { ok: false; message: string }
 
 type ReadFilter = 'unread' | 'read'
 type ManualSeverity = AlertSeverity
@@ -54,6 +63,7 @@ export function AlertsWorkspace() {
   const { toast } = useToast()
   const hasLoadedOnce = useRef(false)
   const [alerts, setAlerts] = useState<AlertRow[]>([])
+  const [counts, setCounts] = useState<AlertCounts>({ total: 0, unread: 0 })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -68,23 +78,38 @@ export function AlertsWorkspace() {
   const [savingManualAlert, setSavingManualAlert] = useState(false)
   const [discardTarget, setDiscardTarget] = useState<DiscardTarget>(null)
   const [deleteReadConfirmOpen, setDeleteReadConfirmOpen] = useState(false)
+  const [clearInboxConfirmOpen, setClearInboxConfirmOpen] = useState(false)
   const [manualTitle, setManualTitle] = useState(MANUAL_ALERT_DEFAULTS.title)
   const [manualModule, setManualModule] = useState(MANUAL_ALERT_DEFAULTS.module)
   const [manualSeverity, setManualSeverity] = useState<ManualSeverity>(MANUAL_ALERT_DEFAULTS.severity)
   const [manualChannel, setManualChannel] = useState(MANUAL_ALERT_DEFAULTS.channel)
   const [manualThreshold, setManualThreshold] = useState(MANUAL_ALERT_DEFAULTS.threshold)
 
-  const loadAlerts = useCallback(async () => {
+  const loadAlerts = useCallback(async (): Promise<AlertLoadResult> => {
     setLoading(!hasLoadedOnce.current)
     setError(null)
     try {
       const response = await fetchWithTimeout('/api/alerts', { cache: 'no-store' })
       const json = await response.json().catch(() => null)
       if (!response.ok || !json?.ok) throw new Error(getApiErrorMessage(json, 'No se pudieron cargar los avisos.'))
-      setAlerts((json.data as AlertRow[]) ?? [])
+      if (!Array.isArray(json.data)
+        || !Number.isSafeInteger(json.counts?.total)
+        || !Number.isSafeInteger(json.counts?.unread)
+        || json.counts.total < 0
+        || json.counts.unread < 0
+        || json.counts.unread > json.counts.total) {
+        throw new Error('El servidor no devolvió contadores verificables para los avisos.')
+      }
+      const data = json.data as AlertRow[]
+      const nextCounts = { total: json.counts.total as number, unread: json.counts.unread as number }
+      setAlerts(data)
+      setCounts(nextCounts)
       hasLoadedOnce.current = true
+      return { ok: true, data, counts: nextCounts }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Error al cargar los avisos.')
+      const message = caught instanceof Error ? caught.message : 'Error al cargar los avisos.'
+      setError(message)
+      return { ok: false, message }
     } finally {
       setLoading(false)
     }
@@ -92,8 +117,8 @@ export function AlertsWorkspace() {
 
   useEffect(() => { void loadAlerts() }, [loadAlerts])
 
-  const unreadCount = alerts.filter(alert => !alert.is_read).length
-  const readCount = alerts.length - unreadCount
+  const unreadCount = counts.unread
+  const readCount = Math.max(0, counts.total - counts.unread)
   const filtered = useMemo(() => {
     return filterAlertRows(alerts, { type: typeFilter, read: readFilter, module: moduleFilter, query })
   }, [alerts, moduleFilter, query, readFilter, typeFilter])
@@ -108,6 +133,8 @@ export function AlertsWorkspace() {
   const activeFilterCount = Number(typeFilter !== 'all') + Number(moduleFilter !== 'all') + Number(query.trim().length > 0)
 
   const handleToggleRead = useCallback(async (id: string, next: boolean) => {
+    const currentAlert = alerts.find(alert => alert.id === id)
+    if (!currentAlert || currentAlert.is_read === next) return
     setBusyId(id)
     try {
       const response = await fetch(`/api/alerts/${id}`, {
@@ -116,14 +143,20 @@ export function AlertsWorkspace() {
       const json = await response.json().catch(() => null)
       if (!response.ok || !json?.ok) throw new Error(getApiErrorMessage(json, 'No se pudo actualizar el aviso.'))
       setAlerts(previous => previous.map(alert => alert.id === id ? { ...alert, is_read: next } : alert))
+      setCounts(previous => ({
+        ...previous,
+        unread: Math.max(0, previous.unread + (next ? -1 : 1)),
+      }))
     } catch (caught) {
       toast.error('No se pudo actualizar el aviso', caught instanceof Error ? caught.message : 'Inténtalo nuevamente.')
     } finally {
       setBusyId(null)
     }
-  }, [toast])
+  }, [alerts, toast])
 
   const handleDelete = useCallback(async (id: string) => {
+    const target = alerts.find(alert => alert.id === id)
+    if (!target) return
     setBusyId(id)
     try {
       const response = await fetch(`/api/alerts/${id}`, { method: 'DELETE' })
@@ -132,70 +165,113 @@ export function AlertsWorkspace() {
         throw new Error(getApiErrorMessage(json, 'No se pudo eliminar el aviso.'))
       }
       setAlerts(previous => previous.filter(alert => alert.id !== id))
+      setCounts(previous => ({
+        total: Math.max(0, previous.total - 1),
+        unread: Math.max(0, previous.unread - (target.is_read ? 0 : 1)),
+      }))
       toast.success('Aviso eliminado', undefined, { persist: false })
     } catch (caught) {
       toast.error('No se pudo eliminar el aviso', caught instanceof Error ? caught.message : 'Inténtalo nuevamente.')
     } finally {
       setBusyId(null)
     }
-  }, [toast])
+  }, [alerts, toast])
 
   const handleMarkAllRead = useCallback(async () => {
-    const unread = alerts.filter(alert => !alert.is_read)
-    if (!unread.length) return
+    if (unreadCount === 0) return
     setBulkBusy(true)
-    const result = await markAlertsReadIndividually(unread, async id => {
-      try {
-        const response = await fetch(`/api/alerts/${id}`, {
-          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_read: true }),
-        })
-        const json = await response.json().catch(() => null)
-        return response.ok && json?.ok === true
-      } catch {
-        return false
+    try {
+      const response = await fetch('/api/alerts', { method: 'PATCH', cache: 'no-store' })
+      const json = await response.json().catch(() => null)
+      const updatedCount = json?.data?.updatedCount
+      if (!response.ok || !json?.ok || !Number.isSafeInteger(updatedCount) || json.data?.remainingUnreadCount !== 0) {
+        await loadAlerts()
+        throw new Error(getApiErrorMessage(json, 'No se pudo confirmar la lectura de todos los avisos.'))
       }
-    })
-    if (result.confirmedIds.length) {
-      const confirmed = new Set(result.confirmedIds)
-      setAlerts(previous => previous.map(alert => confirmed.has(alert.id) ? { ...alert, is_read: true } : alert))
+
+      setAlerts(previous => previous.map(alert => ({ ...alert, is_read: true })))
+      setCounts(previous => ({ ...previous, unread: 0 }))
+
+      const refreshed = await loadAlerts()
+      if (!refreshed.ok) {
+        throw new Error('El servidor confirmó la operación, pero no se pudo recargar la bandeja. Actualízala para verificar el estado.')
+      }
+      if (refreshed.counts.unread > 0) {
+        throw new Error(`La verificación encontró ${refreshed.counts.unread} aviso(s) todavía sin leer. Puedes reintentar.`)
+      }
+
+      toast.success(`${updatedCount} aviso(s) marcado(s) como leídos`, undefined, { persist: false })
+    } catch (caught) {
+      toast.error('No se pudieron marcar todos como leídos', caught instanceof Error ? caught.message : 'Inténtalo nuevamente.')
+    } finally {
+      setBulkBusy(false)
     }
-    if (result.failedIds.length) {
-      toast.error('Lectura parcial', `${result.confirmedIds.length} confirmado(s) · ${result.failedIds.length} pendiente(s). Puedes reintentar los que siguen sin leerse.`)
-    } else {
-      toast.success(`${result.confirmedIds.length} aviso(s) marcado(s) como leídos`, undefined, { persist: false })
-    }
-    setBulkBusy(false)
-  }, [alerts, toast])
+  }, [loadAlerts, toast, unreadCount])
 
   const handleDeleteRead = useCallback(async () => {
     setBulkBusy(true)
     try {
-      const response = await fetch('/api/alerts', { method: 'DELETE' })
-      if (!response.ok && response.status !== 204) {
-        const json = await response.json().catch(() => null)
-        throw new Error(getApiErrorMessage(json, 'No se pudieron eliminar los avisos leídos.'))
+      const response = await fetch('/api/alerts?scope=read', { method: 'DELETE', cache: 'no-store' })
+      const json = await response.json().catch(() => null)
+      const deletedCount = json?.data?.deletedCount
+      if (!response.ok || !json?.ok || !Number.isSafeInteger(deletedCount) || json.data?.remainingReadCount !== 0) {
+        await loadAlerts()
+        throw new Error(getApiErrorMessage(json, 'No se pudo confirmar la eliminación de los avisos leídos.'))
       }
-      setAlerts(previous => previous.filter(alert => !alert.is_read))
+
+      const refreshed = await loadAlerts()
+      if (!refreshed.ok) {
+        throw new Error('El servidor confirmó la eliminación, pero no se pudo recargar la bandeja. Actualízala para verificar el estado.')
+      }
+      if (refreshed.counts.total - refreshed.counts.unread > 0) {
+        throw new Error(`La verificación encontró ${refreshed.counts.total - refreshed.counts.unread} aviso(s) leído(s) todavía en la bandeja.`)
+      }
+
       setDeleteReadConfirmOpen(false)
-      toast.success(`${readCount} aviso(s) leído(s) eliminado(s)`, undefined, { persist: false })
+      toast.success(`${deletedCount} aviso(s) leído(s) eliminado(s)`, undefined, { persist: false })
     } catch (caught) {
       toast.error('No se pudieron eliminar los avisos', caught instanceof Error ? caught.message : 'Inténtalo nuevamente.')
     } finally {
       setBulkBusy(false)
     }
-  }, [readCount, toast])
+  }, [loadAlerts, toast])
+
+  const handleClearInbox = useCallback(async () => {
+    setBulkBusy(true)
+    try {
+      const response = await fetch('/api/alerts?scope=all', { method: 'DELETE', cache: 'no-store' })
+      const json = await response.json().catch(() => null)
+      const deletedCount = json?.data?.deletedCount
+      if (!response.ok || !json?.ok || !Number.isSafeInteger(deletedCount) || json.data?.remainingCount !== 0) {
+        await loadAlerts()
+        throw new Error(getApiErrorMessage(json, 'No se pudo confirmar que la bandeja quedó vacía.'))
+      }
+
+      const refreshed = await loadAlerts()
+      if (!refreshed.ok) {
+        throw new Error('El servidor confirmó la eliminación, pero no se pudo recargar la bandeja. Actualízala para verificar el estado.')
+      }
+      if (refreshed.counts.total > 0) {
+        throw new Error(`La verificación encontró ${refreshed.counts.total} aviso(s) todavía en la bandeja. Puedes volver a vaciarla.`)
+      }
+
+      setClearInboxConfirmOpen(false)
+      toast.success('Bandeja vacía', `${deletedCount} aviso(s) eliminado(s).`, { persist: false })
+    } catch (caught) {
+      toast.error('No se pudo vaciar la bandeja', caught instanceof Error ? caught.message : 'Inténtalo nuevamente.')
+    } finally {
+      setBulkBusy(false)
+    }
+  }, [loadAlerts, toast])
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true)
     try {
-      const response = await fetch('/api/alerts/generate', { method: 'POST' })
-      const json = await response.json().catch(() => null)
-      if (!response.ok || !json?.ok) throw new Error(getApiErrorMessage(json, 'No se pudieron actualizar los avisos.'))
-      const { created, skipped } = json.data as { created: number; skipped: number }
-      toast.success('Avisos actualizados', `${created} nuevo(s) · ${skipped} ya existente(s)`, { persist: false })
-      await loadAlerts()
+      const result = await loadAlerts()
+      if (!result.ok) throw new Error(result.message)
+      toast.success('Bandeja actualizada', `${result.counts.total} aviso(s) en tu cuenta.`, { persist: false })
     } catch (caught) {
-      toast.error('No se pudieron actualizar los avisos', caught instanceof Error ? caught.message : 'Inténtalo nuevamente.')
+      toast.error('No se pudo recargar la bandeja', caught instanceof Error ? caught.message : 'Inténtalo nuevamente.')
     } finally {
       setRefreshing(false)
     }
@@ -290,6 +366,7 @@ export function AlertsWorkspace() {
   const createDiscardMessage = 'Los cambios del aviso se descartarán. El aviso solo se guarda manualmente en la bandeja; el canal y el umbral se conservan como metadatos.'
   const deleteReadCount = `${readCount} aviso${readCount === 1 ? '' : 's'} leído${readCount === 1 ? '' : 's'}`
   const deleteReadMessage = `Se eliminará${readCount === 1 ? '' : 'n'} ${deleteReadCount} de la bandeja. Los avisos no leídos no se eliminarán.`
+  const clearInboxMessage = 'Se eliminarán permanentemente todos los avisos de tu cuenta, leídos y sin leer, incluido el historial informativo guardado en esta bandeja, incluso los que no coincidan con los filtros. Esta acción no se puede deshacer. Solo se eliminarán estos avisos y registros informativos; tus movimientos y demás datos financieros permanecerán intactos.'
 
   return (
     <>
@@ -331,9 +408,10 @@ export function AlertsWorkspace() {
             Filtros{activeFilterCount > 0 ? <span className={styles.filterCount}>{activeFilterCount}</span> : null}
           </Button>
           <div className={styles.bulkActions}>
-            <Button type="button" variant="ghost" size="sm" loading={refreshing} onClick={() => void handleRefresh()} testId="alerts-refresh-button">Actualizar avisos</Button>
-            <Button type="button" variant="ghost" size="sm" disabled={bulkBusy || unreadCount === 0} onClick={() => void handleMarkAllRead()} testId="alerts-mark-all-read-button">Marcar todos como leídos</Button>
-            <Button type="button" variant="ghost" size="sm" disabled={bulkBusy || readCount === 0} onClick={() => setDeleteReadConfirmOpen(true)} testId="alerts-delete-read-button">Eliminar leídos</Button>
+            <Button type="button" variant="ghost" size="sm" loading={refreshing} disabled={bulkBusy} onClick={() => void handleRefresh()} testId="alerts-refresh-button">Actualizar avisos</Button>
+            <Button type="button" variant="ghost" size="sm" disabled={bulkBusy || refreshing || unreadCount === 0} title="Marca como leídos todos los avisos sin leer de la cuenta, aunque no estén visibles o coincidan con los filtros." ariaLabel="Marcar como leídos todos los avisos sin leer de la cuenta" onClick={() => void handleMarkAllRead()} testId="alerts-mark-all-read-button">Marcar todos como leídos</Button>
+            <Button type="button" variant="ghost" size="sm" disabled={bulkBusy || refreshing || readCount === 0} onClick={() => setDeleteReadConfirmOpen(true)} testId="alerts-delete-read-button">Eliminar leídos</Button>
+            <Button type="button" variant="danger" size="sm" disabled={bulkBusy || refreshing || counts.total === 0} title="Elimina todos los avisos leídos y sin leer de la cuenta." onClick={() => setClearInboxConfirmOpen(true)} testId="alerts-clear-inbox-button">Vaciar bandeja</Button>
           </div>
         </div>
 
@@ -424,6 +502,7 @@ export function AlertsWorkspace() {
 
       <ConfirmDialog open={discardTarget === 'create'} title="¿Descartar cambios?" message={createDiscardMessage} onConfirm={confirmDiscardCreate} onCancel={() => setDiscardTarget(null)} confirmLabel="Descartar cambios" cancelLabel="Seguir editando" danger testId="alerts-discard-confirmation" />
       <ConfirmDialog open={deleteReadConfirmOpen} title="Eliminar avisos leídos" message={deleteReadMessage} onConfirm={() => void handleDeleteRead()} onCancel={() => setDeleteReadConfirmOpen(false)} loading={bulkBusy} danger confirmLabel="Eliminar avisos leídos" testId="alerts-delete-read-confirmation" />
+      <ConfirmDialog open={clearInboxConfirmOpen} title="¿Vaciar toda la bandeja?" message={clearInboxMessage} onConfirm={() => void handleClearInbox()} onCancel={() => setClearInboxConfirmOpen(false)} loading={bulkBusy} danger confirmLabel="Vaciar bandeja" cancelLabel="Conservar avisos" testId="alerts-clear-inbox-confirmation" />
     </>
   )
 }

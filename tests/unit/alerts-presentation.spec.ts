@@ -1,34 +1,9 @@
 import { expect, test } from '@playwright/test'
-import { filterAlertRows, isValidAlertHref, markAlertsReadIndividually } from '@/components/alerts/alerts-presentation'
+import { filterAlertRows, isValidAlertHref } from '@/components/alerts/alerts-presentation'
 import { moduleLabel } from '@/components/alerts/AlertBadge'
 import { formatManualAlertMessage } from '@/modules/alerts/manual-alert-message'
 
 test.describe('Alerts R1 presentation and bulk reconciliation', () => {
-  test('marks only individually confirmed unread notices and leaves failed ones retryable', async () => {
-    const notices = [
-      { id: 'confirmed', is_read: false },
-      { id: 'http-failure', is_read: false },
-      { id: 'network-failure', is_read: false },
-    ]
-    const result = await markAlertsReadIndividually(notices, async id => {
-      if (id === 'confirmed') return true
-      if (id === 'network-failure') throw new Error('offline')
-      return false
-    })
-
-    expect(result).toEqual({ confirmedIds: ['confirmed'], failedIds: ['http-failure', 'network-failure'] })
-    expect(notices.filter(notice => !result.confirmedIds.includes(notice.id)).every(notice => !notice.is_read)).toBe(true)
-  })
-
-  test('keeps a successful bulk read result exact when every request succeeds', async () => {
-    const result = await markAlertsReadIndividually([
-      { id: 'one', is_read: false },
-      { id: 'two', is_read: false },
-    ], async () => true)
-
-    expect(result).toEqual({ confirmedIds: ['one', 'two'], failedIds: [] })
-  })
-
   test('combines read state, severity, module and accent-insensitive search without changing classification', () => {
     const alerts = [
       { id: 'target', is_read: false, alert_type: 'CRITICAL', source_module: 'budgets', title: 'Vencimiento próximo', message: 'Revisar presupuesto' },
