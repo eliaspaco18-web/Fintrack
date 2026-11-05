@@ -6,8 +6,10 @@
 // USO DESDE CUALQUIER CLIENT COMPONENT:
 //   const { toast } = useToast()
 //   toast.success('Transacción registrada')
+//   toast.success('Evento auditable', undefined, { persist: true, event: 'EXPLICIT_EVENT' })
 //   toast.error('No se pudo eliminar', 'Hay cuotas pagadas vinculadas')
 //   toast.promise(myAction(), { loading: 'Guardando…', success: '¡Listo!', error: 'Error' })
+// Los éxitos son temporales salvo que persist: true se solicite explícitamente.
 // =============================================================================
 
 'use client'
@@ -148,7 +150,7 @@ interface ToastHelpers {
   info:    (title: string, detail?: string) => void
   promise: <T>(
     p:       Promise<T>,
-    options: { loading: string; success: string; error: string }
+    options: { loading: string; success: string; error: string } & SuccessToastOptions
   ) => Promise<T>
   dismiss: (id: string) => void
   clear:   () => void
@@ -192,7 +194,7 @@ export function useToast(): { toast: ToastHelpers } {
   const toast: ToastHelpers = {
     success: (title: string, detail?: string, options?: SuccessToastOptions) => {
       ctx.add({ variant: 'success', title, detail })
-      if (options?.persist === false) return
+      if (options?.persist !== true) return
       persistSuccessActivity(title, detail, {
         category: options?.category,
         event: options?.event,
@@ -208,7 +210,9 @@ export function useToast(): { toast: ToastHelpers } {
         const result = await p
         ctx.remove(id)
         ctx.add({ variant: 'success', title: opts.success })
-        persistSuccessActivity(opts.success)
+        if (opts.persist === true) {
+          persistSuccessActivity(opts.success, undefined, opts)
+        }
         return result
       } catch (e) {
         ctx.remove(id)
