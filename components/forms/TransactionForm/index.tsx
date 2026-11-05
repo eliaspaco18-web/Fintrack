@@ -365,6 +365,8 @@ interface TransactionFormProps {
     receivableCollectedAmount: number
     payablePaidAmount: number
   }
+  /** Prevents FX persistence during preflight-only flows such as duplication. */
+  ensureExchangeRateOnMount?: boolean
 }
 
 // ─── COMPONENTE ───────────────────────────────────────────────────────────────
@@ -383,6 +385,7 @@ export function TransactionForm({
   transactionId,
   onEditSuccess,
   editContext,
+  ensureExchangeRateOnMount = true,
 }: TransactionFormProps) {
   const router = useRouter()
   const { exchangeRate: liveExchangeRate } = useCurrency()
@@ -712,7 +715,7 @@ export function TransactionForm({
       setCurrentRateVerified(false)
       setRefreshingLiveRate(true)
       try {
-        const params = new URLSearchParams({ mode: 'accounting', ensure: '1' })
+        const params = new URLSearchParams({ mode: 'accounting', ensure: ensureExchangeRateOnMount ? '1' : '0' })
         if (transactionDate) params.set('date', transactionDate)
 
         const res = await fetch(`/api/exchange-rate?${params.toString()}`, { cache: 'no-store' })
@@ -736,7 +739,7 @@ export function TransactionForm({
 
     void refreshRate()
     return () => { active = false }
-  }, [initialEditDate, initialEditExchangeRate, isEditMode, transactionDate])
+  }, [ensureExchangeRateOnMount, initialEditDate, initialEditExchangeRate, isEditMode, transactionDate])
 
   useEffect(() => {
     if (currency !== 'USD') return

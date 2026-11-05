@@ -19,6 +19,10 @@ declare global {
     __mountAssetsWorkspace?: () => void
     __mountUsdTransactionForm?: () => void
     __routeDebug?: { path: string; search: string }
+    __transactionRoot?: { render: (node: unknown) => void }
+    __duplicateFixture?: Record<string, unknown>
+    __duplicateCreates?: Array<Record<string, unknown>>
+    __mountRealDuplicateModal?: () => void
   }
 }
 
@@ -171,7 +175,7 @@ function browserMocks(): string {
       description ? React.createElement('small', null, description) : null, children,
       error ? React.createElement('span', { role: 'alert' }, error) : null);
     const Input = React.forwardRef((props, ref) => React.createElement('input', { ...props, ref, 'aria-label': props['aria-label'] ?? props.label }));
-    const Select = props => React.createElement('select', { ...props, 'aria-label': props['aria-label'] ?? props.label }, props.children);
+    const Select = React.forwardRef((props, ref) => React.createElement('select', { ...props, ref, 'aria-label': props['aria-label'] ?? props.label }, props.children));
     const Textarea = React.forwardRef((props, ref) => React.createElement('textarea', { ...props, ref, 'aria-label': props['aria-label'] ?? props.label }));
     const AmountInput = props => React.createElement('input', { ...props, 'aria-label': props['aria-label'] ?? props.label, inputMode: 'decimal' });
     const CheckboxToggle = ({ label, ...props }) => React.createElement('label', null, label, React.createElement('input', { type: 'checkbox', ...props }));
@@ -187,7 +191,7 @@ function browserMocks(): string {
       SuccessSummary: () => null,
     };
     window.__fintrackModules['@/lib/constants/category-keys'] = {
-      CategoryKeys: new Proxy({}, { get: (_target, key) => String(key) }), getModuleTrigger: () => null,
+      CategoryKeys: new Proxy({}, { get: (_target, key) => String(key) }), getModuleTrigger: () => null, isLockedCategorySystemKey: () => false,
     };
     window.__fintrackModules['@/modules/transactions/credit-card-transfer-policy'] = { getCreditCardTransferPolicy: () => ({ violation: null }) };
     window.__fintrackModules['@/lib/api/error-message'] = { getApiErrorMessage: () => 'Error' };
@@ -202,12 +206,22 @@ function browserMocks(): string {
       OptionalSection: ({ children, title }) => React.createElement('section', null, title, children),
     };
     window.__fintrackModules['@/components/ui/RecordModal'] = { RecordModalFooter: ({ children }) => children };
-    window.__fintrackModules['@/app/actions/transaction.actions'] = { updateTransactionAction: async () => ({ ok: false }) };
+    window.__duplicateCreates = [];
+    window.__fintrackModules['@/app/actions/transaction.actions'] = {
+      updateTransactionAction: async () => ({ ok: false }),
+      createTransactionAction: async payload => {
+        window.__duplicateCreates.push(payload);
+        return { ok: true, data: { id: 'synthetic-created-transaction' } };
+      },
+    };
     window.__fintrackModules['./form.orchestrator'] = window.__fintrackFormOrchestrator;
     window.__fintrackModules['@/components/forms/transaction-edit-presentation'] = { getTransactionEditPresentation: () => ({ blocked: false }) };
     window.__fintrackModules['./NestedRecordCreationModals'] = { NestedAccountCreateModal: () => null, NestedCategoryCreateModal: () => null };
     window.__fintrackModules['@/components/finance'] = { StatusBadge: () => null };
-    window.__fintrackModules['@/components/forms/TransactionForm/IncomeDatePicker'] = { IncomeDatePicker: props => React.createElement('input', { ...props, type: 'date', 'aria-label': props.inputLabel ?? 'Fecha' }) };
+    window.__fintrackModules['@/components/forms/TransactionForm/IncomeDatePicker'] = { IncomeDatePicker: props => React.createElement('input', {
+      value: props.value ?? '', type: 'date', 'data-testid': props.inputTestId ?? 'transaction-date-input',
+      onChange: event => props.onChange?.(event.target.value), 'aria-label': props.inputLabel ?? 'Fecha',
+    }) };
     window.__fintrackModules['./IncomeDatePicker'] = window.__fintrackModules['@/components/forms/TransactionForm/IncomeDatePicker'];
     window.__fintrackModules['@/modules/attachments/attachment-client'] = { getAttachmentAvailabilityOutcome: () => ({ available: false }), requestAttachmentUpload: async () => ({}) };
     window.__fintrackModules['@/modules/attachments/attachment-integrity'] = { MAX_FINANCIAL_ATTACHMENT_BYTES: 5_000_000 };
@@ -312,6 +326,7 @@ async function mountIntegratedFlow(page: Page) {
     const React = window.React;
     const root = window.ReactDOM.createRoot(document.getElementById('root'));
     root.render(React.createElement(window.__fintrackExports.DashboardRound07));
+    window.__transactionRoot = root;
     window.__mountAssetsWorkspace = () => root.render(React.createElement(window.__fintrackExports.AssetsWorkspace, { demoAllowed: false }));
     window.__mountUsdTransactionForm = () => root.render(React.createElement(window.__fintrackExports.TransactionForm, {
       options: window.__fintrackOptions,
@@ -350,6 +365,61 @@ async function mountIntegratedFlow(page: Page) {
     throw new Error(`Integrated dashboard did not mount: ${pageErrors.join(' | ') || 'no browser exception captured'}`)
   })
   return pageErrors
+}
+
+async function installRealDuplicateModal(page: Page) {
+  await page.evaluate(() => {
+    window.__fintrackModules['@/components/forms/TransactionForm/FormFields'] = window.__fintrackModules['./FormFields']
+  })
+  await page.addScriptTag({ content: compileComponent('components/forms/transaction-edit-data.ts', 'firstLinkedRecord', 'firstLinkedRecord', ['inferOperationType', 'toInitialValues']) })
+  await page.addScriptTag({ content: `window.__fintrackModules['@/components/forms/transaction-edit-data'] = {
+    firstLinkedRecord: window.__fintrackExports.firstLinkedRecord,
+    inferOperationType: window.__fintrackExports.inferOperationType,
+    toInitialValues: window.__fintrackExports.toInitialValues,
+  };` })
+  await page.addScriptTag({ content: compileComponent('modules/transactions/transaction-duplication.ts', 'buildTransactionDuplicationPlan', 'buildTransactionDuplicationPlan', ['getTransactionDuplicationBlockReason']) })
+  await page.addScriptTag({ content: `window.__fintrackModules['@/modules/transactions/transaction-duplication'] = {
+    buildTransactionDuplicationPlan: window.__fintrackExports.buildTransactionDuplicationPlan,
+    getTransactionDuplicationBlockReason: window.__fintrackExports.getTransactionDuplicationBlockReason,
+  };` })
+  await page.evaluate(() => {
+    const module = window.__fintrackModules['@/modules/transactions/transaction-duplication']
+    const build = module.buildTransactionDuplicationPlan
+    module.buildTransactionDuplicationPlan = (...args: any[]) => {
+      const plan = build(...args)
+      ;(window as any).__lastDuplicatePlan = plan
+      return plan
+    }
+  })
+  await page.addScriptTag({ content: compileComponent('components/forms/use-transaction-edit-record.ts', 'useTransactionEditRecord', 'useTransactionEditRecord') })
+  await page.addScriptTag({ content: `window.__fintrackModules['@/components/forms/use-transaction-edit-record'] = { useTransactionEditRecord: window.__fintrackExports.useTransactionEditRecord };` })
+  await page.addScriptTag({ content: compileComponent('components/forms/TransactionEditModal.tsx', 'TransactionEditModal', 'TransactionEditModal') })
+  await page.addScriptTag({ content: `window.__fintrackModules['@/components/forms/TransactionEditModal'] = { TransactionEditModal: window.__fintrackExports.TransactionEditModal };` })
+  await page.evaluate(() => {
+    const React = (window as any).React
+    const fixture = {
+      id: 'synthetic-original-1', type: 'EXPENSE', amount: 84.25, amount_pen: 84.25, currency: 'PEN',
+      description: 'Compra ficticia de validación', transaction_date: '2026-10-18', category_id: 'expense-category',
+      category: { id: 'expense-category', system_key: null }, notes: 'Nota de prueba completa',
+      payment_method: 'DEBIT', source_account_id: 'synthetic-account', destination_account_id: null,
+      budget_id: null, is_recurring: false, recurring_transaction_id: null, attachment_url: 'must-not-copy.pdf',
+      sub_type: null, linked_asset: null, linked_receivable: null, linked_payable: null, linked_credit: null, linked_loan: null,
+    }
+    window.__duplicateFixture = fixture
+    window.__fintrackModules['@/components/forms/TransactionForm'] = { TransactionForm: window.__fintrackExports.TransactionForm }
+    window.__transactionRoot?.render(React.createElement(function RealDuplicateHarness() {
+      const [open, setOpen] = React.useState(false)
+      const [transactionId, setTransactionId] = React.useState(null as string | null)
+      return React.createElement(React.Fragment, null,
+        React.createElement('button', { type: 'button', onClick: () => { setTransactionId('synthetic-original-1'); setOpen(true) } }, 'Duplicar movimiento ficticio'),
+        React.createElement('button', { type: 'button', onClick: () => { setTransactionId('synthetic-original-2'); setOpen(true) } }, 'Duplicar segundo movimiento ficticio'),
+        React.createElement(window.__fintrackExports.TransactionEditModal, {
+          open, transactionId, intent: 'duplicate', options: window.__fintrackOptions,
+          onClose: () => setOpen(false), onCreated: () => {},
+        }))
+    }))
+    window.__mountRealDuplicateModal = () => {}
+  })
 }
 
 async function expectNoBrowserErrors(page: Page) {
@@ -474,6 +544,130 @@ test('USD transaction does not auto-apply the numeric context fallback when the 
   await expect(form.getByText('Tipo de cambio no disponible')).toBeVisible()
   await expect(form.getByText('No disponible').first()).toBeVisible()
   expect(await page.evaluate(() => window.__unexpectedSupabaseCalls)).toBe(0)
+})
+
+test('duplicate opens the real TransactionForm with API fixture data, creates independently, cancels cleanly, and resets between records', async ({ page }, testInfo) => {
+  const fixtures: Record<string, Record<string, unknown>> = {
+    'synthetic-original-1': {
+      id: 'synthetic-original-1', type: 'EXPENSE', amount: 84.25, amount_pen: 84.25, currency: 'PEN',
+      description: 'Compra ficticia de validación', transaction_date: '2026-10-18', category_id: 'expense-category',
+      category: { id: 'expense-category', system_key: null }, notes: 'Nota de prueba completa', payment_method: 'DEBIT',
+      source_account_id: 'synthetic-account', destination_account_id: null, budget_id: null, is_recurring: false,
+      attachment_url: 'must-not-copy.pdf', recurring_transaction_id: null, sub_type: null,
+      linked_asset: null, linked_receivable: null, linked_payable: null, linked_credit: null, linked_loan: null,
+    },
+    'synthetic-original-2': {
+      id: 'synthetic-original-2', type: 'EXPENSE', amount: 18.5, amount_pen: 18.5, currency: 'PEN',
+      description: 'Otro gasto de prueba', transaction_date: '2026-10-03', category_id: 'expense-category-2',
+      category: { id: 'expense-category-2', system_key: null }, notes: 'Nota del segundo movimiento', payment_method: 'DEBIT',
+      source_account_id: 'synthetic-account-2', destination_account_id: null, budget_id: null, is_recurring: false,
+      attachment_url: null, recurring_transaction_id: null, sub_type: null,
+      linked_asset: null, linked_receivable: null, linked_payable: null, linked_credit: null, linked_loan: null,
+    },
+  }
+  const browserErrors = await mountIntegratedFlow(page)
+  await page.route('**/api/transactions/synthetic-original-*', async route => {
+    const id = new URL(route.request().url()).pathname.split('/').pop()
+    const data = fixtures[id ?? '']
+    if (!data) throw new Error(`Missing synthetic transaction fixture for ${id}`)
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, data }) })
+  })
+  await page.route('**/api/budgets?**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, data: [] }) }))
+  await page.evaluate(() => {
+    const options = window.__fintrackOptions as typeof formOptions
+    options.accounts.push({ value: 'synthetic-account-2', label: 'Segunda cuenta ficticia', meta: { currency: 'PEN', type: 'CHECKING', balance: 900 } })
+    options.categories.expense.push({ value: 'expense-category-2', label: 'Transporte', system_key: null })
+  })
+  await installRealDuplicateModal(page)
+  const formCss = readFileSync(join(process.cwd(), 'components/forms/TransactionForm/IncomeTransactionForm.module.css'), 'utf8')
+    .replace(/:global\(([^()]*)\)/g, '$1')
+  await page.addStyleTag({ content: formCss })
+  await page.addStyleTag({ content: `
+    body { margin:0; padding:20px; background:#f3f6f4; color:#26352d; font:14px/1.5 Manrope,Inter,system-ui,sans-serif; }
+    .max-h-0 { max-height:0 !important; } .opacity-0 { opacity:0 !important; } .w-0 { width:0 !important; } .overflow-hidden { overflow:hidden !important; }
+    [role=dialog] { width:min(620px,96vw); max-height:none; overflow:visible; margin:2vh auto; padding:24px; border:1px solid #dbe5df; border-radius:18px; background:white; box-shadow:0 18px 60px #18382925; color:#26352d; font:14px/1.5 Manrope,Inter,system-ui,sans-serif; }
+    [role=dialog] form[data-testid=transaction-form] { display:grid; gap:14px; }
+    [role=dialog] input:not([type=checkbox]), [role=dialog] select, [role=dialog] textarea { width:100%; min-height:42px; padding:9px 11px; border:1px solid #d6e0da; border-radius:9px; background:white; color:#203128; font:14px/1.4 Manrope,Inter,system-ui,sans-serif; }
+    [role=dialog] textarea { min-height:70px; }
+    [role=dialog] label { display:grid; gap:6px; color:#53635a; font-size:12px; font-weight:600; }
+    [role=dialog] h2, [role=dialog] h3 { margin:12px 0 4px; font:700 15px/1.35 Manrope,Inter,system-ui,sans-serif; color:#26352d; }
+    [role=dialog] button { min-height:38px; padding:6px 12px; border:1px solid #d6e0da; border-radius:9px; background:#fff; color:#26352d; font:600 13px Manrope,Inter,system-ui,sans-serif; }
+    [role=dialog] button[type=submit] { background:#245c42; border-color:#245c42; color:white; }
+    @media(max-width:520px) { body { padding:8px; } [role=dialog] { margin:1vh auto; padding:18px 14px; border-radius:14px; } }
+  ` })
+
+  await page.getByRole('button', { name: 'Duplicar movimiento ficticio' }).waitFor({ timeout: 3000 }).catch(async () => {
+    throw new Error(`Real duplicate harness did not mount; root=${await page.locator('#root').innerHTML()}; errors=${JSON.stringify(await page.evaluate(() => window.__browserErrors))}`)
+  })
+  await page.getByRole('button', { name: 'Duplicar movimiento ficticio' }).click()
+  const modal = page.getByRole('dialog', { name: 'Duplicar movimiento' })
+  const form = modal.getByTestId('transaction-form')
+  await expect(form).toBeVisible().catch(async () => {
+    throw new Error(`Duplicate form did not load: body=${(await page.locator('body').innerText()).slice(0, 1200)}; errors=${JSON.stringify(await page.evaluate(() => window.__browserErrors))}`)
+  })
+  await expect(form).toHaveAttribute('data-operation-layout', 'expense')
+  await expect(form).not.toHaveAttribute('data-transaction-id')
+  await expect(form.getByTestId('transaction-amount-input')).toHaveValue('84.25')
+  await expect(form.getByTestId('transaction-date-input')).toHaveValue('2026-10-18')
+  await expect(form.getByTestId('transaction-description-input')).toHaveValue('Compra ficticia de validación')
+  await expect(form.getByTestId('transaction-source-account-select')).toHaveValue('synthetic-account')
+  await expect(form.getByTestId('transaction-category-select')).toHaveValue('expense-category')
+  await form.getByRole('button', { name: 'Notas' }).click()
+  await expect(form.getByTestId('transaction-notes-input')).toHaveValue('Nota de prueba completa')
+  expect(await page.evaluate(() => window.__unexpectedSupabaseCalls)).toBe(0)
+
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await modal.evaluate(element => { (element as HTMLElement).scrollTop = 0 })
+  await page.locator('#root > button').evaluateAll(elements => elements.forEach(element => { (element as HTMLElement).style.visibility = 'hidden' }))
+  await page.screenshot({ path: testInfo.outputPath('duplicate-real-form-desktop.png'), fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await modal.evaluate(element => { (element as HTMLElement).scrollTop = 0 })
+  await page.screenshot({ path: testInfo.outputPath('duplicate-real-form-mobile.png'), fullPage: true })
+  await page.locator('#root > button').evaluateAll(elements => elements.forEach(element => { (element as HTMLElement).style.visibility = '' }))
+
+  await form.getByTestId('transaction-amount-input').fill('96.40')
+  await form.getByTestId('transaction-date-input').fill('2026-10-22')
+  await form.getByTestId('transaction-description-input').fill('Gasto editado antes de crear')
+  await form.getByTestId('transaction-source-account-select').selectOption('synthetic-account-2')
+  await form.getByTestId('transaction-category-select').selectOption('expense-category-2')
+  await form.getByTestId('transaction-notes-input').fill('Nota nueva editada')
+  await modal.getByRole('button', { name: 'Cancelar' }).click()
+  await expect(modal).toHaveCount(0)
+  expect(await page.evaluate(() => window.__duplicateCreates)).toHaveLength(0)
+
+  await page.getByRole('button', { name: 'Duplicar segundo movimiento ficticio' }).click()
+  const secondModal = page.getByRole('dialog', { name: 'Duplicar movimiento' })
+  const secondForm = secondModal.getByTestId('transaction-form')
+  await expect(secondForm.getByTestId('transaction-amount-input')).toHaveValue('18.5')
+  expect(await page.evaluate(() => (window as any).__lastDuplicatePlan?.initialValues)).toMatchObject({ category_id: 'expense-category-2' })
+  await expect(secondForm.getByTestId('transaction-date-input')).toHaveValue('2026-10-03')
+  await expect(secondForm.getByTestId('transaction-description-input')).toHaveValue('Otro gasto de prueba')
+  await expect(secondForm.getByTestId('transaction-source-account-select')).toHaveValue('synthetic-account-2')
+  await expect(secondForm.getByTestId('transaction-category-select')).toHaveValue('expense-category-2')
+  await secondForm.getByRole('button', { name: 'Notas' }).click()
+  await expect(secondForm.getByTestId('transaction-notes-input')).toHaveValue('Nota del segundo movimiento')
+  await secondForm.getByTestId('transaction-amount-input').fill('27.75')
+  await secondForm.getByTestId('transaction-date-input').fill('2026-10-24')
+  await secondForm.getByTestId('transaction-description-input').fill('Segundo duplicado independiente')
+  await secondForm.getByTestId('transaction-source-account-select').selectOption('synthetic-account')
+  await secondForm.getByTestId('transaction-category-select').selectOption('expense-category')
+  await secondForm.getByTestId('transaction-notes-input').fill('Notas actualizadas del segundo')
+  await secondForm.getByRole('button', { name: 'Registrar', exact: true }).click()
+
+  await expect(secondModal).toHaveCount(0)
+  const created = await page.evaluate(() => window.__duplicateCreates ?? [])
+  expect(created).toHaveLength(1)
+  const createdPayload = created[0] as Record<string, unknown>
+  expect(createdPayload).toMatchObject({
+    type: 'EXPENSE', amount: 27.75, currency: 'PEN', transaction_date: '2026-10-24',
+    description: 'Segundo duplicado independiente', source_account_id: 'synthetic-account',
+    category_id: 'expense-category', notes: 'Notas actualizadas del segundo',
+  })
+  expect(createdPayload).not.toHaveProperty('id')
+  expect(createdPayload).not.toHaveProperty('attachment_url')
+  expect(createdPayload).not.toHaveProperty('recurring_transaction_id')
+  expect(createdPayload.exchange_rate).toBeUndefined()
+  await expect.poll(() => browserErrors).toEqual([])
 })
 
 test('Assets Registrar activo opens the approved Comprar activo form directly', async ({ page }) => {

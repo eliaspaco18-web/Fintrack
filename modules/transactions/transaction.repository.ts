@@ -53,7 +53,9 @@ export class TransactionRepository extends BaseRepository {
           category:categories(id, name, icon, color, system_key),
           linked_asset:assets(id, name, asset_type, asset_type_id, serial_number, location, purchase_value, current_value, purchase_date, recipient),
           linked_receivable:accounts_receivable(id, debtor_id, debtor_name, due_date, concept, notes, amount, collected_amount, collected_date, currency, status),
-          linked_payable:accounts_payable(id, creditor_id, creditor_name, due_date, concept, notes, amount, paid_amount, paid_date, currency, status)
+          linked_payable:accounts_payable(id, creditor_id, creditor_name, due_date, concept, notes, amount, paid_amount, paid_date, currency, status),
+          linked_credit:credits!credits_transaction_id_fkey(id),
+          linked_loan:loans!loans_transaction_id_fkey(id)
         `)
         .eq('id', id)
         .eq('user_id', userId)

@@ -608,8 +608,15 @@ export function TransactionTable({
   const [deleteTransactionModalOpen, setDeleteTransactionModalOpen] = useState(false)
   const [deleteTransactionId, setDeleteTransactionId] = useState<string | null>(null)
   const [editTransactionId, setEditTransactionId] = useState<string | null>(null)
+  const [transactionModalIntent, setTransactionModalIntent] = useState<'edit' | 'duplicate'>('edit')
   const openEditTransaction = useCallback(async (id: string) => {
     if (onEnsureOptions && !(await onEnsureOptions())) return
+    setTransactionModalIntent('edit')
+    setEditTransactionId(id)
+  }, [onEnsureOptions])
+  const openDuplicateTransaction = useCallback(async (id: string) => {
+    if (onEnsureOptions && !(await onEnsureOptions())) return
+    setTransactionModalIntent('duplicate')
     setEditTransactionId(id)
   }, [onEnsureOptions])
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([])
@@ -1741,6 +1748,11 @@ export function TransactionTable({
                     <div className="flex justify-end">
                       <DataRowActions actions={[
                         {
+                          label: 'Duplicar',
+                          onClick: () => void openDuplicateTransaction(tx.id),
+                          testId: `transactions-mobile-row-duplicate-${tx.id}`,
+                        },
+                        {
                           label: 'Editar',
                           onClick: () => void openEditTransaction(tx.id),
                           testId: `transactions-mobile-row-edit-${tx.id}`,
@@ -1891,6 +1903,7 @@ export function TransactionTable({
                         className="h-8 w-8 rounded-control text-[var(--ft-text-muted)] hover:bg-[var(--ft-surface-hover)] hover:text-[var(--ft-text-strong)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ft-focus-ring-color)]"
                         actions={[
                           { id: 'detail', label: 'Ver detalle', onSelect: () => router.push(`/transactions/${tx.id}`) },
+                          { id: 'duplicate', label: 'Duplicar', detail: 'Crear un movimiento independiente con estos datos.', onSelect: () => void openDuplicateTransaction(tx.id) },
                           { id: 'delete', label: 'Eliminar', destructive: true, disabled: deleteState.status === 'loading', onSelect: () => openDeleteTransactionModal(tx.id) },
                         ]}
                       />
@@ -1918,12 +1931,18 @@ export function TransactionTable({
         <TransactionEditModal
           open={Boolean(editTransactionId)}
           transactionId={editTransactionId}
+          intent={transactionModalIntent}
           options={options}
           initialOperationType={selectedTransactionForEdit
             ? resolveTransactionOperationIconType(selectedTransactionForEdit)
             : null}
           onClose={() => setEditTransactionId(null)}
           onUpdated={() => {
+            setEditTransactionId(null)
+            void refresh()
+            router.refresh()
+          }}
+          onCreated={() => {
             setEditTransactionId(null)
             void refresh()
             router.refresh()
