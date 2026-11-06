@@ -21,11 +21,6 @@ export interface AlertFilterValues {
   query: string
 }
 
-export interface BulkReadResult {
-  confirmedIds: string[]
-  failedIds: string[]
-}
-
 const INTERNAL_ALERT_PATHS = [
   '/alerts',
   '/assets',
@@ -64,23 +59,4 @@ export function isValidAlertHref(href: string | null | undefined): href is strin
   } catch {
     return false
   }
-}
-
-export async function markAlertsReadIndividually<TAlert extends ReadableAlert>(
-  unreadAlerts: readonly TAlert[],
-  confirmRead: (id: string) => Promise<boolean>,
-): Promise<BulkReadResult> {
-  const confirmedIds: string[] = []
-  const failedIds: string[] = []
-
-  for (const alert of unreadAlerts) {
-    try {
-      if (await confirmRead(alert.id)) confirmedIds.push(alert.id)
-      else failedIds.push(alert.id)
-    } catch {
-      failedIds.push(alert.id)
-    }
-  }
-
-  return { confirmedIds, failedIds }
 }

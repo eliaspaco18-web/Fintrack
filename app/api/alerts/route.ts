@@ -10,6 +10,7 @@ import { z } from 'zod'
 import { createClient }              from '@/lib/supabase.server'
 import { getSessionUserId }          from '@/lib/api/response'
 import { formatManualAlertMessage }  from '@/modules/alerts/manual-alert-message'
+import { createAlertBulkRouteHandlers } from '@/modules/alerts/bulk-notifications'
 
 export const dynamic = 'force-dynamic'
 
@@ -53,7 +54,7 @@ export async function GET(req: NextRequest) {
 
   let query = supabase
     .from('app_notifications')
-    .select('id, alert_type, source_module, source_record_id, href, title, message, is_read, created_at')
+    .select('id, alert_type, source_module, source_record_id, href, title, message, is_read, created_at', { count: 'exact' })
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
 
@@ -62,15 +63,27 @@ export async function GET(req: NextRequest) {
   if (readParam === 'true')  query = query.eq('is_read', true)
   if (readParam === 'false') query = query.eq('is_read', false)
 
-  const { data, error } = await query
-  if (error) {
+  const [rowsResult, unreadCountResult] = await Promise.all([
+    query,
+    supabase
+      .from('app_notifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('is_read', false),
+  ])
+
+  if (rowsResult.error || unreadCountResult.error || rowsResult.count === null || unreadCountResult.count === null) {
     return NextResponse.json(
-      { ok: false, error: { code: 'DATABASE_ERROR', message: error.message } },
+      { ok: false, error: { code: 'DATABASE_ERROR', message: 'No se pudieron cargar los avisos y sus contadores.' } },
       { status: 500 }
     )
   }
 
-  return NextResponse.json({ ok: true, data: data ?? [] })
+  return NextResponse.json({
+    ok: true,
+    data: rowsResult.data ?? [],
+    counts: { total: rowsResult.count, unread: unreadCountResult.count },
+  })
 }
 
 export async function POST(req: NextRequest) {
@@ -138,29 +151,10 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true, data }, { status: 201 })
 }
 
-/** DELETE /api/alerts — elimina todas las alertas leídas del usuario (bulk) */
-export async function DELETE(_req: NextRequest) {
-  const supabase = await createClient()
-  const userId   = await getSessionUserId(supabase)
-  if (!userId) {
-    return NextResponse.json(
-      { ok: false, error: { code: 'UNAUTHORIZED', message: 'No autorizado' } },
-      { status: 401 }
-    )
-  }
+const bulkHandlers = createAlertBulkRouteHandlers({ createClient, getSessionUserId })
 
-  const { error } = await supabase
-    .from('app_notifications')
-    .delete()
-    .eq('user_id', userId)
-    .eq('is_read', true)
+/** PATCH /api/alerts — marca como leídos todos los avisos sin leer de la cuenta autenticada. */
+export const PATCH = bulkHandlers.PATCH
 
-  if (error) {
-    return NextResponse.json(
-      { ok: false, error: { code: 'DATABASE_ERROR', message: error.message } },
-      { status: 500 }
-    )
-  }
-
-  return new NextResponse(null, { status: 204 })
-}
+/** DELETE /api/alerts?scope=read|all — read preserves the legacy default; all empties the whole inbox. */
+export const DELETE = bulkHandlers.DELETE
