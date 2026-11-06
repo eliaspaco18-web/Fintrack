@@ -152,12 +152,23 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  let query = supabase.from('accounts_receivable').select(RECEIVABLE_SELECT).eq('user_id', userId)
-  if (status) query = query.eq('status', status)
-  if (debtorId) query = query.eq('debtor_id', debtorId)
-  const { data, error } = await query.order('amount', { ascending: sortParam === 'asc' })
-  if (error) return apiError({ code: 'DATABASE_ERROR', message: error.message })
-  return NextResponse.json({ ok: true, data: ((data ?? []) as ReceivableResponseRow[]).map(normalizeReceivableRow) })
+  try {
+    const data = await readAllPages((from, to) => {
+      let query = supabase.from('accounts_receivable').select(RECEIVABLE_SELECT).eq('user_id', userId)
+      if (status) query = query.eq('status', status)
+      if (debtorId) query = query.eq('debtor_id', debtorId)
+      return query
+        .order('amount', { ascending: sortParam === 'asc' })
+        .order('id', { ascending: true })
+        .range(from, to)
+    })
+    return NextResponse.json({ ok: true, data: (data as ReceivableResponseRow[]).map(normalizeReceivableRow) })
+  } catch {
+    return apiError({
+      code: 'DATABASE_ERROR',
+      message: 'No se pudo cargar la lista completa de cuentas por cobrar. Intenta actualizarla nuevamente.',
+    })
+  }
 }
 
 export async function POST(req: NextRequest) {

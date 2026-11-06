@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import * as ts from 'typescript'
 import type { ReceivableHistoryDocument } from '../../modules/receivables/debtor-financial-history'
-import { buildDebtorFinancialHistory } from '../../modules/receivables/debtor-financial-history'
+import { buildDebtorFinancialHistory, normalizeDebtorReportReceivable } from '../../modules/receivables/debtor-financial-history'
 import { projectLegacyReceivableLinks } from '../../lib/server/receivable-read-model'
 
 const nodeRequire = createRequire(__filename)
@@ -60,6 +60,25 @@ test('the full-history model includes uniquely matched legacy records once and n
   }])
   expect(history).toHaveLength(1)
   expect(history[0]).toMatchObject({ id: 'obligation:orphan-unique', status: 'PENDING', amount: 40 })
+})
+
+test('PDF normalization retains the source account on transaction-projected documents', () => {
+  const projection = projectLegacyReceivableLinks(
+    [{ id: 'debtor-a', name: 'Ficticia Uno' }],
+    [],
+    [{
+      id: 'legacy-loan', debtor_id: 'debtor-a', description: 'Préstamo heredado', amount: 40,
+      currency: 'PEN', transaction_date: '2026-01-01', notes: null,
+      source_account: { id: 'account-origin', name: 'Cuenta de origen ficticia' },
+    }],
+  )
+  const projected = projection.byDebtor.get('debtor-a')?.[0]
+  expect(projected).toBeDefined()
+
+  const reportDocument = normalizeDebtorReportReceivable(projected as unknown as Record<string, unknown>)
+  expect(reportDocument.source_account).toEqual({ id: 'account-origin', name: 'Cuenta de origen ficticia' })
+  const history = buildDebtorFinancialHistory([reportDocument as unknown as ReceivableHistoryDocument], [])
+  expect(history[0]).toMatchObject({ accountId: 'account-origin', accountName: 'Cuenta de origen ficticia' })
 })
 
 test('debtor PDF retains a fictional mixed-currency history across multiple pages', async () => {

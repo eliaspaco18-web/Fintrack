@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase.server'
 import { getSessionUserId } from '@/lib/api/response'
 import { buildDebtorReportPdf } from '@/modules/receivables/debtor-report-pdf'
+import { normalizeDebtorReportReceivable, type ReceivableHistoryDocument } from '@/modules/receivables/debtor-financial-history'
 import { readAllPages } from '@/modules/receivables/paged-read'
 import { projectLegacyReceivableLinks } from '@/lib/server/receivable-read-model'
 
@@ -80,12 +81,9 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       }, { status: 409 })
     }
     const receivables = projection.byDebtor.get(id) ?? []
-    const normalizedReceivables = receivables.map(row => {
-      const transaction = Array.isArray(row.transaction) ? row.transaction[0] : row.transaction
-      const sourceAccount = transaction?.source_account
-      const account = Array.isArray(sourceAccount) ? sourceAccount[0] : sourceAccount
-      return { ...row, source_account: account ? { id: account.id, name: account.name } : null }
-    })
+    const normalizedReceivables = receivables.map(row => normalizeDebtorReportReceivable(
+      row as unknown as Record<string, unknown>,
+    ) as unknown as ReceivableHistoryDocument)
     const assets = await readReportAssets()
     const pdf = await buildDebtorReportPdf({
       debtor,
