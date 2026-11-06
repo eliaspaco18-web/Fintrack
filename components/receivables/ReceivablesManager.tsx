@@ -23,6 +23,7 @@ import {
   getDebtorDueSummary,
   getReceivablePersonState,
   hasVerifiedOpenReceivable,
+  type ReceivablePersonState,
   type ReceivableListRecord,
 } from '@/modules/receivables/receivables-list-presentation'
 import { DebtorDetail } from './DebtorDetail'
@@ -44,6 +45,15 @@ type DebtorWithStats = DebtorRow & {
   unverified_currency_records: number
   unverified_open_currency_records: number
   has_unverified_initial_debt: boolean
+  unlinked_legacy_receivable_count?: number
+  effective_state?: ReceivablePersonState
+  has_incomplete_legacy_coverage?: boolean
+}
+
+type LegacyCoverage = {
+  ambiguous_legacy_documents: number
+  unmatched_legacy_documents: number
+  duplicate_transaction_links: number
 }
 
 type StatusFilter = 'all' | 'pending' | 'collected'
@@ -89,8 +99,12 @@ function personState(
   records: readonly ReceivableListRecord[],
   recordsUnavailable: boolean,
 ) {
+  if (debtor.effective_state) return debtor.effective_state
   const state = getReceivablePersonState(records, debtor.id, debtor.has_unverified_initial_debt)
-  return recordsUnavailable && debtor.receivables_count > 0 && state === 'EMPTY' ? 'UNVERIFIED' as const : state
+  const legacyCoverageUnavailable = (debtor.unlinked_legacy_receivable_count ?? 0) > 0
+  return (recordsUnavailable || legacyCoverageUnavailable || debtor.has_incomplete_legacy_coverage) && debtor.receivables_count > 0 && state === 'EMPTY'
+    ? 'UNVERIFIED' as const
+    : state
 }
 
 function openReceivableRecords(records: readonly ReceivableListRecord[], debtorId: string) {
@@ -204,6 +218,11 @@ export function ReceivablesManager() {
   const detailOpenRef = useRef(false)
 
   const [debtors, setDebtors] = useState<DebtorWithStats[]>([])
+  const [legacyCoverage, setLegacyCoverage] = useState<LegacyCoverage>({
+    ambiguous_legacy_documents: 0,
+    unmatched_legacy_documents: 0,
+    duplicate_transaction_links: 0,
+  })
   const [receivables, setReceivables] = useState<ReceivableRow[]>([])
   const [loading, setLoading] = useState(true)
   const [receivablesLoading, setReceivablesLoading] = useState(true)
@@ -242,6 +261,11 @@ export function ReceivablesManager() {
         throw new Error(getApiErrorMessage(json, 'No se pudieron cargar las personas.'))
       }
       setDebtors(json.data as DebtorWithStats[])
+      setLegacyCoverage({
+        ambiguous_legacy_documents: Number(json.coverage?.ambiguous_legacy_documents) || 0,
+        unmatched_legacy_documents: Number(json.coverage?.unmatched_legacy_documents) || 0,
+        duplicate_transaction_links: Number(json.coverage?.duplicate_transaction_links) || 0,
+      })
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No se pudieron cargar las personas.')
     } finally {
@@ -307,8 +331,13 @@ export function ReceivablesManager() {
   }))), [debtors])
   const hasCurrencyLimitations = debtors.some(debtor => debtor.has_unverified_initial_debt)
     || currencyBreakdown.unverifiedRecordCount > 0
+  const hasIncompleteCoverage = debtors.some(debtor => debtor.has_incomplete_legacy_coverage)
   const unverifiedPersonCount = debtors.filter(debtor => debtor.has_unverified_initial_debt).length
-  const canSortByPendingAmount = currencyBreakdown.summaries.length <= 1 && !hasCurrencyLimitations
+  const legacyProjectionCount = debtors.reduce((sum, debtor) => sum + (debtor.unlinked_legacy_receivable_count ?? 0), 0)
+  const hasLegacyCoverageIssues = legacyCoverage.ambiguous_legacy_documents > 0
+    || legacyCoverage.unmatched_legacy_documents > 0
+    || legacyCoverage.duplicate_transaction_links > 0
+  const canSortByPendingAmount = currencyBreakdown.summaries.length <= 1 && !hasCurrencyLimitations && !hasIncompleteCoverage
   const currentDate = currentLocalDate()
   const listDataLoading = loading || (receivablesLoading && !hasLoadedReceivablesRef.current)
 
@@ -555,6 +584,17 @@ export function ReceivablesManager() {
           </div>
         ) : null}
 
+        {legacyProjectionCount > 0 || hasLegacyCoverageIssues ? (
+          <div role="status" className="flex items-start gap-2 rounded-[12px] border border-[var(--ft-warning-soft)] bg-[var(--ft-warning-soft)] px-3.5 py-3 text-[12px] leading-[18px] text-[var(--ft-warning)]">
+            <span aria-hidden="true">ⓘ</span>
+            <p>
+              {legacyProjectionCount > 0 ? `${legacyProjectionCount} vínculo(s) heredado(s) se muestran en memoria, sin crear documentos persistidos.` : 'Hay cobertura heredada que no se puede confirmar.'}
+              {hasLegacyCoverageIssues ? ` ${legacyCoverage.ambiguous_legacy_documents + legacyCoverage.unmatched_legacy_documents} documento(s) con asociación o relación de origen incompleta y ${legacyCoverage.duplicate_transaction_links} vínculo(s) repetido(s) se excluyen de los totales verificables; las personas afectadas aparecen como No verificable.` : ''}
+              {' '}No se escriben registros al consultar. Registrar cobros solo usa cuentas persistidas; las proyecciones no se pueden cobrar.
+            </p>
+          </div>
+        ) : null}
+
         {hasCurrencyLimitations ? (
           <aside className={styles.currencyNotice} role="note" aria-label="Saldos sin moneda verificable">
             <div className={styles.currencyNoticeCopy}>
@@ -611,7 +651,6 @@ export function ReceivablesManager() {
                     const due = getDebtorDueSummary(receivables, debtor.id, currentDate)
                     const pending = (debtor.currency_summaries ?? []).filter(summary => summary.pending > 0)
                     const canCollect = !receivablesLoading && hasVerifiedOpenReceivable(receivables, debtor.id)
-                    const openRecords = openReceivableRecords(receivables, debtor.id)
                     return (
                       <Fragment key={debtor.id}>
                         <article className={styles.personRow} data-inactive={!debtor.is_active || undefined} data-unverified={debtor.has_unverified_initial_debt || undefined} data-testid={`receivable-person-row-${debtor.id}`}>
@@ -620,7 +659,7 @@ export function ReceivablesManager() {
                             <p className={styles.personContext}>{debtor.relationship?.trim() || 'Sin relación registrada'}</p>
                             <div className={styles.personMeta}>
                               <DebtorStatus state={state} inactive={!debtor.is_active} />
-                              <span>{openRecords.length} cuenta{openRecords.length === 1 ? '' : 's'} pendiente{openRecords.length === 1 ? '' : 's'}</span>
+                              <span>{debtor.count_pending} cuenta{debtor.count_pending === 1 ? '' : 's'} pendiente{debtor.count_pending === 1 ? '' : 's'}</span>
                               {debtor.has_unverified_initial_debt ? <span>Saldo inicial sin moneda</span> : null}
                             </div>
                           </div>
@@ -647,7 +686,7 @@ export function ReceivablesManager() {
                                     {due.openWithoutDateCount > 0 ? ` · ${due.openWithoutDateCount} sin fecha` : ''}
                                   </p>
                                 </> : <span className={styles.dueEmpty}>
-                                  {openRecords.length > 0 ? 'Sin fecha registrada' : 'Sin vencimiento pendiente'}
+                                  {debtor.count_pending > 0 ? (debtor.unlinked_legacy_receivable_count ? 'Sin fecha en parte del historial heredado' : 'Sin fecha registrada') : 'Sin vencimiento pendiente'}
                                 </span>}
                           </div>
                           <DebtorActions
@@ -682,7 +721,7 @@ export function ReceivablesManager() {
                               {receivablesLoading ? <span className={styles.dueEmpty}>Consultando fechas…</span>
                                 : receivablesError ? <span className={styles.dueEmpty}>Fecha no disponible</span>
                                   : due.date ? <><div className={styles.dueDate}>{due.overdue ? 'Vencida · ' : 'Próxima · '}{formatDate(due.date)}</div><p className={styles.dueMeta}>{due.openWithDateCount > 1 ? `Entre ${due.openWithDateCount} cuentas con fecha` : 'Fecha registrada'}</p></>
-                                    : <span className={styles.dueEmpty}>{openRecords.length > 0 ? 'Sin fecha registrada' : 'Sin vencimiento pendiente'}</span>}
+                                    : <span className={styles.dueEmpty}>{debtor.count_pending > 0 ? (debtor.unlinked_legacy_receivable_count ? 'Sin fecha en parte del historial heredado' : 'Sin fecha registrada') : 'Sin vencimiento pendiente'}</span>}
                             </div>
                             <div className={styles.mobileActions}>
                               <Button type="button" variant="ghost" size="sm" onClick={() => openDebtorDetail(debtor.id)}>Ver cuenta</Button>

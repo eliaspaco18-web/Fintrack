@@ -20,7 +20,7 @@ import { QUICK_OPERATIONS, quickOperationHrefForId } from '@/lib/constants/quick
 import type { TransactionListItem } from '@/lib/contracts/ui.contracts'
 import type { CreditListItem } from '@/lib/credits/display-type'
 import { getCreditDetailPresentation } from '@/modules/credits/credit-detail-presentation'
-import type { DashboardSidebar, DashboardSummary, MoneyFlowPoint } from '@/lib/dashboard/types'
+import type { MoneyFlowPoint } from '@/lib/dashboard/types'
 import { formatV3Money } from '@/lib/finance/v3-money-display'
 import {
   currentLimaPeriod, documentedAgenda, documentedPending, nativeAccountPosition,
@@ -28,6 +28,7 @@ import {
 } from '@/lib/dashboard/round07'
 import { fetchDashboardData } from './api'
 import { DashboardSourceState as SourceState } from './DashboardSourceState'
+import { useDashboardOverview } from './useDashboardOverview'
 import styles from './DashboardRound07.module.css'
 
 const AdvancedDashboard = dynamic(() => import('./DashboardWorkspace').then(module => module.DashboardWorkspace), { ssr: false })
@@ -77,16 +78,21 @@ function Panel({ title, subtitle, href, linkLabel, children, className = '' }: {
 
 function useDashboardSources(period: string) {
   const options = { revalidateOnFocus: false, dedupingInterval: 30_000 }
+  const overview = useDashboardOverview(period)
   const accounts = useSWR('/api/accounts?include_inactive=true', read<DashboardAccount[]>, options)
   const receivables = useSWR('/api/receivables', read<DashboardObligation[]>, options)
   const payables = useSWR('/api/payables', read<DashboardObligation[]>, options)
-  const summary = useSWR('/api/dashboard/summary', read<DashboardSummary>, options)
   const flow = useSWR('/api/dashboard/money-flow?months=6&mode=mensual', read<MoneyFlowResponse>, options)
-  const sidebar = useSWR(`/api/dashboard/sidebar?period=${period}`, read<DashboardSidebar>, options)
   const budgets = useSWR(`/api/budget-periods?period=${period}`, read<BudgetPeriod[]>, options)
   const recent = useSWR('/api/transactions?sort_by=transaction_date&sort_dir=desc&page=1&per_page=5', read<RecentResponse>, options)
   const credits = useSWR('/api/credits', read<CreditListItem[]>, options)
-  return { accounts, receivables, payables, summary, flow, sidebar, budgets, recent, credits }
+  return {
+    accounts, receivables, payables,
+    summary: { ...overview.summary, mutate: overview.mutate },
+    flow,
+    sidebar: { ...overview.sidebar, mutate: overview.mutate },
+    budgets, recent, credits,
+  }
 }
 
 export function DashboardRound07() {
@@ -228,7 +234,7 @@ export function DashboardRound07() {
             </div>
             <div className={styles.rankBlock}>
               <div className={styles.subheading}><h3>Por categoría</h3><div className={styles.segment}><button aria-pressed={categoryType === 'EXPENSE'} onClick={() => { setCategoryType('EXPENSE'); setShowAllCategories(false) }}>Egresos</button><button aria-pressed={categoryType === 'INCOME'} onClick={() => { setCategoryType('INCOME'); setShowAllCategories(false) }}>Ingresos</button></div></div>
-              <SourceState loading={(!sources.sidebar.data || !sources.summary.data) && !sources.sidebar.error && !sources.summary.error} failed={Boolean(sources.sidebar.error || sources.summary.error)} available={Boolean(sources.sidebar.data)} retry={() => { void sources.sidebar.mutate(); void sources.summary.mutate() }} skeleton="ranking" regionClassName={styles.rankingSource}>
+              <SourceState loading={(!sources.sidebar.data || !sources.summary.data) && !sources.sidebar.error && !sources.summary.error} failed={Boolean(sources.sidebar.error || sources.summary.error)} available={Boolean(sources.sidebar.data)} retry={() => void sources.sidebar.mutate()} skeleton="ranking" regionClassName={styles.rankingSource}>
                 {!sources.summary.data ? <p className={styles.empty}>Esperando el total del reporte para verificar categorías.</p> : !rankMatches ? <p className={styles.empty}>El desglose no coincide con el total del reporte. Revisa las categorías en Movimientos.</p> : rankingRows.length ? <><CategoryRanking rows={rankingRows} /><p className={styles.meta}>Registros de categoría; la participación en reportes se explica en el detalle.</p></> : <p className={styles.empty}>Sin categorías en el reporte de este mes.</p>}
               </SourceState>
             </div>

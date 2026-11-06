@@ -1,10 +1,10 @@
 export type ReceivableListRecord = {
   id: string
   debtor_id: string | null
-  amount: number
-  collected_amount: number
+  amount: number | string
+  collected_amount?: number | string | null
   status: string
-  due_date: string | null
+  due_date?: string | null
 }
 
 export type ReceivablePersonState = 'OPEN' | 'PARTIAL' | 'SETTLED' | 'WRITTEN_OFF' | 'UNVERIFIED' | 'EMPTY'
