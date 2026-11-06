@@ -5,6 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database.types'
 import type { DashboardSummary as ServiceDashboardSummary } from '@/modules/dashboard/dashboard.types'
 import { buildDashboardSummaryPayload } from '@/lib/dashboard/summary-payload'
+import { consumeDashboardOverviewStream } from '@/lib/dashboard/overview-stream'
 
 class NotificationCountQuery implements PromiseLike<{ count: number | null; error: null }> {
   readonly filters: Array<[string, string | boolean]> = []
@@ -60,12 +61,45 @@ test('dashboard summary projection preserves financial values and scopes unread 
 test('V3 initial dashboard combines summary and sidebar behind one authenticated summary RPC', () => {
   const overviewRoute = readFileSync(resolve(process.cwd(), 'app/api/dashboard/overview/route.ts'), 'utf8')
   const dashboard = readFileSync(resolve(process.cwd(), 'components/dashboard/DashboardRound07.tsx'), 'utf8')
+  const overviewHook = readFileSync(resolve(process.cwd(), 'components/dashboard/useDashboardOverview.ts'), 'utf8')
 
   expect((overviewRoute.match(/service\.getSummary\(/g) ?? []).length).toBe(1)
   expect(overviewRoute).toContain('buildDashboardSummaryPayload')
   expect(overviewRoute).toContain('buildDashboardSidebarResponse')
-  expect(dashboard).toContain('/api/dashboard/overview?period=')
+  expect(dashboard).toContain('useDashboardOverview(period)')
+  expect(overviewHook).toContain('/api/dashboard/overview?period=')
   expect(dashboard).not.toContain('/api/dashboard/summary')
   expect(dashboard).not.toContain('/api/dashboard/sidebar?period=')
   expect(dashboard).not.toContain('void sources.sidebar.mutate(); void sources.summary.mutate()')
+})
+
+test('dashboard overview exposes useful headline data before the delayed sidebar completes', async () => {
+  const events: Array<{ source: string; at: number; data: unknown }> = []
+  const startedAt = performance.now()
+  const encode = (value: unknown) => new TextEncoder().encode(`${JSON.stringify(value)}\n`)
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      void (async () => {
+        await new Promise(resolve => setTimeout(resolve, 35))
+        controller.enqueue(encode({ source: 'summary', data: { ingresos_mes: 420, egresos_mes: 120, resultado_mensual: 300 }, error: null }))
+        await new Promise(resolve => setTimeout(resolve, 170))
+        controller.enqueue(encode({ source: 'sidebar', data: { egresos_categoria: [{ name: 'Hogar', monto: 120 }] }, error: null }))
+        controller.close()
+      })()
+    },
+  })
+
+  await consumeDashboardOverviewStream(new Response(stream, {
+    headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8' },
+  }), event => events.push({ source: event.source, at: performance.now() - startedAt, data: event.data }))
+
+  const summary = events.find(event => event.source === 'summary')!
+  const sidebar = events.find(event => event.source === 'sidebar')!
+  expect(summary.data).toMatchObject({ ingresos_mes: 420, egresos_mes: 120, resultado_mensual: 300 })
+  expect(sidebar.data).toMatchObject({ egresos_categoria: [{ name: 'Hogar', monto: 120 }] })
+  expect(summary.at).toBeLessThan(sidebar.at - 70)
+  // Before progressive delivery a single JSON response exposed both sources only
+  // after the slowest source (170 ms after the summary was ready).
+  expect(summary.at).toBeLessThan(130)
+  console.info(`[dashboard-overview synthetic] useful_summary_ms=${summary.at.toFixed(1)} full_sidebar_ms=${sidebar.at.toFixed(1)} baseline_first_useful_ms>=170`)
 })

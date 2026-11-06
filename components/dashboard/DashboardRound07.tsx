@@ -20,7 +20,7 @@ import { QUICK_OPERATIONS, quickOperationHrefForId } from '@/lib/constants/quick
 import type { TransactionListItem } from '@/lib/contracts/ui.contracts'
 import type { CreditListItem } from '@/lib/credits/display-type'
 import { getCreditDetailPresentation } from '@/modules/credits/credit-detail-presentation'
-import type { DashboardSidebar, DashboardSummary, MoneyFlowPoint } from '@/lib/dashboard/types'
+import type { MoneyFlowPoint } from '@/lib/dashboard/types'
 import { formatV3Money } from '@/lib/finance/v3-money-display'
 import {
   currentLimaPeriod, documentedAgenda, documentedPending, nativeAccountPosition,
@@ -28,17 +28,13 @@ import {
 } from '@/lib/dashboard/round07'
 import { fetchDashboardData } from './api'
 import { DashboardSourceState as SourceState } from './DashboardSourceState'
+import { useDashboardOverview } from './useDashboardOverview'
 import styles from './DashboardRound07.module.css'
 
 const AdvancedDashboard = dynamic(() => import('./DashboardWorkspace').then(module => module.DashboardWorkspace), { ssr: false })
 
 type MoneyFlowResponse = { series: MoneyFlowPoint[] }
 type RecentResponse = { data: TransactionListItem[]; pagination: { has_more: boolean } }
-type DashboardSourceError = { code: string; message: string; detail?: string }
-type DashboardOverviewResponse = {
-  summary: { data: DashboardSummary | null; error: DashboardSourceError | null }
-  sidebar: { data: DashboardSidebar | null; error: DashboardSourceError | null }
-}
 type BudgetPeriod = {
   id: string
   amount: number
@@ -82,7 +78,7 @@ function Panel({ title, subtitle, href, linkLabel, children, className = '' }: {
 
 function useDashboardSources(period: string) {
   const options = { revalidateOnFocus: false, dedupingInterval: 30_000 }
-  const overview = useSWR(`/api/dashboard/overview?period=${period}`, read<DashboardOverviewResponse>, options)
+  const overview = useDashboardOverview(period)
   const accounts = useSWR('/api/accounts?include_inactive=true', read<DashboardAccount[]>, options)
   const receivables = useSWR('/api/receivables', read<DashboardObligation[]>, options)
   const payables = useSWR('/api/payables', read<DashboardObligation[]>, options)
@@ -90,19 +86,13 @@ function useDashboardSources(period: string) {
   const budgets = useSWR(`/api/budget-periods?period=${period}`, read<BudgetPeriod[]>, options)
   const recent = useSWR('/api/transactions?sort_by=transaction_date&sort_dir=desc&page=1&per_page=5', read<RecentResponse>, options)
   const credits = useSWR('/api/credits', read<CreditListItem[]>, options)
-  const summary = {
-    data: overview.data?.summary.data ?? undefined,
-    error: overview.data?.summary.error ?? overview.error,
-    isLoading: overview.isLoading && !overview.data,
-    mutate: overview.mutate,
+  return {
+    accounts, receivables, payables,
+    summary: { ...overview.summary, mutate: overview.mutate },
+    flow,
+    sidebar: { ...overview.sidebar, mutate: overview.mutate },
+    budgets, recent, credits,
   }
-  const sidebar = {
-    data: overview.data?.sidebar.data ?? undefined,
-    error: overview.data?.sidebar.error ?? overview.error,
-    isLoading: overview.isLoading && !overview.data,
-    mutate: overview.mutate,
-  }
-  return { accounts, receivables, payables, summary, flow, sidebar, budgets, recent, credits }
 }
 
 export function DashboardRound07() {

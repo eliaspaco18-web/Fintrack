@@ -114,6 +114,13 @@ function browserMocks(): string {
       summary: { data: summary, error: null },
       sidebar: { data: sidebar, error: null },
     };
+    const dashboardOverview = {
+      summary: { data: summary, error: null, isLoading: false },
+      sidebar: { data: sidebar, error: null, isLoading: false },
+      mutate: async () => undefined,
+    };
+    window.__fintrackModules['@/components/dashboard/useDashboardOverview'] = { useDashboardOverview: () => dashboardOverview };
+    window.__fintrackModules['./useDashboardOverview'] = window.__fintrackModules['@/components/dashboard/useDashboardOverview'];
     window.__fintrackModules['swr'] = {
       default: key => {
         let data = [];

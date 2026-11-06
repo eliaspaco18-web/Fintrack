@@ -4,7 +4,7 @@ export type ReceivableHistoryDocument = {
   concept: string | null
   amount: number | string
   collected_amount?: number | string
-  currency: string
+  currency: string | null
   issue_date: string
   status: string
   notes?: string | null
@@ -16,7 +16,7 @@ export type ReceivableHistoryTransaction = {
   id: string
   type: 'INCOME' | 'EXPENSE'
   amount: number | string
-  currency: string
+  currency: string | null
   description: string | null
   notes: string | null
   transaction_date: string
@@ -30,7 +30,7 @@ export type DebtorFinancialHistoryEntry = {
   type: 'INCOME' | 'EXPENSE'
   date: string
   amount: number | string
-  currency: string
+  currency: string | null
   description: string | null
   notes: string | null
   accountName: string | null

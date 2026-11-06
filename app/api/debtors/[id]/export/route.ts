@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase.server'
 import { getSessionUserId } from '@/lib/api/response'
 import { buildDebtorReportPdf } from '@/modules/receivables/debtor-report-pdf'
 import { readAllPages } from '@/modules/receivables/paged-read'
+import { projectLegacyReceivableLinks } from '@/lib/server/receivable-read-model'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -40,18 +41,22 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   if (!debtor) return NextResponse.json({ ok: false, error: { code: 'NOT_FOUND', message: 'No se encontró el deudor.' } }, { status: 404 })
 
   try {
-    const [receivables, transactions] = await Promise.all([
+    const [allDebtors, allReceivables, transactions] = await Promise.all([
+      readAllPages((from, to) => supabase
+        .from('debtors')
+        .select('id, name')
+        .eq('user_id', userId)
+        .order('id', { ascending: true })
+        .range(from, to)),
       readAllPages((from, to) => supabase
         .from('accounts_receivable')
-        .select('id, transaction_id, concept, amount, collected_amount, currency, issue_date, status, notes, transaction:transactions(id, source_account:accounts!transactions_source_account_id_fkey(id, name))')
+        .select('id, transaction_id, debtor_id, debtor_name, concept, amount, collected_amount, currency, issue_date, status, notes, attachment_url, transaction:transactions(id, source_account:accounts!transactions_source_account_id_fkey(id, name))')
         .eq('user_id', userId)
-        .eq('debtor_id', id)
-        .order('issue_date', { ascending: true })
         .order('id', { ascending: true })
         .range(from, to)),
       readAllPages((from, to) => supabase
         .from('transactions')
-        .select('id, type, amount, currency, description, notes, transaction_date, source_account:accounts!transactions_source_account_id_fkey(id, name), category:categories(id, name)')
+        .select('id, type, debtor_id, amount, currency, description, notes, transaction_date, source_account:accounts!transactions_source_account_id_fkey(id, name), category:categories(id, name)')
         .eq('user_id', userId)
         .eq('debtor_id', id)
         .in('type', ['INCOME', 'EXPENSE'])
@@ -60,6 +65,21 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
         .range(from, to)),
     ])
 
+    const projection = projectLegacyReceivableLinks(
+      allDebtors,
+      allReceivables,
+      transactions.filter(transaction => transaction.type === 'EXPENSE'),
+    )
+    if (projection.coverage.ambiguousDebtorIds.has(id)) {
+      return NextResponse.json({
+        ok: false,
+        error: {
+          code: 'INCOMPLETE_HISTORY',
+          message: 'No se puede generar un PDF íntegro: hay documentos heredados o vínculos repetidos que no se pueden asociar con certeza. Revisa el historial antes de exportar.',
+        },
+      }, { status: 409 })
+    }
+    const receivables = projection.byDebtor.get(id) ?? []
     const normalizedReceivables = receivables.map(row => {
       const transaction = Array.isArray(row.transaction) ? row.transaction[0] : row.transaction
       const sourceAccount = transaction?.source_account
