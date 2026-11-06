@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient }              from '@/lib/supabase.server'
 import { getSessionUserId }          from '@/lib/api/response'
-import { repairLegacyReceivableLinks } from '@/lib/server/receivable-link-repair'
+import { projectLegacyReceivableLinks } from '@/lib/server/receivable-read-model'
 import { summarizeObligationCurrencies } from '@/modules/obligations/obligation-currency-presentation'
 
 export async function GET(_req: NextRequest) {
@@ -24,23 +24,35 @@ export async function GET(_req: NextRequest) {
 
   if (debtorError) return NextResponse.json({ ok: false, error: { code: 'DATABASE_ERROR', message: debtorError.message } }, { status: 500 })
 
-  await repairLegacyReceivableLinks(
-    supabase,
-    userId,
-    (debtors ?? []).map(debtor => ({ id: debtor.id, name: debtor.name })),
+  const debtorsList = debtors ?? []
+  const debtorIds = debtorsList.map(debtor => debtor.id)
+  const [receivablesResult, transactionsResult] = await Promise.all([
+    supabase
+      .from('accounts_receivable')
+      .select('transaction_id, debtor_id, debtor_name, amount, collected_amount, currency, status')
+      .eq('user_id', userId),
+    debtorIds.length > 0
+      ? supabase
+          .from('transactions')
+          .select('id, debtor_id, description, amount, currency, transaction_date, notes')
+          .eq('user_id', userId)
+          .eq('type', 'EXPENSE')
+          .in('debtor_id', debtorIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+
+  if (receivablesResult.error) return NextResponse.json({ ok: false, error: { code: 'DATABASE_ERROR', message: receivablesResult.error.message } }, { status: 500 })
+  if (transactionsResult.error) return NextResponse.json({ ok: false, error: { code: 'DATABASE_ERROR', message: transactionsResult.error.message } }, { status: 500 })
+
+  const projectedByDebtor = projectLegacyReceivableLinks(
+    debtorsList.map(debtor => ({ id: debtor.id, name: debtor.name })),
+    receivablesResult.data ?? [],
+    transactionsResult.data ?? [],
   )
 
-  // Traer cuentas por cobrar para agregar por deudor
-  const { data: receivables, error: arError } = await supabase
-    .from('accounts_receivable')
-    .select('debtor_id, amount, collected_amount, currency, status')
-    .eq('user_id', userId)
-
-  if (arError) return NextResponse.json({ ok: false, error: { code: 'DATABASE_ERROR', message: arError.message } }, { status: 500 })
-
   // Agregar datos por deudor
-  const aggregated = (debtors ?? []).map(debtor => {
-    const related         = (receivables ?? []).filter(r => r.debtor_id === debtor.id)
+  const aggregated = debtorsList.map(debtor => {
+    const related         = projectedByDebtor.get(debtor.id) ?? []
     const initial_debt    = Number(debtor.initial_debt ?? 0)
     const ar_total        = related.reduce((s, r) => s + Number(r.amount), 0)
     const total_collected = related.reduce((s, r) => s + Number(r.collected_amount), 0)
@@ -70,6 +82,7 @@ export async function GET(_req: NextRequest) {
       unverified_currency_records: currencyBreakdown.unverifiedRecordCount,
       unverified_open_currency_records: currencyBreakdown.unverifiedOpenRecordCount,
       has_unverified_initial_debt: initial_debt > 0,
+      unlinked_legacy_receivable_count: related.filter(receivable => receivable.is_legacy_projection).length,
     }
   })
 

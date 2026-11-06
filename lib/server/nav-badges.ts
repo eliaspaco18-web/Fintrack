@@ -4,23 +4,22 @@ import { measureServerOperation } from '@/lib/server/observability'
 
 const SERVER_QUERY_TIMEOUT_MS = 2_500
 
-export async function getNavBadgesForUser(userId: string): Promise<Partial<Record<string, number>>> {
-  return measureServerOperation(
-    'dashboard.nav-badges',
-    async () => {
-      const supabase = await createClient()
+export async function getNavBadgesFromClient(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+): Promise<Partial<Record<string, number>>> {
       const today = new Date().toISOString().split('T')[0]
 
       const [
         overdueInstallmentsResult,
         urgentReceivablesResult,
         urgentPayablesResult,
-      ] = await Promise.allSettled([
+      ] = await Promise.all([
         withTimeout(
           supabase
             .from('installments')
-            .select('id', { count: 'exact', head: true })
-            .eq('user_id', userId)
+            .select('id, loan:loans!inner(user_id)', { count: 'exact', head: true })
+            .eq('loan.user_id', userId)
             .eq('status', 'OVERDUE'),
           SERVER_QUERY_TIMEOUT_MS,
         ),
@@ -44,20 +43,14 @@ export async function getNavBadgesForUser(userId: string): Promise<Partial<Recor
         ),
       ])
 
-      const overdueInstallments =
-        overdueInstallmentsResult.status === 'fulfilled' && !overdueInstallmentsResult.value.error
-          ? (overdueInstallmentsResult.value.count ?? 0)
-          : 0
-
-      const urgentReceivables =
-        urgentReceivablesResult.status === 'fulfilled' && !urgentReceivablesResult.value.error
-          ? (urgentReceivablesResult.value.count ?? 0)
-          : 0
-
-      const urgentPayables =
-        urgentPayablesResult.status === 'fulfilled' && !urgentPayablesResult.value.error
-          ? (urgentPayablesResult.value.count ?? 0)
-          : 0
+      const requireCount = (label: string, result: { count: number | null; error: { message: string } | null }) => {
+        if (result.error) throw new Error(`Could not load ${label}: ${result.error.message}`)
+        if (result.count === null) throw new Error(`Could not verify ${label} count`)
+        return result.count
+      }
+      const overdueInstallments = requireCount('overdue installments', overdueInstallmentsResult)
+      const urgentReceivables = requireCount('urgent receivables', urgentReceivablesResult)
+      const urgentPayables = requireCount('urgent payables', urgentPayablesResult)
 
       return {
         credits: overdueInstallments > 0 ? overdueInstallments : undefined,
@@ -67,6 +60,14 @@ export async function getNavBadgesForUser(userId: string): Promise<Partial<Recor
           ? overdueInstallments + urgentReceivables + urgentPayables
           : undefined,
       }
+}
+
+export async function getNavBadgesForUser(userId: string): Promise<Partial<Record<string, number>>> {
+  return measureServerOperation(
+    'dashboard.nav-badges',
+    async () => {
+      const supabase = await createClient()
+      return getNavBadgesFromClient(supabase, userId)
     },
     { warnAtMs: 450, meta: { user_id: userId } },
   )

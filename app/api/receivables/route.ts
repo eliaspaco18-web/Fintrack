@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase.server'
 import { CategoryKeys } from '@/lib/constants/category-keys'
 import { TransactionService } from '@/modules/transactions/transaction.service'
-import { repairLegacyReceivableLinks } from '@/lib/server/receivable-link-repair'
+import { projectLegacyReceivableLinks, type ReceivableReadDocument } from '@/lib/server/receivable-read-model'
 import {
   apiCreated,
   apiError,
@@ -90,17 +90,21 @@ export async function GET(req: NextRequest) {
     return apiError({ code: 'VALIDATION_ERROR', message: 'Parámetro status inválido' })
   }
 
+  if (debtorId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(debtorId)) {
+    return apiError({ code: 'VALIDATION_ERROR', message: 'Parámetro debtor_id inválido' })
+  }
+
+  let debtor: { id: string; name: string } | null = null
   if (debtorId) {
-    const { data: debtor } = await supabase
+    const { data, error: debtorError } = await supabase
       .from('debtors')
       .select('id, name')
       .eq('id', debtorId)
       .eq('user_id', userId)
       .maybeSingle()
 
-    if (debtor) {
-      await repairLegacyReceivableLinks(supabase, userId, [debtor])
-    }
+    if (debtorError) return apiError({ code: 'DATABASE_ERROR', message: debtorError.message })
+    debtor = data
   }
 
   let query = supabase
@@ -109,16 +113,67 @@ export async function GET(req: NextRequest) {
     .eq('user_id', userId)
 
   if (status) query = query.eq('status', status)
-  if (debtorId) query = query.eq('debtor_id', debtorId)
+  if (debtorId && debtor) query = query.or(`debtor_id.eq.${debtorId},debtor_id.is.null`)
+  else if (debtorId) query = query.eq('debtor_id', debtorId)
 
   query = query.order('amount', { ascending: sortParam === 'asc' })
 
-  const { data, error } = await query
-  if (error) return apiError({ code: 'DATABASE_ERROR', message: error.message })
+  const [rowsResult, knownLinksResult, transactionsResult] = await Promise.all([
+    query,
+    debtorId
+      ? supabase.from('accounts_receivable').select('transaction_id').eq('user_id', userId)
+      : Promise.resolve({ data: [], error: null }),
+    debtorId && debtor
+      ? supabase
+          .from('transactions')
+          .select('id, debtor_id, description, amount, currency, transaction_date, notes, source_account:accounts!transactions_source_account_id_fkey(id, name)')
+          .eq('user_id', userId)
+          .eq('type', 'EXPENSE')
+          .eq('debtor_id', debtorId)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+
+  if (rowsResult.error) return apiError({ code: 'DATABASE_ERROR', message: rowsResult.error.message })
+  if (knownLinksResult.error) return apiError({ code: 'DATABASE_ERROR', message: knownLinksResult.error.message })
+  if (transactionsResult.error) return apiError({ code: 'DATABASE_ERROR', message: transactionsResult.error.message })
+
+  let rows = (rowsResult.data ?? []) as ReceivableResponseRow[]
+  if (debtorId && debtor) {
+    const normalizedDebtorName = debtor.name.trim().toLocaleLowerCase('es')
+    const debtorDocuments = rows.filter(row => row.debtor_id === debtorId
+      || (row.debtor_id === null && typeof row.debtor_name === 'string'
+        && row.debtor_name.trim().toLocaleLowerCase('es') === normalizedDebtorName))
+    const knownTransactionIds = new Set((knownLinksResult.data ?? [])
+      .map(row => row.transaction_id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0))
+    const projected = projectLegacyReceivableLinks(
+      [debtor],
+      debtorDocuments as unknown as ReceivableReadDocument[],
+      transactionsResult.data ?? [],
+      knownTransactionIds,
+    ).get(debtorId) ?? []
+    const transactionsById = new Map((transactionsResult.data ?? []).map(transaction => [transaction.id, transaction]))
+    rows = projected
+      .filter(row => !row.is_legacy_projection || !row.id?.startsWith('legacy-transaction-') || !status || status === 'PENDING')
+      .map(row => {
+      if (!row.id?.startsWith('legacy-transaction-') || !row.transaction_id) return row as ReceivableResponseRow
+      const sourceTransaction = transactionsById.get(row.transaction_id)
+      return {
+        ...row,
+        transaction: sourceTransaction
+          ? { id: sourceTransaction.id, source_account: sourceTransaction.source_account }
+          : null,
+      } as unknown as ReceivableResponseRow
+    })
+      .sort((left, right) => {
+        const amountDifference = Number(left.amount ?? 0) - Number(right.amount ?? 0)
+        return sortParam === 'asc' ? amountDifference : -amountDifference
+      })
+  }
 
   return NextResponse.json({
     ok: true,
-    data: (data ?? []).map(row => normalizeReceivableRow(row as ReceivableResponseRow)),
+    data: rows.map(row => normalizeReceivableRow(row)),
   })
 }
 

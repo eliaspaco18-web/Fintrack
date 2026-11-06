@@ -109,12 +109,18 @@ function browserMocks(): string {
       },
     };
     const summary = { ingresos_mes: 120, egresos_mes: 45, resultado_mensual: 75 };
+    const sidebar = { ingresos_categoria: [], egresos_categoria: [] };
+    const overview = {
+      summary: { data: summary, error: null },
+      sidebar: { data: sidebar, error: null },
+    };
     window.__fintrackModules['swr'] = {
       default: key => {
         let data = [];
-        if (typeof key === 'string' && (key.includes('/dashboard/summary') || key.includes('/transactions/month-summary'))) data = summary;
+        if (typeof key === 'string' && key.includes('/dashboard/overview')) data = overview;
+        else if (typeof key === 'string' && (key.includes('/dashboard/summary') || key.includes('/transactions/month-summary'))) data = summary;
         else if (typeof key === 'string' && key.includes('/dashboard/money-flow')) data = { series: [] };
-        else if (typeof key === 'string' && key.includes('/dashboard/sidebar')) data = { ingresos_categoria: [], egresos_categoria: [] };
+        else if (typeof key === 'string' && key.includes('/dashboard/sidebar')) data = sidebar;
         else if (typeof key === 'string' && key.includes('/transactions?')) data = { data: [], pagination: { has_more: false } };
         return { data, error: undefined, isLoading: false, mutate: async () => data };
       },

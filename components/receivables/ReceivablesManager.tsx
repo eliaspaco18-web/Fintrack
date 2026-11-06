@@ -44,6 +44,7 @@ type DebtorWithStats = DebtorRow & {
   unverified_currency_records: number
   unverified_open_currency_records: number
   has_unverified_initial_debt: boolean
+  unlinked_legacy_receivable_count?: number
 }
 
 type StatusFilter = 'all' | 'pending' | 'collected'
@@ -90,7 +91,10 @@ function personState(
   recordsUnavailable: boolean,
 ) {
   const state = getReceivablePersonState(records, debtor.id, debtor.has_unverified_initial_debt)
-  return recordsUnavailable && debtor.receivables_count > 0 && state === 'EMPTY' ? 'UNVERIFIED' as const : state
+  const legacyCoverageUnavailable = (debtor.unlinked_legacy_receivable_count ?? 0) > 0
+  return (recordsUnavailable || legacyCoverageUnavailable) && debtor.receivables_count > 0 && state === 'EMPTY'
+    ? 'UNVERIFIED' as const
+    : state
 }
 
 function openReceivableRecords(records: readonly ReceivableListRecord[], debtorId: string) {
@@ -308,6 +312,7 @@ export function ReceivablesManager() {
   const hasCurrencyLimitations = debtors.some(debtor => debtor.has_unverified_initial_debt)
     || currencyBreakdown.unverifiedRecordCount > 0
   const unverifiedPersonCount = debtors.filter(debtor => debtor.has_unverified_initial_debt).length
+  const legacyProjectionCount = debtors.reduce((sum, debtor) => sum + (debtor.unlinked_legacy_receivable_count ?? 0), 0)
   const canSortByPendingAmount = currencyBreakdown.summaries.length <= 1 && !hasCurrencyLimitations
   const currentDate = currentLocalDate()
   const listDataLoading = loading || (receivablesLoading && !hasLoadedReceivablesRef.current)
@@ -552,6 +557,13 @@ export function ReceivablesManager() {
           <div role="status" className="flex flex-col gap-2 rounded-[12px] border border-[var(--ft-border)] bg-[var(--ft-surface-muted)] px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-[12px] leading-[18px] text-[var(--ft-text-muted)]">No se pudieron consultar las fechas y referencias de las cuentas por cobrar.</p>
             <Button type="button" variant="secondary" size="sm" onClick={() => void loadReceivables()}>Reintentar</Button>
+          </div>
+        ) : null}
+
+        {legacyProjectionCount > 0 ? (
+          <div role="status" className="flex items-start gap-2 rounded-[12px] border border-[var(--ft-warning-soft)] bg-[var(--ft-warning-soft)] px-3.5 py-3 text-[12px] leading-[18px] text-[var(--ft-warning)]">
+            <span aria-hidden="true">ⓘ</span>
+            <p>{legacyProjectionCount} vínculo(s) heredado(s) se muestran solo para conservar el resumen. No se crean ni actualizan registros al consultar; las operaciones de cobro requieren el documento persistido correspondiente.</p>
           </div>
         ) : null}
 
