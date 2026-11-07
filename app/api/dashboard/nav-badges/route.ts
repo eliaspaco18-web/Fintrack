@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase.server'
-import { apiOk, apiUnauthorized, getSessionUserId } from '@/lib/api/response'
+import { apiError, apiOk, apiUnauthorized, getSessionUserId } from '@/lib/api/response'
 import { getNavBadgesForUser } from '@/lib/server/nav-badges'
 
 export async function GET() {
@@ -7,6 +7,13 @@ export async function GET() {
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
-  const badges = await getNavBadgesForUser(userId)
-  return apiOk(badges)
+  try {
+    const badges = await getNavBadgesForUser(userId)
+    return apiOk(badges)
+  } catch (error) {
+    return apiError({
+      code: 'DATABASE_ERROR',
+      message: error instanceof Error ? error.message : 'Could not load navigation counts',
+    })
+  }
 }

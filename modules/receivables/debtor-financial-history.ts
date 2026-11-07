@@ -4,7 +4,7 @@ export type ReceivableHistoryDocument = {
   concept: string | null
   amount: number | string
   collected_amount?: number | string
-  currency: string
+  currency: string | null
   issue_date: string
   status: string
   notes?: string | null
@@ -16,7 +16,7 @@ export type ReceivableHistoryTransaction = {
   id: string
   type: 'INCOME' | 'EXPENSE'
   amount: number | string
-  currency: string
+  currency: string | null
   description: string | null
   notes: string | null
   transaction_date: string
@@ -30,7 +30,7 @@ export type DebtorFinancialHistoryEntry = {
   type: 'INCOME' | 'EXPENSE'
   date: string
   amount: number | string
-  currency: string
+  currency: string | null
   description: string | null
   notes: string | null
   accountName: string | null
@@ -38,6 +38,31 @@ export type DebtorFinancialHistoryEntry = {
   categoryName: string | null
   status: string
   attachmentUrl: string | null
+}
+
+type ReportRelationAccount = { id: string; name: string }
+
+function relationRecord(value: unknown): Record<string, unknown> | null {
+  const candidate = Array.isArray(value) ? value[0] : value
+  return candidate && typeof candidate === 'object' ? candidate as Record<string, unknown> : null
+}
+
+function reportAccount(value: unknown): ReportRelationAccount | null {
+  const account = relationRecord(value)
+  return account && typeof account.id === 'string' && typeof account.name === 'string'
+    ? { id: account.id, name: account.name }
+    : null
+}
+
+/** Preserve the account carried by legacy transaction projections as well as joined rows. */
+export function normalizeDebtorReportReceivable<T extends Record<string, unknown>>(
+  row: T,
+): Omit<T, 'transaction' | 'source_account'> & { source_account: ReportRelationAccount | null } {
+  const transaction = relationRecord(row.transaction)
+  const joinedAccount = reportAccount(transaction?.source_account)
+  const projectedAccount = reportAccount(row.source_account)
+  const { transaction: _transaction, ...rest } = row
+  return { ...rest, source_account: joinedAccount ?? projectedAccount } as Omit<T, 'transaction' | 'source_account'> & { source_account: ReportRelationAccount | null }
 }
 
 /**

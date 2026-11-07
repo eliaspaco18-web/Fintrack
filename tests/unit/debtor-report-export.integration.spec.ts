@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import * as ts from 'typescript'
 import type { ReceivableHistoryDocument } from '../../modules/receivables/debtor-financial-history'
+import { buildDebtorFinancialHistory, normalizeDebtorReportReceivable } from '../../modules/receivables/debtor-financial-history'
+import { projectLegacyReceivableLinks } from '../../lib/server/receivable-read-model'
 
 const nodeRequire = createRequire(__filename)
 const Module = nodeRequire('node:module') as typeof import('node:module') & { _resolveFilename: (...args: any[]) => string; _extensions: Record<string, (module: NodeModule, filename: string) => void> }
@@ -35,6 +37,48 @@ test('debtor report reads every page and fails closed when pagination cannot be 
   expect(calls).toEqual([[0, 399], [400, 799], [800, 1199]])
   await expect(readAllPages(async () => ({ data: [1, 2], error: null }), 2, 2)).rejects.toThrow('no se generó un reporte parcial')
   await expect(readAllPages(async () => ({ data: null, error: new Error('database') }), 2, 2)).rejects.toThrow('historial completo')
+})
+
+test('the full-history model includes uniquely matched legacy records once and never guesses ambiguous names', () => {
+  const debtors = [{ id: 'debtor-a', name: 'Ficticia Uno' }, { id: 'debtor-b', name: 'Ficticia Uno' }]
+  const documents = [
+    { id: 'orphan-unique', transaction_id: null, debtor_id: null, debtor_name: 'Ficticia Uno', amount: 40, collected_amount: 0, currency: 'PEN', status: 'PENDING', issue_date: '2026-01-01', concept: 'No debe asignarse' },
+  ]
+  const ambiguousProjection = projectLegacyReceivableLinks(debtors, documents, [])
+  expect(ambiguousProjection.byDebtor.get('debtor-a')).toEqual([])
+  expect(ambiguousProjection.byDebtor.get('debtor-b')).toEqual([])
+  expect(ambiguousProjection.coverage.ambiguousDebtorIds.size).toBe(2)
+
+  const uniqueProjection = projectLegacyReceivableLinks(
+    [{ id: 'debtor-a', name: 'Ficticia Uno' }],
+    [{ ...documents[0]!, transaction_id: 'legacy-loan', debtor_id: null, debtor_name: ' FICTICIA UNO ' }],
+    [{ id: 'legacy-loan', debtor_id: 'debtor-a', description: 'Préstamo heredado', amount: 40, currency: 'PEN', transaction_date: '2026-01-01', notes: null }],
+  )
+  const records = uniqueProjection.byDebtor.get('debtor-a') ?? []
+  const history = buildDebtorFinancialHistory(records as never, [{
+    id: 'legacy-loan', type: 'EXPENSE', amount: 40, currency: 'PEN', description: 'Préstamo heredado', notes: null, transaction_date: '2026-01-01',
+  }])
+  expect(history).toHaveLength(1)
+  expect(history[0]).toMatchObject({ id: 'obligation:orphan-unique', status: 'PENDING', amount: 40 })
+})
+
+test('PDF normalization retains the source account on transaction-projected documents', () => {
+  const projection = projectLegacyReceivableLinks(
+    [{ id: 'debtor-a', name: 'Ficticia Uno' }],
+    [],
+    [{
+      id: 'legacy-loan', debtor_id: 'debtor-a', description: 'Préstamo heredado', amount: 40,
+      currency: 'PEN', transaction_date: '2026-01-01', notes: null,
+      source_account: { id: 'account-origin', name: 'Cuenta de origen ficticia' },
+    }],
+  )
+  const projected = projection.byDebtor.get('debtor-a')?.[0]
+  expect(projected).toBeDefined()
+
+  const reportDocument = normalizeDebtorReportReceivable(projected as unknown as Record<string, unknown>)
+  expect(reportDocument.source_account).toEqual({ id: 'account-origin', name: 'Cuenta de origen ficticia' })
+  const history = buildDebtorFinancialHistory([reportDocument as unknown as ReceivableHistoryDocument], [])
+  expect(history[0]).toMatchObject({ accountId: 'account-origin', accountName: 'Cuenta de origen ficticia' })
 })
 
 test('debtor PDF retains a fictional mixed-currency history across multiple pages', async () => {
@@ -92,8 +136,9 @@ test('authenticated export scopes the debtor and every history query to the sess
   const queryLog: Array<{ table: string; filters: Array<[string, unknown]>; range?: [number, number] }> = []
   let sessionUser: { id: string } | null = null
   const debtor = { id: 'debtor-owned', name: 'Persona de prueba', relationship: null, initial_debt: 0 }
-  const oneReceivable = [{ id: 'owned-receivable', transaction_id: null, concept: 'Cuenta ficticia', amount: 120, collected_amount: 20, currency: 'PEN', issue_date: '2026-01-10', status: 'PARTIAL', notes: null, transaction: null }]
-  const oneTransaction = [{ id: 'owned-payment', type: 'INCOME', amount: 20, currency: 'PEN', description: 'Cobro ficticio', notes: null, transaction_date: '2026-01-12', source_account: null, category: null }]
+  let allDebtors = [{ id: 'debtor-owned', name: 'Persona de prueba' }]
+  let oneReceivable: Array<Record<string, any>> = [{ id: 'owned-receivable', transaction_id: null, debtor_id: null, debtor_name: 'Persona de prueba', concept: 'Documento heredado ficticio', amount: 120, collected_amount: 20, currency: 'PEN', issue_date: '2026-01-10', status: 'PARTIAL', notes: null, transaction: null }]
+  const oneTransaction = [{ id: 'owned-payment', type: 'INCOME', debtor_id: 'debtor-owned', amount: 20, currency: 'PEN', description: 'Cobro ficticio', notes: null, transaction_date: '2026-01-12', source_account: null, category: null }]
   const client = {
     auth: { getUser: async () => ({ data: { user: sessionUser } }) },
     from(table: string) {
@@ -106,7 +151,7 @@ test('authenticated export scopes the debtor and every history query to the sess
         order: () => builder,
         range: async (from: number, to: number) => {
           query.range = [from, to]
-          const rows = table === 'accounts_receivable' ? oneReceivable : oneTransaction
+          const rows = table === 'accounts_receivable' ? oneReceivable : table === 'transactions' ? oneTransaction : allDebtors
           return { data: rows.slice(from, to + 1), error: null }
         },
         maybeSingle: async () => ({ data: table === 'debtors' && query.filters.some(([key, value]) => key === 'id' && value === debtor.id) && query.filters.some(([key, value]) => key === 'user_id' && value === 'owner-1') ? debtor : null, error: null }),
@@ -129,17 +174,26 @@ test('authenticated export scopes the debtor and every history query to the sess
   const response = await route.GET(new Request('http://localhost/api/debtors/debtor-owned/export'), { params: Promise.resolve({ id: debtor.id }) })
   expect(response.status).toBe(200)
   expect(response.headers.get('content-type')).toBe('application/pdf')
-  expect(queryLog).toHaveLength(3)
+  expect(queryLog).toHaveLength(4)
   for (const query of queryLog) {
     expect(query.filters).toContainEqual(['user_id', 'owner-1'])
-    if (query.table === 'debtors') expect(query.filters).toContainEqual(['id', debtor.id])
-    else expect(query.filters).toContainEqual(['debtor_id', debtor.id])
   }
+  expect(queryLog.filter(item => item.table === 'debtors')).toHaveLength(2)
+  expect(queryLog.find(item => item.table === 'debtors' && item.range)?.range).toEqual([0, 499])
+  const singleDebtorLookup = queryLog.find(item => item.table === 'debtors' && !item.range)!
+  expect(singleDebtorLookup.filters).toContainEqual(['id', debtor.id])
   for (const query of queryLog.filter(item => item.table !== 'debtors')) {
-    expect(query.filters).toContainEqual(['debtor_id', debtor.id])
     expect(query.range).toEqual([0, 499])
   }
+  expect(queryLog.find(item => item.table === 'transactions')?.filters).toContainEqual(['debtor_id', debtor.id])
   const { PDFDocument } = nodeRequire('pdf-lib') as typeof import('pdf-lib')
   const responsePdf = await PDFDocument.load(await response.arrayBuffer())
   expect(responsePdf.getPageCount()).toBe(1)
+
+  allDebtors = [{ id: debtor.id, name: debtor.name }, { id: 'same-name-debtor', name: debtor.name }]
+  oneReceivable = [{ id: 'ambiguous-orphan', transaction_id: null, debtor_id: null, debtor_name: debtor.name, concept: 'Asociación ambigua', amount: 40, collected_amount: 0, currency: 'PEN', issue_date: '2026-01-10', status: 'PENDING', notes: null, transaction: null }]
+  queryLog.length = 0
+  const incomplete = await route.GET(new Request('http://localhost/api/debtors/debtor-owned/export'), { params: Promise.resolve({ id: debtor.id }) })
+  expect(incomplete.status).toBe(409)
+  expect(await incomplete.json()).toMatchObject({ ok: false, error: { code: 'INCOMPLETE_HISTORY' } })
 })

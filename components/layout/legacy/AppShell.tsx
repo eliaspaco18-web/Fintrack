@@ -58,7 +58,7 @@ function InnerShell({ user, navBadges = {}, children }: Omit<AppShellProps, 'exc
     openMobileDrawer,
     closeMobileDrawer,
   } = useLayout()
-  const { data: liveNavBadges } = useSWR<Partial<Record<string, number>>>(
+  const { data: liveNavBadges, error: navBadgesError } = useSWR<Partial<Record<string, number>>>(
     '/api/dashboard/nav-badges',
     async (url: string) => {
       const response = await fetchWithTimeout(url, {
@@ -128,6 +128,11 @@ function InnerShell({ user, navBadges = {}, children }: Omit<AppShellProps, 'exc
             style={{ paddingBottom: 'max(6rem, calc(var(--fab-safe-area, 0px) + 1.5rem))' }}
           >
             <ProductUpdatesBanner />
+            {navBadgesError ? (
+              <p role="status" className="mx-4 mt-3 rounded-lg border border-[var(--ft-warning-soft)] bg-[var(--ft-warning-soft)] px-3 py-2 text-xs text-[var(--ft-warning)] md:mx-6 xl:mx-8">
+                No se pudieron verificar los indicadores de navegación. Intenta recargar la página.
+              </p>
+            ) : null}
             {children}
           </div>
 

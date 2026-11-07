@@ -1,0 +1,373 @@
+import { createClient } from '@/lib/supabase.server'
+import { categoryBreakdown } from '@/lib/dashboard/category-breakdown'
+import { apiError, apiOk } from '@/lib/api/response'
+import type { DashboardCounterpartyPreview, DashboardSidebar } from '@/lib/dashboard/types'
+import type { DashboardSummary as ServiceDashboardSummary } from '@/modules/dashboard/dashboard.types'
+
+const DAY_IN_MS = 86_400_000
+const CATEGORY_QUERY_PAGE_SIZE = 500
+
+function toDateUtc(dateIso: string): Date {
+  return new Date(`${dateIso}T00:00:00Z`)
+}
+
+function startOfTodayUtc(): Date {
+  const now = new Date()
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+}
+
+function monthStartFromPeriod(period: string | null, fallback: Date): Date {
+  if (!period || !/^\d{4}-\d{2}$/.test(period)) {
+    return new Date(Date.UTC(fallback.getUTCFullYear(), fallback.getUTCMonth(), 1))
+  }
+
+  const [yearRaw, monthRaw] = period.split('-')
+  const year = Number(yearRaw)
+  const month = Number(monthRaw)
+
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    return new Date(Date.UTC(fallback.getUTCFullYear(), fallback.getUTCMonth(), 1))
+  }
+
+  return new Date(Date.UTC(year, month - 1, 1))
+}
+
+function getDaysUntil(dueDateIso: string, todayUtc: Date): number {
+  const due = toDateUtc(dueDateIso)
+  return Math.floor((due.getTime() - todayUtc.getTime()) / DAY_IN_MS)
+}
+
+function toPenAmount(amount: number, currency: string, exchangeRate: number | null): number | null {
+  if (currency !== 'USD') return amount
+  return exchangeRate === null ? null : amount * exchangeRate
+}
+
+export async function buildDashboardSidebarResponse(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  summary: ServiceDashboardSummary,
+  period: string | null,
+) {
+    const saldoTotal = summary.accounts.some(account => account.balancePen === null)
+      ? null
+      : summary.accounts.reduce((sum, account) => sum + (account.balancePen ?? 0), 0)
+    const porCobrar = summary.receivables.totalPendingPen
+    const porPagar = summary.payables.totalPendingPen
+    const neto = porCobrar === null || porPagar === null ? null : porCobrar - porPagar
+    const exchangeRate = summary.meta.exchangeRateUsdPen
+
+    const todayUtc = startOfTodayUtc()
+    const next30DaysUtc = new Date(todayUtc)
+    next30DaysUtc.setUTCDate(next30DaysUtc.getUTCDate() + 30)
+    const todayIso = todayUtc.toISOString().slice(0, 10)
+    const next30DaysIso = next30DaysUtc.toISOString().slice(0, 10)
+    const monthStart = monthStartFromPeriod(period, todayUtc)
+    const nextMonthStart = new Date(Date.UTC(
+      monthStart.getUTCFullYear(),
+      monthStart.getUTCMonth() + 1,
+      1,
+    ))
+    const monthStartIso = monthStart.toISOString().slice(0, 10)
+    const nextMonthStartIso = nextMonthStart.toISOString().slice(0, 10)
+
+    const [
+      activeCardsResult,
+      debtorsResult,
+      receivablesResult,
+      creditorsResult,
+      payablesResult,
+      monthTransactionsResult,
+    ] = await Promise.all([
+      supabase
+        .from('credits')
+        .select('id, name, currency')
+        .eq('user_id', userId)
+        .eq('status', 'ACTIVE')
+        .eq('credit_type', 'CREDIT_CARD'),
+      supabase
+        .from('debtors')
+        .select('id, name')
+        .eq('user_id', userId),
+      supabase
+        .from('accounts_receivable')
+        .select('debtor_id, amount, collected_amount, currency, status')
+        .eq('user_id', userId)
+        .in('status', ['PENDING', 'PARTIAL']),
+      supabase
+        .from('creditors')
+        .select('id, name')
+        .eq('user_id', userId),
+      supabase
+        .from('accounts_payable')
+        .select('creditor_id, amount, paid_amount, currency, status')
+        .eq('user_id', userId)
+        .in('status', ['PENDING', 'PARTIAL']),
+      supabase
+        .from('transactions')
+        .select('category_id, amount_pen, type', { count: 'exact' })
+        .eq('user_id', userId)
+        .eq('affects_reports', true)
+        .in('type', ['INCOME', 'EXPENSE'])
+        .gte('transaction_date', monthStartIso)
+        .lt('transaction_date', nextMonthStartIso)
+        .order('id', { ascending: true })
+        .range(0, CATEGORY_QUERY_PAGE_SIZE - 1),
+    ])
+
+    if (activeCardsResult.error) {
+      return apiError({
+        code: 'DATABASE_ERROR',
+        message: activeCardsResult.error.message,
+      })
+    }
+    if (debtorsResult.error) {
+      return apiError({
+        code: 'DATABASE_ERROR',
+        message: debtorsResult.error.message,
+      })
+    }
+    if (receivablesResult.error) {
+      return apiError({
+        code: 'DATABASE_ERROR',
+        message: receivablesResult.error.message,
+      })
+    }
+    if (creditorsResult.error) {
+      return apiError({
+        code: 'DATABASE_ERROR',
+        message: creditorsResult.error.message,
+      })
+    }
+    if (payablesResult.error) {
+      return apiError({
+        code: 'DATABASE_ERROR',
+        message: payablesResult.error.message,
+      })
+    }
+    if (monthTransactionsResult.error) {
+      return apiError({
+        code: 'DATABASE_ERROR',
+        message: monthTransactionsResult.error.message,
+      })
+    }
+
+    const activeCards = activeCardsResult.data ?? []
+    const cardById = new Map(activeCards.map((card) => [card.id, { name: card.name, currency: card.currency }]))
+    const cardIds = activeCards.map((card) => card.id)
+
+    let cycleRows: Array<{
+      id: string
+      credit_id: string
+      payment_date: string
+      total_to_pay: number
+      currency: string
+    }> = []
+
+    if (cardIds.length > 0) {
+      const { data, error } = await supabase
+        .from('billing_cycles')
+        .select('id, credit_id, payment_date, total_to_pay')
+        .in('credit_id', cardIds)
+        .gte('payment_date', todayIso)
+        .lte('payment_date', next30DaysIso)
+        .order('payment_date', { ascending: true })
+
+      if (error) {
+        return apiError({
+          code: 'DATABASE_ERROR',
+          message: error.message,
+        })
+      }
+
+      cycleRows = (data ?? []).map((row) => ({
+        id: row.id,
+        credit_id: row.credit_id,
+        payment_date: row.payment_date,
+        total_to_pay: Number(row.total_to_pay ?? 0),
+        currency: cardById.get(row.credit_id)?.currency ?? 'PEN',
+      }))
+    }
+
+    const debtorsById = new Map((debtorsResult.data ?? []).map((debtor) => [debtor.id, debtor.name]))
+    const creditorsById = new Map((creditorsResult.data ?? []).map((creditor) => [creditor.id, creditor.name]))
+
+    const debtorPending = new Map<string, number | null>()
+    for (const row of receivablesResult.data ?? []) {
+      if (!row.debtor_id) continue
+      const pendingOriginal = Number(row.amount ?? 0) - Number(row.collected_amount ?? 0)
+      const pendingPen = toPenAmount(Math.max(0, pendingOriginal), row.currency, exchangeRate)
+      const current = debtorPending.get(row.debtor_id)
+      debtorPending.set(row.debtor_id, current === null || pendingPen === null
+        ? null
+        : (current ?? 0) + pendingPen)
+    }
+
+    const creditorPending = new Map<string, number | null>()
+    for (const row of payablesResult.data ?? []) {
+      if (!row.creditor_id) continue
+      const pendingOriginal = Number(row.amount ?? 0) - Number(row.paid_amount ?? 0)
+      const pendingPen = toPenAmount(Math.max(0, pendingOriginal), row.currency, exchangeRate)
+      const current = creditorPending.get(row.creditor_id)
+      creditorPending.set(row.creditor_id, current === null || pendingPen === null
+        ? null
+        : (current ?? 0) + pendingPen)
+    }
+
+    const topDeudores: DashboardCounterpartyPreview[] = Array.from(debtorPending.entries())
+    .map(([id, pendingAmountPen]) => ({
+      id,
+      name: debtorsById.get(id) ?? 'Deudor',
+      pending_amount_pen: pendingAmountPen === null ? null : Math.round(pendingAmountPen * 100) / 100,
+      href: `/receivables?debtorId=${id}`,
+    }))
+    .sort((a, b) => (b.pending_amount_pen ?? -Infinity) - (a.pending_amount_pen ?? -Infinity))
+    .slice(0, 3)
+
+    const topAcreedores: DashboardCounterpartyPreview[] = Array.from(creditorPending.entries())
+    .map(([id, pendingAmountPen]) => ({
+      id,
+      name: creditorsById.get(id) ?? 'Acreedor',
+      pending_amount_pen: pendingAmountPen === null ? null : Math.round(pendingAmountPen * 100) / 100,
+      href: `/payables?creditorId=${id}`,
+    }))
+    .sort((a, b) => (b.pending_amount_pen ?? -Infinity) - (a.pending_amount_pen ?? -Infinity))
+    .slice(0, 3)
+
+    const transactionCount = monthTransactionsResult.count
+    if (transactionCount === null || !Number.isSafeInteger(transactionCount) || transactionCount < 0) {
+      return apiError({ code: 'DATABASE_ERROR', message: 'Category transaction coverage is unavailable' })
+    }
+
+    const transactionRows = [...(monthTransactionsResult.data ?? [])]
+    while (transactionRows.length < transactionCount) {
+      const start = transactionRows.length
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('category_id, amount_pen, type')
+        .eq('user_id', userId)
+        .eq('affects_reports', true)
+        .in('type', ['INCOME', 'EXPENSE'])
+        .gte('transaction_date', monthStartIso)
+        .lt('transaction_date', nextMonthStartIso)
+        .order('id', { ascending: true })
+        .range(start, start + CATEGORY_QUERY_PAGE_SIZE - 1)
+
+      if (error || !data?.length) {
+        return apiError({ code: 'DATABASE_ERROR', message: 'Category transaction coverage is incomplete' })
+      }
+      transactionRows.push(...data)
+    }
+    if (transactionRows.length !== transactionCount) {
+      return apiError({ code: 'DATABASE_ERROR', message: 'Category transaction coverage changed during read' })
+    }
+    const categoryIds = Array.from(new Set(
+      transactionRows
+        .map((row) => row.category_id)
+        .filter((value): value is string => typeof value === 'string' && value.length > 0)
+    ))
+
+    const categoryMap = new Map<string, { name: string; color: string }>()
+    for (let start = 0; start < categoryIds.length; start += CATEGORY_QUERY_PAGE_SIZE) {
+      const { data: categories, error: categoriesError } = await supabase
+        .from('categories')
+        .select('id, name, color')
+        .in('id', categoryIds.slice(start, start + CATEGORY_QUERY_PAGE_SIZE))
+
+      if (categoriesError) {
+        return apiError({
+          code: 'DATABASE_ERROR',
+          message: categoriesError.message,
+        })
+      }
+
+      for (const category of categories ?? []) {
+        categoryMap.set(category.id, {
+          name: category.name,
+          color: category.color,
+        })
+      }
+    }
+
+    const { income: ingresosCategoria, expense: egresosCategoria } = categoryBreakdown(
+      transactionRows.map((row) => ({
+        category_id: row.category_id,
+        amount_pen: row.amount_pen,
+        type: row.type === 'INCOME' ? 'INCOME' : 'EXPENSE',
+      })),
+      categoryMap,
+    )
+
+    const vencimientosCreditoBancario = summary.upcomingInstallments
+      .filter((item) => item.daysUntilDue >= 0 && item.daysUntilDue <= 30)
+      .map((item) => ({
+        id: item.id,
+        tipo: 'credito_bancario' as const,
+        name: item.creditorName,
+        due_date: item.dueDate,
+        monto: item.totalAmount,
+        currency: item.currency === 'USD' ? 'USD' as const : 'PEN' as const,
+      }))
+
+    const vencimientosTarjeta = cycleRows.map((cycle) => ({
+      id: cycle.id,
+      tipo: 'ciclo_tarjeta' as const,
+      name: cardById.get(cycle.credit_id)?.name ?? 'Tarjeta de crédito',
+      due_date: cycle.payment_date,
+      monto: cycle.total_to_pay,
+      currency: cycle.currency === 'USD' ? 'USD' as const : 'PEN' as const,
+    }))
+
+    const vencimientosPorPagar = summary.payables.items
+      .filter((item) => item.dueDate)
+      .map((item) => ({
+        item,
+        daysUntil: getDaysUntil(item.dueDate as string, todayUtc),
+      }))
+      .filter(({ daysUntil }) => daysUntil >= 0 && daysUntil <= 30)
+      .map(({ item }) => ({
+        id: item.id,
+        tipo: 'cuenta_por_pagar' as const,
+        name: item.creditorName,
+        due_date: item.dueDate as string,
+        monto: item.pendingAmount,
+        currency: item.currency === 'USD' ? 'USD' as const : 'PEN' as const,
+      }))
+
+    const payload: DashboardSidebar = {
+      saldos_bancarios: {
+        total_consolidado: saldoTotal,
+        items: summary.accounts
+          .slice()
+          .sort((a, b) => (b.balancePen ?? -Infinity) - (a.balancePen ?? -Infinity))
+          .map((account) => ({
+            portfolio_id: account.id,
+            name: account.name,
+            saldo: account.balancePen,
+            pct_of_total: saldoTotal !== null && saldoTotal > 0 && account.balancePen !== null
+              ? Math.round((account.balancePen / saldoTotal) * 10000) / 100
+              : null,
+          })),
+      },
+      flujo_pendiente: {
+        por_cobrar_total: porCobrar,
+        por_cobrar_count: summary.receivables.count,
+        por_pagar_total: porPagar,
+        por_pagar_count: summary.payables.count,
+        neto,
+        nota: neto === null ? 'incomplete' : neto > 0 ? 'favorece' : neto < 0 ? 'desfavorece' : 'equilibrado',
+        top_deudores: topDeudores,
+        top_acreedores: topAcreedores,
+      },
+      egresos_categoria: egresosCategoria,
+      ingresos_categoria: ingresosCategoria,
+      vencimientos_proximos: [
+        ...vencimientosCreditoBancario,
+        ...vencimientosTarjeta,
+        ...vencimientosPorPagar,
+      ]
+        .sort((a, b) => a.due_date.localeCompare(b.due_date))
+        .slice(0, 10),
+    }
+
+  return apiOk(payload)
+}

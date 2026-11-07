@@ -4,6 +4,7 @@ const PROTECTED_API_ROUTES = [
   '/api/dashboard/summary',
   '/api/dashboard/modules-summary',
   '/api/dashboard/sidebar',
+  '/api/dashboard/overview',
   '/api/accounts',
   '/api/profile',
   '/api/transactions',

@@ -7,7 +7,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase.server'
 import { CategoryKeys } from '@/lib/constants/category-keys'
 import { TransactionService } from '@/modules/transactions/transaction.service'
-import { repairLegacyReceivableLinks } from '@/lib/server/receivable-link-repair'
+import { projectLegacyReceivableLinks } from '@/lib/server/receivable-read-model'
+import { readAllPages } from '@/modules/receivables/paged-read'
 import {
   apiCreated,
   apiError,
@@ -90,36 +91,84 @@ export async function GET(req: NextRequest) {
     return apiError({ code: 'VALIDATION_ERROR', message: 'Parámetro status inválido' })
   }
 
+  if (debtorId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(debtorId)) {
+    return apiError({ code: 'VALIDATION_ERROR', message: 'Parámetro debtor_id inválido' })
+  }
+
+  let debtor: { id: string; name: string } | null = null
   if (debtorId) {
-    const { data: debtor } = await supabase
+    const { data, error: debtorError } = await supabase
       .from('debtors')
       .select('id, name')
       .eq('id', debtorId)
       .eq('user_id', userId)
       .maybeSingle()
 
-    if (debtor) {
-      await repairLegacyReceivableLinks(supabase, userId, [debtor])
+    if (debtorError) return apiError({ code: 'DATABASE_ERROR', message: debtorError.message })
+    debtor = data
+  }
+
+  if (debtorId && debtor) {
+    try {
+      const [allDebtors, allDocuments, transactions] = await Promise.all([
+        readAllPages((from, to) => supabase.from('debtors').select('id, name').eq('user_id', userId).order('id', { ascending: true }).range(from, to)),
+        readAllPages((from, to) => supabase.from('accounts_receivable').select(RECEIVABLE_SELECT).eq('user_id', userId).order('id', { ascending: true }).range(from, to)),
+        readAllPages((from, to) => supabase
+          .from('transactions')
+          .select('id, debtor_id, description, amount, currency, transaction_date, notes, source_account:accounts!transactions_source_account_id_fkey(id, name)')
+          .eq('user_id', userId)
+          .eq('type', 'EXPENSE')
+          .eq('debtor_id', debtorId)
+          .order('id', { ascending: true })
+          .range(from, to)),
+      ])
+      const projection = projectLegacyReceivableLinks(allDebtors, allDocuments, transactions)
+      const projectedRows = projection.byDebtor.get(debtorId) ?? []
+      const transactionsById = new Map(transactions.map(transaction => [transaction.id, transaction]))
+      const rows = projectedRows
+        .filter(row => !status || row.status === status)
+        .map(row => {
+          if (row.projection_source !== 'transaction' || !row.transaction_id) return row as ReceivableResponseRow
+          const sourceTransaction = transactionsById.get(row.transaction_id)
+          return {
+            ...row,
+            transaction: sourceTransaction
+              ? { id: sourceTransaction.id, source_account: sourceTransaction.source_account }
+              : null,
+          } as unknown as ReceivableResponseRow
+        })
+        .sort((left, right) => {
+          const amountDifference = Number(left.amount ?? 0) - Number(right.amount ?? 0)
+          return sortParam === 'asc' ? amountDifference : -amountDifference
+        })
+      const coverage = {
+        ambiguous: projection.coverage.ambiguousDebtorIds.has(debtorId),
+        ambiguousDocuments: projection.coverage.ambiguousOrphanDocumentCount + projection.coverage.unmatchedOrphanDocumentCount,
+        duplicateLinks: projection.coverage.duplicateTransactionLinkCount,
+      }
+      return NextResponse.json({ ok: true, data: rows.map(row => normalizeReceivableRow(row)), legacy_coverage: coverage })
+    } catch {
+      return apiError({ code: 'DATABASE_ERROR', message: 'No se pudo leer la cobertura completa del historial.' })
     }
   }
 
-  let query = supabase
-    .from('accounts_receivable')
-    .select(RECEIVABLE_SELECT)
-    .eq('user_id', userId)
-
-  if (status) query = query.eq('status', status)
-  if (debtorId) query = query.eq('debtor_id', debtorId)
-
-  query = query.order('amount', { ascending: sortParam === 'asc' })
-
-  const { data, error } = await query
-  if (error) return apiError({ code: 'DATABASE_ERROR', message: error.message })
-
-  return NextResponse.json({
-    ok: true,
-    data: (data ?? []).map(row => normalizeReceivableRow(row as ReceivableResponseRow)),
-  })
+  try {
+    const data = await readAllPages((from, to) => {
+      let query = supabase.from('accounts_receivable').select(RECEIVABLE_SELECT).eq('user_id', userId)
+      if (status) query = query.eq('status', status)
+      if (debtorId) query = query.eq('debtor_id', debtorId)
+      return query
+        .order('amount', { ascending: sortParam === 'asc' })
+        .order('id', { ascending: true })
+        .range(from, to)
+    })
+    return NextResponse.json({ ok: true, data: (data as ReceivableResponseRow[]).map(normalizeReceivableRow) })
+  } catch {
+    return apiError({
+      code: 'DATABASE_ERROR',
+      message: 'No se pudo cargar la lista completa de cuentas por cobrar. Intenta actualizarla nuevamente.',
+    })
+  }
 }
 
 export async function POST(req: NextRequest) {
