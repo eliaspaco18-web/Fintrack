@@ -5,6 +5,7 @@ import {
   assertPromotionAuthorization,
   assertMergedReleaseProof,
   assertMigrationChangesAreAdditive,
+  assertPreviewBuildBootstrap,
   assertPreviewDeployment,
   assertPreviewDeploymentProtectionResponse,
   assertPreviewPrReady,
@@ -26,6 +27,9 @@ const projectRef = 'abcdefghijklmnopqrst'
 const realReadyPreview = JSON.parse(readFileSync(new URL('./fixtures/vercel/ready-preview.json', import.meta.url), 'utf8'))
 const realCanceledPreview = JSON.parse(readFileSync(new URL('./fixtures/vercel/canceled-preview.json', import.meta.url), 'utf8'))
 const realReadyProduction = JSON.parse(readFileSync(new URL('./fixtures/vercel/ready-production.json', import.meta.url), 'utf8'))
+const previewBuildCommand = 'node scripts/release/verify-preview-build-env.mjs && npm run build'
+const trustedPreviewVercelConfig = JSON.stringify({ buildCommand: previewBuildCommand, crons: [] })
+const trustedPreviewBuildVerifier = readFileSync(new URL('./verify-preview-build-env.mjs', import.meta.url), 'utf8')
 
 function jwt(role, ref = projectRef) {
   return `header.${Buffer.from(JSON.stringify({ role, ref })).toString('base64url')}.signature`
@@ -35,7 +39,9 @@ function previewEnv(overrides = {}) {
   return {
     NEXT_PUBLIC_SUPABASE_URL: `https://${projectRef}.supabase.co`,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: jwt('anon'),
-    SUPABASE_SERVICE_ROLE_KEY: jwt('service_role'),
+    // `vercel pull` returns this marker for a Vercel Secret. The runner must
+    // validate its presence without materializing the credential.
+    SUPABASE_SERVICE_ROLE_KEY: '[SENSITIVE]',
     SUPABASE_PROJECT_ID: projectRef,
     NEXT_PUBLIC_FINTRACK_V3_SHELL: '1',
     ...overrides,
@@ -99,6 +105,62 @@ test('Preview accepts only credentials bound to the isolated QA Supabase project
   assert.deepEqual(previewSupabaseProbeHeaders(opaqueSecret), { apikey: opaqueSecret })
   const legacyJwt = jwt('anon')
   assert.deepEqual(previewSupabaseProbeHeaders(legacyJwt), { apikey: legacyJwt, Authorization: `Bearer ${legacyJwt}` })
+})
+
+test('Preview pull accepts only the non-retrievable service-role Secret marker', () => {
+  const common = {
+    previewProjectRef: projectRef,
+    productionProjectRef: 'zyxwvutsrqponmlkjihg',
+    shellFlag: '1',
+  }
+  assert.equal(assertPreviewSupabaseEnvironment(previewEnv(), common), true)
+  assert.throws(() => assertPreviewSupabaseEnvironment(previewEnv({ SUPABASE_SERVICE_ROLE_KEY: '' }), common), /SUPABASE_SERVICE_ROLE_KEY/)
+
+  const accidentallyMaterializedSecret = 'sb_secret_synthetic_not_for_use_0123456789'
+  assert.throws(
+    () => assertPreviewSupabaseEnvironment(previewEnv({ SUPABASE_SERVICE_ROLE_KEY: accidentallyMaterializedSecret }), common),
+    error => error.message.includes('cannot be materialized') && !error.message.includes(accidentallyMaterializedSecret),
+  )
+})
+
+test('Preview bootstrap guard rejects a legacy candidate without the approved remote build command', () => {
+  assert.throws(() => assertPreviewBuildBootstrap({
+    candidateVercelConfig: JSON.stringify({ crons: [] }),
+    trustedVercelConfig: trustedPreviewVercelConfig,
+    candidateVerifier: '',
+    trustedVerifier: trustedPreviewBuildVerifier,
+  }), /Candidate is missing the approved Preview remote build command/)
+})
+
+test('Preview bootstrap guard rejects a changed verifier and alternate Vercel TypeScript config', () => {
+  const candidateVercelConfig = JSON.stringify({ buildCommand: previewBuildCommand, crons: [] })
+  assert.throws(() => assertPreviewBuildBootstrap({
+    candidateVercelConfig,
+    trustedVercelConfig: trustedPreviewVercelConfig,
+    candidateVerifier: `${trustedPreviewBuildVerifier}\n// changed candidate content`,
+    trustedVerifier: trustedPreviewBuildVerifier,
+  }), /differs from trusted main/)
+  assert.throws(() => assertPreviewBuildBootstrap({
+    candidateVercelConfig,
+    trustedVercelConfig: trustedPreviewVercelConfig,
+    candidateVerifier: trustedPreviewBuildVerifier,
+    trustedVerifier: trustedPreviewBuildVerifier,
+    candidateHasVercelTs: true,
+  }), /vercel\.ts/)
+})
+
+test('Preview bootstrap guard accepts the exact approved command and verifier without modifying candidate input', () => {
+  const candidateVercelConfig = JSON.stringify({ buildCommand: previewBuildCommand, crons: [] })
+  const originalConfig = candidateVercelConfig
+  const originalVerifier = trustedPreviewBuildVerifier
+  assert.equal(assertPreviewBuildBootstrap({
+    candidateVercelConfig,
+    trustedVercelConfig: trustedPreviewVercelConfig,
+    candidateVerifier: originalVerifier,
+    trustedVerifier: originalVerifier,
+  }), true)
+  assert.equal(candidateVercelConfig, originalConfig)
+  assert.equal(originalVerifier, trustedPreviewBuildVerifier)
 })
 
 test('Preview environment allowlist reports variable names only and masks all values safely', () => {

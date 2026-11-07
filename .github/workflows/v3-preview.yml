@@ -150,25 +150,31 @@ jobs:
       - name: Fail closed unless the full Preview environment is QA-only
         run: node release-tools/scripts/release/continuous-publishing.mjs check-preview-environment candidate/.vercel/.env.preview.local
 
-      - name: Build the approved candidate with isolated QA Preview variables
-        working-directory: candidate
-        run: vercel build
-
-      - name: Remove pulled environment file before deployment upload
+      - name: Remove the pulled environment snapshot before remote deployment
         working-directory: candidate
         run: rm -f .vercel/.env.preview.local
 
-      - name: Deploy a Preview target bound to the exact PR SHA
+      - name: Verify Preview build bootstrap against trusted main immediately before deployment
+        run: node release-tools/scripts/release/continuous-publishing.mjs verify-preview-build-bootstrap candidate release-tools
+
+      - name: Build remotely with the Vercel Preview Secret and deploy a Preview target bound to the exact PR SHA
         id: deploy
         working-directory: candidate
         run: |
           set -euo pipefail
-          log_file="$RUNNER_TEMP/fintrack-preview-deploy.log"
-          vercel deploy --prebuilt \
+          stdout_file="$RUNNER_TEMP/fintrack-preview-deploy.stdout"
+          stderr_file="$RUNNER_TEMP/fintrack-preview-deploy.stderr"
+          if ! vercel deploy --yes --target=preview \
+            --build-env "FINTRACK_PREVIEW_BUILD_VERIFICATION=1" \
+            --build-env "FINTRACK_PREVIEW_EXPECTED_PROJECT_REF=$PREVIEW_SUPABASE_PROJECT_REF" \
+            --build-env "FINTRACK_PREVIEW_PRODUCTION_PROJECT_REF=$PRODUCTION_SUPABASE_PROJECT_REF" \
             --meta "githubCommitSha=$RELEASE_SHA" \
             --meta "githubPullRequest=$PULL_REQUEST_NUMBER" \
-            --meta "gitTreeSha=$RELEASE_TREE_SHA" 2>&1 | tee "$log_file"
-          url="$(grep -Eo 'https://[a-zA-Z0-9.-]+\.vercel\.app' "$log_file" | tail -n 1)"
+            --meta "gitTreeSha=$RELEASE_TREE_SHA" >"$stdout_file" 2>"$stderr_file"; then
+            echo 'Vercel remote Preview build or deployment failed; CLI output was suppressed to protect environment values.' >&2
+            exit 1
+          fi
+          url="$(grep -Eo 'https://[a-zA-Z0-9.-]+\.vercel\.app' "$stdout_file" | tail -n 1)"
           [[ "$url" =~ ^https://[a-zA-Z0-9.-]+\.vercel\.app$ ]]
           echo "deployment_url=$url" >> "$GITHUB_OUTPUT"
         env:
