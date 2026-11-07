@@ -151,6 +151,31 @@ test('real anonymized Vercel Preview response accepts READY with target null and
   assert.throws(() => assertPreviewDeployment({ ...deployment, target: undefined }, expected), /eligible Preview/)
 })
 
+test('Preview accepts Vercel CLI detached-HEAD metadata but rejects a different reported branch', () => {
+  // `vercel deploy --prebuilt` can report HEAD when the verified checkout is detached.
+  const deployment = {
+    ...realReadyPreview,
+    meta: {
+      ...realReadyPreview.meta,
+      githubCommitRef: 'HEAD',
+      githubPullRequest: '71',
+      gitTreeSha: tree,
+    },
+  }
+  const expected = {
+    projectId: 'prj_test', commitSha: realReadyPreview.meta.githubCommitSha, treeSha: tree,
+    headRef: 'codex/continuous-publishing-r1', githubRepo: 'fintrack-redacted', githubOrg: 'example-org',
+    pullRequestNumber: 71, hostname: realReadyPreview.url, aliases: realReadyPreview.alias,
+    productionDomain: 'fintrack-eta-silk.vercel.app',
+  }
+
+  assert.equal(assertPreviewDeployment(deployment, expected), true)
+  assert.throws(() => assertPreviewDeployment({
+    ...deployment,
+    meta: { ...deployment.meta, githubCommitRef: 'codex/unrelated-branch' },
+  }, expected), /branch metadata does not match/)
+})
+
 test('Preview API verification handles real target-null response and separately proves the official alias is absent', async () => {
   const deployment = { ...realReadyPreview, meta: { ...realReadyPreview.meta, githubPullRequest: '71', gitTreeSha: tree } }
   const seen = []

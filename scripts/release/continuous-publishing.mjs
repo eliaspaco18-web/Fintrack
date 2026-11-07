@@ -194,7 +194,10 @@ export function assertPreviewDeployment(deployment, expected) {
   if (deployment.meta?.gitTreeSha !== expected.treeSha) fail('Preview deployment tree does not match the approved PR tree.')
   if (expected.githubRepo && deployment.meta?.githubRepo !== expected.githubRepo) fail('Preview deployment repository metadata does not match the approved repository.')
   if (expected.githubOrg && deployment.meta?.githubOrg !== expected.githubOrg) fail('Preview deployment owner metadata does not match the approved repository.')
-  if (expected.headRef && deployment.meta?.githubCommitRef !== expected.headRef) fail('Preview deployment branch metadata does not match the approved PR head.')
+  const deploymentRef = deployment.meta?.githubCommitRef
+  if (expected.headRef && deploymentRef !== expected.headRef && deploymentRef !== 'HEAD') {
+    fail('Preview deployment branch metadata does not match the approved PR head.')
+  }
   const hostname = String(deployment.url ?? '').replace(/^https:\/\//, '')
   if (!hostname.endsWith('.vercel.app') || hostname.includes('/') || hostname !== expected.hostname) {
     fail('Preview deployment hostname is invalid or does not match the deployed URL.')
