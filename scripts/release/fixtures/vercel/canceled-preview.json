@@ -1,0 +1,19 @@
+{
+  "id": "dpl_redacted_canceled_preview",
+  "name": "fintrack",
+  "url": "fintrack-preview-fixture-98765-redacted.vercel.app",
+  "state": "CANCELED",
+  "project": {
+    "id": "prj_test",
+    "name": "fintrack",
+    "framework": "nextjs"
+  },
+  "meta": {
+    "githubCommitRef": "codex/preview-fixture",
+    "githubCommitSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "githubRepo": "fintrack-redacted",
+    "githubOrg": "example-org"
+  },
+  "target": null,
+  "readyState": "CANCELED"
+}

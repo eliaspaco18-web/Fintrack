@@ -1,34 +1,38 @@
 import fs from 'node:fs'
-
-export const REQUIRED_MIGRATION_IDS = Object.freeze([
-  '20261025000001',
-  '20261025000002',
-  '20261026000001',
-])
-
-export function assertMigrationEvidence(evidence, expectedSha) {
-  if (!evidence || typeof evidence !== 'object') throw new Error('Migration evidence is missing or malformed.')
-  if (evidence.release_sha !== expectedSha) throw new Error('Migration evidence belongs to a different release SHA.')
-  if (evidence.result === 'supabase-ledger-certified') {
-    if (evidence.certification !== 'protected-production-migration-ledger' || evidence.observed_migration_count !== 37) {
-      throw new Error('Read-only migration certification is missing its required provenance or exact ledger count.')
-    }
-  } else if (evidence.result !== 'supabase-db-push-succeeded') {
-    throw new Error('Migration evidence does not record a successful apply or protected read-only certification.')
-  }
-  const actual = Array.isArray(evidence.migrations) ? [...evidence.migrations].sort() : []
-  const expected = [...REQUIRED_MIGRATION_IDS].sort()
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error('Migration evidence does not contain the exact required V3 migration set.')
-  return true
-}
+import { assertMigrationEvidence } from './continuous-publishing.mjs'
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
   try {
-    const path = process.argv[2]
-    const expectedSha = process.argv[3]
-    if (!path || !/^[0-9a-f]{40}$/.test(expectedSha ?? '')) throw new Error('Usage: node assert-migration-evidence.mjs <evidence.json> <full-release-sha>')
-    assertMigrationEvidence(JSON.parse(fs.readFileSync(path, 'utf8')), expectedSha)
-    process.stdout.write(`Migration evidence verified for ${expectedSha}.\n`)
+    const [path, releaseSha, treeSha, changeType, productionBaseSha, riskLevel, financialSensitive] = process.argv.slice(2)
+    if (!path || !/^[0-9a-f]{40}$/.test(releaseSha ?? '') || !/^[0-9a-f]{40}$/.test(treeSha ?? '') || !['code-only', 'migration'].includes(changeType ?? '') || !/^[0-9a-f]{40}$/.test(productionBaseSha ?? '')) {
+      throw new Error('Usage: assert-migration-evidence.mjs <evidence.json> <release-sha> <tree-sha> <code-only|migration> <production-base-sha> <standard|elevated> <true|false>')
+    }
+    if (!['standard', 'elevated'].includes(riskLevel ?? '') || !['true', 'false'].includes(financialSensitive ?? '')) {
+      throw new Error('Usage: assert-migration-evidence.mjs <evidence.json> <release-sha> <tree-sha> <code-only|migration> <production-base-sha> <standard|elevated> <true|false>')
+    }
+    assertMigrationEvidence(JSON.parse(fs.readFileSync(path, 'utf8')), {
+      releaseSha, treeSha, changeType, productionBaseSha, riskLevel, financialSensitive: financialSensitive === 'true',
+    })
+    const evidence = JSON.parse(fs.readFileSync(path, 'utf8'))
+    const sourceRunId = process.env.MIGRATION_EVIDENCE_RUN_ID
+    if (sourceRunId) {
+      if (!/^\d+$/.test(sourceRunId) || evidence.source_run_id !== sourceRunId) throw new Error('Migration evidence source run ID does not match the requested artifact run.')
+      const repository = process.env.GITHUB_REPOSITORY
+      const token = process.env.GITHUB_TOKEN
+      if (!repository || !token) throw new Error('GITHUB_REPOSITORY and GITHUB_TOKEN are required to verify migration evidence provenance.')
+      const response = await fetch(`https://api.github.com/repos/${repository}/actions/runs/${sourceRunId}`, {
+        headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}`, 'X-GitHub-Api-Version': '2022-11-28' },
+      })
+      if (!response.ok) throw new Error(`GitHub migration evidence run lookup failed with HTTP ${response.status}.`)
+      const run = await response.json()
+      const expectedWorkflow = changeType === 'code-only'
+        ? '.github/workflows/production-migration-certification.yml'
+        : '.github/workflows/production-migrations.yml'
+      if (String(run.path ?? '').split('@')[0] !== expectedWorkflow || run.head_branch !== 'main' || run.head_sha !== releaseSha || run.status !== 'completed' || run.conclusion !== 'success') {
+        throw new Error('Migration evidence was not produced by the successful protected workflow for the exact main SHA.')
+      }
+    }
+    process.stdout.write(`Release evidence verified for ${releaseSha} (${changeType}).\n`)
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
     process.exitCode = 1

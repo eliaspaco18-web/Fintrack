@@ -1,0 +1,22 @@
+{
+  "id": "dpl_redacted_ready_preview",
+  "name": "fintrack",
+  "url": "fintrack-preview-fixture-12345-redacted.vercel.app",
+  "state": "READY",
+  "project": {
+    "id": "prj_test",
+    "name": "fintrack",
+    "framework": "nextjs"
+  },
+  "meta": {
+    "githubCommitRef": "codex/preview-fixture",
+    "githubCommitSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "githubRepo": "fintrack-redacted",
+    "githubOrg": "example-org"
+  },
+  "alias": [
+    "fintrack-git-preview-fixture-redacted.vercel.app"
+  ],
+  "target": null,
+  "readyState": "READY"
+}

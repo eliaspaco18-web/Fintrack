@@ -1,0 +1,22 @@
+{
+  "id": "dpl_redacted_ready_production",
+  "name": "fintrack",
+  "url": "fintrack-production-fixture-54321-redacted.vercel.app",
+  "state": "READY",
+  "project": {
+    "id": "prj_test",
+    "name": "fintrack",
+    "framework": "nextjs"
+  },
+  "meta": {
+    "githubCommitRef": "main",
+    "githubCommitSha": "cccccccccccccccccccccccccccccccccccccccc",
+    "githubCommitMessage": "redacted production release",
+    "githubRepo": "fintrack-redacted",
+    "githubOrg": "example-org"
+  },
+  "alias": [],
+  "target": "production",
+  "readyState": "READY",
+  "source": "cli"
+}
