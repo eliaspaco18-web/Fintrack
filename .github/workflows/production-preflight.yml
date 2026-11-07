@@ -1,51 +1,80 @@
-name: Production Release Preflight
+name: Production Release Preflight (reuse exact-tree CI)
 
 on:
   workflow_dispatch:
     inputs:
       release_sha:
-        description: Exact 40-character commit SHA already merged into main
+        description: Exact commit already merged into main
         required: true
         type: string
 
 permissions:
   contents: read
+  pull-requests: read
+  actions: read
 
 jobs:
   preflight:
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       NEXT_PUBLIC_SUPABASE_URL: https://release-ci.invalid
       NEXT_PUBLIC_SUPABASE_ANON_KEY: release-ci-placeholder-not-a-secret
+      RELEASE_SHA: ${{ inputs.release_sha }}
     steps:
       - name: Check out the requested commit
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.release_sha }}
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify exact SHA is on main
-        env:
-          RELEASE_SHA: ${{ inputs.release_sha }}
+      - name: Verify SHA is on main and resolve tree identity
+        id: tree
         run: |
           set -euo pipefail
           [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$(git rev-parse HEAD)" == "$RELEASE_SHA" ]]
-          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
-          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+          git merge-base --is-ancestor "$RELEASE_SHA" refs/remotes/origin/main
+          echo "tree_sha=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 24
-          cache: npm
+          node-version: 24.22.1
 
-      # This job deliberately has no Production or Vercel secrets.
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm run build
-      - run: npm run test:unit
-      - run: npm run test:release-guards
+      - name: Reuse only successful CI for the exact reviewed PR head and identical Git tree
+        id: ci-proof
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_TREE_SHA: ${{ steps.tree.outputs.tree_sha }}
+        run: node scripts/release/continuous-publishing.mjs merged-ci-tree
+
+      # If the release SHA's tree differs, or its PR CI/review cannot be proven,
+      # run the complete suite on the exact release checkout.
+      - name: Install locked dependencies
+        if: steps.ci-proof.outputs.reusable != 'true'
+        run: npm ci
+      - name: Lint
+        if: steps.ci-proof.outputs.reusable != 'true'
+        run: npm run lint
+      - name: Typecheck
+        if: steps.ci-proof.outputs.reusable != 'true'
+        run: npm run typecheck
+      - name: Build
+        if: steps.ci-proof.outputs.reusable != 'true'
+        run: npm run build
+      - name: Unit and integration suite
+        if: steps.ci-proof.outputs.reusable != 'true'
+        run: npm run test:unit
+      - name: Release guards
+        if: steps.ci-proof.outputs.reusable != 'true'
+        run: npm run test:release-guards
+
+      - name: Report exact-tree CI reuse or full preflight
+        run: |
+          if [[ "${{ steps.ci-proof.outputs.reusable }}" == "true" ]]; then
+            echo "Reused successful CI run ${{ steps.ci-proof.outputs.ciRunId }} for the identical release tree ${{ steps.tree.outputs.tree_sha }}."
+          else
+            echo "No exact-tree proof was available; the complete preflight suite ran on $RELEASE_SHA."
+          fi

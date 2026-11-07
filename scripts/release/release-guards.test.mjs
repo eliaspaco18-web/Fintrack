@@ -1,10 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { assertV3MigrationPlan } from './assert-v3-migration-plan.mjs'
 import { assertStagedDeployment } from './verify-staged-deployment.mjs'
+import { assertStageEvidence } from './verify-stage-evidence.mjs'
 import { sanitizeBuildEnvironment } from './sanitize-build-env.mjs'
-import { assertMigrationEvidence, REQUIRED_MIGRATION_IDS } from './assert-migration-evidence.mjs'
-import { assertRemoteMigrationLedger, assertCompleteMigrationLedger } from './assert-migration-ledger.mjs'
+import { assertMigrationEvidence } from './continuous-publishing.mjs'
+import { assertRemoteMigrationLedger, assertCompleteMigrationLedger, assertMigrationPlanMatchesDryRun, digestMigrationIds } from './assert-migration-ledger.mjs'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { spawnSync } from 'node:child_process'
@@ -12,51 +12,44 @@ import { spawnSync } from 'node:child_process'
 const require = createRequire(import.meta.url)
 const { validateSupabasePublicBuildEnvironment } = require('./validate-supabase-public-build-env.cjs')
 
-test('accepts exactly the two remaining V3 migrations after the first was applied', () => {
+test('migration apply accepts only the exact pending IDs identified by the protected ledger', () => {
   const dryRun = [
     'Would push these migrations:',
     ' • 20261026000001_harden_user_scoped_rpc_permissions.sql',
     ' • 20261025000002_atomic_exchange_rate_default_null.sql',
   ].join('\n')
-  assert.equal(assertV3MigrationPlan(dryRun).length, 2)
-})
-
-test('rejects missing, already-applied, additional, or duplicate migration IDs', () => {
-  assert.throws(() => assertV3MigrationPlan('No migrations to apply.'), /Expected/)
-  assert.throws(() => assertV3MigrationPlan('20261025000002_b.sql'), /Expected/)
-  assert.throws(() => assertV3MigrationPlan([
-    '20261025000002_b.sql', '20261025000002_b.sql', '20261026000001_c.sql',
-  ].join('\n')), /duplicate/i)
-  assert.throws(() => assertV3MigrationPlan([
-    '20261025000001_a.sql', '20261025000002_b.sql', '20261026000001_c.sql',
-  ].join('\n')), /Expected/)
-  assert.throws(() => assertV3MigrationPlan([
-    '20261025000002_b.sql', '20261026000001_c.sql', '20261027000001_unreviewed.sql',
-  ].join('\n')), /Expected/)
+  const expected = ['20261025000002', '20261026000001']
+  assert.deepEqual(assertMigrationPlanMatchesDryRun(dryRun, expected), expected)
+  assert.throws(() => assertMigrationPlanMatchesDryRun('No migrations to apply.', expected), /does not match/)
+  assert.throws(() => assertMigrationPlanMatchesDryRun(`${dryRun}\n • 20261026000001_duplicate.sql`, expected), /duplicate/)
+  assert.throws(() => assertMigrationPlanMatchesDryRun(`${dryRun}\n • 20261027000001_unreviewed.sql`, expected), /does not match/)
 })
 
 const expectedDeployment = {
   readyState: 'READY',
   target: 'production',
   projectId: 'prj_test',
-  meta: { githubCommitSha: 'a'.repeat(40) },
+  id: 'dpl_abcdef12345',
+  meta: { githubCommitSha: 'a'.repeat(40), gitTreeSha: 'b'.repeat(40), githubPullRequest: '71' },
   url: 'fintrack-abc.vercel.app',
 }
 
 test('accepts the exact staged production deployment', () => {
   assert.equal(assertStagedDeployment(expectedDeployment, {
-    projectId: 'prj_test', releaseSha: 'a'.repeat(40), url: 'fintrack-abc.vercel.app',
+    projectId: 'prj_test', releaseSha: 'a'.repeat(40), treeSha: 'b'.repeat(40), sourcePrNumber: '71', url: 'fintrack-abc.vercel.app',
   }), true)
 })
 
 test('rejects wrong project, SHA, target, URL, or deployment state', () => {
-  const expected = { projectId: 'prj_test', releaseSha: 'a'.repeat(40), url: 'fintrack-abc.vercel.app' }
+  const expected = { projectId: 'prj_test', releaseSha: 'a'.repeat(40), treeSha: 'b'.repeat(40), sourcePrNumber: '71', url: 'fintrack-abc.vercel.app' }
   for (const [key, value] of [
     ['projectId', 'prj_other'], ['target', 'preview'], ['readyState', 'BUILDING'], ['url', 'other.vercel.app'],
   ]) {
     assert.throws(() => assertStagedDeployment({ ...expectedDeployment, [key]: value }, expected))
   }
   assert.throws(() => assertStagedDeployment({ ...expectedDeployment, meta: { githubCommitSha: 'b'.repeat(40) } }, expected))
+  assert.throws(() => assertStagedDeployment({ ...expectedDeployment, meta: { ...expectedDeployment.meta, gitTreeSha: 'c'.repeat(40) } }, expected))
+  assert.throws(() => assertStagedDeployment({ ...expectedDeployment, id: 'dpl_different' }, { ...expected, deploymentId: 'dpl_other' }))
 })
 
 test('keeps public build variables, strips runtime secrets, and fixes the bridge shell off', () => {
@@ -146,28 +139,74 @@ test('Next.js build config fails closed on Vercel placeholders without echoing v
   assert.doesNotMatch(result.stderr, /\[SENSITIVE\]/)
 })
 
-test('stages with a Vercel remote build, no prebuilt artifact, and the exact checked-out SHA', () => {
+test('Stage and Promotion consume exact-tree evidence while retaining production gates and Cron checks', () => {
   const workflowPath = new URL('../../.github/workflows/production-stage.yml', import.meta.url)
   const workflow = readFileSync(workflowPath, 'utf8')
   const deployCommand = workflow.match(/^\s+vercel deploy .*$/m)?.[0] ?? ''
   assert.match(deployCommand, /--prod\s+--skip-domain/)
-  assert.match(deployCommand, /--meta\s+"githubCommitSha=\$RELEASE_SHA"/)
+  assert.match(workflow, /--meta\s+"githubCommitSha=\$RELEASE_SHA"/)
   assert.doesNotMatch(deployCommand, /--prebuilt/)
   assert.doesNotMatch(workflow, /vercel pull --yes --environment=production|vercel build --prod/)
   assert.match(workflow, /npm run test:release-guards/)
+  assert.match(workflow, /FINTRACK_PRODUCTION_STAGE_ENABLED/)
+  assert.match(workflow, /confirm_cron_jobs_disabled/)
+  assert.match(workflow, /fintrack-release-migration-evidence/)
+  assert.match(workflow, /merged-release-proof/)
+  assert.match(workflow, /fintrack-production-stage-evidence/)
+  assert.match(workflow, /PRODUCTION_BASE_SHA: \$\{\{ steps\.baseline\.outputs\.production_base_sha \}\}/)
+  assert.match(workflow, /assert-migration-evidence\.mjs[\s\S]*\$RISK_LEVEL[\s\S]*\$FINANCIAL_SENSITIVE/)
+  const promotion = readFileSync(new URL('../../.github/workflows/production-promote.yml', import.meta.url), 'utf8')
+  assert.match(promotion, /FINTRACK_PRODUCTION_PROMOTION_ENABLED/)
+  assert.match(promotion, /stage_run_id/)
+  assert.match(promotion, /verify-stage-evidence\.mjs/)
+  assert.match(promotion, /vercel promote --yes/)
   assert.match(readFileSync(new URL('../../next.config.js', import.meta.url), 'utf8'), /validate-supabase-public-build-env\.cjs/)
 })
 
-test('binds a V3 stage to the exact successful migration SHA and set', () => {
+test('Stage manifest is bound to release, Production baseline, project, Vercel deployment and Cron confirmation', () => {
+  const manifest = {
+    release_sha: 'a'.repeat(40), tree_sha: 'b'.repeat(40), production_base_sha: 'c'.repeat(40),
+    change_type: 'code-only', risk_level: 'elevated', stage_workflow_run_id: '12345', migration_evidence_run_id: '1234',
+    source_pr_number: '71', ci_run_id: '991', vercel_project_id: 'prj_test', vercel_deployment_id: 'dpl_abcdef12345',
+    deployment_url: 'https://fintrack-preview.vercel.app', deployment_ready_state: 'READY', deployment_target: 'production',
+    cron_jobs_disabled_confirmation: true,
+  }
+  const expected = { releaseSha: 'a'.repeat(40), treeSha: 'b'.repeat(40), productionBaseSha: 'c'.repeat(40), stageRunId: '12345' }
+  assert.equal(assertStageEvidence(manifest, expected), true)
+  for (const invalid of [
+    { ...manifest, production_base_sha: 'd'.repeat(40) },
+    { ...manifest, deployment_ready_state: 'BUILDING' },
+    { ...manifest, cron_jobs_disabled_confirmation: false },
+    { ...manifest, stage_workflow_run_id: '12346' },
+  ]) assert.throws(() => assertStageEvidence(invalid, expected))
+})
+
+test('binds release evidence to exact SHA and tree, risk, change type and full ledger digest', () => {
+  const ledgerMigrations = ['20261025000001', '20261025000002', '20261026000001']
   const evidence = {
     release_sha: 'c'.repeat(40),
-    migrations: [...REQUIRED_MIGRATION_IDS],
+    tree_sha: 'd'.repeat(40),
+    production_base_sha: 'e'.repeat(40),
+    change_type: 'migration',
+    risk_level: 'elevated',
+    financial_sensitive: true,
+    migrations: ['20261107000001'],
+    ledger_migrations: [...ledgerMigrations],
+    ledger_migration_count: 3,
+    ledger_sha256: digestMigrationIds(ledgerMigrations),
     result: 'supabase-db-push-succeeded',
+    db_push_executed: true,
   }
-  assert.equal(assertMigrationEvidence(evidence, 'c'.repeat(40)), true)
-  assert.throws(() => assertMigrationEvidence(evidence, 'd'.repeat(40)), /different release SHA/)
-  assert.throws(() => assertMigrationEvidence({ ...evidence, result: 'failed' }, 'c'.repeat(40)), /successful apply/)
-  assert.throws(() => assertMigrationEvidence({ ...evidence, migrations: REQUIRED_MIGRATION_IDS.slice(1) }, 'c'.repeat(40)), /exact required/)
+  const expected = { releaseSha: 'c'.repeat(40), treeSha: 'd'.repeat(40), productionBaseSha: 'e'.repeat(40), changeType: 'migration', riskLevel: 'elevated', financialSensitive: true }
+  assert.equal(assertMigrationEvidence(evidence, expected), true)
+  assert.throws(() => assertMigrationEvidence(evidence, { ...expected, releaseSha: 'f'.repeat(40) }), /different release SHA/)
+  assert.throws(() => assertMigrationEvidence(evidence, { ...expected, treeSha: 'f'.repeat(40) }), /different release tree/)
+  assert.throws(() => assertMigrationEvidence(evidence, { ...expected, productionBaseSha: 'f'.repeat(40) }), /different active Production baseline/)
+  assert.throws(() => assertMigrationEvidence(evidence, { ...expected, riskLevel: 'standard' }), /risk classification/)
+  assert.throws(() => assertMigrationEvidence({ ...evidence, financial_sensitive: false }, expected), /financial-sensitivity classification/)
+  assert.throws(() => assertMigrationEvidence({ ...evidence, result: 'failed' }, expected), /read-only ledger certification or explicitly approved migration apply/)
+  assert.throws(() => assertMigrationEvidence({ ...evidence, migrations: [] }, expected), /at least one/)
+  assert.throws(() => assertMigrationEvidence({ ...evidence, db_push_executed: false }, expected), /read-only ledger certification or explicitly approved migration apply/)
 })
 
 test('requires the exact migrations to appear in the remote ledger column', () => {
@@ -179,9 +218,8 @@ test('requires the exact migrations to appear in the remote ledger column', () =
     '20261026000001 | 20261026000001 | 2026-10-26 00:00:01',
   ].join('\n')
   assert.equal(assertRemoteMigrationLedger(output).length, 3)
-  assert.throws(() => assertRemoteMigrationLedger(output.replace('20261026000001 | 20261026000001', '20261026000001 |')), /missing required/)
   assert.throws(() => assertRemoteMigrationLedger(output.replace('REMOTE', 'OTHER')), /Could not identify/)
-  assert.throws(() => assertRemoteMigrationLedger(`${output}\n20261025000001 | 20261025000001 | duplicate`), /duplicate IDs/)
+  assert.throws(() => assertRemoteMigrationLedger(`${output}\n20261025000001 | 20261025000001 | duplicate`), /duplicate version IDs/)
 })
 
 test('parses Supabase CLI backtick-quoted migration ledger and certifies exact synchronization', () => {
@@ -193,23 +231,63 @@ test('parses Supabase CLI backtick-quoted migration ledger and certifies exact s
     ' `20261026000001` | `20261026000001` | 2026-10-26 00:00:01',
   ].join('\n')
   assert.equal(assertRemoteMigrationLedger(output).length, 3)
-  assert.equal(assertCompleteMigrationLedger(output, 3).length, 3)
-  assert.throws(() => assertCompleteMigrationLedger(output, 37), /Expected exactly/)
-  assert.throws(() => assertCompleteMigrationLedger(output.replace('`20261026000001` | `20261026000001`', '`20261026000001` |'), 3), /missing required|mismatch/i)
-  assert.throws(() => assertCompleteMigrationLedger(output.replace('`20261026000001` | `20261026000001`', '| `20261026000001`'), 3), /mismatch/i)
-  assert.throws(() => assertCompleteMigrationLedger(output.replace('`20261026000001` | `20261026000001`', '`20261025000002` | `20261026000001`'), 3), /mismatch/i)
+  assert.equal(assertCompleteMigrationLedger(output, ['20261025000001', '20261025000002', '20261026000001']).migrationIds.length, 3)
+  assert.throws(() => assertCompleteMigrationLedger(output, ['20261025000001', '20261025000002']), /local ledger does not match/)
+  assert.throws(() => assertCompleteMigrationLedger(output.replace('`20261026000001` | `20261026000001`', '`20261026000001` |'), ['20261025000001', '20261025000002', '20261026000001']), /mismatch/)
+  assert.throws(() => assertCompleteMigrationLedger(output.replace('`20261026000001` | `20261026000001`', '| `20261026000001`'), ['20261025000001', '20261025000002', '20261026000001']), /mismatch/)
+  assert.throws(() => assertCompleteMigrationLedger(output.replace('`20261026000001` | `20261026000001`', '`20261025000002` | `20261026000001`'), ['20261025000001', '20261025000002', '20261026000001']), /duplicate version IDs/)
 })
 
-test('accepts truthful read-only Production migration certification and rejects weak evidence', () => {
+test('accepts a code-only ledger certificate and rejects db push or migration claims', () => {
+  const ledgerMigrations = ['20261025000001', '20261025000002', '20261026000001']
   const good = {
     release_sha: 'c'.repeat(40),
-    migrations: [...REQUIRED_MIGRATION_IDS],
+    tree_sha: 'd'.repeat(40),
+    production_base_sha: 'e'.repeat(40),
+    change_type: 'code-only',
+    risk_level: 'standard',
+    financial_sensitive: false,
+    migrations: [],
+    ledger_migrations: ledgerMigrations,
+    ledger_migration_count: 3,
+    ledger_sha256: digestMigrationIds(ledgerMigrations),
     result: 'supabase-ledger-certified',
     certification: 'protected-production-migration-ledger',
-    observed_migration_count: 37,
+    db_push_executed: false,
   }
-  assert.equal(assertMigrationEvidence(good, 'c'.repeat(40)), true)
-  assert.throws(() => assertMigrationEvidence({ ...good, certification: 'manual' }, 'c'.repeat(40)), /provenance/)
-  assert.throws(() => assertMigrationEvidence({ ...good, observed_migration_count: 35 }, 'c'.repeat(40)), /exact ledger count/)
-  assert.throws(() => assertMigrationEvidence({ ...good, migrations: REQUIRED_MIGRATION_IDS.slice(1) }, 'c'.repeat(40)), /exact required/)
+  const expected = { releaseSha: 'c'.repeat(40), treeSha: 'd'.repeat(40), productionBaseSha: 'e'.repeat(40), changeType: 'code-only', riskLevel: 'standard', financialSensitive: false }
+  assert.equal(assertMigrationEvidence(good, expected), true)
+  assert.throws(() => assertMigrationEvidence({ ...good, db_push_executed: true }, expected), /must not run db push/)
+  assert.throws(() => assertMigrationEvidence({ ...good, migrations: ['20261107000001'] }, expected), /must not run db push/)
+  assert.throws(() => assertMigrationEvidence({ ...good, ledger_migration_count: 35 }, expected), /count or digest/)
+})
+
+test('Preview dispatch resolves a PR and reuses CI instead of accepting manual SHAs or branch overrides', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/v3-preview.yml', import.meta.url), 'utf8')
+  assert.match(workflow, /pull_request_number/)
+  assert.match(workflow, /environment: preview/)
+  assert.match(workflow, /preview-pr/)
+  assert.match(workflow, /check-preview-environment/)
+  assert.match(workflow, /verify-preview-project/)
+  assert.match(workflow, /verify-preview-deployment/)
+  assert.match(workflow, /vercel pull --yes --environment=preview/)
+  assert.match(workflow, /git branch --show-current/)
+  assert.match(readFileSync(new URL('./continuous-publishing.mjs', import.meta.url), 'utf8'), /auth\/v1\/settings/)
+  assert.doesNotMatch(workflow, /commit_sha:\s*\n\s+description:/)
+  assert.doesNotMatch(workflow, /--git-branch|npm run lint|npm run typecheck|npm run test:unit/)
+  assert.doesNotMatch(workflow, /vercel deploy[^\n]*--prod/)
+  assert.match(readFileSync(new URL('./continuous-publishing.mjs', import.meta.url), 'utf8'), /PREVIEW_SUPABASE_PROJECT_REF/)
+})
+
+test('code-only certification has no SQL apply command; migration apply stays explicit and protected', () => {
+  const certification = readFileSync(new URL('../../.github/workflows/production-migration-certification.yml', import.meta.url), 'utf8')
+  const apply = readFileSync(new URL('../../.github/workflows/production-migrations.yml', import.meta.url), 'utf8')
+  assert.doesNotMatch(certification, /^\s*run:.*\bdb push\b/m)
+  assert.match(certification, /migration list --linked/)
+  assert.match(certification, /FINTRACK_PRODUCTION_MIGRATIONS_ENABLED/)
+  assert.match(apply, /inputs\.apply_migrations == true/)
+  assert.match(apply, /db push --linked --dry-run/)
+  assert.match(apply, /db push --linked$/m)
+  assert.match(apply, /assertMigrationPlanMatchesDryRun/)
+  assert.doesNotMatch(apply, /20261025000001|20261025000002|20261026000001/)
 })
