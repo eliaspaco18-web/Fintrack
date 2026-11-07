@@ -4,6 +4,13 @@ function fail(message) {
   throw new Error(message)
 }
 
+export function vercelDeploymentProjectId(deployment) {
+  const direct = deployment?.projectId ? String(deployment.projectId) : ''
+  const nested = deployment?.project?.id ? String(deployment.project.id) : ''
+  if (direct && nested && direct !== nested) fail('Vercel deployment contains conflicting project IDs.')
+  return direct || nested
+}
+
 async function request(url, token, fetchImpl) {
   const response = await fetchImpl(url, { headers: { Authorization: `Bearer ${token}` } })
   if (!response.ok) fail(`Vercel read request failed with HTTP ${response.status}.`)
@@ -23,7 +30,7 @@ export async function resolveProductionBaseline({ projectId, teamId, token, doma
   const list = await request(listUrl, token, fetchImpl)
   const deployments = Array.isArray(list.deployments) ? list.deployments : []
   for (const candidate of deployments) {
-    if (candidate.state !== 'READY' || candidate.target !== 'production' || candidate.projectId !== projectId) continue
+    if (candidate.state !== 'READY' || candidate.target !== 'production' || vercelDeploymentProjectId(candidate) !== projectId) continue
     const id = candidate.uid ?? candidate.id
     if (!id) continue
     const aliasesUrl = new URL(`https://api.vercel.com/v2/deployments/${encodeURIComponent(id)}/aliases`)
@@ -35,7 +42,7 @@ export async function resolveProductionBaseline({ projectId, teamId, token, doma
     detailUrl.searchParams.set('projectId', projectId)
     detailUrl.searchParams.set('teamId', teamId)
     const deployment = await request(detailUrl, token, fetchImpl)
-    if (deployment.projectId !== projectId || deployment.readyState !== 'READY' || deployment.target !== 'production') {
+    if (vercelDeploymentProjectId(deployment) !== projectId || deployment.readyState !== 'READY' || deployment.target !== 'production') {
       fail('Official Production alias did not resolve to a READY deployment in the approved Vercel project.')
     }
     const releaseSha = String(deployment.meta?.githubCommitSha ?? '')

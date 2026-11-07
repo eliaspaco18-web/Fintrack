@@ -12,9 +12,16 @@ on:
         required: true
         default: false
         type: boolean
+      owner_authorized_sha:
+        description: Optional exact release SHA for explicit single-owner authorization (leave blank when independently approved)
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
+  pull-requests: read
+  actions: read
 
 concurrency:
   group: fintrack-production-migrations
@@ -33,6 +40,8 @@ jobs:
       VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
       RELEASE_SHA: ${{ inputs.release_sha }}
+      OWNER_AUTHORIZED_SHA: ${{ inputs.owner_authorized_sha }}
+      AUTHORIZED_ACTOR_ID: ${{ github.actor_id }}
     steps:
       - name: Check out the exact migration release
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -54,6 +63,14 @@ jobs:
           [[ "$(git rev-parse refs/remotes/origin/main)" == "$RELEASE_SHA" ]]
           [[ "$MIGRATIONS_ENABLED" == "1" ]]
           [[ "$PRODUCTION_SUPABASE_PROJECT_REF" == "$EXPECTED_PRODUCTION_PROJECT_REF" ]]
+
+      - name: Prove exact merged PR, CI and owner or independent-review authorization before database access
+        id: pr-proof
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RELEASE_TREE_SHA="$(git rev-parse "$RELEASE_SHA^{tree}")" node scripts/release/continuous-publishing.mjs merged-release-proof
 
       - name: Resolve active official Production deployment baseline (read only)
         id: baseline

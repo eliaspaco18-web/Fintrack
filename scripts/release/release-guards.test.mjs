@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { assertStagedDeployment } from './verify-staged-deployment.mjs'
 import { assertStageEvidence } from './verify-stage-evidence.mjs'
+import { assertReleasePreflightEvidence } from './verify-preflight-evidence.mjs'
 import { sanitizeBuildEnvironment } from './sanitize-build-env.mjs'
 import { assertMigrationEvidence } from './continuous-publishing.mjs'
 import { assertRemoteMigrationLedger, assertCompleteMigrationLedger, assertMigrationPlanMatchesDryRun, digestMigrationIds } from './assert-migration-ledger.mjs'
@@ -25,12 +26,11 @@ test('migration apply accepts only the exact pending IDs identified by the prote
   assert.throws(() => assertMigrationPlanMatchesDryRun(`${dryRun}\n • 20261027000001_unreviewed.sql`, expected), /does not match/)
 })
 
+const realReadyProduction = JSON.parse(readFileSync(new URL('./fixtures/vercel/ready-production.json', import.meta.url), 'utf8'))
 const expectedDeployment = {
-  readyState: 'READY',
-  target: 'production',
-  projectId: 'prj_test',
+  ...realReadyProduction,
   id: 'dpl_abcdef12345',
-  meta: { githubCommitSha: 'a'.repeat(40), gitTreeSha: 'b'.repeat(40), githubPullRequest: '71' },
+  meta: { ...realReadyProduction.meta, githubCommitSha: 'a'.repeat(40), gitTreeSha: 'b'.repeat(40), githubPullRequest: '71' },
   url: 'fintrack-abc.vercel.app',
 }
 
@@ -43,13 +43,14 @@ test('accepts the exact staged production deployment', () => {
 test('rejects wrong project, SHA, target, URL, or deployment state', () => {
   const expected = { projectId: 'prj_test', releaseSha: 'a'.repeat(40), treeSha: 'b'.repeat(40), sourcePrNumber: '71', url: 'fintrack-abc.vercel.app' }
   for (const [key, value] of [
-    ['projectId', 'prj_other'], ['target', 'preview'], ['readyState', 'BUILDING'], ['url', 'other.vercel.app'],
+    ['project', { id: 'prj_other' }], ['target', 'preview'], ['readyState', 'BUILDING'], ['url', 'other.vercel.app'],
   ]) {
     assert.throws(() => assertStagedDeployment({ ...expectedDeployment, [key]: value }, expected))
   }
   assert.throws(() => assertStagedDeployment({ ...expectedDeployment, meta: { githubCommitSha: 'b'.repeat(40) } }, expected))
   assert.throws(() => assertStagedDeployment({ ...expectedDeployment, meta: { ...expectedDeployment.meta, gitTreeSha: 'c'.repeat(40) } }, expected))
   assert.throws(() => assertStagedDeployment({ ...expectedDeployment, id: 'dpl_different' }, { ...expected, deploymentId: 'dpl_other' }))
+  assert.throws(() => assertStagedDeployment({ ...expectedDeployment, projectId: 'prj_other' }, expected), /conflicting project IDs/)
 })
 
 test('keeps public build variables, strips runtime secrets, and fixes the bridge shell off', () => {
@@ -153,12 +154,16 @@ test('Stage and Promotion consume exact-tree evidence while retaining production
   assert.match(workflow, /fintrack-release-migration-evidence/)
   assert.match(workflow, /merged-release-proof/)
   assert.match(workflow, /fintrack-production-stage-evidence/)
+  assert.match(workflow, /fintrack-release-preflight-evidence/)
+  assert.match(workflow, /preflight_run_id/)
   assert.match(workflow, /PRODUCTION_BASE_SHA: \$\{\{ steps\.baseline\.outputs\.production_base_sha \}\}/)
   assert.match(workflow, /assert-migration-evidence\.mjs[\s\S]*\$RISK_LEVEL[\s\S]*\$FINANCIAL_SENSITIVE/)
   const promotion = readFileSync(new URL('../../.github/workflows/production-promote.yml', import.meta.url), 'utf8')
   assert.match(promotion, /FINTRACK_PRODUCTION_PROMOTION_ENABLED/)
   assert.match(promotion, /stage_run_id/)
   assert.match(promotion, /verify-stage-evidence\.mjs/)
+  assert.match(promotion, /promotion-authorization/)
+  assert.match(promotion, /environment: production-promotion/)
   assert.match(promotion, /vercel promote --yes/)
   assert.match(readFileSync(new URL('../../next.config.js', import.meta.url), 'utf8'), /validate-supabase-public-build-env\.cjs/)
 })
@@ -168,6 +173,7 @@ test('Stage manifest is bound to release, Production baseline, project, Vercel d
     release_sha: 'a'.repeat(40), tree_sha: 'b'.repeat(40), production_base_sha: 'c'.repeat(40),
     change_type: 'code-only', risk_level: 'elevated', stage_workflow_run_id: '12345', migration_evidence_run_id: '1234',
     source_pr_number: '71', ci_run_id: '991', vercel_project_id: 'prj_test', vercel_deployment_id: 'dpl_abcdef12345',
+    authorization_method: 'repository-owner', authorized_actor_id: '268006031', preflight_workflow_run_id: '98765',
     deployment_url: 'https://fintrack-preview.vercel.app', deployment_ready_state: 'READY', deployment_target: 'production',
     cron_jobs_disabled_confirmation: true,
   }
@@ -179,6 +185,26 @@ test('Stage manifest is bound to release, Production baseline, project, Vercel d
     { ...manifest, cron_jobs_disabled_confirmation: false },
     { ...manifest, stage_workflow_run_id: '12346' },
   ]) assert.throws(() => assertStageEvidence(invalid, expected))
+})
+
+test('post-merge preflight evidence covers exact-tree reuse and full suites after merge or squash tree changes', () => {
+  const base = {
+    release_sha: 'a'.repeat(40), tree_sha: 'b'.repeat(40), preflight_workflow_run_id: '98765',
+    source_pr_number: '71', source_head_sha: 'c'.repeat(40), ci_run_id: '991',
+    authorization_method: 'repository-owner', authorized_actor_id: '268006031', reviewed_head_tree_matches_release: true,
+    release_ci_run_id: '991', result: 'exact-pr-ci-reused',
+  }
+  assert.equal(assertReleasePreflightEvidence(base, { releaseSha: 'a'.repeat(40), treeSha: 'b'.repeat(40), runId: '98765' }), true)
+  assert.equal(assertReleasePreflightEvidence({
+    ...base, reviewed_head_tree_matches_release: false, release_ci_run_id: '', result: 'full-post-merge-suite-passed',
+  }, { releaseSha: 'a'.repeat(40), treeSha: 'b'.repeat(40), runId: '98765' }), true)
+  for (const invalid of [
+    { ...base, preflight_workflow_run_id: '00001' },
+    { ...base, tree_sha: 'd'.repeat(40) },
+    { ...base, authorized_actor_id: '999999999' },
+    { ...base, release_ci_run_id: '992' },
+    { ...base, result: 'failed' },
+  ]) assert.throws(() => assertReleasePreflightEvidence(invalid, { releaseSha: 'a'.repeat(40), treeSha: 'b'.repeat(40), runId: '98765' }))
 })
 
 test('binds release evidence to exact SHA and tree, risk, change type and full ledger digest', () => {
@@ -270,6 +296,8 @@ test('Preview dispatch resolves a PR and reuses CI instead of accepting manual S
   assert.match(workflow, /check-preview-environment/)
   assert.match(workflow, /verify-preview-project/)
   assert.match(workflow, /verify-preview-deployment/)
+  assert.match(workflow, /owner_authorized_sha/)
+  assert.match(workflow, /AUTHORIZED_ACTOR_ID: \$\{\{ github\.actor_id \}\}/)
   assert.match(workflow, /vercel pull --yes --environment=preview/)
   assert.match(workflow, /git branch --show-current/)
   assert.match(readFileSync(new URL('./continuous-publishing.mjs', import.meta.url), 'utf8'), /auth\/v1\/settings/)
@@ -277,6 +305,14 @@ test('Preview dispatch resolves a PR and reuses CI instead of accepting manual S
   assert.doesNotMatch(workflow, /--git-branch|npm run lint|npm run typecheck|npm run test:unit/)
   assert.doesNotMatch(workflow, /vercel deploy[^\n]*--prod/)
   assert.match(readFileSync(new URL('./continuous-publishing.mjs', import.meta.url), 'utf8'), /PREVIEW_SUPABASE_PROJECT_REF/)
+  assert.match(readFileSync(new URL('./continuous-publishing.mjs', import.meta.url), 'utf8'), /PREVIEW_ENV_ALLOWLIST/)
+  const certification = readFileSync(new URL('../../.github/workflows/production-migration-certification.yml', import.meta.url), 'utf8')
+  assert.match(certification, /merged-release-proof/)
+  assert.match(certification, /owner_authorized_sha/)
+  assert.doesNotMatch(certification, /\bnpx\s+(?:--yes\s+)?supabase@\S+\s+db push\b/)
+  const preflight = readFileSync(new URL('../../.github/workflows/production-preflight.yml', import.meta.url), 'utf8')
+  assert.match(preflight, /fintrack-release-preflight-evidence/)
+  assert.match(preflight, /\[\[ "\$GITHUB_SHA" == "\$RELEASE_SHA" \]\]/)
 })
 
 test('code-only certification has no SQL apply command; migration apply stays explicit and protected', () => {

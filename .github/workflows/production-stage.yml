@@ -7,8 +7,17 @@ on:
         description: Exact commit at main to stage without assigning a domain
         required: true
         type: string
+      owner_authorized_sha:
+        description: Optional exact release SHA for explicit single-owner authorization (leave blank when independently approved)
+        required: false
+        default: ''
+        type: string
       migration_evidence_run_id:
         description: Successful read-only ledger certification (code-only) or explicit migration apply run ID
+        required: true
+        type: string
+      preflight_run_id:
+        description: Successful exact-SHA production-preflight workflow run ID
         required: true
         type: string
       confirm_cron_jobs_disabled:
@@ -37,7 +46,10 @@ jobs:
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
       STAGE_ENABLED: ${{ vars.FINTRACK_PRODUCTION_STAGE_ENABLED }}
       RELEASE_SHA: ${{ inputs.release_sha }}
+      OWNER_AUTHORIZED_SHA: ${{ inputs.owner_authorized_sha }}
+      AUTHORIZED_ACTOR_ID: ${{ github.actor_id }}
       MIGRATION_EVIDENCE_RUN_ID: ${{ inputs.migration_evidence_run_id }}
+      PREFLIGHT_RUN_ID: ${{ inputs.preflight_run_id }}
       CRON_JOBS_DISABLED_CONFIRMATION: ${{ inputs.confirm_cron_jobs_disabled }}
     steps:
       - name: Check out the exact release commit
@@ -63,6 +75,7 @@ jobs:
           [[ -n "$VERCEL_ORG_ID" && "$VERCEL_ORG_ID" == team_* ]]
           [[ -n "$VERCEL_PROJECT_ID" && "$VERCEL_PROJECT_ID" == prj_* ]]
           [[ "$MIGRATION_EVIDENCE_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$PREFLIGHT_RUN_ID" =~ ^[0-9]+$ ]]
 
       - name: Resolve active official Production deployment baseline (read only)
         id: baseline
@@ -99,6 +112,20 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           RELEASE_TREE_SHA: ${{ steps.classify.outputs.tree_sha }}
         run: node scripts/release/continuous-publishing.mjs merged-release-proof
+
+      - name: Download the exact-SHA post-merge preflight evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: fintrack-release-preflight-evidence
+          run-id: ${{ inputs.preflight_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/fintrack-preflight-evidence
+
+      - name: Verify the successful post-merge test run for exact release SHA and tree
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/release/verify-preflight-evidence.mjs "$RUNNER_TEMP/fintrack-preflight-evidence/manifest.json" "$RELEASE_SHA" "${{ steps.classify.outputs.tree_sha }}" "$PREFLIGHT_RUN_ID"
 
       - name: Download matching read-only or migration-apply evidence
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -174,6 +201,8 @@ jobs:
           FINANCIAL_SENSITIVE: ${{ steps.classify.outputs.financial_sensitive }}
           SOURCE_PR_NUMBER: ${{ steps.pr-proof.outputs.sourcePullRequestNumber }}
           CI_RUN_ID: ${{ steps.pr-proof.outputs.ciRunId }}
+          AUTHORIZATION_METHOD: ${{ steps.pr-proof.outputs.authorizationMethod }}
+          RELEASE_AUTHORIZED_ACTOR_ID: ${{ steps.pr-proof.outputs.authorizedActorId }}
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment_url }}
           VERCEL_DEPLOYMENT_ID: ${{ steps.verify-deployment.outputs.deployment_id }}
         run: |
@@ -190,7 +219,10 @@ jobs:
             financial_sensitive: process.env.FINANCIAL_SENSITIVE === 'true',
             source_pr_number: process.env.SOURCE_PR_NUMBER,
             ci_run_id: process.env.CI_RUN_ID,
+            authorization_method: process.env.AUTHORIZATION_METHOD,
+            authorized_actor_id: process.env.RELEASE_AUTHORIZED_ACTOR_ID ?? '',
             migration_evidence_run_id: process.env.MIGRATION_EVIDENCE_RUN_ID,
+            preflight_workflow_run_id: process.env.PREFLIGHT_RUN_ID,
             stage_workflow_run_id: process.env.GITHUB_RUN_ID,
             vercel_project_id: process.env.VERCEL_PROJECT_ID,
             vercel_deployment_id: process.env.VERCEL_DEPLOYMENT_ID,

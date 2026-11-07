@@ -7,6 +7,11 @@ on:
         description: Open, non-draft PR number targeting main
         required: true
         type: number
+      owner_authorized_sha:
+        description: Optional exact PR head SHA for explicit single-owner authorization (leave blank when independently approved)
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -26,6 +31,8 @@ jobs:
       commit_sha: ${{ steps.resolve.outputs.commitSha }}
       tree_sha: ${{ steps.resolve.outputs.treeSha }}
       ci_run_id: ${{ steps.resolve.outputs.ciRunId }}
+      head_ref: ${{ steps.resolve.outputs.headRef }}
+      authorization_method: ${{ steps.resolve.outputs.authorizationMethod }}
     steps:
       - name: Check out trusted release tooling from the dispatched main commit
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -42,6 +49,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           PULL_REQUEST_NUMBER: ${{ inputs.pull_request_number }}
+          OWNER_AUTHORIZED_SHA: ${{ inputs.owner_authorized_sha }}
+          AUTHORIZED_ACTOR_ID: ${{ github.actor_id }}
         run: node scripts/release/continuous-publishing.mjs preview-pr
 
   deploy-preview:
@@ -66,6 +75,7 @@ jobs:
       RELEASE_SHA: ${{ needs.resolve.outputs.commit_sha }}
       RELEASE_TREE_SHA: ${{ needs.resolve.outputs.tree_sha }}
       RELEASE_CI_RUN_ID: ${{ needs.resolve.outputs.ci_run_id }}
+      RELEASE_HEAD_REF: ${{ needs.resolve.outputs.head_ref }}
     steps:
       - name: Check out trusted release tooling
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -85,6 +95,8 @@ jobs:
           EXPECTED_SHA: ${{ needs.resolve.outputs.commit_sha }}
           EXPECTED_TREE_SHA: ${{ needs.resolve.outputs.tree_sha }}
           EXPECTED_CI_RUN_ID: ${{ needs.resolve.outputs.ci_run_id }}
+          OWNER_AUTHORIZED_SHA: ${{ inputs.owner_authorized_sha }}
+          AUTHORIZED_ACTOR_ID: ${{ github.actor_id }}
         run: node release-tools/scripts/release/continuous-publishing.mjs preview-pr
 
       - name: Check out the verified candidate commit only after the second authorization check
@@ -135,7 +147,7 @@ jobs:
       - name: Redact Preview credential values before candidate build logs
         run: node release-tools/scripts/release/continuous-publishing.mjs mask-preview-environment candidate/.vercel/.env.preview.local
 
-      - name: Fail closed unless every Supabase credential belongs to isolated QA
+      - name: Fail closed unless the full Preview environment is QA-only
         run: node release-tools/scripts/release/continuous-publishing.mjs check-preview-environment candidate/.vercel/.env.preview.local
 
       - name: Build the approved candidate with isolated QA Preview variables
@@ -176,6 +188,7 @@ jobs:
             echo "- PR: #$PULL_REQUEST_NUMBER"
             echo "- Candidate SHA: \`$RELEASE_SHA\`"
             echo "- Release CI run: $RELEASE_CI_RUN_ID"
+            echo "- Authorization: ${{ needs.resolve.outputs.authorization_method }}"
             echo "- Deployment: ${{ steps.deploy.outputs.deployment_url }}"
             echo "- Supabase: isolated QA project (credential values are not logged)"
             echo "- Access: Vercel Authentication remains required"

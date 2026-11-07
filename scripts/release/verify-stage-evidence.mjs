@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import { TRUSTED_RELEASE_OWNER_ACTOR_ID } from './continuous-publishing.mjs'
 
 function fail(message) {
   throw new Error(message)
@@ -13,9 +14,15 @@ export function assertStageEvidence(manifest, expected) {
   if (!['standard', 'elevated'].includes(manifest.risk_level)) fail('Stage evidence has an invalid risk classification.')
   if (manifest.stage_workflow_run_id !== String(expected.stageRunId)) fail('Stage evidence is not bound to the supplied protected Stage run.')
   if (!/^[0-9]+$/.test(String(manifest.migration_evidence_run_id ?? ''))) fail('Stage evidence has no migration ledger certification or apply run ID.')
+  if (!/^[0-9]+$/.test(String(manifest.preflight_workflow_run_id ?? ''))) fail('Stage evidence has no successful exact-SHA release preflight run ID.')
   if (!/^[0-9]+$/.test(String(manifest.source_pr_number ?? '')) || !/^[0-9]+$/.test(String(manifest.ci_run_id ?? ''))) {
     fail('Stage evidence is missing its source PR or CI run reference.')
   }
+  if (!['independent-review', 'repository-owner'].includes(manifest.authorization_method)) fail('Stage evidence has no valid authorization method.')
+  if (manifest.authorization_method === 'repository-owner' && String(manifest.authorized_actor_id) !== TRUSTED_RELEASE_OWNER_ACTOR_ID) {
+    fail('Stage owner-authorization evidence does not match the registered repository owner.')
+  }
+  if (manifest.authorization_method === 'independent-review' && manifest.authorized_actor_id) fail('Independent-review evidence must not claim an owner actor authorization.')
   if (!/^prj_[A-Za-z0-9]+$/.test(String(manifest.vercel_project_id ?? ''))) fail('Stage evidence has an invalid Vercel project ID.')
   if (manifest.deployment_ready_state !== 'READY' || manifest.deployment_target !== 'production') fail('Stage deployment was not verified READY for the protected Production staging target.')
   if (manifest.cron_jobs_disabled_confirmation !== true) fail('Stage evidence lacks the explicit Cron-disabled confirmation.')
@@ -52,7 +59,7 @@ async function main() {
     fail('The supplied Stage run is not a successful protected run for the exact main SHA.')
   }
   const outputPath = process.env.GITHUB_OUTPUT
-  if (outputPath) fs.appendFileSync(outputPath, `deployment_url=${manifest.deployment_url}\ndeployment_id=${manifest.vercel_deployment_id}\ntree_sha=${manifest.tree_sha}\nproduction_base_sha=${manifest.production_base_sha}\nchange_type=${manifest.change_type}\nrisk_level=${manifest.risk_level}\nsource_pr_number=${manifest.source_pr_number}\n`)
+  if (outputPath) fs.appendFileSync(outputPath, `deployment_url=${manifest.deployment_url}\ndeployment_id=${manifest.vercel_deployment_id}\ntree_sha=${manifest.tree_sha}\nproduction_base_sha=${manifest.production_base_sha}\nchange_type=${manifest.change_type}\nrisk_level=${manifest.risk_level}\nsource_pr_number=${manifest.source_pr_number}\nauthorization_method=${manifest.authorization_method}\nauthorized_actor_id=${manifest.authorized_actor_id ?? ''}\npreflight_run_id=${manifest.preflight_workflow_run_id}\n`)
   process.stdout.write(`Verified Stage artifact and successful protected run ${stageRunId} for ${releaseSha}.\n`)
 }
 

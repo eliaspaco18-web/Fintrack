@@ -11,6 +11,11 @@ on:
         description: Successful protected Stage run ID that created the release evidence artifact
         required: true
         type: string
+      owner_authorized_sha:
+        description: Optional exact release SHA for explicit single-owner authorization (required again if Stage used owner authorization)
+        required: false
+        default: ''
+        type: string
       confirm_cron_jobs_disabled:
         description: Confirm Vercel Production Cron Jobs remain disabled through promotion verification
         required: true
@@ -36,6 +41,8 @@ jobs:
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
       PROMOTION_ENABLED: ${{ vars.FINTRACK_PRODUCTION_PROMOTION_ENABLED }}
       RELEASE_SHA: ${{ inputs.release_sha }}
+      OWNER_AUTHORIZED_SHA: ${{ inputs.owner_authorized_sha }}
+      AUTHORIZED_ACTOR_ID: ${{ github.actor_id }}
       STAGE_RUN_ID: ${{ inputs.stage_run_id }}
       CRON_JOBS_DISABLED_CONFIRMATION: ${{ inputs.confirm_cron_jobs_disabled }}
     steps:
@@ -86,6 +93,14 @@ jobs:
           node scripts/release/verify-stage-evidence.mjs \
             "$RUNNER_TEMP/fintrack-stage-evidence/manifest.json" \
             "$RELEASE_SHA" "$RELEASE_TREE_SHA" "$STAGE_RUN_ID"
+
+      - name: Require matching owner authorization or reviewed Stage provenance
+        env:
+          RELEASE_SHA: ${{ env.RELEASE_SHA }}
+          STAGE_AUTHORIZATION_METHOD: ${{ steps.stage-evidence.outputs.authorization_method }}
+          OWNER_AUTHORIZED_SHA: ${{ inputs.owner_authorized_sha }}
+          AUTHORIZED_ACTOR_ID: ${{ github.actor_id }}
+        run: node scripts/release/continuous-publishing.mjs promotion-authorization
 
       - name: Resolve current Production alias and reject stale Stage evidence
         id: active-before

@@ -1,10 +1,17 @@
 import fs from 'node:fs'
 
+function deploymentProjectId(deployment) {
+  const direct = deployment?.projectId ? String(deployment.projectId) : ''
+  const nested = deployment?.project?.id ? String(deployment.project.id) : ''
+  if (direct && nested && direct !== nested) throw new Error('Vercel deployment contains conflicting project IDs.')
+  return direct || nested
+}
+
 export function assertStagedDeployment(deployment, expected) {
   if (!deployment || typeof deployment !== 'object') throw new Error('Vercel returned no deployment object.')
   if (deployment.readyState !== 'READY') throw new Error(`Deployment is not READY: ${deployment.readyState ?? 'unknown'}`)
   if (deployment.target !== 'production') throw new Error(`Deployment target is not Production: ${deployment.target ?? 'unknown'}`)
-  if (deployment.projectId !== expected.projectId) throw new Error('Deployment belongs to a different Vercel project.')
+  if (deploymentProjectId(deployment) !== expected.projectId) throw new Error('Deployment belongs to a different Vercel project.')
   if (expected.deploymentId && deployment.id !== expected.deploymentId) throw new Error('Vercel deployment ID differs from the protected Stage evidence.')
   if (deployment.meta?.githubCommitSha !== expected.releaseSha) throw new Error('Deployment Git SHA does not match the approved release SHA.')
   if (deployment.meta?.gitTreeSha !== expected.treeSha) throw new Error('Deployment Git tree does not match the approved release tree.')
