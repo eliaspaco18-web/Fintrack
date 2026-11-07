@@ -24,7 +24,7 @@
     "db:types": "supabase gen types typescript --project-id $SUPABASE_PROJECT_ID > types/database.types.ts",
     "db:reset": "supabase db reset",
     "release:preflight": "bash scripts/release/preflight.sh",
-    "test:release-guards": "node --test scripts/release/release-guards.test.mjs",
+    "test:release-guards": "node --test scripts/release/*.test.mjs",
     "db:push:local": "supabase db push --local"
   },
   "dependencies": {

@@ -1,51 +1,139 @@
-name: Production Release Preflight
+name: Production Release Preflight (reuse exact-tree CI)
 
 on:
   workflow_dispatch:
     inputs:
       release_sha:
-        description: Exact 40-character commit SHA already merged into main
+        description: Exact commit already merged into main
         required: true
+        type: string
+      owner_authorized_sha:
+        description: Optional exact release SHA for explicit single-owner authorization (leave blank when independently approved)
+        required: false
+        default: ''
         type: string
 
 permissions:
   contents: read
+  pull-requests: read
+  actions: read
 
 jobs:
   preflight:
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       NEXT_PUBLIC_SUPABASE_URL: https://release-ci.invalid
       NEXT_PUBLIC_SUPABASE_ANON_KEY: release-ci-placeholder-not-a-secret
+      RELEASE_SHA: ${{ inputs.release_sha }}
     steps:
       - name: Check out the requested commit
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.release_sha }}
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify exact SHA is on main
-        env:
-          RELEASE_SHA: ${{ inputs.release_sha }}
+      - name: Verify SHA is on main and resolve tree identity
+        id: tree
         run: |
           set -euo pipefail
           [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$(git rev-parse HEAD)" == "$RELEASE_SHA" ]]
-          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
-          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+          [[ "$GITHUB_SHA" == "$RELEASE_SHA" ]]
+          [[ "$(git rev-parse refs/remotes/origin/main)" == "$RELEASE_SHA" ]]
+          echo "tree_sha=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 24
-          cache: npm
+          node-version: 24.22.1
 
-      # This job deliberately has no Production or Vercel secrets.
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm run build
-      - run: npm run test:unit
-      - run: npm run test:release-guards
+      - name: Prove merged PR, source CI and exact-head authorization
+        id: pr-proof
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_TREE_SHA: ${{ steps.tree.outputs.tree_sha }}
+          OWNER_AUTHORIZED_SHA: ${{ inputs.owner_authorized_sha }}
+          AUTHORIZED_ACTOR_ID: ${{ github.actor_id }}
+        run: node scripts/release/continuous-publishing.mjs merged-release-proof
+
+      - name: Reuse only successful CI for the exact reviewed PR head and identical Git tree
+        id: ci-proof
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_TREE_SHA: ${{ steps.tree.outputs.tree_sha }}
+          OWNER_AUTHORIZED_SHA: ${{ inputs.owner_authorized_sha }}
+          AUTHORIZED_ACTOR_ID: ${{ github.actor_id }}
+        run: node scripts/release/continuous-publishing.mjs merged-ci-tree
+
+      # If the release SHA's tree differs, or its PR CI/review cannot be proven,
+      # run the complete suite on the exact release checkout.
+      - name: Install locked dependencies
+        if: steps.ci-proof.outputs.reusable != 'true'
+        run: npm ci
+      - name: Lint
+        if: steps.ci-proof.outputs.reusable != 'true'
+        run: npm run lint
+      - name: Typecheck
+        if: steps.ci-proof.outputs.reusable != 'true'
+        run: npm run typecheck
+      - name: Build
+        if: steps.ci-proof.outputs.reusable != 'true'
+        run: npm run build
+      - name: Unit and integration suite
+        if: steps.ci-proof.outputs.reusable != 'true'
+        run: npm run test:unit
+      - name: Release guards
+        if: steps.ci-proof.outputs.reusable != 'true'
+        run: npm run test:release-guards
+
+      - name: Report exact-tree CI reuse or full preflight
+        run: |
+          if [[ "${{ steps.ci-proof.outputs.reusable }}" == "true" ]]; then
+            echo "Reused successful CI run ${{ steps.ci-proof.outputs.ciRunId }} for the identical release tree ${{ steps.tree.outputs.tree_sha }}."
+          else
+            echo "No exact-tree proof was available; the complete preflight suite ran on $RELEASE_SHA."
+          fi
+
+      - name: Write exact-SHA preflight evidence
+        env:
+          RELEASE_TREE_SHA: ${{ steps.tree.outputs.tree_sha }}
+          SOURCE_PR_NUMBER: ${{ steps.pr-proof.outputs.sourcePullRequestNumber }}
+          SOURCE_HEAD_SHA: ${{ steps.pr-proof.outputs.sourceSha }}
+          SOURCE_CI_RUN_ID: ${{ steps.pr-proof.outputs.ciRunId }}
+          AUTHORIZATION_METHOD: ${{ steps.pr-proof.outputs.authorizationMethod }}
+          AUTHORIZED_ACTOR_ID: ${{ steps.pr-proof.outputs.authorizedActorId }}
+          REVIEWED_HEAD_TREE_MATCH: ${{ steps.pr-proof.outputs.treeMatchesReviewedHead }}
+          REUSED_CI_RUN_ID: ${{ steps.ci-proof.outputs.ciRunId }}
+          CI_REUSED: ${{ steps.ci-proof.outputs.reusable }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/fintrack-preflight-evidence"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          const reused = process.env.CI_REUSED === 'true'
+          const manifest = {
+            release_sha: process.env.RELEASE_SHA,
+            tree_sha: process.env.RELEASE_TREE_SHA,
+            preflight_workflow_run_id: process.env.GITHUB_RUN_ID,
+            source_pr_number: process.env.SOURCE_PR_NUMBER,
+            source_head_sha: process.env.SOURCE_HEAD_SHA,
+            ci_run_id: process.env.SOURCE_CI_RUN_ID,
+            release_ci_run_id: reused ? process.env.REUSED_CI_RUN_ID : '',
+            authorization_method: process.env.AUTHORIZATION_METHOD,
+            authorized_actor_id: process.env.AUTHORIZED_ACTOR_ID ?? '',
+            reviewed_head_tree_matches_release: process.env.REVIEWED_HEAD_TREE_MATCH === 'true',
+            result: reused ? 'exact-pr-ci-reused' : 'full-post-merge-suite-passed',
+          }
+          fs.writeFileSync(`${process.env.RUNNER_TEMP}/fintrack-preflight-evidence/manifest.json`, JSON.stringify(manifest, null, 2))
+          NODE
+          node scripts/release/verify-preflight-evidence.mjs \
+            "$RUNNER_TEMP/fintrack-preflight-evidence/manifest.json" "$RELEASE_SHA" "$RELEASE_TREE_SHA" "$GITHUB_RUN_ID" --local-only
+
+      - name: Retain exact-SHA release preflight evidence for Stage
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: fintrack-release-preflight-evidence
+          path: ${{ runner.temp }}/fintrack-preflight-evidence/manifest.json
+          retention-days: 14

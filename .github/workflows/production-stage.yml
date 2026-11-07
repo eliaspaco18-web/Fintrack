@@ -1,27 +1,35 @@
-name: Stage Exact Production Deployment
+name: Stage Exact FinTrack Production Release
 
 on:
   workflow_dispatch:
     inputs:
       release_sha:
-        description: Exact commit to stage without assigning Production domains
+        description: Exact commit at main to stage without assigning a domain
         required: true
         type: string
-      release_kind:
-        description: V2 bridge or V3; V3 requires successful migration evidence
-        required: true
-        type: choice
-        options:
-          - v2-bridge
-          - v3
-      migration_run_id:
-        description: Required for V3; successful production-migrations workflow run ID
+      owner_authorized_sha:
+        description: Optional exact release SHA for explicit single-owner authorization (leave blank when independently approved)
         required: false
+        default: ''
         type: string
+      migration_evidence_run_id:
+        description: Successful read-only ledger certification (code-only) or explicit migration apply run ID
+        required: true
+        type: string
+      preflight_run_id:
+        description: Successful exact-SHA production-preflight workflow run ID
+        required: true
+        type: string
+      confirm_cron_jobs_disabled:
+        description: Confirm Vercel Production Cron Jobs were disabled for this stage
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
   actions: read
+  pull-requests: read
 
 concurrency:
   group: fintrack-production-stage
@@ -30,7 +38,7 @@ concurrency:
 jobs:
   stage:
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     environment: production-stage
     env:
@@ -38,84 +46,210 @@ jobs:
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
       STAGE_ENABLED: ${{ vars.FINTRACK_PRODUCTION_STAGE_ENABLED }}
       RELEASE_SHA: ${{ inputs.release_sha }}
+      OWNER_AUTHORIZED_SHA: ${{ inputs.owner_authorized_sha }}
+      AUTHORIZED_ACTOR_ID: ${{ github.actor_id }}
+      MIGRATION_EVIDENCE_RUN_ID: ${{ inputs.migration_evidence_run_id }}
+      PREFLIGHT_RUN_ID: ${{ inputs.preflight_run_id }}
+      CRON_JOBS_DISABLED_CONFIRMATION: ${{ inputs.confirm_cron_jobs_disabled }}
     steps:
       - name: Check out the exact release commit
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.release_sha }}
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify release authorization and main ancestry
-        env:
-          RELEASE_SHA: ${{ inputs.release_sha }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.22.1
+
+      - name: Fail closed unless exact current main, gate, Cron confirmation and Vercel project match
         run: |
           set -euo pipefail
           [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$(git rev-parse HEAD)" == "$RELEASE_SHA" ]]
-          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
-          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+          [[ "$GITHUB_SHA" == "$RELEASE_SHA" ]]
+          [[ "$(git rev-parse refs/remotes/origin/main)" == "$RELEASE_SHA" ]]
           [[ "$STAGE_ENABLED" == "1" ]]
-          [[ -n "$VERCEL_ORG_ID" && -n "$VERCEL_PROJECT_ID" ]]
-          migration_ids="$(git ls-tree -r --name-only "$RELEASE_SHA" -- supabase/migrations | grep -E '20261025000001|20261025000002|20261026000001' || true)"
-          if [[ "${{ inputs.release_kind }}" == "v3" ]]; then
-            [[ "$(printf '%s\n' "$migration_ids" | sed '/^$/d' | wc -l | tr -d ' ')" == "3" ]]
-            [[ "${{ inputs.migration_run_id }}" =~ ^[0-9]+$ ]]
-          else
-            [[ -z "$migration_ids" ]]
-          fi
+          [[ "$CRON_JOBS_DISABLED_CONFIRMATION" == "true" ]]
+          [[ -n "$VERCEL_ORG_ID" && "$VERCEL_ORG_ID" == team_* ]]
+          [[ -n "$VERCEL_PROJECT_ID" && "$VERCEL_PROJECT_ID" == prj_* ]]
+          [[ "$MIGRATION_EVIDENCE_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$PREFLIGHT_RUN_ID" =~ ^[0-9]+$ ]]
 
-      - name: Verify V3 migration evidence
-        if: ${{ inputs.release_kind == 'v3' }}
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - name: Resolve active official Production deployment baseline (read only)
+        id: baseline
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: node scripts/release/production-baseline.mjs
+
+      - name: Classify exact release tree and reject modified or deleted migrations
+        id: classify
+        env:
+          PRODUCTION_BASE_SHA: ${{ steps.baseline.outputs.production_base_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$PRODUCTION_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$PRODUCTION_BASE_SHA" "$RELEASE_SHA"
+          git -c diff.renames=false diff --name-status "$PRODUCTION_BASE_SHA" "$RELEASE_SHA" > "$RUNNER_TEMP/release-changes.txt"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import { execFileSync } from 'node:child_process'
+          import { classifyReleaseFiles, assertMigrationChangesAreAdditive } from './scripts/release/continuous-publishing.mjs'
+          const changes = fs.readFileSync(`${process.env.RUNNER_TEMP}/release-changes.txt`, 'utf8').trim().split(/\r?\n/).filter(Boolean).map(line => {
+            const [status, ...parts] = line.split(/\s+/)
+            return { status, path: parts.at(-1) }
+          })
+          const classification = classifyReleaseFiles(changes.map(change => change.path))
+          assertMigrationChangesAreAdditive(changes)
+          const treeSha = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim()
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `change_type=${classification.changeType}\nrisk_level=${classification.riskLevel}\nfinancial_sensitive=${classification.financialSensitive}\ntree_sha=${treeSha}\n`)
+          NODE
+
+      - name: Prove the merged PR review and successful CI refer to this exact code tree
+        id: pr-proof
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_TREE_SHA: ${{ steps.classify.outputs.tree_sha }}
+        run: node scripts/release/continuous-publishing.mjs merged-release-proof
+
+      - name: Download the exact-SHA post-merge preflight evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: fintrack-production-migration-evidence
-          run-id: ${{ inputs.migration_run_id }}
+          name: fintrack-release-preflight-evidence
+          run-id: ${{ inputs.preflight_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/fintrack-preflight-evidence
+
+      - name: Verify the successful post-merge test run for exact release SHA and tree
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/release/verify-preflight-evidence.mjs "$RUNNER_TEMP/fintrack-preflight-evidence/manifest.json" "$RELEASE_SHA" "${{ steps.classify.outputs.tree_sha }}" "$PREFLIGHT_RUN_ID"
+
+      - name: Download matching read-only or migration-apply evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: fintrack-release-migration-evidence
+          run-id: ${{ inputs.migration_evidence_run_id }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/fintrack-migration-evidence
 
-      - name: Bind V3 stage to successful migration evidence
-        if: ${{ inputs.release_kind == 'v3' }}
-        run: node scripts/release/assert-migration-evidence.mjs "$RUNNER_TEMP/fintrack-migration-evidence/evidence.json" "$RELEASE_SHA"
+      - name: Verify protected evidence run, exact SHA/tree, release type and ledger
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          MIGRATION_EVIDENCE_RUN_ID: ${{ inputs.migration_evidence_run_id }}
+          RELEASE_TREE_SHA: ${{ steps.classify.outputs.tree_sha }}
+          CHANGE_TYPE: ${{ steps.classify.outputs.change_type }}
+          RISK_LEVEL: ${{ steps.classify.outputs.risk_level }}
+          FINANCIAL_SENSITIVE: ${{ steps.classify.outputs.financial_sensitive }}
+          PRODUCTION_BASE_SHA: ${{ steps.baseline.outputs.production_base_sha }}
+        run: node scripts/release/assert-migration-evidence.mjs "$RUNNER_TEMP/fintrack-migration-evidence/evidence.json" "$RELEASE_SHA" "$RELEASE_TREE_SHA" "$CHANGE_TYPE" "$PRODUCTION_BASE_SHA" "$RISK_LEVEL" "$FINANCIAL_SENSITIVE"
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: 24
-
-      - name: Install locked dependencies for the cron guard tests
+      - name: Install dependencies for preserved Cron and release guard checks
         run: npm ci
 
-      - name: Verify the Production cron host and secret guard
-        run: npm run test:unit -- tests/unit/exchange-rate-cron-guard.spec.ts
-
-      - name: Verify release guards and Vercel build environment validation
-        run: npm run test:release-guards
+      - name: Preserve the Production Cron host/secret and release guard tests
+        run: |
+          npm run test:unit -- tests/unit/exchange-rate-cron-guard.spec.ts
+          npm run test:release-guards
 
       - name: Install pinned Vercel CLI
         run: npm install --global vercel@63.1.0
 
-      - name: Link approved Vercel project
+      - name: Link the approved Vercel project
         run: vercel link --yes --project "$VERCEL_PROJECT_ID"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
-      - name: Remote-build and stage exact release without assigning any domain
+      - name: Stage the exact reviewed build without assigning a Production domain
         id: deploy
         run: |
           set -euo pipefail
           log_file="$RUNNER_TEMP/vercel-stage-deploy.log"
-          vercel deploy --prod --skip-domain --meta "githubCommitSha=$RELEASE_SHA" 2>&1 | tee "$log_file"
+          vercel deploy --prod --skip-domain \
+            --meta "githubCommitSha=$RELEASE_SHA" \
+            --meta "gitTreeSha=${{ steps.classify.outputs.tree_sha }}" \
+            --meta "githubPullRequest=${{ steps.pr-proof.outputs.sourcePullRequestNumber }}" \
+            --meta "releaseCiRunId=${{ steps.pr-proof.outputs.ciRunId }}" \
+            --meta "migrationEvidenceRunId=$MIGRATION_EVIDENCE_RUN_ID" 2>&1 | tee "$log_file"
           url="$(grep -Eo 'https://[a-zA-Z0-9.-]+\.vercel\.app' "$log_file" | tail -n 1)"
           [[ "$url" =~ ^https://[a-zA-Z0-9.-]+\.vercel\.app$ ]]
           echo "deployment_url=$url" >> "$GITHUB_OUTPUT"
-          echo "Staged deployment: $url"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
-      - name: Publish staged deployment reference
+      - name: Verify staged project, target, READY state, SHA, tree and PR
+        id: verify-deployment
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          RELEASE_TREE_SHA: ${{ steps.classify.outputs.tree_sha }}
+          PRODUCTION_BASE_SHA: ${{ steps.baseline.outputs.production_base_sha }}
+          SOURCE_PR_NUMBER: ${{ steps.pr-proof.outputs.sourcePullRequestNumber }}
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment_url }}
+        run: node scripts/release/verify-staged-deployment.mjs
+
+      - name: Write immutable-by-SHA Stage evidence manifest
+        env:
+          PRODUCTION_BASE_SHA: ${{ steps.baseline.outputs.production_base_sha }}
+          RELEASE_TREE_SHA: ${{ steps.classify.outputs.tree_sha }}
+          CHANGE_TYPE: ${{ steps.classify.outputs.change_type }}
+          RISK_LEVEL: ${{ steps.classify.outputs.risk_level }}
+          FINANCIAL_SENSITIVE: ${{ steps.classify.outputs.financial_sensitive }}
+          SOURCE_PR_NUMBER: ${{ steps.pr-proof.outputs.sourcePullRequestNumber }}
+          CI_RUN_ID: ${{ steps.pr-proof.outputs.ciRunId }}
+          AUTHORIZATION_METHOD: ${{ steps.pr-proof.outputs.authorizationMethod }}
+          RELEASE_AUTHORIZED_ACTOR_ID: ${{ steps.pr-proof.outputs.authorizedActorId }}
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment_url }}
+          VERCEL_DEPLOYMENT_ID: ${{ steps.verify-deployment.outputs.deployment_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/fintrack-stage-evidence"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          const evidence = {
+            release_sha: process.env.RELEASE_SHA,
+            tree_sha: process.env.RELEASE_TREE_SHA,
+            production_base_sha: process.env.PRODUCTION_BASE_SHA,
+            change_type: process.env.CHANGE_TYPE,
+            risk_level: process.env.RISK_LEVEL,
+            financial_sensitive: process.env.FINANCIAL_SENSITIVE === 'true',
+            source_pr_number: process.env.SOURCE_PR_NUMBER,
+            ci_run_id: process.env.CI_RUN_ID,
+            authorization_method: process.env.AUTHORIZATION_METHOD,
+            authorized_actor_id: process.env.RELEASE_AUTHORIZED_ACTOR_ID ?? '',
+            migration_evidence_run_id: process.env.MIGRATION_EVIDENCE_RUN_ID,
+            preflight_workflow_run_id: process.env.PREFLIGHT_RUN_ID,
+            stage_workflow_run_id: process.env.GITHUB_RUN_ID,
+            vercel_project_id: process.env.VERCEL_PROJECT_ID,
+            vercel_deployment_id: process.env.VERCEL_DEPLOYMENT_ID,
+            deployment_url: process.env.DEPLOYMENT_URL,
+            deployment_ready_state: 'READY',
+            deployment_target: 'production',
+            cron_jobs_disabled_confirmation: true,
+          }
+          fs.writeFileSync(`${process.env.RUNNER_TEMP}/fintrack-stage-evidence/manifest.json`, JSON.stringify(evidence, null, 2))
+          NODE
+          PRODUCTION_BASE_SHA="$PRODUCTION_BASE_SHA" node scripts/release/verify-stage-evidence.mjs "$RUNNER_TEMP/fintrack-stage-evidence/manifest.json" "$RELEASE_SHA" "$RELEASE_TREE_SHA" "$GITHUB_RUN_ID" --local-only
+
+      - name: Retain Stage evidence for exact-SHA Promotion
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: fintrack-production-stage-evidence
+          path: ${{ runner.temp }}/fintrack-stage-evidence/manifest.json
+          retention-days: 14
+
+      - name: Publish protected stage result
         run: |
           {
-            echo "Release SHA: ${{ inputs.release_sha }}"
+            echo "Release SHA: $RELEASE_SHA"
+            echo "Git tree: ${{ steps.classify.outputs.tree_sha }}"
+            echo "Source PR: #${{ steps.pr-proof.outputs.sourcePullRequestNumber }}"
+            echo "Successful CI run: ${{ steps.pr-proof.outputs.ciRunId }}"
             echo "Staged URL: ${{ steps.deploy.outputs.deployment_url }}"
-            echo "No Production domain was assigned. Promotion is a separate workflow and approval."
+            echo "Vercel READY and exact-SHA evidence verified. No Production domain was assigned."
+            echo "Cron status was confirmed by the dispatching owner and covered by the preserved host/secret guard tests."
           } >> "$GITHUB_STEP_SUMMARY"

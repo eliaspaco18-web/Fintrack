@@ -1,27 +1,26 @@
-name: Promote Approved Production Deployment
+name: Promote Exact Verified FinTrack Deployment
 
 on:
   workflow_dispatch:
     inputs:
       release_sha:
-        description: Exact SHA approved for this promotion
+        description: Exact main SHA approved for this promotion
         required: true
         type: string
-      deployment_url:
-        description: Vercel deployment URL emitted by the staging workflow
+      stage_run_id:
+        description: Successful protected Stage run ID that created the release evidence artifact
         required: true
         type: string
-      release_kind:
-        description: V2 bridge or V3
-        required: true
-        type: choice
-        options:
-          - v2-bridge
-          - v3
-      migration_run_id:
-        description: Required for V3; successful production-migrations workflow run ID
+      owner_authorized_sha:
+        description: Optional exact release SHA for explicit single-owner authorization (required again if Stage used owner authorization)
         required: false
+        default: ''
         type: string
+      confirm_cron_jobs_disabled:
+        description: Confirm Vercel Production Cron Jobs remain disabled through promotion verification
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -34,65 +33,156 @@ concurrency:
 jobs:
   promote:
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     environment: production-promotion
     env:
       VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
       PROMOTION_ENABLED: ${{ vars.FINTRACK_PRODUCTION_PROMOTION_ENABLED }}
       RELEASE_SHA: ${{ inputs.release_sha }}
-      DEPLOYMENT_URL: ${{ inputs.deployment_url }}
+      OWNER_AUTHORIZED_SHA: ${{ inputs.owner_authorized_sha }}
+      AUTHORIZED_ACTOR_ID: ${{ github.actor_id }}
+      STAGE_RUN_ID: ${{ inputs.stage_run_id }}
+      CRON_JOBS_DISABLED_CONFIRMATION: ${{ inputs.confirm_cron_jobs_disabled }}
     steps:
-      - name: Check out main for release ancestry
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Check out main for the exact release commit and ancestry
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: main
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify explicit promotion gate
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.22.1
+
+      - name: Verify explicit promotion gate, release ancestry, Cron confirmation and project identity
         run: |
           set -euo pipefail
           [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$STAGE_RUN_ID" =~ ^[0-9]+$ ]]
           git merge-base --is-ancestor "$RELEASE_SHA" HEAD
           [[ "$PROMOTION_ENABLED" == "1" ]]
-          [[ -n "$VERCEL_ORG_ID" && -n "$VERCEL_PROJECT_ID" ]]
-          [[ "$DEPLOYMENT_URL" =~ ^https://[a-zA-Z0-9.-]+\.vercel\.app$ ]]
-          migration_ids="$(git ls-tree -r --name-only "$RELEASE_SHA" -- supabase/migrations | grep -E '20261025000001|20261025000002|20261026000001' || true)"
-          if [[ "${{ inputs.release_kind }}" == "v3" ]]; then
-            [[ "$(printf '%s\n' "$migration_ids" | sed '/^$/d' | wc -l | tr -d ' ')" == "3" ]]
-            [[ "${{ inputs.migration_run_id }}" =~ ^[0-9]+$ ]]
-          else
-            [[ -z "$migration_ids" ]]
-          fi
+          [[ "$CRON_JOBS_DISABLED_CONFIRMATION" == "true" ]]
+          [[ -n "$VERCEL_ORG_ID" && "$VERCEL_ORG_ID" == team_* ]]
+          [[ -n "$VERCEL_PROJECT_ID" && "$VERCEL_PROJECT_ID" == prj_* ]]
 
-      - name: Download V3 migration evidence
-        if: ${{ inputs.release_kind == 'v3' }}
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - name: Download manifest only from the specified protected Stage run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: fintrack-production-migration-evidence
-          run-id: ${{ inputs.migration_run_id }}
+          name: fintrack-production-stage-evidence
+          run-id: ${{ inputs.stage_run_id }}
           github-token: ${{ github.token }}
-          path: ${{ runner.temp }}/fintrack-migration-evidence
+          path: ${{ runner.temp }}/fintrack-stage-evidence
 
-      - name: Bind V3 promotion to successful migration evidence
-        if: ${{ inputs.release_kind == 'v3' }}
-        run: node scripts/release/assert-migration-evidence.mjs "$RUNNER_TEMP/fintrack-migration-evidence/evidence.json" "$RELEASE_SHA"
+      - name: Verify Stage run success and exact SHA/tree/deployment provenance
+        id: stage-evidence
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          STAGE_MANIFEST: ${{ runner.temp }}/fintrack-stage-evidence/manifest.json
+        run: |
+          set -euo pipefail
+          RELEASE_TREE_SHA="$(git rev-parse "$RELEASE_SHA^{tree}")"
+          export RELEASE_TREE_SHA
+          PRODUCTION_BASE_SHA="$(node -e 'const fs=require("fs");const m=JSON.parse(fs.readFileSync(process.env.STAGE_MANIFEST,"utf8"));process.stdout.write(m.production_base_sha)')"
+          [[ "$PRODUCTION_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$PRODUCTION_BASE_SHA" "$RELEASE_SHA"
+          export PRODUCTION_BASE_SHA
+          node scripts/release/verify-stage-evidence.mjs \
+            "$RUNNER_TEMP/fintrack-stage-evidence/manifest.json" \
+            "$RELEASE_SHA" "$RELEASE_TREE_SHA" "$STAGE_RUN_ID"
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: 24
+      - name: Require matching owner authorization or reviewed Stage provenance
+        env:
+          RELEASE_SHA: ${{ env.RELEASE_SHA }}
+          STAGE_AUTHORIZATION_METHOD: ${{ steps.stage-evidence.outputs.authorization_method }}
+          OWNER_AUTHORIZED_SHA: ${{ inputs.owner_authorized_sha }}
+          AUTHORIZED_ACTOR_ID: ${{ github.actor_id }}
+        run: node scripts/release/continuous-publishing.mjs promotion-authorization
+
+      - name: Resolve current Production alias and reject stale Stage evidence
+        id: active-before
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: node scripts/release/production-baseline.mjs
+
+      - name: Require Production to remain at the baseline used by Stage
+        env:
+          EXPECTED_PRODUCTION_BASE_SHA: ${{ steps.stage-evidence.outputs.production_base_sha }}
+          ACTIVE_PRODUCTION_SHA: ${{ steps.active-before.outputs.production_base_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_PRODUCTION_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$ACTIVE_PRODUCTION_SHA" == "$EXPECTED_PRODUCTION_BASE_SHA" ]]
 
       - name: Install pinned Vercel CLI
         run: npm install --global vercel@63.1.0
 
-      - name: Verify staged deployment belongs to this SHA and project
-        run: node scripts/release/verify-staged-deployment.mjs
+      - name: Link the exact approved Vercel project
+        run: vercel link --yes --project "$VERCEL_PROJECT_ID"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
-      - name: Promote the verified deployment
+      - name: Reverify deployment identity and READY state immediately before promotion
+        id: verify-staged
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          RELEASE_TREE_SHA: ${{ steps.stage-evidence.outputs.tree_sha }}
+          SOURCE_PR_NUMBER: ${{ steps.stage-evidence.outputs.source_pr_number }}
+          EXPECTED_DEPLOYMENT_ID: ${{ steps.stage-evidence.outputs.deployment_id }}
+          DEPLOYMENT_URL: ${{ steps.stage-evidence.outputs.deployment_url }}
+        run: node scripts/release/verify-staged-deployment.mjs
+
+      - name: Promote only the verified Stage deployment
         run: vercel promote --yes "$DEPLOYMENT_URL"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          DEPLOYMENT_URL: ${{ steps.stage-evidence.outputs.deployment_url }}
+
+      - name: Confirm Vercel still reports the exact deployment READY on Production
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          RELEASE_TREE_SHA: ${{ steps.stage-evidence.outputs.tree_sha }}
+          SOURCE_PR_NUMBER: ${{ steps.stage-evidence.outputs.source_pr_number }}
+          EXPECTED_DEPLOYMENT_ID: ${{ steps.stage-evidence.outputs.deployment_id }}
+          DEPLOYMENT_URL: ${{ steps.stage-evidence.outputs.deployment_url }}
+        run: node scripts/release/verify-staged-deployment.mjs
+
+      - name: Confirm the official Production alias now points to the promoted deployment
+        id: active-after
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: node scripts/release/production-baseline.mjs
+
+      - name: Require the official Production domain to resolve to the exact promoted SHA and deployment
+        env:
+          EXPECTED_RELEASE_SHA: ${{ env.RELEASE_SHA }}
+          EXPECTED_DEPLOYMENT_ID: ${{ steps.stage-evidence.outputs.deployment_id }}
+          ACTIVE_PRODUCTION_SHA: ${{ steps.active-after.outputs.production_base_sha }}
+          ACTIVE_PRODUCTION_DEPLOYMENT_ID: ${{ steps.active-after.outputs.production_base_deployment_id }}
+        run: |
+          set -euo pipefail
+          [[ "$ACTIVE_PRODUCTION_SHA" == "$EXPECTED_RELEASE_SHA" ]]
+          [[ "$ACTIVE_PRODUCTION_DEPLOYMENT_ID" == "$EXPECTED_DEPLOYMENT_ID" ]]
+
+      - name: Publish exact-SHA promotion evidence and rollback reference
+        run: |
+          {
+            echo "### Exact FinTrack release promoted"
+            echo "- Release SHA: \`$RELEASE_SHA\`"
+            echo "- Protected Stage run: $STAGE_RUN_ID"
+            echo "- Production baseline SHA: ${{ steps.stage-evidence.outputs.production_base_sha }}"
+            echo "- Deployment: $DEPLOYMENT_URL"
+            echo "- Vercel reports READY for the exact project, SHA, tree and source PR."
+            echo "- The official Production alias resolves to the same READY deployment ID and release SHA."
+            echo "- Cron Jobs were confirmed disabled for this promotion; the owner must restore their prior state after the post-release observation window."
+            echo "- If post-release monitoring fails, use Vercel's Instant Rollback to the deployment preceding this verified release; keep the evidence and run logs for review."
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          DEPLOYMENT_URL: ${{ steps.stage-evidence.outputs.deployment_url }}

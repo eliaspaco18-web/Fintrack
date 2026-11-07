@@ -10,17 +10,42 @@ function normalizeUrlCandidate(raw: string | undefined): string | null {
     : `https://${trimmed.replace(/\/+$/, '')}`
 }
 
-export function resolveConfiguredAppUrl(): string | null {
+function normalizeSafePreviewUrl(raw: string | undefined): string | null {
+  const normalized = normalizeUrlCandidate(raw)
+  if (!normalized) return null
+  try {
+    const url = new URL(normalized)
+    if (url.protocol !== 'https:' || !url.hostname.endsWith('.vercel.app') || url.hostname === 'fintrack-eta-silk.vercel.app') return null
+    return url.origin
+  } catch {
+    return null
+  }
+}
+
+export function resolveConfiguredAppUrl(env: NodeJS.ProcessEnv = process.env): string | null {
+  if (env.VERCEL_ENV === 'preview') {
+    // VERCEL_PROJECT_PRODUCTION_URL always describes Production. A Preview
+    // must use its own VERCEL_URL to avoid sending QA auth links to Production.
+    return (
+      normalizeSafePreviewUrl(env.VERCEL_URL) ??
+      normalizeSafePreviewUrl(env.NEXT_PUBLIC_SITE_URL) ??
+      normalizeSafePreviewUrl(env.NEXT_PUBLIC_APP_URL)
+    )
+  }
+
   return (
-    normalizeUrlCandidate(process.env.NEXT_PUBLIC_SITE_URL) ??
-    normalizeUrlCandidate(process.env.NEXT_PUBLIC_APP_URL) ??
-    normalizeUrlCandidate(process.env.VERCEL_PROJECT_PRODUCTION_URL) ??
-    normalizeUrlCandidate(process.env.VERCEL_URL)
+    normalizeUrlCandidate(env.NEXT_PUBLIC_SITE_URL) ??
+    normalizeUrlCandidate(env.NEXT_PUBLIC_APP_URL) ??
+    normalizeUrlCandidate(env.VERCEL_PROJECT_PRODUCTION_URL) ??
+    normalizeUrlCandidate(env.VERCEL_URL)
   )
 }
 
 export function resolveAppUrlFromRequest(request: { url: string }): string {
-  return resolveConfiguredAppUrl() ?? new URL(request.url).origin
+  const configured = resolveConfiguredAppUrl()
+  if (configured) return configured
+  if (process.env.VERCEL_ENV === 'preview') return normalizeSafePreviewUrl(new URL(request.url).origin) ?? 'http://localhost:3000'
+  return new URL(request.url).origin
 }
 
 export function resolveAppUrlFallback(): string {
