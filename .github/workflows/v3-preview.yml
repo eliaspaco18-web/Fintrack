@@ -154,6 +154,9 @@ jobs:
         working-directory: candidate
         run: rm -f .vercel/.env.preview.local
 
+      - name: Verify Preview build bootstrap against trusted main immediately before deployment
+        run: node release-tools/scripts/release/continuous-publishing.mjs verify-preview-build-bootstrap candidate release-tools
+
       - name: Build remotely with the Vercel Preview Secret and deploy a Preview target bound to the exact PR SHA
         id: deploy
         working-directory: candidate

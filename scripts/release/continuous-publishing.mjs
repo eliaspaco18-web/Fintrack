@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 const GITHUB_API = 'https://api.github.com'
 const RELEASE_CI_PATH = '.github/workflows/release-ci.yml'
 const RELEASE_CI_NAME = 'Release Candidate CI (No Production Access)'
+const PREVIEW_REMOTE_BUILD_COMMAND = 'node scripts/release/verify-preview-build-env.mjs && npm run build'
 // GitHub account ID for the sole repository owner. Numeric IDs are stable if a login changes.
 export const TRUSTED_RELEASE_OWNER_ACTOR_ID = '268006031'
 const PREVIEW_ENV_ALLOWLIST = new Set([
@@ -98,6 +99,44 @@ export function assertPreviewSupabaseEnvironment(values, { previewProjectRef, pr
 
 export function assertPreviewSupabaseCredentialProbe(status, keyName) {
   if (status < 200 || status >= 300) fail(`${keyName} was rejected by the isolated Preview Supabase project.`)
+  return true
+}
+
+function parseVercelConfig(content, label) {
+  try {
+    return JSON.parse(String(content))
+  } catch {
+    fail(`${label} is missing or is not valid JSON.`)
+  }
+}
+
+export function assertPreviewBuildBootstrap({
+  candidateVercelConfig,
+  trustedVercelConfig,
+  candidateVerifier,
+  trustedVerifier,
+  candidateHasVercelTs = false,
+}) {
+  const trustedConfig = parseVercelConfig(trustedVercelConfig, 'Trusted main vercel.json')
+  const candidateConfig = parseVercelConfig(candidateVercelConfig, 'Candidate vercel.json')
+  if (trustedConfig.buildCommand !== PREVIEW_REMOTE_BUILD_COMMAND) {
+    fail('Trusted main does not contain the approved Preview remote build command.')
+  }
+  if (candidateConfig.buildCommand !== PREVIEW_REMOTE_BUILD_COMMAND) {
+    fail('Candidate is missing the approved Preview remote build command.')
+  }
+  if (candidateHasVercelTs) {
+    fail('Candidate includes vercel.ts, which could override the verified vercel.json build command.')
+  }
+  if (typeof trustedVerifier !== 'string' || trustedVerifier.length === 0) {
+    fail('Trusted main Preview build verifier is missing.')
+  }
+  if (typeof candidateVerifier !== 'string' || candidateVerifier.length === 0) {
+    fail('Candidate Preview build verifier is missing.')
+  }
+  if (candidateVerifier !== trustedVerifier) {
+    fail('Candidate Preview build verifier differs from trusted main.')
+  }
   return true
 }
 
@@ -662,6 +701,40 @@ async function main() {
     return
   }
 
+  if (mode === 'verify-preview-build-bootstrap') {
+    const candidateDirectory = process.argv[3]
+    const trustedDirectory = process.argv[4]
+    if (!candidateDirectory || !trustedDirectory) {
+      fail('Usage: continuous-publishing.mjs verify-preview-build-bootstrap <candidate-directory> <trusted-main-directory>.')
+    }
+    const readRegularFile = (path, label) => {
+      let metadata
+      try {
+        metadata = fs.lstatSync(path)
+      } catch {
+        fail(`${label} is missing from the candidate or trusted main checkout.`)
+      }
+      if (!metadata.isFile()) fail(`${label} must be a regular file; symlinks are not accepted.`)
+      return fs.readFileSync(path, 'utf8')
+    }
+    let candidateHasVercelTs = false
+    try {
+      fs.lstatSync(`${candidateDirectory}/vercel.ts`)
+      candidateHasVercelTs = true
+    } catch (error) {
+      if (error?.code !== 'ENOENT') fail('Could not verify whether the candidate contains a Vercel TypeScript config.')
+    }
+    assertPreviewBuildBootstrap({
+      candidateVercelConfig: readRegularFile(`${candidateDirectory}/vercel.json`, 'Candidate vercel.json'),
+      trustedVercelConfig: readRegularFile(`${trustedDirectory}/vercel.json`, 'Trusted main vercel.json'),
+      candidateVerifier: readRegularFile(`${candidateDirectory}/scripts/release/verify-preview-build-env.mjs`, 'Candidate Preview build verifier'),
+      trustedVerifier: readRegularFile(`${trustedDirectory}/scripts/release/verify-preview-build-env.mjs`, 'Trusted main Preview build verifier'),
+      candidateHasVercelTs,
+    })
+    process.stdout.write('Candidate Preview build command and verifier match trusted main.\n')
+    return
+  }
+
   if (mode === 'mask-preview-environment') {
     const path = process.argv[3]
     if (!path) fail('Usage: continuous-publishing.mjs mask-preview-environment <vercel-env-file>.')
@@ -701,7 +774,7 @@ async function main() {
     return
   }
 
-  fail('Usage: continuous-publishing.mjs <preview-pr|merged-ci-tree|merged-release-proof|check-preview-environment|mask-preview-environment|verify-preview-project|verify-preview-deployment>.')
+  fail('Usage: continuous-publishing.mjs <preview-pr|merged-ci-tree|merged-release-proof|check-preview-environment|verify-preview-build-bootstrap|mask-preview-environment|verify-preview-project|verify-preview-deployment>.')
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
