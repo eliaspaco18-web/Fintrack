@@ -76,13 +76,12 @@ export function assertPreviewSupabaseEnvironment(values, { previewProjectRef, pr
   } else if (!/^sb_publishable_[A-Za-z0-9_-]{20,}$/.test(values.NEXT_PUBLIC_SUPABASE_ANON_KEY)) {
     fail('NEXT_PUBLIC_SUPABASE_ANON_KEY is not a supported Supabase public key format.')
   }
-  if (String(values.SUPABASE_SERVICE_ROLE_KEY).includes('.')) {
-    const serviceClaims = decodeJwtClaims(values.SUPABASE_SERVICE_ROLE_KEY, 'SUPABASE_SERVICE_ROLE_KEY')
-    if (serviceClaims.ref !== previewProjectRef || serviceClaims.role !== 'service_role') {
-      fail('SUPABASE_SERVICE_ROLE_KEY is not a service credential for the isolated Preview project.')
-    }
-  } else if (!/^sb_secret_[A-Za-z0-9_-]{20,}$/.test(values.SUPABASE_SERVICE_ROLE_KEY)) {
-    fail('SUPABASE_SERVICE_ROLE_KEY is not a supported Supabase secret key format.')
+  // Vercel intentionally replaces Secret values with this marker in `pull`.
+  // Require that behavior so the credential never enters the GitHub runner.
+  // Its project binding and validity are checked from the protected remote
+  // Preview build, where Vercel injects the Secret without exposing it.
+  if (values.SUPABASE_SERVICE_ROLE_KEY !== '[SENSITIVE]') {
+    fail('SUPABASE_SERVICE_ROLE_KEY must remain a non-retrievable Vercel Secret and cannot be materialized on the GitHub runner.')
   }
   if (shellFlag !== '1' || values.NEXT_PUBLIC_FINTRACK_V3_SHELL !== '1') fail('Preview must compile with the V3 shell enabled.')
   const unapprovedNames = Object.keys(values).filter(name => !PREVIEW_ENV_ALLOWLIST.has(name))
@@ -656,12 +655,10 @@ async function main() {
       productionProjectRef: requireEnv('PRODUCTION_SUPABASE_PROJECT_REF'),
       shellFlag: values.NEXT_PUBLIC_FINTRACK_V3_SHELL,
     })
-    for (const name of ['NEXT_PUBLIC_SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY']) {
-      const headers = previewSupabaseProbeHeaders(values[name])
-      const probe = await fetch(`${values.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/settings`, { method: 'GET', headers, redirect: 'error' })
-      assertPreviewSupabaseCredentialProbe(probe.status, name)
-    }
-    process.stdout.write('Preview Supabase variables are bound to the isolated QA project; read-only Auth settings probes passed; V3 shell is enabled.\n')
+    const headers = previewSupabaseProbeHeaders(values.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+    const probe = await fetch(`${values.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/settings`, { method: 'GET', headers, redirect: 'error' })
+    assertPreviewSupabaseCredentialProbe(probe.status, 'NEXT_PUBLIC_SUPABASE_ANON_KEY')
+    process.stdout.write('Preview Supabase public variables are bound to the isolated QA project; the non-retrievable Secret will be verified inside the protected remote Preview build; V3 shell is enabled.\n')
     return
   }
 

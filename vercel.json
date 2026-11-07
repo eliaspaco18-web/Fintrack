@@ -1,4 +1,5 @@
 {
+  "buildCommand": "node scripts/release/verify-preview-build-env.mjs && npm run build",
   "crons": [
     {
       "path": "/api/cron/exchange-rate",
