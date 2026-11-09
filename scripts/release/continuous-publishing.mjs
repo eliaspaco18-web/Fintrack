@@ -561,12 +561,185 @@ export async function resolveMergedReleaseProof({ repository, releaseSha, releas
   }
 }
 
+
+export function assertMainQaWorkflowContext({
+  repository,
+  workflowRef,
+  eventName,
+  dispatchSha,
+  currentMainSha,
+  ownerAuthorizedSha,
+  actorId,
+}) {
+  if (repository !== 'eliaspaco18-web/Fintrack') fail('MAIN_QA is available only for the FinTrack repository.')
+  if (workflowRef !== 'refs/heads/main' || eventName !== 'workflow_dispatch') {
+    fail('MAIN_QA can run only from workflow_dispatch on the protected main branch.')
+  }
+  if (!/^[0-9a-f]{40}$/.test(String(currentMainSha ?? ''))) fail('GitHub returned an invalid main HEAD SHA.')
+  if (dispatchSha !== currentMainSha) fail('The workflow dispatch SHA is not the current main HEAD.')
+  if (ownerAuthorizedSha !== currentMainSha) fail('Owner authorization must match the exact current main HEAD SHA.')
+  return authorizeReleaseAction({
+    expectedSha: currentMainSha,
+    ownerAuthorizedSha,
+    actorId,
+  })
+}
+
+export async function resolveMainQaPreview({
+  repository,
+  ownerAuthorizedSha,
+  workflowRef,
+  eventName,
+  dispatchSha,
+  actorId,
+  token,
+  expected = {},
+  fetchImpl = fetch,
+}) {
+  if (!String(token ?? '').trim()) fail('GitHub token is required to verify MAIN_QA release evidence.')
+
+  async function readMainHead() {
+    const ref = await githubRequest('/repos/' + repository + '/git/ref/heads/main', token, fetchImpl)
+    if (ref.ref !== 'refs/heads/main' || ref.object?.type !== 'commit') {
+      fail('GitHub did not return the canonical main commit reference.')
+    }
+    const sha = String(ref.object?.sha ?? '')
+    if (!/^[0-9a-f]{40}$/.test(sha)) fail('GitHub main HEAD SHA is missing or malformed.')
+    return sha
+  }
+
+  const currentMainSha = await readMainHead()
+  const authorization = assertMainQaWorkflowContext({
+    repository,
+    workflowRef,
+    eventName,
+    dispatchSha,
+    currentMainSha,
+    ownerAuthorizedSha,
+    actorId,
+  })
+
+  const mainCommit = await githubRequest('/repos/' + repository + '/commits/' + currentMainSha, token, fetchImpl)
+  if (mainCommit.sha !== currentMainSha) fail('GitHub returned a different commit than current main HEAD.')
+  const treeSha = String(mainCommit.commit?.tree?.sha ?? '')
+  if (!/^[0-9a-f]{40}$/.test(treeSha)) fail('GitHub did not return a verifiable main tree SHA.')
+
+  const proof = await resolveMergedReleaseProof({
+    repository,
+    releaseSha: currentMainSha,
+    releaseTreeSha: treeSha,
+    token,
+    ownerAuthorization: { ownerAuthorizedSha, actorId },
+    fetchImpl,
+  })
+  if (!proof.treeMatchesReviewedHead || proof.sourceTreeSha !== treeSha) {
+    fail('Release Candidate CI does not cover the exact integrated main tree.')
+  }
+
+  const checks = [
+    ['commitSha', currentMainSha],
+    ['treeSha', treeSha],
+    ['ciRunId', proof.ciRunId],
+    ['pullRequestNumber', String(proof.sourcePullRequestNumber)],
+    ['sourceSha', proof.sourceSha],
+  ]
+  for (const [name, actual] of checks) {
+    if (expected[name] !== undefined && String(expected[name]) !== String(actual)) {
+      fail('MAIN_QA release evidence changed after Preview approval.')
+    }
+  }
+
+  const mainShaAfterChecks = await readMainHead()
+  if (mainShaAfterChecks !== currentMainSha) {
+    fail('main HEAD changed while MAIN_QA evidence was being verified.')
+  }
+
+  return {
+    pullRequestNumber: proof.sourcePullRequestNumber,
+    commitSha: currentMainSha,
+    treeSha,
+    ciRunId: proof.ciRunId,
+    headRef: 'main',
+    sourceSha: proof.sourceSha,
+    authorizationMethod: authorization.authorizationMethod,
+    authorizedActorId: authorization.authorizedActorId,
+  }
+}
+
 async function vercelRequest(path, token, teamId, fetchImpl = fetch) {
   const url = new URL(`https://api.vercel.com${path}`)
   if (teamId) url.searchParams.set('teamId', teamId)
   const response = await fetchImpl(url, { headers: { Authorization: `Bearer ${token}` } })
   if (!response.ok) fail(`Vercel read request failed with HTTP ${response.status}.`)
   return response.json()
+}
+
+
+export function assertMainQaPreviewDeployment(deployment, expected) {
+  if (!deployment || typeof deployment !== 'object') fail('Vercel returned no MAIN_QA deployment record.')
+  if (deployment.readyState !== 'READY') fail('MAIN_QA Preview deployment did not reach READY.')
+  if (deployment.target !== null && deployment.target !== 'preview') {
+    fail('MAIN_QA deployment target is not Preview.')
+  }
+  if (deploymentProjectId(deployment) !== expected.projectId) fail('MAIN_QA deployment belongs to a different Vercel project.')
+  if (deployment.meta?.githubCommitSha !== expected.commitSha) fail('MAIN_QA deployment SHA does not match current main.')
+  if (deployment.meta?.gitTreeSha !== expected.treeSha) fail('MAIN_QA deployment tree does not match current main.')
+  if (deployment.meta?.fintrackPreviewMode !== 'MAIN_QA') fail('Vercel deployment is not explicitly marked as MAIN_QA.')
+  if (deployment.meta?.githubPullRequest) fail('MAIN_QA deployment unexpectedly contains PR metadata.')
+
+  const deploymentRef = String(deployment.meta?.githubCommitRef ?? '')
+  const normalizedRef = deploymentRef.startsWith('refs/heads/') ? deploymentRef.slice('refs/heads/'.length) : deploymentRef
+  if (normalizedRef && !['main', 'HEAD'].includes(normalizedRef)) {
+    fail('MAIN_QA deployment identifies a branch other than main or detached HEAD.')
+  }
+
+  const hostname = String(deployment.url ?? '').replace('https://', '')
+  if (!hostname.endsWith('.vercel.app') || hostname.includes('/') || hostname !== expected.hostname) {
+    fail('MAIN_QA Preview hostname is invalid or does not match the deployed URL.')
+  }
+  if (!Array.isArray(expected.aliases)) fail('Vercel did not return aliases needed to verify the MAIN_QA domain.')
+  if (expected.aliases.some(alias =>
+    String(typeof alias === 'string' ? alias : alias?.alias).toLowerCase() ===
+    String(expected.productionDomain ?? '').toLowerCase(),
+  )) {
+    fail('MAIN_QA Preview unexpectedly owns the official Production domain.')
+  }
+  return true
+}
+
+export async function resolveAndVerifyVercelMainQaPreview({
+  projectId,
+  teamId,
+  deploymentUrl,
+  commitSha,
+  treeSha,
+  token,
+  fetchImpl = fetch,
+}) {
+  if (!/^prj_[A-Za-z0-9]+$/.test(projectId ?? '') || !/^team_[A-Za-z0-9]+$/.test(teamId ?? '')) {
+    fail('Vercel team or project ID is missing or malformed.')
+  }
+  const parsed = new URL(deploymentUrl)
+  if (parsed.protocol !== 'https:' || parsed.pathname !== '/' || !parsed.hostname.endsWith('.vercel.app')) {
+    fail('MAIN_QA deployment URL must be a Vercel hostname without a path.')
+  }
+  const [project, deployment] = await Promise.all([
+    vercelRequest('/v9/projects/' + encodeURIComponent(projectId), token, teamId, fetchImpl),
+    vercelRequest('/v13/deployments/' + encodeURIComponent(parsed.hostname), token, teamId, fetchImpl),
+  ])
+  if (!deployment?.id) fail('Vercel MAIN_QA response has no deployment ID.')
+  const aliasResponse = await vercelRequest('/v2/deployments/' + encodeURIComponent(deployment.id) + '/aliases', token, teamId, fetchImpl)
+  const aliases = Array.isArray(aliasResponse.aliases) ? aliasResponse.aliases : null
+  assertPreviewProjectProtection(project, projectId)
+  assertMainQaPreviewDeployment(deployment, {
+    projectId,
+    commitSha,
+    treeSha,
+    hostname: parsed.hostname,
+    aliases,
+    productionDomain: 'fintrack-eta-silk.vercel.app',
+  })
+  return { deploymentId: deployment.id, url: parsed.origin, hostname: parsed.hostname, readyState: deployment.readyState }
 }
 
 export async function resolveAndVerifyVercelPreview({ projectId, teamId, deploymentUrl, commitSha, treeSha, headRef, pullRequestNumber, repository, token, fetchImpl = fetch }) {
@@ -617,7 +790,29 @@ function appendOutput(values) {
 async function main() {
   const mode = process.argv[2]
   const repository = requireEnv('GITHUB_REPOSITORY')
-  const token = ['preview-pr', 'merged-ci-tree', 'merged-release-proof'].includes(mode) ? requireEnv('GITHUB_TOKEN') : ''
+  const token = ['preview-pr', 'main-qa', 'merged-ci-tree', 'merged-release-proof'].includes(mode) ? requireEnv('GITHUB_TOKEN') : ''
+
+  if (mode === 'main-qa') {
+    const candidate = await resolveMainQaPreview({
+      repository,
+      ownerAuthorizedSha: requireEnv('OWNER_AUTHORIZED_SHA'),
+      workflowRef: requireEnv('GITHUB_REF'),
+      eventName: requireEnv('GITHUB_EVENT_NAME'),
+      dispatchSha: requireEnv('GITHUB_SHA'),
+      actorId: requireEnv('AUTHORIZED_ACTOR_ID'),
+      token,
+      expected: process.env.EXPECTED_SHA ? {
+        commitSha: process.env.EXPECTED_SHA,
+        treeSha: process.env.EXPECTED_TREE_SHA,
+        ciRunId: process.env.EXPECTED_CI_RUN_ID,
+        pullRequestNumber: process.env.EXPECTED_PULL_REQUEST_NUMBER,
+        sourceSha: process.env.EXPECTED_SOURCE_SHA,
+      } : {},
+    })
+    appendOutput(candidate)
+    process.stdout.write('Approved MAIN_QA Preview: exact current main SHA, integrated PR, matching CI, and repository-owner authorization verified.\n')
+    return
+  }
 
   if (mode === 'preview-pr') {
     const candidate = await resolvePreviewPr({
@@ -748,6 +943,22 @@ async function main() {
     return
   }
 
+  if (mode === 'verify-main-qa-preview-deployment') {
+    const checked = await resolveAndVerifyVercelMainQaPreview({
+      projectId: requireEnv('VERCEL_PROJECT_ID'),
+      teamId: requireEnv('VERCEL_ORG_ID'),
+      deploymentUrl: requireEnv('DEPLOYMENT_URL'),
+      commitSha: requireEnv('RELEASE_SHA'),
+      treeSha: requireEnv('RELEASE_TREE_SHA'),
+      token: requireEnv('VERCEL_TOKEN'),
+    })
+    const protection = await fetch(checked.url, { method: 'GET', redirect: 'manual' })
+    assertPreviewDeploymentProtectionResponse(protection)
+    appendOutput({ deployment_url: checked.url, deployment_id: checked.deploymentId, ready_state: checked.readyState })
+    process.stdout.write('MAIN_QA Preview deployment is READY and authentication-protected.\n')
+    return
+  }
+
   if (mode === 'verify-preview-deployment') {
     const checked = await resolveAndVerifyVercelPreview({
       projectId: requireEnv('VERCEL_PROJECT_ID'),
@@ -774,7 +985,7 @@ async function main() {
     return
   }
 
-  fail('Usage: continuous-publishing.mjs <preview-pr|merged-ci-tree|merged-release-proof|check-preview-environment|verify-preview-build-bootstrap|mask-preview-environment|verify-preview-project|verify-preview-deployment>.')
+  fail('Usage: continuous-publishing.mjs <preview-pr|main-qa|merged-ci-tree|merged-release-proof|check-preview-environment|verify-preview-build-bootstrap|mask-preview-environment|verify-preview-project|verify-preview-deployment|verify-main-qa-preview-deployment>.')
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
