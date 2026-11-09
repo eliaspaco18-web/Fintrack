@@ -33,7 +33,7 @@ concurrency:
 
 jobs:
   resolve:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     outputs:
       pull_request_number: ${{ steps.resolve_pr.outputs.pullRequestNumber || steps.resolve_main_qa.outputs.pullRequestNumber }}
@@ -75,7 +75,6 @@ jobs:
         id: resolve_main_qa
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
           OWNER_AUTHORIZED_SHA: ${{ inputs.owner_authorized_sha }}
           AUTHORIZED_ACTOR_ID: ${{ github.actor_id }}
         run: node scripts/release/continuous-publishing.mjs main-qa
@@ -131,10 +130,6 @@ jobs:
         if: inputs.mode == 'main_qa'
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
-          GITHUB_REF: ${{ github.ref }}
-          GITHUB_SHA: ${{ github.sha }}
           OWNER_AUTHORIZED_SHA: ${{ inputs.owner_authorized_sha }}
           AUTHORIZED_ACTOR_ID: ${{ github.actor_id }}
           EXPECTED_SHA: ${{ needs.resolve.outputs.commit_sha }}
@@ -225,34 +220,31 @@ jobs:
           stdout_file="$RUNNER_TEMP/fintrack-preview-deploy.stdout"
           stderr_file="$RUNNER_TEMP/fintrack-preview-deploy.stderr"
           if [[ "$PREVIEW_MODE" == "main_qa" ]]; then
-            deploy_args=(
-              --yes --target=preview
-              --build-env "FINTRACK_PREVIEW_BUILD_VERIFICATION=1"
-              --build-env "FINTRACK_PREVIEW_EXPECTED_PROJECT_REF=$PREVIEW_SUPABASE_PROJECT_REF"
-              --build-env "FINTRACK_PREVIEW_PRODUCTION_PROJECT_REF=$PRODUCTION_SUPABASE_PROJECT_REF"
-              --meta "githubCommitSha=$RELEASE_SHA"
-              --meta "gitTreeSha=$RELEASE_TREE_SHA"
-              --meta "fintrackPreviewMode=MAIN_QA"
-            )
+            if ! vercel deploy --yes --target=preview \
+              --build-env "FINTRACK_PREVIEW_BUILD_VERIFICATION=1" \
+              --build-env "FINTRACK_PREVIEW_EXPECTED_PROJECT_REF=$PREVIEW_SUPABASE_PROJECT_REF" \
+              --build-env "FINTRACK_PREVIEW_PRODUCTION_PROJECT_REF=$PRODUCTION_SUPABASE_PROJECT_REF" \
+              --meta "githubCommitSha=$RELEASE_SHA" \
+              --meta "gitTreeSha=$RELEASE_TREE_SHA" \
+              --meta "fintrackPreviewMode=MAIN_QA" >"$stdout_file" 2>"$stderr_file"; then
+              echo 'Vercel remote Preview build or deployment failed; CLI output was suppressed to protect environment values.' >&2
+              exit 1
+            fi
           else
-            deploy_args=(
-              --yes --target=preview
-              --build-env "FINTRACK_PREVIEW_BUILD_VERIFICATION=1"
-              --build-env "FINTRACK_PREVIEW_EXPECTED_PROJECT_REF=$PREVIEW_SUPABASE_PROJECT_REF"
-              --build-env "FINTRACK_PREVIEW_PRODUCTION_PROJECT_REF=$PRODUCTION_SUPABASE_PROJECT_REF"
-              --meta "githubCommitSha=$RELEASE_SHA"
-              --meta "githubPullRequest=$PULL_REQUEST_NUMBER"
-              --meta "gitTreeSha=$RELEASE_TREE_SHA"
-            )
-          fi
-          if ! vercel deploy "${deploy_args[@]}" >"$stdout_file" 2>"$stderr_file"; then
-            echo 'Vercel remote Preview build or deployment failed; CLI output was suppressed to protect environment values.' >&2
-            exit 1
+            if ! vercel deploy --yes --target=preview \
+              --build-env "FINTRACK_PREVIEW_BUILD_VERIFICATION=1" \
+              --build-env "FINTRACK_PREVIEW_EXPECTED_PROJECT_REF=$PREVIEW_SUPABASE_PROJECT_REF" \
+              --build-env "FINTRACK_PREVIEW_PRODUCTION_PROJECT_REF=$PRODUCTION_SUPABASE_PROJECT_REF" \
+              --meta "githubCommitSha=$RELEASE_SHA" \
+              --meta "githubPullRequest=$PULL_REQUEST_NUMBER" \
+              --meta "gitTreeSha=$RELEASE_TREE_SHA" >"$stdout_file" 2>"$stderr_file"; then
+              echo 'Vercel remote Preview build or deployment failed; CLI output was suppressed to protect environment values.' >&2
+              exit 1
+            fi
           fi
           url="$(grep -Eo 'https://[a-zA-Z0-9.-]+\.vercel\.app' "$stdout_file" | tail -n 1)"
           [[ "$url" =~ ^https://[a-zA-Z0-9.-]+\.vercel\.app$ ]]
           echo "deployment_url=$url" >> "$GITHUB_OUTPUT"
-
 
       - name: Verify deployment identity, READY state, Preview target and SSO gate
         env:

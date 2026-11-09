@@ -123,7 +123,7 @@ test('MAIN_QA deployment requires READY Preview identity, SHA, tree, detached/ma
 test('Preview workflow keeps MAIN_QA on main, behind preview approval, and uses only verified Preview deploy flags', () => {
   const workflow = readFileSync(new URL('../../.github/workflows/v3-preview.yml', import.meta.url), 'utf8')
   assert.match(workflow, /mode:[\s\S]*?options:[\s\S]*?- pr[\s\S]*?- main_qa/)
-  assert.match(workflow, /if: github\.event_name == 'workflow_dispatch' && github\.ref == 'refs\/heads\/main'/)
+  assert.match(workflow, /if: github\.ref == 'refs\/heads\/main'/)
   assert.match(workflow, /run: node scripts\/release\/continuous-publishing\.mjs main-qa/)
   assert.match(workflow, /environment: preview/)
   assert.match(workflow, /Revalidate current main HEAD,[\s\S]*?after environment approval/)
@@ -138,5 +138,7 @@ test('Preview workflow keeps MAIN_QA on main, behind preview approval, and uses 
   assert.match(deployment, /vercel deploy/)
   assert.match(deployment, /--target=preview/)
   assert.doesNotMatch(deployment, /--prod|--prebuilt/)
+  assert.match(workflow, /unset VERCEL_GIT_COMMIT_REF/)
+  assert.doesNotMatch(workflow, /--git-branch/)
   assert.ok(workflow.indexOf('Revalidate current main HEAD') < workflow.indexOf('VERCEL_TOKEN: '))
 })
