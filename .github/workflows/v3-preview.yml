@@ -1,14 +1,23 @@
-name: FinTrack V3 Preview (approved PR, isolated QA)
+name: FinTrack V3 Preview (approved PR or main QA)
 
 on:
   workflow_dispatch:
     inputs:
-      pull_request_number:
-        description: Open, non-draft PR number targeting main
+      mode:
+        description: Select an approved PR Preview or the protected MAIN_QA Preview of current main
         required: true
+        type: choice
+        options:
+          - pr
+          - main_qa
+        default: pr
+      pull_request_number:
+        description: Open, non-draft PR number targeting main (required in PR mode)
+        required: false
         type: number
+        default: 0
       owner_authorized_sha:
-        description: Optional exact PR head SHA for explicit single-owner authorization (leave blank when independently approved)
+        description: Exact full SHA authorized by the repository owner (PR head SHA or MAIN_QA current main HEAD)
         required: false
         default: ''
         type: string
@@ -19,7 +28,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: fintrack-v3-preview-${{ inputs.pull_request_number }}
+  group: fintrack-v3-preview-${{ inputs.mode == 'main_qa' && inputs.owner_authorized_sha || inputs.pull_request_number }}
   cancel-in-progress: false
 
 jobs:
@@ -27,12 +36,13 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     outputs:
-      pull_request_number: ${{ steps.resolve.outputs.pullRequestNumber }}
-      commit_sha: ${{ steps.resolve.outputs.commitSha }}
-      tree_sha: ${{ steps.resolve.outputs.treeSha }}
-      ci_run_id: ${{ steps.resolve.outputs.ciRunId }}
-      head_ref: ${{ steps.resolve.outputs.headRef }}
-      authorization_method: ${{ steps.resolve.outputs.authorizationMethod }}
+      pull_request_number: ${{ steps.resolve_pr.outputs.pullRequestNumber || steps.resolve_main_qa.outputs.pullRequestNumber }}
+      commit_sha: ${{ steps.resolve_pr.outputs.commitSha || steps.resolve_main_qa.outputs.commitSha }}
+      tree_sha: ${{ steps.resolve_pr.outputs.treeSha || steps.resolve_main_qa.outputs.treeSha }}
+      ci_run_id: ${{ steps.resolve_pr.outputs.ciRunId || steps.resolve_main_qa.outputs.ciRunId }}
+      head_ref: ${{ steps.resolve_pr.outputs.headRef || steps.resolve_main_qa.outputs.headRef }}
+      source_sha: ${{ steps.resolve_main_qa.outputs.sourceSha }}
+      authorization_method: ${{ steps.resolve_pr.outputs.authorizationMethod || steps.resolve_main_qa.outputs.authorizationMethod }}
     steps:
       - name: Check out trusted release tooling from the dispatched main commit
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -44,8 +54,15 @@ jobs:
         with:
           node-version: 24.22.1
 
+      - name: Validate requested Preview mode
+        env:
+          PREVIEW_MODE: ${{ inputs.mode }}
+        run: |
+          case "$PREVIEW_MODE" in pr|main_qa) ;; *) echo 'Unsupported Preview mode.' >&2; exit 1 ;; esac
+
       - name: Resolve PR head, approval and exact successful CI run without candidate code or secrets
-        id: resolve
+        if: inputs.mode == 'pr'
+        id: resolve_pr
         env:
           GITHUB_TOKEN: ${{ github.token }}
           PULL_REQUEST_NUMBER: ${{ inputs.pull_request_number }}
@@ -53,9 +70,18 @@ jobs:
           AUTHORIZED_ACTOR_ID: ${{ github.actor_id }}
         run: node scripts/release/continuous-publishing.mjs preview-pr
 
+      - name: Resolve exact current main SHA, owner authorization, integration and CI before approval
+        if: inputs.mode == 'main_qa'
+        id: resolve_main_qa
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OWNER_AUTHORIZED_SHA: ${{ inputs.owner_authorized_sha }}
+          AUTHORIZED_ACTOR_ID: ${{ github.actor_id }}
+        run: node scripts/release/continuous-publishing.mjs main-qa
+
   deploy-preview:
     needs: resolve
-    name: Preview PR #${{ needs.resolve.outputs.pull_request_number }} @ ${{ needs.resolve.outputs.commit_sha }}
+    name: Preview ${{ inputs.mode }} @ ${{ needs.resolve.outputs.commit_sha }}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     # Required reviewers on this environment are an explicit gate before any
@@ -89,6 +115,7 @@ jobs:
           node-version: 24.22.1
 
       - name: Revalidate PR state, exact SHA, approval and CI after environment approval
+        if: inputs.mode == 'pr'
         env:
           GITHUB_TOKEN: ${{ github.token }}
           PULL_REQUEST_NUMBER: ${{ needs.resolve.outputs.pull_request_number }}
@@ -98,6 +125,19 @@ jobs:
           OWNER_AUTHORIZED_SHA: ${{ inputs.owner_authorized_sha }}
           AUTHORIZED_ACTOR_ID: ${{ github.actor_id }}
         run: node release-tools/scripts/release/continuous-publishing.mjs preview-pr
+
+      - name: Revalidate current main HEAD, owner authorization, integration proof and CI after environment approval
+        if: inputs.mode == 'main_qa'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OWNER_AUTHORIZED_SHA: ${{ inputs.owner_authorized_sha }}
+          AUTHORIZED_ACTOR_ID: ${{ github.actor_id }}
+          EXPECTED_SHA: ${{ needs.resolve.outputs.commit_sha }}
+          EXPECTED_TREE_SHA: ${{ needs.resolve.outputs.tree_sha }}
+          EXPECTED_CI_RUN_ID: ${{ needs.resolve.outputs.ci_run_id }}
+          EXPECTED_PULL_REQUEST_NUMBER: ${{ needs.resolve.outputs.pull_request_number }}
+          EXPECTED_SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+        run: node release-tools/scripts/release/continuous-publishing.mjs main-qa
 
       - name: Check out the verified candidate commit only after the second authorization check
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -113,6 +153,16 @@ jobs:
           [[ "$(git rev-parse HEAD)" == "$RELEASE_SHA" ]]
           [[ "$(git rev-parse 'HEAD^{tree}')" == "$RELEASE_TREE_SHA" ]]
           [[ -z "$(git branch --show-current)" ]]
+
+      - name: Require detached checkout and shared Preview variables only
+        working-directory: candidate
+        env:
+          VERCEL_GIT_COMMIT_REF: ''
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$RELEASE_SHA" ]]
+          [[ "$(git rev-parse --abbrev-ref HEAD)" == "HEAD" ]]
+          [[ -z "${VERCEL_GIT_COMMIT_REF:-}" ]]
 
       - name: Install dependencies from the candidate lockfile
         working-directory: candidate
@@ -132,17 +182,19 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
-      - name: Pull only shared Preview variables (never a branch override)
+      - name: Pull shared Preview variables without selecting a branch override
         working-directory: candidate
         run: |
           set -euo pipefail
           log_file="$RUNNER_TEMP/vercel-preview-pull.log"
+          unset VERCEL_GIT_COMMIT_REF || true
           if ! vercel pull --yes --environment=preview > "$log_file" 2>&1; then
             echo 'Vercel could not load the shared Preview environment; CLI output was suppressed to protect credentials.' >&2
             exit 1
           fi
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_GIT_COMMIT_REF: ''
 
       - name: Redact Preview credential values before candidate build logs
         run: node release-tools/scripts/release/continuous-publishing.mjs mask-preview-environment candidate/.vercel/.env.preview.local
@@ -157,42 +209,70 @@ jobs:
       - name: Verify Preview build bootstrap against trusted main immediately before deployment
         run: node release-tools/scripts/release/continuous-publishing.mjs verify-preview-build-bootstrap candidate release-tools
 
-      - name: Build remotely with the Vercel Preview Secret and deploy a Preview target bound to the exact PR SHA
+      - name: Build remotely with the Vercel Preview Secret and deploy the exact approved code as Preview
         id: deploy
         working-directory: candidate
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          PREVIEW_MODE: ${{ inputs.mode }}
         run: |
           set -euo pipefail
           stdout_file="$RUNNER_TEMP/fintrack-preview-deploy.stdout"
           stderr_file="$RUNNER_TEMP/fintrack-preview-deploy.stderr"
-          if ! vercel deploy --yes --target=preview \
-            --build-env "FINTRACK_PREVIEW_BUILD_VERIFICATION=1" \
-            --build-env "FINTRACK_PREVIEW_EXPECTED_PROJECT_REF=$PREVIEW_SUPABASE_PROJECT_REF" \
-            --build-env "FINTRACK_PREVIEW_PRODUCTION_PROJECT_REF=$PRODUCTION_SUPABASE_PROJECT_REF" \
-            --meta "githubCommitSha=$RELEASE_SHA" \
-            --meta "githubPullRequest=$PULL_REQUEST_NUMBER" \
-            --meta "gitTreeSha=$RELEASE_TREE_SHA" >"$stdout_file" 2>"$stderr_file"; then
-            echo 'Vercel remote Preview build or deployment failed; CLI output was suppressed to protect environment values.' >&2
-            exit 1
+          if [[ "$PREVIEW_MODE" == "main_qa" ]]; then
+            if ! vercel deploy --yes --target=preview \
+              --build-env "FINTRACK_PREVIEW_BUILD_VERIFICATION=1" \
+              --build-env "FINTRACK_PREVIEW_EXPECTED_PROJECT_REF=$PREVIEW_SUPABASE_PROJECT_REF" \
+              --build-env "FINTRACK_PREVIEW_PRODUCTION_PROJECT_REF=$PRODUCTION_SUPABASE_PROJECT_REF" \
+              --meta "githubCommitSha=$RELEASE_SHA" \
+              --meta "gitTreeSha=$RELEASE_TREE_SHA" \
+              --meta "fintrackPreviewMode=MAIN_QA" >"$stdout_file" 2>"$stderr_file"; then
+              echo 'Vercel remote Preview build or deployment failed; CLI output was suppressed to protect environment values.' >&2
+              exit 1
+            fi
+          else
+            if ! vercel deploy --yes --target=preview \
+              --build-env "FINTRACK_PREVIEW_BUILD_VERIFICATION=1" \
+              --build-env "FINTRACK_PREVIEW_EXPECTED_PROJECT_REF=$PREVIEW_SUPABASE_PROJECT_REF" \
+              --build-env "FINTRACK_PREVIEW_PRODUCTION_PROJECT_REF=$PRODUCTION_SUPABASE_PROJECT_REF" \
+              --meta "githubCommitSha=$RELEASE_SHA" \
+              --meta "githubPullRequest=$PULL_REQUEST_NUMBER" \
+              --meta "gitTreeSha=$RELEASE_TREE_SHA" >"$stdout_file" 2>"$stderr_file"; then
+              echo 'Vercel remote Preview build or deployment failed; CLI output was suppressed to protect environment values.' >&2
+              exit 1
+            fi
           fi
           url="$(grep -Eo 'https://[a-zA-Z0-9.-]+\.vercel\.app' "$stdout_file" | tail -n 1)"
           [[ "$url" =~ ^https://[a-zA-Z0-9.-]+\.vercel\.app$ ]]
           echo "deployment_url=$url" >> "$GITHUB_OUTPUT"
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
       - name: Verify deployment identity, READY state, Preview target and SSO gate
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment_url }}
-        run: node release-tools/scripts/release/continuous-publishing.mjs verify-preview-deployment
+          PREVIEW_MODE: ${{ inputs.mode }}
+        run: |
+          if [[ "$PREVIEW_MODE" == "main_qa" ]]; then
+            node release-tools/scripts/release/continuous-publishing.mjs verify-main-qa-preview-deployment
+          else
+            node release-tools/scripts/release/continuous-publishing.mjs verify-preview-deployment
+          fi
 
       - name: Publish a safe review summary
         if: success()
+        env:
+          PREVIEW_MODE: ${{ inputs.mode }}
         run: |
           {
             echo "### Isolated FinTrack Preview is ready"
-            echo "- PR: #$PULL_REQUEST_NUMBER"
-            echo "- Candidate SHA: \`$RELEASE_SHA\`"
+            echo "- Mode: $PREVIEW_MODE"
+            if [[ "$PREVIEW_MODE" == "main_qa" ]]; then
+              echo "- Authorized main SHA: \`$RELEASE_SHA\`"
+              echo "- Integrated source PR: #$PULL_REQUEST_NUMBER"
+            else
+              echo "- PR: #$PULL_REQUEST_NUMBER"
+              echo "- Candidate SHA: \`$RELEASE_SHA\`"
+            fi
             echo "- Release CI run: $RELEASE_CI_RUN_ID"
             echo "- Authorization: ${{ needs.resolve.outputs.authorization_method }}"
             echo "- Deployment: ${{ steps.deploy.outputs.deployment_url }}"
