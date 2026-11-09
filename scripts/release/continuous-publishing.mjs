@@ -212,9 +212,30 @@ export function githubMaskCommand(value) {
 
 export function assertPreviewProjectProtection(project, expectedProjectId) {
   if (!project || project.id !== expectedProjectId) fail('Vercel project ID does not match the approved Preview project.')
-  const enabled = project.ssoProtection?.enabled === true
-  const scope = project.ssoProtection?.deploymentType
-  if (!enabled || !['all', 'all_except_custom_domains'].includes(scope)) {
+
+  const protection = project.ssoProtection
+  const documentedScopes = new Set([
+    'all_except_custom_domains',
+    'prod_deployment_urls_and_all_previews',
+    'all',
+    'preview',
+  ])
+  const hasExplicitEnabled = protection && typeof protection === 'object' && 'enabled' in protection
+  const scope = protection && typeof protection === 'object' && !Array.isArray(protection)
+    ? protection.deploymentType
+    : undefined
+
+  // The Vercel project REST API documents ssoProtection as { deploymentType }.
+  // Some callers normalize the same setting to add enabled: true. If enabled is
+  // supplied, require it to be explicitly true; the deployment scope must
+  // independently cover Preview URLs in either representation.
+  if (
+    !protection
+    || typeof protection !== 'object'
+    || Array.isArray(protection)
+    || (hasExplicitEnabled && protection.enabled !== true)
+    || !documentedScopes.has(scope)
+  ) {
     fail('Vercel Preview deployment protection must keep SSO enabled for generated deployment URLs.')
   }
   return true

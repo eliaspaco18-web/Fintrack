@@ -170,13 +170,48 @@ test('Preview environment allowlist reports variable names only and masks all va
   assert.equal(githubMaskCommand('line1%\nline2\r'), '::add-mask::line1%25%0Aline2%0D')
 })
 
-test('Preview fails closed unless project identity and Vercel Authentication protection are present', () => {
-  assert.equal(assertPreviewProjectProtection({
+test('Preview accepts documented Vercel SSO project shapes and fails closed on missing or insufficient protection', () => {
+  // Vercel GET /v9/projects/{id} documents this raw REST shape.
+  const documentedApiResponse = {
+    id: 'prj_test',
+    ssoProtection: { deploymentType: 'all_except_custom_domains' },
+  }
+  // The account connector may normalize the same API setting with enabled:true.
+  const normalizedResponse = {
     id: 'prj_test',
     ssoProtection: { enabled: true, deploymentType: 'all_except_custom_domains' },
-  }, 'prj_test'), true)
-  assert.throws(() => assertPreviewProjectProtection({ id: 'prj_other', ssoProtection: { enabled: true, deploymentType: 'all' } }, 'prj_test'), /project ID/)
-  assert.throws(() => assertPreviewProjectProtection({ id: 'prj_test', ssoProtection: { enabled: false } }, 'prj_test'), /SSO/)
+  }
+
+  assert.equal(assertPreviewProjectProtection(documentedApiResponse, 'prj_test'), true)
+  assert.equal(assertPreviewProjectProtection(normalizedResponse, 'prj_test'), true)
+
+  for (const deploymentType of [
+    'all_except_custom_domains',
+    'prod_deployment_urls_and_all_previews',
+    'all',
+    'preview',
+  ]) {
+    assert.equal(assertPreviewProjectProtection({
+      id: 'prj_test',
+      ssoProtection: { deploymentType },
+    }, 'prj_test'), true, deploymentType)
+  }
+
+  assert.throws(() => assertPreviewProjectProtection({ id: 'prj_other', ssoProtection: { deploymentType: 'all' } }, 'prj_test'), /project ID/)
+  for (const ssoProtection of [
+    undefined,
+    null,
+    {},
+    { deploymentType: 'unknown' },
+    { deploymentType: 'production' },
+    { enabled: false, deploymentType: 'all_except_custom_domains' },
+    { enabled: null, deploymentType: 'all_except_custom_domains' },
+    { enabled: 'true', deploymentType: 'all_except_custom_domains' },
+  ]) {
+    assert.throws(() => assertPreviewProjectProtection({ id: 'prj_test', ssoProtection }, 'prj_test'), /SSO/)
+  }
+
+  // READY deployment URLs are still checked independently for unauthenticated blocking.
   assert.equal(assertPreviewDeploymentProtectionResponse(new Response(null, { status: 302, headers: { location: 'https://vercel.com/sso-api?url=preview' } })), true)
   assert.equal(assertPreviewDeploymentProtectionResponse(new Response(null, { status: 403 })), true)
   assert.throws(() => assertPreviewDeploymentProtectionResponse(new Response('public', { status: 200 })), /not blocked/)
