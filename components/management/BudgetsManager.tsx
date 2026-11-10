@@ -30,6 +30,8 @@ import {
   StatusBadge,
 } from '@/components/finance'
 import { getApiErrorMessage } from '@/lib/api/error-message'
+import { useBudgetCategories } from '@/lib/hooks/useBudgetCategories'
+import { getBudgetCategoryFilterOptions } from '@/modules/budgets/category-filter-options'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 import { BudgetDetail } from '@/components/management/BudgetDetail'
 import { BudgetMonthPicker } from '@/components/management/BudgetMonthPicker'
@@ -81,13 +83,6 @@ type BudgetSeriesItem = BudgetItem & {
   period_count: number
   active_period_count: number
   latest_period_end: string
-}
-
-type CategoryOption = {
-  id: string
-  name: string
-  scope: 'INCOME' | 'EXPENSE'
-  is_system: boolean
 }
 
 type BudgetForm = {
@@ -454,7 +449,6 @@ export function BudgetsManager() {
   const { toast } = useToast()
 
   const [budgets, setBudgets] = useState<BudgetItem[]>([])
-  const [categories, setCategories] = useState<CategoryOption[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -486,6 +480,7 @@ export function BudgetsManager() {
   const [loadedPeriodMonth, setLoadedPeriodMonth] = useState<string | null>(null)
   const [detailBudget, setDetailBudget] = useState<BudgetSeriesItem | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
+  const { categories, isLoading: categoriesLoading, error: categoriesError, load: loadCategories } = useBudgetCategories(modalOpen)
   const periodFetchSequence = useRef(0)
   const resetAfterModalExitRef = useRef(false)
   const initialFormSnapshotRef = useRef(JSON.stringify(EMPTY_FORM))
@@ -516,25 +511,9 @@ export function BudgetsManager() {
     }
   }, [])
 
-  const loadCategories = useCallback(async () => {
-    try {
-      const res = await fetchWithTimeout('/api/categories?include_system=true', { cache: 'no-store' })
-      const json = await res.json().catch(() => null)
-      if (!res.ok || !json?.ok) {
-        throw new Error(getApiErrorMessage(json, 'No se pudieron cargar las categorías'))
-      }
-      const allCategories = ((json.data as CategoryOption[]) ?? [])
-        .filter(category => category.scope === 'EXPENSE')
-      setCategories(allCategories)
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : 'No se pudieron cargar las categorías'
-      setError(prev => prev ?? message)
-    }
-  }, [])
-
   useEffect(() => {
-    void Promise.all([loadBudgets(), loadCategories()])
-  }, [loadBudgets, loadCategories])
+    void loadBudgets()
+  }, [loadBudgets])
 
   const loadPeriodRows = useCallback(async () => {
     const sequence = ++periodFetchSequence.current
@@ -742,6 +721,7 @@ export function BudgetsManager() {
   }, [])
 
   const budgetSeries = useMemo(() => buildBudgetSeries(budgets), [budgets])
+  const categoryFilterOptions = useMemo(() => getBudgetCategoryFilterOptions(budgets), [budgets])
 
   useEffect(() => {
     if (!detailBudget) return
@@ -1255,7 +1235,7 @@ export function BudgetsManager() {
                   options={[
                     { value: 'all', label: 'Todas' },
                     { value: 'none', label: 'General (sin categoría)' },
-                    ...categories.map(category => ({ value: category.id, label: category.name })),
+                    ...categoryFilterOptions.map(category => ({ value: category.id, label: category.name })),
                   ]}
                   ariaLabel="Filtrar por categoría"
                 />
@@ -1779,6 +1759,9 @@ export function BudgetsManager() {
                       value={form.category_id}
                       onChange={value => setForm(prev => ({ ...prev, category_id: value }))}
                       searchPlaceholder="Buscar categoría..."
+                      loading={categoriesLoading}
+                      error={categoriesError}
+                      onRetry={() => { void loadCategories() }}
                       options={[
                         { value: '', label: 'General (todos los egresos)' },
                         ...categories.map(category => ({ value: category.id, label: category.name })),

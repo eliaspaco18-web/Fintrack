@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { mutate } from 'swr'
 import { useToast } from '@/lib/toast/toast'
 import { useAssets } from '@/lib/hooks/useModules'
@@ -81,7 +80,6 @@ export function AssetsListPanel({
   demoTypes?: AssetTypeOption[]
   onExitDemo?: () => void
 }) {
-  const router = useRouter()
   const { toast } = useToast()
   const resolvedDemoTypes = demoTypes ?? EMPTY_ASSET_TYPES
   const [search, setSearch] = useState('')
@@ -237,9 +235,7 @@ export function AssetsListPanel({
       })
       const json = await response.json().catch(() => null)
       if (!response.ok || !json?.ok) throw new Error(getApiErrorMessage(json, 'No se pudo actualizar el estado.'))
-      await refetch()
       await mutate((key: unknown) => typeof key === 'string' && key.startsWith('/api/assets'))
-      router.refresh()
       toast.success(nextStatus === 'ACTIVE' ? 'Activo reactivado' : 'Activo marcado como vendido', asset.name, { persist: false })
     } catch (error) {
       const message = getErrorMessage(error) ?? 'No se pudo actualizar el activo.'
@@ -248,7 +244,7 @@ export function AssetsListPanel({
     } finally {
       setActionLoadingId(null)
     }
-  }, [actionLoadingId, demoMode, refetch, router, toast])
+  }, [actionLoadingId, demoMode, toast])
 
   const handleDelete = useCallback(async () => {
     if (demoMode || !pendingDelete || actionLoadingId) return
@@ -260,9 +256,7 @@ export function AssetsListPanel({
         const json = await response.json().catch(() => null)
         throw new Error(getApiErrorMessage(json, 'No se pudo eliminar el activo.'))
       }
-      await refetch()
       await mutate((key: unknown) => typeof key === 'string' && key.startsWith('/api/assets'))
-      router.refresh()
       toast.success('Activo eliminado', pendingDelete.name, { persist: false })
       setPendingDelete(null)
     } catch (error) {
@@ -272,7 +266,7 @@ export function AssetsListPanel({
     } finally {
       setActionLoadingId(null)
     }
-  }, [actionLoadingId, demoMode, pendingDelete, refetch, router, toast])
+  }, [actionLoadingId, demoMode, pendingDelete, toast])
 
   const saveEdit = useCallback(async () => {
     if (demoMode || !editingAsset || actionLoadingId) return
@@ -290,9 +284,7 @@ export function AssetsListPanel({
       })
       const json = await response.json().catch(() => null)
       if (!response.ok || !json?.ok) throw new Error(getApiErrorMessage(json, 'No se pudo actualizar el activo.'))
-      await refetch()
       await mutate((key: unknown) => typeof key === 'string' && key.startsWith('/api/assets'))
-      router.refresh()
       setEditingAsset(null)
       toast.success('Activo actualizado', name, { persist: false })
     } catch (error) {
@@ -302,7 +294,7 @@ export function AssetsListPanel({
     } finally {
       setActionLoadingId(null)
     }
-  }, [actionLoadingId, demoMode, editForm, editingAsset, refetch, router, toast])
+  }, [actionLoadingId, demoMode, editForm, editingAsset, toast])
 
   return (
     <PageLayout className={`max-w-none !gap-0 ${movementStyles.v3ModuleContent} ${styles.page}`}>

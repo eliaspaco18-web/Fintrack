@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { mutate } from 'swr'
 import {
   getCreditDisplayLabel,
@@ -34,6 +33,7 @@ import {
 import { getApiErrorMessage } from '@/lib/api/error-message'
 import { summarizeCredits } from '@/lib/credits/overview'
 import { getCreditDetailPresentation } from '@/modules/credits/credit-detail-presentation'
+import { getCreditBankFilterOptions } from '@/modules/credits/bank-filter-options'
 import type { Credit } from '@/types/database.types'
 import tableHeaderStyles from '@/components/credits/CreditsTableHeader.module.css'
 import pageStyles from '@/components/tables/TransactionsRound07.module.css'
@@ -42,7 +42,6 @@ import workbenchStyles from './CreditsWorkbench.module.css'
 
 type ViewMode = 'list' | 'cards'
 type StatusFilter = 'all' | 'ACTIVE' | 'CLOSED' | 'BLOCKED'
-type BankEntityOption = { id: string; name: string; short_name: string | null }
 type CreditEditForm = { name: string; notes: string }
 type CurrencyFilter = 'all' | 'PEN' | 'USD'
 
@@ -288,7 +287,6 @@ function statusTone(status: string): 'success' | 'muted' | 'warning' {
 }
 
 export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
-  const router = useRouter()
   const { toast } = useToast()
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [search, setSearch] = useState('')
@@ -296,9 +294,6 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [currencyFilter, setCurrencyFilter] = useState<CurrencyFilter>('all')
   const [bankFilter, setBankFilter] = useState('all')
-  const [bankEntities, setBankEntities] = useState<BankEntityOption[]>([])
-  const [bankEntitiesLoading, setBankEntitiesLoading] = useState(true)
-  const [bankEntitiesError, setBankEntitiesError] = useState<string | null>(null)
   const [editingCredit, setEditingCredit] = useState<CreditListItem | null>(null)
   const [isNestedEditModalOpen, setIsNestedEditModalOpen] = useState(false)
   const [isLoanFinancialEdit, setIsLoanFinancialEdit] = useState(false)
@@ -308,25 +303,6 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const { credits, isLoading, error: hookError, refetch } = useCredits({ status: undefined })
-
-  const loadBankEntities = useCallback(async () => {
-    setBankEntitiesLoading(true)
-    setBankEntitiesError(null)
-    try {
-      const response = await fetch('/api/bank-entities', { cache: 'no-store' })
-      const json = await response.json().catch(() => null)
-      if (!response.ok || !json?.ok || !Array.isArray(json.data)) {
-        throw new Error(getApiErrorMessage(json, 'No se pudieron cargar las entidades financieras.'))
-      }
-      setBankEntities(json.data)
-    } catch (error) {
-      setBankEntitiesError(error instanceof Error ? error.message : 'No se pudieron cargar las entidades financieras.')
-    } finally {
-      setBankEntitiesLoading(false)
-    }
-  }, [])
-
-  useEffect(() => { void loadBankEntities() }, [loadBankEntities])
 
   const filtered = useMemo(() => {
     const query = search.trim().toLocaleLowerCase()
@@ -344,7 +320,7 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
 
   const overview = useMemo(() => summarizeCredits(credits), [credits])
   const activeCountLabel = isLoading ? 'Cargando…' : String(overview.activeCount)
-  const surfaceError = actionError ?? bankEntitiesError ?? resolveErrorMessage(hookError)
+  const surfaceError = actionError ?? resolveErrorMessage(hookError)
   const editIsCard = editingCredit?.credit_type === 'CREDIT_CARD'
   const editIsLoan = editingCredit?.display_type === 'LOAN'
   const editIsLoanFinancial = Boolean(editIsLoan && isLoanFinancialEdit)
@@ -388,16 +364,14 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
       })
       const json = await response.json().catch(() => null)
       if (!response.ok || !json?.ok) throw new Error(getApiErrorMessage(json, 'No se pudo actualizar el estado.'))
-      await refetch()
       await mutate((key: unknown) => typeof key === 'string' && key.startsWith('/api/credits'))
-      router.refresh()
       toast.success(nextStatus === 'ACTIVE' ? 'Crédito activado' : 'Crédito desactivado', credit.name, { persist: false })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Error al actualizar.'
       setActionError(message)
       toast.error('Error', message)
     } finally { setActionLoadingId(null) }
-  }, [actionLoadingId, refetch, router, toast])
+  }, [actionLoadingId, toast])
 
   const handleSaveEdit = useCallback(async () => {
     if (!editingCredit || actionLoadingId) return
@@ -417,9 +391,7 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
       })
       const json = await response.json().catch(() => null)
       if (!response.ok || !json?.ok) throw new Error(getApiErrorMessage(json, 'No se pudo actualizar el crédito.'))
-      await refetch()
       await mutate((key: unknown) => typeof key === 'string' && key.startsWith('/api/credits'))
-      router.refresh()
       toast.success('Crédito actualizado', name, { persist: false })
       closeEditModal()
     } catch (error) {
@@ -427,15 +399,13 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
       setActionError(message)
       toast.error('No se pudo actualizar el crédito', message)
     } finally { setActionLoadingId(null) }
-  }, [actionLoadingId, closeEditModal, editForm, editingCredit, refetch, router, toast])
+  }, [actionLoadingId, closeEditModal, editForm, editingCredit, toast])
 
   const afterFormSuccess = useCallback(async (name: string, type: 'Tarjeta' | 'Préstamo') => {
-    await refetch()
     await mutate((key: unknown) => typeof key === 'string' && key.startsWith('/api/credits'))
-    router.refresh()
     toast.success(`${type} actualizado`, name, { persist: false })
     closeEditModal()
-  }, [closeEditModal, refetch, router, toast])
+  }, [closeEditModal, toast])
 
   const handleDelete = useCallback(async () => {
     if (!pendingDelete || actionLoadingId) return
@@ -447,9 +417,7 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
         const json = await response.json().catch(() => null)
         throw new Error(getApiErrorMessage(json, 'No se pudo eliminar el crédito.'))
       }
-      await refetch()
       await mutate((key: unknown) => typeof key === 'string' && key.startsWith('/api/credits'))
-      router.refresh()
       toast.success('Crédito eliminado', pendingDelete.name, { persist: false })
       setPendingDelete(null)
     } catch (error) {
@@ -457,7 +425,7 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
       setActionError(message)
       toast.error('No se pudo eliminar', message)
     } finally { setActionLoadingId(null) }
-  }, [actionLoadingId, pendingDelete, refetch, router, toast])
+  }, [actionLoadingId, pendingDelete, toast])
 
   const clearFilters = useCallback(() => {
     setSearch('')
@@ -468,10 +436,10 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
   }, [])
 
   const bankOptions = useMemo(() => [
-    { value: 'all', label: bankEntitiesLoading ? 'Cargando entidades…' : 'Todas las entidades' },
+    { value: 'all', label: 'Todas las entidades' },
     { value: 'none', label: 'Sin entidad' },
-    ...bankEntities.map(bank => ({ value: bank.id, label: bank.name })),
-  ], [bankEntities, bankEntitiesLoading])
+    ...getCreditBankFilterOptions(credits).map(bank => ({ value: bank.id, label: bank.name })),
+  ], [credits])
   const currencyOptions = useMemo(() => Array.from(new Set(credits.map(credit => credit.currency).filter(Boolean)))
     .sort((left, right) => left.localeCompare(right))
     .map(currency => ({ value: currency, label: currency })), [credits])
@@ -636,9 +604,6 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
               className={`${styles.filterSelect} ${styles.entityFilter} filters-control`}
               matchTriggerWidth
               options={bankOptions}
-              loading={bankEntitiesLoading}
-              error={bankEntitiesError}
-              onRetry={() => void loadBankEntities()}
               searchPlaceholder="Buscar entidad…"
               testId="credits-entity-filter"
             />
@@ -650,7 +615,7 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
           </div>
         </section>
 
-        {surfaceError ? <DataErrorBanner message={surfaceError} onRetry={() => { void refetch(); void loadBankEntities() }} /> : null}
+        {surfaceError ? <DataErrorBanner message={surfaceError} onRetry={() => { void refetch() }} /> : null}
 
         {isLoading ? (
           <DataTable density="credit" className={styles.table}>

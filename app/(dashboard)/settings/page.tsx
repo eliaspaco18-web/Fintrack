@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/Button'
 import styles from '@/components/settings/SettingsWorkspace.module.css'
 import { createClient } from '@/lib/supabase.server'
 import { withTimeout } from '@/lib/server/promise-timeout'
+import { loadSettingsPagePreload } from '@/modules/settings/settings-preload'
 
 const SERVER_QUERY_TIMEOUT_MS = 4_000
 
@@ -44,6 +45,7 @@ function renderPanel({
   activeTab,
   profilePayload,
   accountRows,
+  accountCount,
   totalPen,
   totalUsd,
   email,
@@ -69,6 +71,7 @@ function renderPanel({
     color?: string | null
     icon?: string | null
   }>
+  accountCount: number
   totalPen: number
   totalUsd: number
   email: string
@@ -81,7 +84,7 @@ function renderPanel({
     return (
       <ProfileSettingsForm
         initialProfile={profilePayload}
-        accountCount={accountRows.length}
+        accountCount={accountCount}
         profilePreloadWarning={profilePreloadWarning}
         accountsPreloadWarning={accountsPreloadWarning}
         externalSaveAction={externalProfileSave}
@@ -139,31 +142,42 @@ export default async function SettingsPage(
 
   if (!user) redirect('/login')
 
-  const [profileResult, accountsResult] = await Promise.allSettled([
-    withTimeout(supabase.from('profiles').select('*').eq('id', user.id).single(), SERVER_QUERY_TIMEOUT_MS),
-    withTimeout(supabase.from('accounts').select('*').eq('user_id', user.id).order('name'), SERVER_QUERY_TIMEOUT_MS),
-  ])
-
-  const profile =
-    profileResult.status === 'fulfilled' && !profileResult.value.error
-      ? profileResult.value.data
-      : null
-  const accounts =
-    accountsResult.status === 'fulfilled' && !accountsResult.value.error
-      ? accountsResult.value.data
-      : []
-
-  const profilePreloadWarning =
-    profileResult.status === 'fulfilled' && !profileResult.value.error
-      ? null
-      : PROFILE_PRELOAD_WARNING
-  const accountsPreloadWarning =
-    accountsResult.status === 'fulfilled' && !accountsResult.value.error
-      ? null
-      : ACCOUNTS_PRELOAD_WARNING
-
   const activeTab = getSettingsTabValue(searchParams?.tab)
-  const accountRows = accounts ?? []
+  const preload = await loadSettingsPagePreload(activeTab, {
+    profile: async () => {
+      const { data, error } = await withTimeout(
+        supabase.from('profiles').select('*').eq('id', user.id).single(),
+        SERVER_QUERY_TIMEOUT_MS,
+      )
+      if (error || !data) throw error ?? new Error('Profile data is unavailable')
+      return data
+    },
+    accountCount: async () => {
+      const { count, error } = await withTimeout(
+        supabase.from('accounts').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+        SERVER_QUERY_TIMEOUT_MS,
+      )
+      if (error || count === null) throw error ?? new Error('Account count is unavailable')
+      return count
+    },
+    accounts: async () => {
+      const { data, error } = await withTimeout(
+        supabase
+          .from('accounts')
+          .select('id, name, type, currency, balance, color, icon')
+          .eq('user_id', user.id)
+          .order('name'),
+        SERVER_QUERY_TIMEOUT_MS,
+      )
+      if (error || !data) throw error ?? new Error('Account details are unavailable')
+      return data
+    },
+  })
+
+  const profile = preload.profile
+  const accountRows = preload.accounts
+  const profilePreloadWarning = preload.profileUnavailable ? PROFILE_PRELOAD_WARNING : null
+  const accountsPreloadWarning = preload.accountsUnavailable ? ACCOUNTS_PRELOAD_WARNING : null
 
   const totalPen = accountRows
     .filter(account => account.currency === 'PEN')
@@ -216,6 +230,7 @@ export default async function SettingsPage(
             activeTab,
             profilePayload,
             accountRows,
+            accountCount: preload.accountCount,
             totalPen,
             totalUsd,
             email,

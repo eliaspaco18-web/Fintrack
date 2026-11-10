@@ -13,6 +13,7 @@ declare global {
     __assetApiRequests: string[]
     __assetFixtures: any[]
     __assetTypes: Array<{ id: string; name: string }>
+    __assetMetrics: { fetches: Array<{ url: string; method: string }>; mutateCalls: number; refetchCalls: number; routerRefreshCalls: number }
     __assetRoot?: any
   }
 }
@@ -62,7 +63,7 @@ function cssRule(source: string, selector: string): string {
   throw new Error(`Could not parse CSS rule ${selector}`)
 }
 
-async function mountAssetsDemo(page: Page) {
+async function mountAssetsDemo(page: Page, demoMode = true) {
   const pageErrors: string[] = []
   page.on('pageerror', error => pageErrors.push(error.message))
   await page.setViewportSize({ width: 1440, height: 1000 })
@@ -71,15 +72,16 @@ async function mountAssetsDemo(page: Page) {
   await page.addScriptTag({ path: reactDomPath })
   await page.addScriptTag({ content: `
     window.__assetModules = {}; window.__assetExports = {}; window.__assetApiRequests = []; window.__assetHookEnabled = null;
+    window.__assetMetrics = { fetches: [], mutateCalls: 0, refetchCalls: 0, routerRefreshCalls: 0 };
     const React = window.React; const noop = () => {};
     const proxy = new Proxy({}, { get: (_target, key) => String(key) });
     window.__assetModules['react'] = { default: React, ...React };
-    window.__assetModules['next/navigation'] = { useRouter: () => ({ refresh: noop }) };
-    window.__assetModules['swr'] = { mutate: async () => undefined };
+    window.__assetModules['next/navigation'] = { useRouter: () => ({ refresh: () => { window.__assetMetrics.routerRefreshCalls += 1 } }) };
+    window.__assetModules['swr'] = { mutate: async () => { window.__assetMetrics.mutateCalls += 1; return window.fetch('/api/assets?status=ACTIVE') } };
     window.__assetModules['@/lib/toast/toast'] = { useToast: () => ({ toast: { success: noop, error: noop } }) };
-    window.__assetModules['@/lib/hooks/useModules'] = { useAssets: (_filters, enabled = true) => { window.__assetHookEnabled = enabled; return { assets: [], isLoading: false, error: null, refetch: async () => [] }; } };
+    window.__assetModules['@/lib/hooks/useModules'] = { useAssets: (_filters, enabled = true) => { window.__assetHookEnabled = enabled; return { assets: window.__assetFixtures || [], isLoading: false, error: null, refetch: async () => { window.__assetMetrics.refetchCalls += 1; return window.fetch('/api/assets?status=ACTIVE') } }; } };
     window.__assetModules['@/lib/contracts/ui.contracts'] = { formatCurrency: (amount, currency) => (currency === 'USD' ? '$' : 'S/') + Number(amount).toFixed(2), formatDateLabel: value => String(value) };
-    window.__assetModules['@/components/ui/AnchoredActionMenu'] = { AnchoredActionMenu: () => null };
+    window.__assetModules['@/components/ui/AnchoredActionMenu'] = { AnchoredActionMenu: ({ label, actions }) => { const [open, setOpen] = React.useState(false); return React.createElement('span', null, React.createElement('button', { type: 'button', 'aria-label': label, onClick: () => setOpen(value => !value) }, 'More'), open ? React.createElement('div', { role: 'menu', 'aria-label': label }, actions.map(action => React.createElement('button', { key: action.id, type: 'button', role: 'menuitem', disabled: action.disabled, onClick: () => { setOpen(false); action.onSelect('pointer') } }, action.label))) : null); } };
     window.__assetModules['@/components/ui/AppSelect'] = { AppSelect: ({ options, value, onChange, testId }) => React.createElement('select', { 'data-testid': testId, value, onChange: event => onChange(event.target.value) }, options.map(option => React.createElement('option', { key: option.value, value: option.value }, option.label))) };
     window.__assetModules['@/components/ui/Button'] = { Button: ({ children, testId, onClick, ...props }) => React.createElement('button', { ...props, 'data-testid': testId, onClick }, children) };
     window.__assetModules['@/components/ui/CreateModuleButton'] = { CreateModuleButton: () => React.createElement('button', null, 'Registrar activo') };
@@ -97,7 +99,13 @@ async function mountAssetsDemo(page: Page) {
     window.__assetModules['@/components/tables/TransactionsRound07.module.css'] = { default: proxy };
     window.__assetModules['./AssetsListPanel.module.css'] = { default: proxy };
     window.__assetModules['next/link'] = { default: ({ href, children, ...props }) => React.createElement('a', { href, ...props }, children) };
-    window.fetch = async (input) => { window.__assetApiRequests.push(String(input)); throw new Error('Unexpected API request in demo harness'); };
+    window.fetch = async (input, init = {}) => {
+      const url = String(input); const method = init.method || 'GET';
+      window.__assetApiRequests.push(url); window.__assetMetrics.fetches.push({ url, method });
+      if (url === '/api/asset-types') return { ok: true, json: async () => ({ ok: true, data: window.__assetTypes }) };
+      if (method === 'PATCH' || method === 'DELETE') return { ok: true, status: 200, json: async () => ({ ok: true, data: {} }) };
+      return { ok: true, json: async () => ({ ok: true, data: window.__assetFixtures || [] }) };
+    };
   ` })
   await page.addScriptTag({ content: compileComponent('modules/assets/asset-presentation.ts', 'asset-presentation', ['getAssetStatusPresentation', 'getAssetPurchaseValue', 'getAssetTypePresentation', 'getRecordedAssetValue', 'matchesAssetStatusFilter', 'summarizeActiveAssetValues']) })
   await page.addScriptTag({ content: `window.__assetModules['@/modules/assets/asset-presentation'] = window.__assetExports['asset-presentation'];` })
@@ -106,7 +114,7 @@ async function mountAssetsDemo(page: Page) {
   await page.addScriptTag({ content: compileComponent('components/assets/AssetRecordContent.tsx', 'AssetRecordContent') })
   await page.addScriptTag({ content: `window.__assetModules['@/components/assets/AssetRecordContent'] = window.__assetExports.AssetRecordContent;` })
   await page.addScriptTag({ content: compileComponent('components/assets/AssetsListPanel.tsx', 'AssetsListPanel') })
-  await page.addScriptTag({ content: `window.__assetModules['@/components/assets/AssetsListPanel'] = window.__assetExports.AssetsListPanel; const root = window.ReactDOM.createRoot(document.getElementById('root')); window.__assetRoot = root; root.render(window.React.createElement(window.__assetExports.AssetsListPanel.AssetsListPanel, { onCreate: () => {}, demoMode: true, demoAssets: window.__assetFixtures, demoTypes: window.__assetTypes }));` })
+  await page.addScriptTag({ content: `window.__assetModules['@/components/assets/AssetsListPanel'] = window.__assetExports.AssetsListPanel; const root = window.ReactDOM.createRoot(document.getElementById('root')); window.__assetRoot = root; root.render(window.React.createElement(window.__assetExports.AssetsListPanel.AssetsListPanel, { onCreate: () => {}, demoMode: ${demoMode}, demoAssets: window.__assetFixtures, demoTypes: window.__assetTypes }));` })
 
   const sharedCss = readFileSync(join(process.cwd(), 'components/tables/TransactionsRound07.module.css'), 'utf8')
   const localCss = readFileSync(join(process.cwd(), 'components/assets/AssetsListPanel.module.css'), 'utf8')
@@ -116,7 +124,7 @@ async function mountAssetsDemo(page: Page) {
     cssRule(localCss, '.tabs {'), cssRule(localCss, '.tab {'), cssRule(localCss, '.tab:hover {'),
     cssRule(localCss, ".tab[data-active='true'] {"), cssRule(localCss, ".tab[data-active='true']::after {"),
   ].join('\n') })
-  await expect(page.getByTestId('assets-demo-banner')).toBeVisible().catch(() => {
+  await expect(demoMode ? page.getByTestId('assets-demo-banner') : page.getByTestId('asset-row-demo-asset-macbook')).toBeVisible().catch(() => {
     throw new Error(`AssetsListPanel demo did not mount: ${pageErrors.join(' | ') || 'no browser exception captured'}`)
   })
 }
@@ -154,4 +162,19 @@ test('real AssetsListPanel demo uses separated tabs, full-width divider and no d
   await expect(page.getByTestId('assets-detail-modal')).toBeVisible()
   await expect(page.getByText('Registro ficticio de demostración.', { exact: false })).toBeVisible()
   expect(await page.evaluate(() => window.__assetApiRequests)).toEqual([])
+})
+
+test('asset mutations revalidate the loaded resource once without refreshing the server route', async ({ page }) => {
+  await mountAssetsDemo(page, false)
+
+  await page.getByRole('button', { name: 'Más acciones de MacBook Pro 14' }).click()
+  await page.getByRole('menuitem', { name: 'Marcar como vendido' }).click()
+  await expect.poll(() => page.evaluate(() => window.__assetMetrics)).toMatchObject({
+    mutateCalls: 1,
+    refetchCalls: 0,
+    routerRefreshCalls: 0,
+  })
+
+  const metrics = await page.evaluate(() => window.__assetMetrics)
+  expect(metrics.fetches.filter(request => request.method === 'GET' && request.url.startsWith('/api/assets'))).toHaveLength(1)
 })
