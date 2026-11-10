@@ -95,10 +95,7 @@ export function CreditsWorkspace() {
     setIsModalOpen(false)
     clearQuery()
     await mutate((key: unknown) => typeof key === 'string' && key.startsWith('/api/credits'))
-    // Loan details are now consulted from the Credits list in a modal. Avoid
-    // navigating newly created loans to the legacy full-page detail route.
-    router.refresh()
-  }, [clearQuery, router, toast])
+  }, [clearQuery, toast])
 
   useEffect(() => {
     if (openFromQuery) {

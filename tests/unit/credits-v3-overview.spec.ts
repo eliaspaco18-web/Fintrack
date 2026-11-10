@@ -65,20 +65,22 @@ async function mountRealCreditsList(page: Page, count: number, viewport: { width
   await page.addScriptTag({ content: `(() => {
     const React = window.React;
     window.__creditsListModules = {};
+    window.__creditsListMetrics = { fetches: [], mutateCalls: 0, refetchCalls: 0, routerRefreshCalls: 0 };
     const record = (id, type, currency) => ({id,user_id:'synthetic',account_id:null,bank_entity_id:'bank-1',transaction_id:null,credit_type:type,name:(type==='CREDIT_CARD'?'Tarjeta':type==='LOAN'?'Préstamo':'Línea')+' '+id,currency,credit_limit:currency==='PEN'?1200:300,credit_limit_pen:currency==='PEN'?1200:0,credit_limit_usd:currency==='USD'?300:0,used_amount:currency==='PEN'?800:120,used_amount_pen:currency==='PEN'?800:0,used_amount_usd:currency==='USD'?120:0,initial_used_amount_pen:0,initial_used_amount_usd:0,available_amount:400,interest_rate:0,closing_day:20,payment_day:type==='CREDIT_CARD'?14:null,status:'ACTIVE',notes:null,created_at:'2026-01-01T00:00:00Z',updated_at:'2026-01-01T00:00:00Z',display_type:type==='CREDIT_CARD'?'CARD':type==='LOAN'?'LOAN':'LINE',has_loan:type==='LOAN',bank_entity:{id:'bank-1',name:'Banco Andino Round 07',short_name:'Banco Andino'},account:{id:'account-1',name:'Cuenta principal'}});
     window.__creditsListFixtures = Array.from({length:${count}}, (_, index) => record('item-'+index, index % 3 === 0 ? 'CREDIT_CARD' : index % 3 === 1 ? 'LINE_OF_CREDIT' : 'LOAN', index % 2 === 0 ? 'PEN' : 'USD'));
     const cls = ${JSON.stringify(moduleClasses)};
     const el = (tag, props, children) => React.createElement(tag, props, children);
     window.__creditsListModules['react'] = React;
     window.__creditsListModules['react-dom'] = {createPortal:ReactDOM.createPortal};
-    window.__creditsListModules['next/navigation'] = { useRouter: () => ({refresh(){}}) };
-    window.__creditsListModules['swr'] = { mutate: async () => {} };
+    window.__creditsListModules['next/navigation'] = { useRouter: () => ({refresh(){window.__creditsListMetrics.routerRefreshCalls += 1}}) };
+    window.__creditsListModules['swr'] = { mutate: async () => { window.__creditsListMetrics.mutateCalls += 1; return window.fetch('/api/credits?sort=name') } };
     window.__creditsListModules['@/lib/credits/display-type'] = { getCreditDisplayLabel: type => ({CARD:'Tarjeta',LOAN:'Préstamo',LINE:'Línea'})[type], getCreditDisplayTone: () => 'muted' };
+    window.__creditsListModules['@/modules/credits/bank-filter-options'] = { getCreditBankFilterOptions: credits => Array.from(new Map(credits.filter(credit => credit.bank_entity?.id).map(credit => [credit.bank_entity.id, credit.bank_entity.name || credit.bank_entity.short_name || 'Entidad sin nombre'])).entries()).map(([id,name])=>({id,name})).sort((a,b)=>a.name.localeCompare(b.name,'es')) };
     window.__creditsListModules['@/lib/toast/toast'] = { useToast: () => ({toast:{success(){},error(){}}}) };
-    window.__creditsListModules['@/lib/hooks/useModules'] = { useCredits: () => ({credits:window.__creditsListFixtures,isLoading:false,error:null,refetch:async()=>{}}) };
+    window.__creditsListModules['@/lib/hooks/useModules'] = { useCredits: () => ({credits:window.__creditsListFixtures,isLoading:false,error:null,refetch:async()=>{window.__creditsListMetrics.refetchCalls += 1; return window.fetch('/api/credits?sort=name')}}) };
     window.__creditsListModules['@/lib/contracts/ui.contracts'] = { formatCurrency: (amount,currency) => currency+' '+Number(amount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) };
     window.__creditsListModules['@/components/ui/ActionIconButton'] = { ActionIconButton: ({label,testId,href,onClick}) => href ? el('a',{href,'aria-label':label,'data-testid':testId},'◉') : el('button',{type:'button','aria-label':label,'data-testid':testId,onClick},'◉') };
-    window.__creditsListModules['@/components/ui/AppSelect'] = { AppSelect: ({ariaLabel,className,value}) => el('button',{type:'button','aria-label':ariaLabel,className},value) };
+    window.__creditsListModules['@/components/ui/AppSelect'] = { AppSelect: ({ariaLabel,className,value,testId,options}) => el('button',{type:'button','aria-label':ariaLabel,className,'data-testid':testId,'data-options':JSON.stringify(options)},value) };
     window.__creditsListModules['@/components/ui/Button'] = { Button: ({children,...props}) => el('button',props,children) };
     window.__creditsListModules['@/components/ui/CreateModuleButton'] = { CreateModuleButton: ({label,className}) => el('button',{className},label) };
     window.__creditsListModules['@/components/ui/RecordModal'] = { RecordModal: () => null, RecordModalFooter: ({children}) => children };
@@ -96,7 +98,14 @@ async function mountRealCreditsList(page: Page, count: number, viewport: { width
     window.__creditsListModules['./CreditsListPanel.module.css'] = {default:cls};
     window.__creditsListModules['@/components/credits/CreditsTableHeader.module.css'] = {default:${JSON.stringify(headerClasses)}};
     window.__creditsListModules['./CreditsWorkbench.module.css'] = {default:{}};
-    window.fetch = async () => ({ok:true,json:async()=>({ok:true,data:[{id:'bank-1',name:'Banco Andino Round 07',short_name:'Banco Andino'}]})});
+    window.fetch = async (input, init={}) => {
+      const url = String(input);
+      const method = init.method || 'GET';
+      window.__creditsListMetrics.fetches.push({url,method});
+      if (method === 'PATCH') return {ok:true,json:async()=>({ok:true,data:{}})};
+      if (url.startsWith('/api/credits')) return {ok:true,json:async()=>({ok:true,data:window.__creditsListFixtures})};
+      return {ok:true,json:async()=>({ok:true,data:[{id:'bank-1',name:'Banco Andino Round 07',short_name:'Banco Andino'}]})};
+    };
   })();` })
   await page.addScriptTag({ content: compileCreditsModule('components/ui/AnchoredActionMenu.tsx', '@/components/ui/AnchoredActionMenu', ['AnchoredActionMenu']) })
   await page.addScriptTag({ content: compileCreditsListPanel() })
@@ -123,6 +132,27 @@ test('credit classifications keep cards, linked loans and ordinary lines distinc
   expect(deriveCreditDisplayType({ creditType: 'CREDIT_CARD', hasLoan: true })).toBe('CARD')
   expect(deriveCreditDisplayType({ creditType: 'LINE_OF_CREDIT', hasLoan: true })).toBe('LOAN')
   expect(deriveCreditDisplayType({ creditType: 'LINE_OF_CREDIT', hasLoan: false })).toBe('LINE')
+})
+
+test('credits list removes reference and mutation reloads that duplicate list requests', async ({ page }) => {
+  await mountRealCreditsList(page, 2, { width: 1440, height: 1000 })
+
+  const initial = await page.evaluate(() => (window as unknown as { __creditsListMetrics: { fetches: Array<{ url: string; method: string }> } }).__creditsListMetrics.fetches)
+  expect(initial).toEqual([])
+  const entityFilter = page.getByTestId('credits-entity-filter')
+  expect(JSON.parse((await entityFilter.getAttribute('data-options')) ?? '[]')).toContainEqual({ value: 'bank-1', label: 'Banco Andino Round 07' })
+
+  await page.getByRole('button', { name: 'Más acciones de Tarjeta item-0' }).click()
+  await page.getByRole('menuitem', { name: 'Desactivar' }).click()
+
+  await expect.poll(() => page.evaluate(() => (window as unknown as {
+    __creditsListMetrics: { fetches: Array<{ url: string; method: string }>; mutateCalls: number; refetchCalls: number; routerRefreshCalls: number }
+  }).__creditsListMetrics)).toMatchObject({ mutateCalls: 1, refetchCalls: 0, routerRefreshCalls: 0 })
+  const metrics = await page.evaluate(() => (window as unknown as {
+    __creditsListMetrics: { fetches: Array<{ url: string; method: string }>; mutateCalls: number; refetchCalls: number; routerRefreshCalls: number }
+  }).__creditsListMetrics)
+  expect(metrics.fetches.filter(request => request.method === 'GET' && request.url.startsWith('/api/credits'))).toHaveLength(1)
+  expect(metrics.fetches.some(request => request.url.startsWith('/api/bank-entities'))).toBe(false)
 })
 
 test('overview keeps card debt and verified loan capital separate by native currency', () => {
