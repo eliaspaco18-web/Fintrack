@@ -11,6 +11,7 @@
 // =============================================================================
 
 import { NextRequest } from 'next/server'
+import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase.server'
 import {
@@ -27,10 +28,10 @@ import {
   getSessionUserId,
 } from '@/lib/api/response'
 import {
+  ATTACHMENT_DELETE_BLOCKED_MESSAGE,
   ATTACHMENT_UPDATE_BLOCKED_MESSAGE,
   ATTACHMENT_UPLOAD_UNAVAILABLE_MESSAGE,
   ATTACHMENT_VERIFICATION_FAILED_MESSAGE,
-  getLegacyAttachmentReferenceState,
   hasUnsupportedAttachmentWrite,
 } from '@/modules/attachments/attachment-integrity'
 import { getBillingCyclesSubmissionIssue } from '@/modules/credits/billing-cycle-integrity'
@@ -50,8 +51,10 @@ const zBillingCycleSchema = z.object({
   notes: z.string().trim().max(500).optional().nullable(),
 })
 
-const zBillingCyclesReplaceSchema = z.object({
-  cycles: z.array(zBillingCycleSchema).max(120),
+const zBillingCycleSaveSchema = zBillingCycleSchema.extend({ id: z.string().uuid().optional() })
+
+const zBillingCyclesSaveSchema = z.object({
+  cycles: z.array(zBillingCycleSaveSchema).max(120),
 })
 
 type CardMovement = {
@@ -179,7 +182,7 @@ export async function GET(_req: NextRequest, props: { params: Promise<{ id: stri
       total_to_pay_pen: summary.total_pen,
       total_to_pay_usd: summary.total_usd,
       movement_summary: summary,
-      can_delete: summary.movement_count === 0,
+      can_delete: summary.movement_count === 0 && !Boolean(cycle.statement_url?.trim()),
     }
   }).sort((a, b) => {
     const yearDiff = Number(b.billing_year) - Number(a.billing_year)
@@ -285,15 +288,86 @@ export async function POST(req: NextRequest, props: { params: Promise<{ id: stri
   return apiCreated(data)
 }
 
+type PersistedBillingCycle = {
+  id: string
+  credit_id: string
+  billing_month: number
+  billing_year: number
+  consumption_from: string
+  consumption_to: string
+  payment_date: string
+  total_to_pay: number | string | null
+  statement_url: string | null
+  notes: string | null
+}
+
+type BillingCycleMutationInput = z.infer<typeof zBillingCycleSaveSchema>
+
+function hasChangedPeriodIdentity(existing: PersistedBillingCycle, next: BillingCycleMutationInput) {
+  return existing.billing_month !== next.billing_month
+    || existing.billing_year !== next.billing_year
+    || existing.consumption_from !== next.consumption_from
+    || existing.consumption_to !== next.consumption_to
+}
+
+function hasChangedSchedule(existing: PersistedBillingCycle, next: BillingCycleMutationInput) {
+  return hasChangedPeriodIdentity(existing, next) || existing.payment_date !== next.payment_date
+}
+
+function movementMatchesCycleRange(movement: { transaction_date: string }, cycle: Pick<PersistedBillingCycle, 'consumption_from' | 'consumption_to'>) {
+  return movement.transaction_date >= cycle.consumption_from && movement.transaction_date <= cycle.consumption_to
+}
+
+async function hasLinkedMovementForChangedCycle(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>
+  userId: string
+  accountId: string | null
+  existing: PersistedBillingCycle
+  next?: BillingCycleMutationInput
+}): Promise<{ ok: true; hasMovement: boolean } | { ok: false }> {
+  const { supabase, userId, accountId, existing, next } = params
+  if (!accountId) return { ok: true, hasMovement: false }
+
+  const proposedRange = next ?? existing
+  const from = existing.consumption_from < proposedRange.consumption_from
+    ? existing.consumption_from
+    : proposedRange.consumption_from
+  const to = existing.consumption_to > proposedRange.consumption_to
+    ? existing.consumption_to
+    : proposedRange.consumption_to
+  const pageSize = 500
+
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('id, transaction_date')
+      .eq('user_id', userId)
+      .in('type', ['EXPENSE', 'TRANSFER'])
+      .or(`source_account_id.eq.${accountId},destination_account_id.eq.${accountId}`)
+      .gte('transaction_date', from)
+      .lte('transaction_date', to)
+      .order('transaction_date', { ascending: true })
+      .order('id', { ascending: true })
+      .range(offset, offset + pageSize - 1)
+
+    if (error || !data) return { ok: false }
+    if (data.some(movement => movementMatchesCycleRange(movement, existing)
+      || (next && movementMatchesCycleRange(movement, next)))) {
+      return { ok: true, hasMovement: true }
+    }
+    if (data.length < pageSize) return { ok: true, hasMovement: false }
+  }
+}
+
 export async function PUT(req: NextRequest, props: { params: Promise<{ id: string }> }) {
-  const params = await props.params;
+  const params = await props.params
   const supabase = await createClient()
   const userId = await getSessionUserId(supabase)
   if (!userId) return apiUnauthorized()
 
   const { data: credit, error: creditError } = await supabase
     .from('credits')
-    .select('id, credit_type')
+    .select('id, credit_type, account_id')
     .eq('id', params.id)
     .eq('user_id', userId)
     .single()
@@ -325,7 +399,7 @@ export async function PUT(req: NextRequest, props: { params: Promise<{ id: strin
     })
   }
 
-  const parsed = zBillingCyclesReplaceSchema.safeParse(body)
+  const parsed = zBillingCyclesSaveSchema.safeParse(body)
   if (!parsed.success) return apiZodError(parsed.error)
 
   const cycleIssue = getBillingCyclesSubmissionIssue(parsed.data.cycles)
@@ -333,7 +407,8 @@ export async function PUT(req: NextRequest, props: { params: Promise<{ id: strin
     return apiError({ code: 'VALIDATION_ERROR', message: cycleIssue })
   }
 
-  const seen = new Set<string>()
+  const seenPeriods = new Set<string>()
+  const seenIds = new Set<string>()
   for (const cycle of parsed.data.cycles) {
     if (!isBillingCycleYearInRange(cycle.billing_year)) {
       return apiError({
@@ -343,51 +418,83 @@ export async function PUT(req: NextRequest, props: { params: Promise<{ id: strin
     }
 
     const key = `${cycle.billing_year}-${cycle.billing_month}`
-    if (seen.has(key)) {
+    if (seenPeriods.has(key)) {
       return apiError({
         code: 'BUSINESS_RULE_ERROR',
         message: `Hay ciclos duplicados para ${cycle.billing_month}/${cycle.billing_year}.`,
       })
     }
-    seen.add(key)
+    seenPeriods.add(key)
+
+    if (cycle.id) {
+      if (seenIds.has(cycle.id)) {
+        return apiError({ code: 'VALIDATION_ERROR', message: 'La lista contiene identificadores de ciclo duplicados.' })
+      }
+      seenIds.add(cycle.id)
+    }
   }
 
-  const existingStatementsResult = await supabase
+  const existingResult = await supabase
     .from('billing_cycles')
-    .select('statement_url')
+    .select('id, credit_id, billing_month, billing_year, consumption_from, consumption_to, payment_date, total_to_pay, statement_url, notes')
     .eq('credit_id', params.id)
+    .order('consumption_from', { ascending: true })
 
-  const statementReferenceState = getLegacyAttachmentReferenceState({
-    verificationFailed: Boolean(existingStatementsResult.error),
-    references: (existingStatementsResult.data ?? []).map(cycle => cycle.statement_url),
-  })
-
-  if (statementReferenceState === 'UNVERIFIED') {
-    return apiError({
-      code: 'BUSINESS_RULE_ERROR',
-      message: ATTACHMENT_VERIFICATION_FAILED_MESSAGE,
-    })
+  if (existingResult.error || !existingResult.data) {
+    return apiError({ code: 'BUSINESS_RULE_ERROR', message: ATTACHMENT_VERIFICATION_FAILED_MESSAGE })
   }
 
-  if (statementReferenceState === 'PRESENT') {
-    return apiError({
-      code: 'BUSINESS_RULE_ERROR',
-      message: ATTACHMENT_UPDATE_BLOCKED_MESSAGE,
-    })
+  const existingCycles = existingResult.data as PersistedBillingCycle[]
+  const existingById = new Map(existingCycles.map(cycle => [cycle.id, cycle]))
+  const submittedExistingById = new Map<string, BillingCycleMutationInput>()
+  const updates: Array<{ existing: PersistedBillingCycle; next: BillingCycleMutationInput }> = []
+  const newCycles: BillingCycleMutationInput[] = []
+
+  for (const cycle of parsed.data.cycles) {
+    const existing = cycle.id ? existingById.get(cycle.id) : undefined
+    if (!existing) {
+      newCycles.push(cycle)
+      continue
+    }
+
+    submittedExistingById.set(existing.id, cycle)
+    if (hasChangedSchedule(existing, cycle)) {
+      if (existing.statement_url?.trim()) {
+        return apiError({ code: 'BUSINESS_RULE_ERROR', message: ATTACHMENT_UPDATE_BLOCKED_MESSAGE })
+      }
+      updates.push({ existing, next: cycle })
+    }
   }
 
-  const { error: deleteError } = await supabase
-    .from('billing_cycles')
-    .delete()
-    .eq('credit_id', params.id)
+  const removedCycles = existingCycles.filter(cycle => !submittedExistingById.has(cycle.id))
+  if (removedCycles.some(cycle => cycle.statement_url?.trim())) {
+    return apiError({ code: 'BUSINESS_RULE_ERROR', message: ATTACHMENT_DELETE_BLOCKED_MESSAGE })
+  }
 
-  if (deleteError) return apiError({ code: 'DATABASE_ERROR', message: deleteError.message })
-
-  if (parsed.data.cycles.length === 0) return apiOk([])
-
-  const { data, error } = await supabase
-    .from('billing_cycles')
-    .insert(parsed.data.cycles.map(cycle => ({
+  const upsertRows: Array<{
+    id: string
+    credit_id: string
+    billing_month: number
+    billing_year: number
+    consumption_from: string
+    consumption_to: string
+    payment_date: string
+    total_to_pay?: number
+    notes?: string | null
+  }> = [
+    ...updates.map(({ existing, next }) => ({
+      id: existing.id,
+      credit_id: params.id,
+      billing_month: next.billing_month,
+      billing_year: next.billing_year,
+      consumption_from: next.consumption_from,
+      consumption_to: next.consumption_to,
+      payment_date: next.payment_date,
+      // Omit statement_url, notes, and total_to_pay so the database retains
+      // their verified values (including attachments and financial history).
+    })),
+    ...newCycles.map(cycle => ({
+      id: randomUUID(),
       credit_id: params.id,
       billing_month: cycle.billing_month,
       billing_year: cycle.billing_year,
@@ -396,8 +503,70 @@ export async function PUT(req: NextRequest, props: { params: Promise<{ id: strin
       payment_date: cycle.payment_date,
       total_to_pay: cycle.total_to_pay,
       notes: cycle.notes ?? null,
-    })))
-    .select()
+    })),
+  ]
+
+  if (removedCycles.length > 0 && upsertRows.length > 0) {
+    return apiError({
+      code: 'BUSINESS_RULE_ERROR',
+      message: 'Guarda primero los cambios o ciclos nuevos y elimina los periodos en una operación separada. No se realizaron cambios.',
+    })
+  }
+
+  const movementSensitiveChanges: Array<{ existing: PersistedBillingCycle; next?: BillingCycleMutationInput }> = [
+    ...removedCycles.map(existing => ({ existing })),
+    ...updates.filter(({ existing, next }) => hasChangedPeriodIdentity(existing, next)),
+  ]
+  for (const change of movementSensitiveChanges) {
+    const result = await hasLinkedMovementForChangedCycle({
+      supabase,
+      userId,
+      accountId: credit.account_id as string | null,
+      existing: change.existing,
+      next: change.next,
+    })
+    if (!result.ok) {
+      return apiError({ code: 'DATABASE_ERROR', message: 'No se pudo verificar si el ciclo tiene movimientos asociados. No se realizaron cambios.' })
+    }
+    if (result.hasMovement) {
+      return apiError({
+        code: 'BUSINESS_RULE_ERROR',
+        message: 'No se puede cambiar o eliminar un ciclo que tiene movimientos asociados.',
+      })
+    }
+  }
+
+  if (removedCycles.length > 1) {
+    return apiError({
+      code: 'BUSINESS_RULE_ERROR',
+      message: 'Elimina un ciclo por vez para verificar su integridad antes de cada cambio. No se realizaron cambios.',
+    })
+  }
+
+  if (removedCycles.length === 1) {
+    const { data, error } = await supabase
+      .from('billing_cycles')
+      .delete()
+      .eq('credit_id', params.id)
+      .eq('id', removedCycles[0]!.id)
+      .is('statement_url', null)
+      .select('id')
+
+    if (error) return apiError({ code: 'DATABASE_ERROR', message: error.message })
+    if (!data || data.length !== 1) {
+      return apiError({
+        code: 'BUSINESS_RULE_ERROR',
+        message: 'El ciclo cambió o conserva un estado de cuenta. Actualiza la lista; no se eliminó.',
+      })
+    }
+  }
+
+  if (upsertRows.length === 0) return apiOk(existingCycles.filter(cycle => !removedCycles.some(removed => removed.id === cycle.id)))
+
+  const { data, error } = await supabase
+    .from('billing_cycles')
+    .upsert(upsertRows, { onConflict: 'id' })
+    .select('id, credit_id, billing_month, billing_year, consumption_from, consumption_to, payment_date, total_to_pay, statement_url, notes')
 
   if (error) return apiError({ code: 'DATABASE_ERROR', message: error.message })
   return apiOk(data ?? [])

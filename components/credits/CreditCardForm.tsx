@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Button } from '@/components/ui/Button'
 import { AppSelect } from '@/components/ui/AppSelect'
 import { NumericInput } from '@/components/ui/NumericInput'
@@ -17,7 +17,6 @@ import { getApiErrorMessage } from '@/lib/api/error-message'
 import { parseNumericInput, roundToDecimals } from '@/lib/utils/numeric-input'
 import { formatNumber } from '@/lib/contracts/ui.contracts'
 import type { CreditListItem } from '@/lib/credits/display-type'
-import { ATTACHMENT_UPDATE_BLOCKED_MESSAGE } from '@/modules/attachments/attachment-integrity'
 import { getBillingCyclesSubmissionIssue } from '@/modules/credits/billing-cycle-integrity'
 import {
   getAttachmentAvailabilityOutcome,
@@ -72,7 +71,6 @@ interface CreditCardFormProps {
   credit?: CreditListItem | null
   onSuccess: (creditName: string, followUpIssue?: string, creditId?: string) => void
   onCancel: () => void
-  onLayoutPreferenceChange?: (nextSize: 'lg' | 'xl' | 'full-form') => void
   onNestedModalOpenChange?: (open: boolean) => void
 }
 
@@ -111,7 +109,6 @@ export function CreditCardForm({
   credit = null,
   onSuccess,
   onCancel,
-  onLayoutPreferenceChange,
   onNestedModalOpenChange,
 }: CreditCardFormProps) {
   const [bankEntities, setBankEntities] = useState<BankEntityOption[]>([])
@@ -134,6 +131,7 @@ export function CreditCardForm({
   const [cyclesLoadError, setCyclesLoadError] = useState(false)
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
   const [statementUploadCycleId, setStatementUploadCycleId] = useState<string | null>(null)
+  const persistedCycleIdsRef = useRef<Set<string>>(new Set())
 
   const currencyLabel = form.currency === 'USD' ? 'Dólares (USD)' : 'Soles (PEN)'
 
@@ -169,10 +167,6 @@ export function CreditCardForm({
         .map(cycle => formatBillingCycleLabel(cycle.billing_month, cycle.billing_year)),
     [cycles, duplicateCycleKeys],
   )
-  useEffect(() => {
-    onLayoutPreferenceChange?.('full-form')
-  }, [onLayoutPreferenceChange])
-
   useEffect(() => {
     if (mode !== 'edit' || !credit) return
 
@@ -258,6 +252,7 @@ export function CreditCardForm({
           statement_url: cycle.statement_url ?? null,
         }))
 
+        persistedCycleIdsRef.current = new Set(loaded.map(cycle => cycle.id))
         setCycles(loaded.length > 0 ? loaded : [newCycleRow()])
         setCyclesDirty(false)
       } catch (caught) {
@@ -300,10 +295,11 @@ export function CreditCardForm({
   }, [onNestedModalOpenChange])
 
   const uploadStatement = useCallback(async (cycleId: string, file: File) => {
-    if (mode === 'create') {
+    if (mode === 'create' || !persistedCycleIdsRef.current.has(cycleId)) {
       setCycles(current => current.map(cycle => cycle.id === cycleId
         ? { ...cycle, statement_file: file }
         : cycle))
+      if (mode === 'edit') setCyclesDirty(true)
       setError(null)
       return
     }
@@ -356,11 +352,6 @@ export function CreditCardForm({
 
     if (!form.bank_entity_id) {
       setError('Selecciona la entidad bancaria emisora.')
-      return
-    }
-
-    if (cyclesDirty && cycles.some(cycle => Boolean(cycle.statement_url?.trim()))) {
-      setError(ATTACHMENT_UPDATE_BLOCKED_MESSAGE)
       return
     }
 
@@ -445,6 +436,7 @@ export function CreditCardForm({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             cycles: cycles.map(cycle => ({
+              id: cycle.id,
               billing_month: Number(cycle.billing_month),
               billing_year: Number(cycle.billing_year),
               consumption_from: cycle.consumption_from,
@@ -457,6 +449,35 @@ export function CreditCardForm({
         const cycleJson = await cycleRes.json().catch(() => null)
         if (!cycleRes.ok || !cycleJson?.ok) {
           throw new Error(getApiErrorMessage(cycleJson, 'No se pudieron actualizar los ciclos de facturación'))
+        }
+        const savedCycles = (Array.isArray(cycleJson.data) ? cycleJson.data : []) as Array<{
+          id: string
+          billing_month: number
+          billing_year: number
+        }>
+        persistedCycleIdsRef.current = new Set(savedCycles.map(cycle => cycle.id))
+
+        for (const cycle of cycles) {
+          if (!cycle.statement_file) continue
+          const savedCycle = savedCycles.find(item => (
+            item.billing_month === Number(cycle.billing_month)
+            && item.billing_year === Number(cycle.billing_year)
+          ))
+          if (!savedCycle) {
+            attachmentIssues.push(`${formatBillingCycleLabel(cycle.billing_month, cycle.billing_year)}: no se pudo identificar el ciclo guardado para asociar el archivo.`)
+            continue
+          }
+          try {
+            const uploadResult = await requestAttachmentUpload(
+              `/api/credits/${creditId}/billing-cycles/${savedCycle.id}/statement`,
+              cycle.statement_file,
+            )
+            const availability = getAttachmentAvailabilityOutcome(uploadResult)
+            if (availability.message) attachmentIssues.push(`${formatBillingCycleLabel(cycle.billing_month, cycle.billing_year)}: ${availability.message}`)
+          } catch (uploadError) {
+            const message = uploadError instanceof Error ? uploadError.message : 'no se pudo adjuntar el archivo'
+            attachmentIssues.push(`${formatBillingCycleLabel(cycle.billing_month, cycle.billing_year)}: ${message}`)
+          }
         }
       } else if (mode === 'create') {
         for (const cycle of cycles) {
@@ -505,7 +526,10 @@ export function CreditCardForm({
           persistedCreditId,
         )
       } else {
-        setError(caught instanceof Error ? caught.message : 'No se pudo guardar la tarjeta de crédito')
+        const message = caught instanceof Error ? caught.message : 'No se pudo guardar la tarjeta de crédito'
+        setError(mode === 'edit' && persistedCreditId
+          ? `La tarjeta se actualizó, pero los cambios de ciclos no se guardaron. Los ciclos y estados de cuenta existentes se conservaron. ${message}`
+          : message)
       }
     } finally {
       setSaving(false)
@@ -527,17 +551,16 @@ export function CreditCardForm({
         </div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 items-start gap-4 overflow-y-auto pr-1 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] xl:pr-0">
+      <div className="grid min-h-0 flex-1 grid-cols-1 items-start gap-4 overflow-y-auto pr-1 xl:pr-0">
         <FormSection
           title="Datos esenciales"
           description="Identidad y línea aprobada."
-          columns="2"
+          columns="1"
           className="rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 [--ft-form-field-gap:12px] [--ft-form-section-gap:12px]"
         >
           <FormField
             label="Entidad bancaria emisora"
             labelAdornment={<CreditInfoHint label="Ayuda sobre la entidad emisora">La entidad identifica quién emitió la tarjeta y permite asociar su ciclo de facturación.</CreditInfoHint>}
-            className="md:col-span-2"
           >
             {loadingOptions ? (
               <div className="field-base ft-form-input flex w-full items-center text-[var(--ft-form-muted)]">
@@ -561,14 +584,14 @@ export function CreditCardForm({
           </FormField>
 
           {!loadingOptions && bankEntities.length === 0 ? (
-            <div className="rounded-[var(--ft-form-radius)] border border-[color:var(--ft-warning)]/20 bg-[var(--ft-warning-soft)] px-3.5 py-3 md:col-span-2">
+            <div className="rounded-[var(--ft-form-radius)] border border-[color:var(--ft-warning)]/20 bg-[var(--ft-warning-soft)] px-3.5 py-3">
               <p className="text-[12px] font-medium text-[var(--ft-warning)]">
                 Registra primero una entidad bancaria en Administración para poder crear la tarjeta.
               </p>
             </div>
           ) : null}
 
-          <FormField label="Nombre de la tarjeta" className="md:col-span-2">
+          <FormField label="Nombre de la tarjeta">
             <input
               value={form.name}
               onChange={event => setForm(prev => ({ ...prev, name: event.target.value }))}
@@ -584,7 +607,6 @@ export function CreditCardForm({
           <FormField
             label="Moneda de la línea"
             labelAdornment={<CreditInfoHint label="Ayuda sobre la moneda de la línea">La moneda define el límite aprobado. Los consumos iniciales se registran por separado en PEN y USD.</CreditInfoHint>}
-            className="md:col-span-2"
           >
             <div role="group" aria-label="Moneda de la línea" className="inline-flex w-full max-w-[280px] rounded-[var(--ft-radius-control)] border border-[var(--ft-control-border)] bg-[var(--ft-surface-muted)] p-1">
               <div className="grid w-full grid-cols-2 gap-1.5">
@@ -622,7 +644,7 @@ export function CreditCardForm({
             </span>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid gap-3">
             <FormField label="Línea de crédito" labelAdornment={<CreditInfoHint label="Ayuda sobre la línea de crédito">El límite aprobado de la tarjeta. No representa dinero propio ni saldo disponible en cuentas.</CreditInfoHint>}>
               <NumericInput
                 step="0.01"
@@ -697,7 +719,7 @@ export function CreditCardForm({
           </div>
         </section>
 
-        <section className="min-w-0 rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4 xl:col-span-2" aria-labelledby="credit-card-cycles-heading">
+        <section className="min-w-0 rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)] bg-[var(--ft-form-surface)] p-4" aria-labelledby="credit-card-cycles-heading">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <div className="flex items-center gap-2">

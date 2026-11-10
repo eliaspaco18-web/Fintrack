@@ -70,7 +70,7 @@ export function CreditsWorkspace() {
 
   const handleTypeSelected = useCallback((mode: CreditMode) => {
     setSelectedMode(mode)
-    setModalSize('lg')
+    setModalSize(mode === 'CARD' ? 'sm' : 'lg')
     setIsNestedModalOpen(false)
     setFormKey(k => k + 1)
     setModalStep('form')
@@ -137,11 +137,14 @@ export function CreditsWorkspace() {
         title={modalTitle}
         subtitle={modalSubtitle}
         size={modalSize}
+        widthClassName={selectedMode === 'CARD' && modalStep === 'form' ? 'w-full max-w-[580px]' : undefined}
         focusTrapActive={!isNestedModalOpen}
         preserveFocusOnResume
         bodyClassName={modalStep === 'form' ? 'credits-modal-body !overflow-hidden py-4' : ''}
         presentation="workbench"
-        overlayClassName={modalStep === 'form' ? workbenchStyles.creditFormOverlay : undefined}
+        overlayClassName={modalStep === 'form'
+          ? selectedMode === 'CARD' ? workbenchStyles.creditCardFormOverlay : workbenchStyles.creditFormOverlay
+          : undefined}
         motionSource="pointer"
       >
         {modalStep === 'select_type' ? (
@@ -163,7 +166,6 @@ export function CreditsWorkspace() {
                 key={formKey}
                 onSuccess={handleSuccess}
                 onCancel={closeModal}
-                onLayoutPreferenceChange={setModalSize}
                 onNestedModalOpenChange={setIsNestedModalOpen}
               />
             ) : (
