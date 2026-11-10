@@ -7,12 +7,50 @@ const RELEASE_CI_NAME = 'Release Candidate CI (No Production Access)'
 const PREVIEW_REMOTE_BUILD_COMMAND = 'node scripts/release/verify-preview-build-env.mjs && npm run build'
 // GitHub account ID for the sole repository owner. Numeric IDs are stable if a login changes.
 export const TRUSTED_RELEASE_OWNER_ACTOR_ID = '268006031'
-const PREVIEW_ENV_ALLOWLIST = new Set([
+const PREVIEW_APPLICATION_ENV_ALLOWLIST = new Set([
   'NEXT_PUBLIC_SUPABASE_URL',
   'NEXT_PUBLIC_SUPABASE_ANON_KEY',
   'SUPABASE_PROJECT_ID',
   'SUPABASE_SERVICE_ROLE_KEY',
   'NEXT_PUBLIC_FINTRACK_V3_SHELL',
+])
+// Exact Vercel system variables observed in the Preview pull and documented by Vercel.
+// This allowlist is intentionally explicit: unknown VERCEL_* names remain rejected.
+const VERCEL_PREVIEW_SYSTEM_ENV_ALLOWLIST = new Set([
+  'VERCEL',
+  'VERCEL_ENV',
+  'VERCEL_TARGET_ENV',
+  'VERCEL_URL',
+  'VERCEL_GIT_COMMIT_AUTHOR_LOGIN',
+  'VERCEL_GIT_COMMIT_AUTHOR_NAME',
+  'VERCEL_GIT_COMMIT_MESSAGE',
+  'VERCEL_GIT_COMMIT_REF',
+  'VERCEL_GIT_COMMIT_SHA',
+  'VERCEL_GIT_PREVIOUS_SHA',
+  'VERCEL_GIT_PROVIDER',
+  'VERCEL_GIT_PULL_REQUEST_ID',
+  'VERCEL_GIT_REPO_ID',
+  'VERCEL_GIT_REPO_OWNER',
+  'VERCEL_GIT_REPO_SLUG',
+  'VERCEL_OIDC_TOKEN',
+])
+// Exact Nx/Turborepo controls exposed by Vercel CLI for this project; no prefix wildcard.
+const PREVIEW_BUILD_TOOL_ENV_ALLOWLIST = new Set([
+  'NX_DAEMON',
+  'TURBO_CACHE',
+  'TURBO_DOWNLOAD_LOCAL_ENABLED',
+  'TURBO_REMOTE_ONLY',
+  'TURBO_RUN_SUMMARY',
+])
+const PREVIEW_ENV_ALLOWLIST = new Set([
+  ...PREVIEW_APPLICATION_ENV_ALLOWLIST,
+  ...VERCEL_PREVIEW_SYSTEM_ENV_ALLOWLIST,
+  ...PREVIEW_BUILD_TOOL_ENV_ALLOWLIST,
+])
+const PREVIEW_ENVIRONMENT_MARKERS = new Map([
+  ['VERCEL', '1'],
+  ['VERCEL_ENV', 'preview'],
+  ['VERCEL_TARGET_ENV', 'preview'],
 ])
 
 function fail(message) {
@@ -51,6 +89,12 @@ export function assertPreviewSupabaseEnvironment(values, { previewProjectRef, pr
   if (!/^[a-z0-9]{20}$/.test(previewProjectRef ?? '')) fail('Preview Supabase project reference is missing or malformed.')
   if (!/^[a-z0-9]{20}$/.test(productionProjectRef ?? '')) fail('Production Supabase project reference is missing or malformed.')
   if (previewProjectRef === productionProjectRef) fail('Preview Supabase project must differ from Production.')
+
+  for (const [name, expected] of PREVIEW_ENVIRONMENT_MARKERS) {
+    if (Object.hasOwn(values ?? {}, name) && values[name] !== expected) {
+      fail(`${name} does not identify the approved Preview environment.`)
+    }
+  }
 
   const required = ['NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_ANON_KEY', 'SUPABASE_PROJECT_ID', 'SUPABASE_SERVICE_ROLE_KEY']
   for (const name of required) {
@@ -955,8 +999,8 @@ async function main() {
     const path = process.argv[3]
     if (!path) fail('Usage: continuous-publishing.mjs mask-preview-environment <vercel-env-file>.')
     const values = parseEnvironmentFile(fs.readFileSync(path, 'utf8'))
-    for (const value of Object.values(values)) {
-      if (value.length >= 4) {
+    for (const [name, value] of Object.entries(values)) {
+      if (value.length >= 4 || (name === 'VERCEL_OIDC_TOKEN' && value.length > 0)) {
         process.stdout.write(`${githubMaskCommand(value)}\n`)
       }
     }

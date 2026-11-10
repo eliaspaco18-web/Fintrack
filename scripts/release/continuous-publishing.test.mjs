@@ -1,6 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   assertPromotionAuthorization,
   assertMergedReleaseProof,
@@ -44,6 +48,33 @@ function previewEnv(overrides = {}) {
     SUPABASE_SERVICE_ROLE_KEY: '[SENSITIVE]',
     SUPABASE_PROJECT_ID: projectRef,
     NEXT_PUBLIC_FINTRACK_V3_SHELL: '1',
+    ...overrides,
+  }
+}
+
+function vercelCliEnvironment(overrides = {}) {
+  return {
+    VERCEL: '1',
+    VERCEL_ENV: 'preview',
+    VERCEL_TARGET_ENV: 'preview',
+    VERCEL_URL: 'fintrack-preview.synthetic.vercel.app',
+    VERCEL_GIT_COMMIT_AUTHOR_LOGIN: 'synthetic-owner',
+    VERCEL_GIT_COMMIT_AUTHOR_NAME: 'Synthetic Owner',
+    VERCEL_GIT_COMMIT_MESSAGE: 'synthetic Preview test',
+    VERCEL_GIT_COMMIT_REF: 'main',
+    VERCEL_GIT_COMMIT_SHA: 'a'.repeat(40),
+    VERCEL_GIT_PREVIOUS_SHA: 'b'.repeat(40),
+    VERCEL_GIT_PROVIDER: 'github',
+    VERCEL_GIT_PULL_REQUEST_ID: '0',
+    VERCEL_GIT_REPO_ID: 'synthetic-repo-id',
+    VERCEL_GIT_REPO_OWNER: 'synthetic-owner',
+    VERCEL_GIT_REPO_SLUG: 'synthetic-repo',
+    VERCEL_OIDC_TOKEN: 'synthetic-vercel-oidc-token-not-a-credential',
+    NX_DAEMON: 'false',
+    TURBO_CACHE: 'local:rw',
+    TURBO_DOWNLOAD_LOCAL_ENABLED: 'true',
+    TURBO_REMOTE_ONLY: 'false',
+    TURBO_RUN_SUMMARY: 'false',
     ...overrides,
   }
 }
@@ -105,6 +136,115 @@ test('Preview accepts only credentials bound to the isolated QA Supabase project
   assert.deepEqual(previewSupabaseProbeHeaders(opaqueSecret), { apikey: opaqueSecret })
   const legacyJwt = jwt('anon')
   assert.deepEqual(previewSupabaseProbeHeaders(legacyJwt), { apikey: legacyJwt, Authorization: `Bearer ${legacyJwt}` })
+})
+
+test('Preview accepts the exact Vercel CLI, Nx and Turborepo variables reported by MAIN_QA', () => {
+  const common = {
+    previewProjectRef: projectRef,
+    productionProjectRef: 'zyxwvutsrqponmlkjihg',
+    shellFlag: '1',
+  }
+  const reportedAutomaticNames = [
+    'NX_DAEMON',
+    'TURBO_CACHE',
+    'TURBO_DOWNLOAD_LOCAL_ENABLED',
+    'TURBO_REMOTE_ONLY',
+    'TURBO_RUN_SUMMARY',
+    'VERCEL',
+    'VERCEL_ENV',
+    'VERCEL_GIT_COMMIT_AUTHOR_LOGIN',
+    'VERCEL_GIT_COMMIT_AUTHOR_NAME',
+    'VERCEL_GIT_COMMIT_MESSAGE',
+    'VERCEL_GIT_COMMIT_REF',
+    'VERCEL_GIT_COMMIT_SHA',
+    'VERCEL_GIT_PREVIOUS_SHA',
+    'VERCEL_GIT_PROVIDER',
+    'VERCEL_GIT_PULL_REQUEST_ID',
+    'VERCEL_GIT_REPO_ID',
+    'VERCEL_GIT_REPO_OWNER',
+    'VERCEL_GIT_REPO_SLUG',
+    'VERCEL_OIDC_TOKEN',
+    'VERCEL_TARGET_ENV',
+    'VERCEL_URL',
+  ]
+  assert.deepEqual(Object.keys(vercelCliEnvironment()).sort(), reportedAutomaticNames.sort())
+
+  const observedVercelPull = {
+    ...previewEnv(),
+    ...vercelCliEnvironment(),
+  }
+
+  assert.equal(assertPreviewSupabaseEnvironment(observedVercelPull, common), true)
+
+  for (const invalid of [
+    { ...observedVercelPull, VERCEL_ENV: 'production' },
+    { ...observedVercelPull, VERCEL_ENV: 'development' },
+    { ...observedVercelPull, VERCEL_TARGET_ENV: 'production' },
+    { ...observedVercelPull, VERCEL: '0' },
+  ]) {
+    assert.throws(() => assertPreviewSupabaseEnvironment(invalid, common), /approved Preview environment/)
+  }
+})
+
+test('Preview still rejects unknown application, Vercel-prefixed and credential variables without echoing values', () => {
+  const common = {
+    previewProjectRef: projectRef,
+    productionProjectRef: 'zyxwvutsrqponmlkjihg',
+    shellFlag: '1',
+  }
+  const fakeCredential = 'synthetic-not-a-real-production-credential'
+
+  for (const name of [
+    'NEXT_PUBLIC_UNAPPROVED_SETTING',
+    'VERCEL_UNRECOGNIZED_SETTING',
+    'VERCEL_AUTOMATION_BYPASS_SECRET',
+    'TURBO_TOKEN',
+  ]) {
+    const values = { ...previewEnv(), [name]: fakeCredential }
+    assert.throws(() => assertPreviewSupabaseEnvironment(values, common), error => {
+      assert.match(error.message, /outside the QA-only allowlist/)
+      assert.match(error.message, new RegExp(name))
+      assert.equal(error.message.includes(fakeCredential), false)
+      return true
+    })
+  }
+})
+
+test('Preview environment masking registers automatically exposed OIDC tokens without echoing them in ordinary output', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'fintrack-preview-env-'))
+  const environmentPath = join(directory, '.env.preview.local')
+  const syntheticToken = 'synthetic-vercel-oidc-token-not-a-credential'
+  const scriptPath = fileURLToPath(new URL('./continuous-publishing.mjs', import.meta.url))
+
+  try {
+    writeFileSync(environmentPath, `VERCEL_OIDC_TOKEN=${syntheticToken}\nVERCEL_ENV=preview\n`)
+    const result = spawnSync(process.execPath, [scriptPath, 'mask-preview-environment', environmentPath], {
+      encoding: 'utf8',
+      env: { GITHUB_REPOSITORY: repository },
+    })
+
+    assert.equal(result.status, 0, 'environment masking should succeed without printing credentials')
+    assert.ok(result.stdout.includes(`::add-mask::${syntheticToken}`), 'automatic OIDC token must be registered with GitHub masking')
+    assert.ok(result.stdout.includes('Registered redaction for Preview credential variables.'))
+    assert.equal(result.stderr.includes(syntheticToken), false, 'stderr must not contain the automatic OIDC token')
+    assert.equal(result.stdout.replace(`::add-mask::${syntheticToken}`, '').includes(syntheticToken), false, 'ordinary stdout must not echo the token')
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('Preview workflow removes its pulled environment snapshot after a failed validation step', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/v3-preview.yml', import.meta.url), 'utf8')
+  const cleanupName = '      - name: Remove the pulled environment snapshot before remote deployment'
+  const cleanupStart = workflow.indexOf(cleanupName)
+  assert.notEqual(cleanupStart, -1, 'Preview cleanup step must exist')
+  const nextStep = workflow.indexOf('\n      - name:', cleanupStart + cleanupName.length)
+  const cleanup = workflow.slice(cleanupStart, nextStep === -1 ? workflow.length : nextStep)
+
+  assert.ok(cleanup.includes('if: always()'))
+  assert.ok(cleanup.includes('environment_file="candidate/.vercel/.env.preview.local"'))
+  assert.ok(cleanup.includes('rm -f -- "$environment_file"'))
+  assert.doesNotMatch(cleanup, /working-directory:/)
 })
 
 test('Preview pull accepts only the non-retrievable service-role Secret marker', () => {
