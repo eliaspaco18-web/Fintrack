@@ -296,7 +296,7 @@ type PersistedBillingCycle = {
   consumption_from: string
   consumption_to: string
   payment_date: string
-  total_to_pay: number | string | null
+  total_to_pay: number
   statement_url: string | null
   notes: string | null
 }
@@ -451,10 +451,17 @@ export async function PUT(req: NextRequest, props: { params: Promise<{ id: strin
   const newCycles: BillingCycleMutationInput[] = []
 
   for (const cycle of parsed.data.cycles) {
-    const existing = cycle.id ? existingById.get(cycle.id) : undefined
-    if (!existing) {
+    if (!cycle.id) {
       newCycles.push(cycle)
       continue
+    }
+
+    const existing = existingById.get(cycle.id)
+    if (!existing) {
+      return apiError({
+        code: 'NOT_FOUND',
+        message: 'Uno de los ciclos indicados ya no pertenece a esta tarjeta. Actualiza el cronograma; no se realizaron cambios.',
+      })
     }
 
     submittedExistingById.set(existing.id, cycle)
@@ -479,8 +486,9 @@ export async function PUT(req: NextRequest, props: { params: Promise<{ id: strin
     consumption_from: string
     consumption_to: string
     payment_date: string
-    total_to_pay?: number
-    notes?: string | null
+    total_to_pay: PersistedBillingCycle['total_to_pay']
+    statement_url: string | null
+    notes: string | null
   }> = [
     ...updates.map(({ existing, next }) => ({
       id: existing.id,
@@ -490,8 +498,12 @@ export async function PUT(req: NextRequest, props: { params: Promise<{ id: strin
       consumption_from: next.consumption_from,
       consumption_to: next.consumption_to,
       payment_date: next.payment_date,
-      // Omit statement_url, notes, and total_to_pay so the database retains
-      // their verified values (including attachments and financial history).
+      // PostgREST bulk upserts use a shared column set for the whole array.
+      // Include server-verified values explicitly so heterogeneous input rows
+      // can never turn omitted history or attachment references into null.
+      total_to_pay: existing.total_to_pay,
+      statement_url: existing.statement_url,
+      notes: existing.notes,
     })),
     ...newCycles.map(cycle => ({
       id: randomUUID(),
@@ -502,6 +514,7 @@ export async function PUT(req: NextRequest, props: { params: Promise<{ id: strin
       consumption_to: cycle.consumption_to,
       payment_date: cycle.payment_date,
       total_to_pay: cycle.total_to_pay,
+      statement_url: null,
       notes: cycle.notes ?? null,
     })),
   ]
@@ -565,7 +578,7 @@ export async function PUT(req: NextRequest, props: { params: Promise<{ id: strin
 
   const { data, error } = await supabase
     .from('billing_cycles')
-    .upsert(upsertRows, { onConflict: 'id' })
+    .upsert(upsertRows, { onConflict: 'id', defaultToNull: false })
     .select('id, credit_id, billing_month, billing_year, consumption_from, consumption_to, payment_date, total_to_pay, statement_url, notes')
 
   if (error) return apiError({ code: 'DATABASE_ERROR', message: error.message })

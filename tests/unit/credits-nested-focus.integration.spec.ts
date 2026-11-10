@@ -420,6 +420,9 @@ test('edit card adds a new billing period without blocking or replacing an attac
     expect.objectContaining({ id: 'cycle-1', billing_month: 10, billing_year: 2026, consumption_from: '2026-10-01', consumption_to: '2026-10-31' }),
     expect.objectContaining({ billing_month: 11, billing_year: 2026, consumption_from: '2026-11-15', consumption_to: '2026-11-15' }),
   ]))
+  const newlyAddedCycle = savedSchedule?.find(cycle => cycle.billing_month === 11)
+  expect(newlyAddedCycle).toBeDefined()
+  expect(newlyAddedCycle).not.toHaveProperty('id')
   expect(savedSchedule).toHaveLength(2)
   await expect(page.getByText('blocked')).toHaveCount(0)
   await expect.poll(() => page.evaluate(() => (window as unknown as { __creditSaved: string[] | null }).__creditSaved))

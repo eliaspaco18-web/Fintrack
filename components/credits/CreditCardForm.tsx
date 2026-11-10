@@ -436,7 +436,7 @@ export function CreditCardForm({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             cycles: cycles.map(cycle => ({
-              id: cycle.id,
+              ...(persistedCycleIdsRef.current.has(cycle.id) ? { id: cycle.id } : {}),
               billing_month: Number(cycle.billing_month),
               billing_year: Number(cycle.billing_year),
               consumption_from: cycle.consumption_from,

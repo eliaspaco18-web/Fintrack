@@ -29,10 +29,12 @@ Module._resolveFilename = function (request, parent, isMain, options) {
 const ownerId = 'owner-a'
 const creditId = 'credit-card-a'
 const existingCycleId = '11111111-1111-4111-8111-111111111111'
-const clientCycleId = '22222222-2222-4222-8222-222222222222'
+const secondExistingCycleId = '22222222-2222-4222-8222-222222222222'
+const foreignCycleId = '33333333-3333-4333-8333-333333333333'
 let database: Database
 let queryLog: QueryLog[]
 let upsertFailure = false
+let upsertFailureAfterRows: number | null = null
 
 function attachedCycle() {
   return {
@@ -56,7 +58,7 @@ function createDatabase() {
       { id: 'credit-card-b', user_id: 'owner-b', credit_type: 'CREDIT_CARD', account_id: null },
     ],
     billing_cycles: [attachedCycle(), {
-      id: '33333333-3333-4333-8333-333333333333',
+      id: foreignCycleId,
       credit_id: 'credit-card-b', billing_month: 12, billing_year: 2026,
       consumption_from: '2026-12-01', consumption_to: '2026-12-31', payment_date: '2027-01-10',
       total_to_pay: 900, notes: null, statement_url: null,
@@ -127,23 +129,43 @@ function createMockClient() {
         const rows = database[table]
         if (query.operation === 'upsert') {
           if (upsertFailure) return { data: null, error: new Error('synthetic upsert failure') }
-          mutationRows = []
-          for (const incoming of query.payload ?? []) {
-            const index = rows.findIndex(row => row.id === incoming.id)
+          const payload = query.payload ?? []
+          const options = query.options as { defaultToNull?: boolean } | undefined
+          const defaultToNull = options?.defaultToNull ?? true
+          const columns = [...new Set(payload.flatMap(incoming => Object.keys(incoming)))]
+          const defaultFor = (column: string) => column === 'total_to_pay' ? 0 : null
+          // postgrest-js builds one columns set for this bulk request.
+          // Missing keys resolve to null or DEFAULT according to Prefer, and
+          // merge-duplicates writes EXCLUDED values on conflicts. Do not
+          // spread the existing row to simulate preservation.
+          const normalizedPayload = payload.map(incoming => Object.fromEntries(columns.map(column => [
+            column,
+            Object.hasOwn(incoming, column) ? incoming[column] : defaultToNull ? null : defaultFor(column),
+          ])))
+          const stagedRows = structuredClone(rows)
+          const stagedMutations: Row[] = []
+          for (const incoming of normalizedPayload) {
+            const index = stagedRows.findIndex(row => row.id === incoming.id)
             if (index >= 0) {
-              if (rows[index]?.credit_id !== incoming.credit_id) return { data: null, error: new Error('cross-credit upsert rejected') }
-              rows[index] = { ...rows[index], ...incoming }
-              mutationRows.push(rows[index]!)
+              if (stagedRows[index]?.credit_id !== incoming.credit_id) return { data: null, error: new Error('cross-credit upsert rejected') }
+              stagedRows[index] = { ...stagedRows[index], ...incoming }
+              stagedMutations.push(stagedRows[index]!)
             } else {
-              const duplicate = rows.some(row => row.credit_id === incoming.credit_id
+              const duplicate = stagedRows.some(row => row.credit_id === incoming.credit_id
                 && row.billing_month === incoming.billing_month
                 && row.billing_year === incoming.billing_year)
               if (duplicate) return { data: null, error: new Error('duplicate billing period') }
               const created = { ...incoming }
-              rows.push(created)
-              mutationRows.push(created)
+              stagedRows.push(created)
+              stagedMutations.push(created)
+            }
+            if (upsertFailureAfterRows === stagedMutations.length) {
+              return { data: null, error: new Error('synthetic mid-statement upsert failure') }
             }
           }
+          // PostgREST executes this bulk upsert as one SQL statement.
+          database[table] = stagedRows
+          mutationRows = stagedMutations
         } else if (query.operation === 'delete') {
           const selected = rows.filter(row => matches(row, query, isFilters, inFilters, dateFilters, accountFilter))
           mutationRows = selected
@@ -200,49 +222,108 @@ test.beforeEach(() => {
   database = createDatabase()
   queryLog = []
   upsertFailure = false
+  upsertFailureAfterRows = null
 })
 
 test('PUT adds a new period while preserving the existing cycle id, attachment, amount, notes, and other user data', async () => {
+  const before = structuredClone(database.billing_cycles[0])
   const response = await putCycles([
     cycle(10, { id: existingCycleId }),
-    cycle(11, { id: clientCycleId }),
-    cycle(12, { id: '33333333-3333-4333-8333-333333333333' }),
+    cycle(11),
   ])
 
   expect(response.status).toBe(200)
   const body = await response.json() as { ok: boolean; data: Row[] }
   expect(body.ok).toBe(true)
-  expect(database.billing_cycles.find(row => row.id === existingCycleId)).toMatchObject({
-    id: existingCycleId,
-    statement_url: 'credits/card-a/cycles/october.pdf',
-    total_to_pay: 425.5,
-    notes: 'Notas preservadas',
-    consumption_from: '2026-10-01',
-  })
+  expect(database.billing_cycles.find(row => row.id === existingCycleId)).toEqual(before)
   const created = database.billing_cycles.find(row => row.credit_id === creditId && row.billing_month === 11)
   expect(created).toMatchObject({ billing_month: 11, billing_year: 2026, consumption_from: '2026-11-01', consumption_to: '2026-11-30', total_to_pay: 0 })
-  expect(created?.id).not.toBe(clientCycleId)
-  const ownerACycleFromForeignId = database.billing_cycles.find(row => row.credit_id === creditId && row.billing_month === 12)
-  expect(ownerACycleFromForeignId).toMatchObject({
-    credit_id: creditId,
-    billing_month: 12,
-    billing_year: 2026,
-  })
-  expect(ownerACycleFromForeignId?.id).not.toBe('33333333-3333-4333-8333-333333333333')
+  expect(created?.id).toBeTruthy()
   expect(database.billing_cycles.find(row => row.credit_id === 'credit-card-b')).toMatchObject({ total_to_pay: 900 })
   expect(queryLog.filter(query => query.operation === 'upsert')).toHaveLength(1)
   expect(queryLog.some(query => query.operation === 'delete')).toBe(false)
-  expect(queryLog.find(query => query.operation === 'upsert')?.payload?.every(row => !Object.hasOwn(row, 'statement_url'))).toBe(true)
+  const upsert = queryLog.find(query => query.operation === 'upsert')
+  expect(upsert?.options).toMatchObject({ onConflict: 'id', defaultToNull: false })
+  expect(upsert?.payload).toHaveLength(1)
+  expect(upsert?.payload?.every(row => Object.hasOwn(row, 'statement_url')
+    && Object.hasOwn(row, 'total_to_pay') && Object.hasOwn(row, 'notes'))).toBe(true)
+})
+
+test('editing an existing cycle and adding another preserves history and attached-cycle references in the same save', async () => {
+  database.billing_cycles.push({
+    id: secondExistingCycleId, credit_id: creditId, billing_month: 9, billing_year: 2026,
+    consumption_from: '2026-09-01', consumption_to: '2026-09-30', payment_date: '2026-10-10',
+    total_to_pay: 88.25, notes: 'Nota del ciclo anterior', statement_url: null,
+  })
+  const attachedBefore = structuredClone(database.billing_cycles.find(row => row.id === existingCycleId))
+  const editedBefore = structuredClone(database.billing_cycles.find(row => row.id === secondExistingCycleId))
+  const response = await putCycles([
+    cycle(10, { id: existingCycleId }),
+    cycle(9, { id: secondExistingCycleId, payment_date: '2026-10-12' }),
+    cycle(11),
+  ])
+
+  expect(response.status).toBe(200)
+  expect(database.billing_cycles.find(row => row.id === existingCycleId)).toEqual(attachedBefore)
+  expect(database.billing_cycles.find(row => row.id === secondExistingCycleId)).toEqual({
+    ...editedBefore,
+    payment_date: '2026-10-12',
+  })
+  expect(database.billing_cycles.find(row => row.credit_id === creditId && row.billing_month === 11)).toMatchObject({
+    total_to_pay: 0, statement_url: null, notes: null,
+  })
+  const upsert = queryLog.find(query => query.operation === 'upsert')
+  expect(upsert?.payload).toHaveLength(2)
+  expect(upsert?.payload?.map(row => Object.keys(row).sort())[0])
+    .toEqual(upsert?.payload?.map(row => Object.keys(row).sort())[1])
 })
 
 test('a failed bulk upsert leaves every persisted cycle unchanged', async () => {
   const before = structuredClone(database.billing_cycles)
   upsertFailure = true
-  const response = await putCycles([cycle(10, { id: existingCycleId }), cycle(11, { id: clientCycleId })])
+  const response = await putCycles([cycle(10, { id: existingCycleId }), cycle(11)])
 
   expect(response.status).toBe(500)
   expect(database.billing_cycles).toEqual(before)
   expect(queryLog.some(query => query.operation === 'delete')).toBe(false)
+})
+
+test('a persistence failure after staging one row leaves the entire batch unchanged', async () => {
+  database.billing_cycles[0]!.statement_url = null
+  const before = structuredClone(database.billing_cycles)
+  upsertFailureAfterRows = 1
+  const response = await putCycles([
+    cycle(10, { id: existingCycleId, payment_date: '2026-11-12' }),
+    cycle(11),
+  ])
+
+  expect(response.status).toBe(500)
+  expect(database.billing_cycles).toEqual(before)
+  expect(queryLog.filter(query => query.operation === 'upsert')).toHaveLength(1)
+})
+
+test('unknown persisted ids are rejected without creating or editing any cycle', async () => {
+  const before = structuredClone(database.billing_cycles)
+  const response = await putCycles([
+    cycle(10, { id: existingCycleId }),
+    cycle(11, { id: '44444444-4444-4444-8444-444444444444' }),
+  ])
+
+  expect(response.status).toBe(404)
+  expect(database.billing_cycles).toEqual(before)
+  expect(queryLog.some(query => query.operation === 'upsert' || query.operation === 'delete')).toBe(false)
+})
+
+test('an id belonging to another card is rejected without changing or exposing that cycle', async () => {
+  const before = structuredClone(database.billing_cycles)
+  const response = await putCycles([
+    cycle(10, { id: existingCycleId }),
+    cycle(11, { id: foreignCycleId }),
+  ])
+
+  expect(response.status).toBe(404)
+  expect(database.billing_cycles).toEqual(before)
+  expect(queryLog.some(query => query.operation === 'upsert' || query.operation === 'delete')).toBe(false)
 })
 
 test('a safe schedule edit updates the existing cycle without changing its id or financial metadata', async () => {
@@ -299,7 +380,7 @@ test('safe single-cycle deletion is account-scoped and leaves another user cycle
 test('a delete cannot be mixed with cycle additions in a request that must remain all-or-none', async () => {
   database.billing_cycles[0]!.statement_url = null
   const before = structuredClone(database.billing_cycles)
-  const response = await putCycles([cycle(11, { id: clientCycleId })])
+  const response = await putCycles([cycle(11)])
 
   expect(response.status).toBe(422)
   expect(database.billing_cycles).toEqual(before)
@@ -309,7 +390,7 @@ test('a delete cannot be mixed with cycle additions in a request that must remai
 test('multiple cycle deletions are rejected before any row is removed', async () => {
   database.billing_cycles[0]!.statement_url = null
   database.billing_cycles.push({
-    id: clientCycleId,
+    id: secondExistingCycleId,
     credit_id: creditId,
     billing_month: 11,
     billing_year: 2026,
