@@ -93,10 +93,12 @@ async function mountRealCreditModals(
   viewport = { width: 1440, height: 900 },
   statementUrl: string | null = null,
   longAmounts = false,
+  testNow = '2026-10-15T12:00:00.000Z',
+  movementCount = 0,
 ) {
   const runtimeErrors: string[] = []
   page.on('pageerror', error => runtimeErrors.push(error.message))
-  await page.clock.setFixedTime(new Date('2026-10-15T12:00:00.000Z'))
+  await page.clock.setFixedTime(new Date(testNow))
   await page.setViewportSize(viewport)
   await page.setContent('<div class="fin-shell" data-ft-v3-shell><div id="root"></div></div>')
   await page.addScriptTag({ content: "let creditFixtureId = 0; Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: () => creditFixtureId++ === 0 ? 'credits-test-id' : `credits-test-id-${creditFixtureId}` })" })
@@ -109,6 +111,7 @@ async function mountRealCreditModals(
   ))?.[1] ?? localName
   const footerClassName = moduleClass('operationFormActions')
   const creditFormOverlayClass = moduleClass('creditFormOverlay')
+  const creditCardFormOverlayClass = moduleClass('creditCardFormOverlay')
   const creditScheduleOverlayClass = moduleClass('creditScheduleOverlay')
   const creditCardScheduleOverlayClass = moduleClass('creditCardScheduleOverlay')
   const creditsTableHeaderClasses = Object.fromEntries([
@@ -144,15 +147,15 @@ async function mountRealCreditModals(
     };
     window.__creditsModules['react'] = { ...React };
     window.__creditsModules['react-dom'] = { createPortal: ReactDOM.createPortal };
-    window.__creditsModules['@/components/ui/Button'] = { Button: ({children, type='button', onClick, disabled, id, ariaLabel, className, title, ...props}) => React.createElement('button', { type, onClick, disabled, id, 'aria-label': ariaLabel, className, title, ...props }, children) };
+    window.__creditsModules['@/components/ui/Button'] = { Button: ({children, type='button', onClick, disabled, id, ariaLabel, className, title, testId, variant='primary', size='md', ...props}) => React.createElement('button', { type, onClick, disabled, id, 'aria-label': ariaLabel, 'data-testid': testId, className: 'inline-flex items-center justify-center rounded-lg border px-4 font-semibold ' + (size === 'lg' ? 'h-11 text-sm ' : size === 'sm' ? 'h-9 text-xs ' : 'h-10 text-sm ') + (variant === 'primary' ? 'border-transparent bg-slate-800 text-white ' : variant === 'danger' ? 'border-red-200 bg-red-50 text-red-700 ' : 'border-slate-200 bg-white text-slate-700 ') + (className || ''), title, ...props }, children) };
     window.__creditsModules['@/components/ui/NumericInput'] = { NumericInput: ({value='', onValueChange, disabled, ...props}) => React.createElement('input', { value: String(value ?? ''), onChange: event => onValueChange?.(event.target.value), disabled, ...props }) };
     window.__creditsModules['@/components/forms/TransactionForm/IncomeTransactionForm.module.css'] = { default: { operationFormActions: ${JSON.stringify(footerClassName)} } };
     window.__creditsModules['@/components/forms/primitives'] = {
       FormActions: ({primaryAction, secondaryAction, className}) => React.createElement('div', { className }, secondaryAction, primaryAction),
-      FormField: ({label, labelAdornment, children, error}) => React.createElement('div', null, React.createElement('label', null, label, labelAdornment), children, error ? React.createElement('span', null, error) : null),
-      FormSection: ({title, description, children}) => React.createElement('section', null, React.createElement('h3', null, title), description ? React.createElement('p', null, description) : null, children),
+      FormField: ({label, labelAdornment, children, error, className='', optional=false}) => React.createElement('div', { className: 'flex min-w-0 flex-col gap-2 ' + className }, React.createElement('div', { className: 'flex flex-wrap items-baseline justify-between gap-2' }, React.createElement('label', { className: 'text-[13px] font-semibold leading-[1.3] text-slate-800' }, label, optional ? React.createElement('span', { className: 'ml-2 text-xs font-medium text-slate-500' }, 'Opcional') : null), labelAdornment), React.createElement('div', { className: 'min-w-0' }, children), error ? React.createElement('span', { role: 'alert' }, error) : null),
+      FormSection: ({title, description, columns='1', className='', children}) => React.createElement('section', { className: 'space-y-3 ' + className }, title ? React.createElement('h3', { className: 'text-[15px] font-semibold tracking-tight text-slate-900' }, title) : null, description ? React.createElement('p', { className: 'text-[13px] leading-5 text-slate-500' }, description) : null, React.createElement('div', { className: 'grid gap-x-3 gap-y-3 ' + (columns === '2' ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1') }, children)),
     };
-    window.__creditsModules['@/components/credits/CreditInfoHint'] = { CreditInfoHint: ({label, children}) => React.createElement('span', { title: label }, children) };
+    window.__creditsModules['@/components/credits/CreditInfoHint'] = { CreditInfoHint: ({label}) => React.createElement('button', { type: 'button', title: label, 'aria-label': label, className: 'inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 text-[10px] font-semibold text-slate-500' }, 'i') };
     window.__creditsModules['@/components/credits/credits-schedule.constants'] = {
       SCHEDULE_MONTHS: ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map((label,index) => ({ value: String(index + 1).padStart(2, '0'), label })),
       CREDIT_CARD_DATE_INPUT_MIN_WIDTH: 120, BANK_LOAN_DATE_INPUT_MIN_WIDTH: 120,
@@ -176,7 +179,7 @@ async function mountRealCreditModals(
     window.__creditsModules['@/modules/credits/exchange-rate-integrity'] = { resolveCreditExchangeRateInput: () => ({ok:true, value:1}) };
     window.__creditsModules['@/modules/loans/loan-schedule-integrity'] = { resizeScheduleRows: (rows, count, buildRow) => Array.from({length:count}, (_, index) => rows[index] || buildRow(index)) };
     window.__creditsModules['@/modules/loans/loan-type'] = { LOAN_TYPE_VALUES: ['CONSUMPTION'], getLoanTypeLabel: value => value };
-    window.__creditsModules['@/components/credits/CreditsWorkbench.module.css'] = { default: { creditFormOverlay:${JSON.stringify(creditFormOverlayClass)}, creditScheduleOverlay:${JSON.stringify(creditScheduleOverlayClass)}, creditCardScheduleOverlay:${JSON.stringify(creditCardScheduleOverlayClass)} } };
+    window.__creditsModules['@/components/credits/CreditsWorkbench.module.css'] = { default: { creditFormOverlay:${JSON.stringify(creditFormOverlayClass)}, creditCardFormOverlay:${JSON.stringify(creditCardFormOverlayClass)}, creditScheduleOverlay:${JSON.stringify(creditScheduleOverlayClass)}, creditCardScheduleOverlay:${JSON.stringify(creditCardScheduleOverlayClass)} } };
     window.__creditsModules['@/components/credits/CreditsTableHeader.module.css'] = { default: ${JSON.stringify(creditsTableHeaderClasses)} };
     window.__creditsModules['@/components/credits/CreditCardScheduleModal.module.css'] = { default: ${JSON.stringify(scheduleClasses)} };
     window.__creditRequests = [];
@@ -185,12 +188,18 @@ async function mountRealCreditModals(
     window.__openedStatement = null;
     window.fetch = async (input, init = {}) => {
       const path = String(input);
-      window.__creditRequests.push({path,method:init.method || 'GET'});
+      window.__creditRequests.push({path,method:init.method || 'GET',body:typeof init.body === 'string' ? JSON.parse(init.body) : null});
       const bank = {id:'bank-1',name:'Banco de prueba',short_name:'Banco',is_active:true};
-      const cycle = {id:'cycle-1',billing_month:10,billing_year:2026,consumption_from:'2026-10-01',consumption_to:'2026-10-31',payment_date:'2026-11-10',total_to_pay:${longAmounts ? 1234567890.23 : 25},total_to_pay_pen:${longAmounts ? 1234567890.23 : 25},total_to_pay_usd:${longAmounts ? 987654321.09 : 0},movement_summary:null,can_delete:true,statement_url:window.__creditCycleStatementUrl};
+      const movements = Array.from({length:${movementCount}}, (_, index) => ({id:'movement-' + index,type:'EXPENSE',description:'Movimiento sintético ' + String(index + 1).padStart(2, '0'),amount:25,currency:'PEN',transaction_date:'2026-10-15',payment_method:'CARD',source_account_id:'account-1',destination_account_id:null,movement_kind:'CONSUMPTION'}));
+      const movementSummary = ${movementCount} > 0 ? {initial_pen:10,initial_usd:0,consumption_pen:movements.length * 25,consumption_usd:0,payment_pen:0,payment_usd:0,total_pen:10 + movements.length * 25,total_usd:0,movement_count:movements.length,consumptions:movements,payments:[],movements} : null;
+      const cycle = {id:'cycle-1',billing_month:10,billing_year:2026,consumption_from:'2026-10-01',consumption_to:'2026-10-31',payment_date:'2026-11-10',total_to_pay:${longAmounts ? 1234567890.23 : 25},total_to_pay_pen:${longAmounts ? 1234567890.23 : 25},total_to_pay_usd:${longAmounts ? 987654321.09 : 0},movement_summary:movementSummary,can_delete:true,statement_url:window.__creditCycleStatementUrl};
       let data = [];
       if (path === '/api/bank-entities') data = [bank];
       else if (path === '/api/accounts') data = [{id:'account-1',name:'Cuenta de prueba',type:'CHECKING',currency:'PEN',is_active:true}];
+      else if (path === '/api/credits/card-1/billing-cycles' && init.method === 'PUT') {
+        const submitted = JSON.parse(init.body || '{}').cycles || [];
+        data = submitted.map((item, index) => ({...item,id:item.id === 'cycle-1' ? 'cycle-1' : 'persisted-cycle-' + index,statement_url:item.id === 'cycle-1' ? window.__creditCycleStatementUrl : null}));
+      }
       else if (path === '/api/credits/card-1/billing-cycles') data = [cycle];
       else if (path === '/api/credits/card-1/billing-cycles/cycle-1/statement') data = {signed_url:'https://example.test/signed-statement'};
       else if (path === '/api/credits' && init.method === 'POST') data = {credit:{id:'created-card-1'}};
@@ -225,7 +234,7 @@ async function mountRealCreditModals(
         : React.createElement(window.__creditsModules['@/components/credits/BankLoanForm'].BankLoanForm, {mode,creditId:mode === 'edit' ? 'loan-1' : undefined,onSuccess:()=>{},onCancel:()=>setParentOpen(false),onNestedModalOpenChange:setNestedOpen});
       return React.createElement(React.Fragment, null,
         React.createElement('button',{id:'outside-focus'},'Outside'),
-        React.createElement(window.__creditsModules['@/components/ui/RecordModal'].RecordModal,{open:parentOpen,onClose:()=>{window.__modalCloseCounts.parent++;setParentOpen(false)},title:type === 'card'?'Parent card':'Parent loan',focusTrapActive:!nestedOpen,preserveFocusOnResume:true,presentation:'workbench',overlayClassName:window.__creditsModules['@/components/credits/CreditsWorkbench.module.css'].default.creditFormOverlay,testId:'parent-workbench'},body),
+        React.createElement(window.__creditsModules['@/components/ui/RecordModal'].RecordModal,{open:parentOpen,onClose:()=>{window.__modalCloseCounts.parent++;setParentOpen(false)},title:type === 'card'?'Parent card':'Parent loan',focusTrapActive:!nestedOpen,preserveFocusOnResume:true,presentation:'workbench',widthClassName:type === 'card'?'w-full max-w-[580px]':undefined,overlayClassName:type === 'card'?window.__creditsModules['@/components/credits/CreditsWorkbench.module.css'].default.creditCardFormOverlay:window.__creditsModules['@/components/credits/CreditsWorkbench.module.css'].default.creditFormOverlay,testId:'parent-workbench'},body),
         React.createElement('output',{id:'nested-state'},String(nestedOpen)));
     }
     ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Host));
@@ -358,8 +367,14 @@ test('new card can stage a statement and uploads it after the persisted billing 
   await expect.poll(() => page.evaluate(() => (window as unknown as { __attachmentCalls: Array<{ endpoint: string; name: string; size: number }> }).__attachmentCalls)).toEqual([
     { endpoint: '/api/credits/created-card-1/billing-cycles/created-cycle-1/statement', name: 'estado-cuenta.pdf', size: 19 },
   ])
-  expect(await page.evaluate(() => (window as unknown as { __creditRequests: Array<{ path: string; method: string }> }).__creditRequests))
-    .toContainEqual({ path: '/api/credits/created-card-1/billing-cycles', method: 'POST' })
+  expect(await page.evaluate(() => (window as unknown as { __creditRequests: Array<{ path: string; method: string; body?: Record<string, unknown> }> }).__creditRequests))
+    .toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: '/api/credits/created-card-1/billing-cycles',
+        method: 'POST',
+        body: expect.objectContaining({ billing_month: 10, billing_year: 2026 }),
+      }),
+    ]))
 })
 
 test('edit card opens and replaces a saved billing-cycle statement through its record-scoped endpoint', async ({ page }) => {
@@ -372,6 +387,7 @@ test('edit card opens and replaces a saved billing-cycle statement through its r
   const schedule = page.getByRole('dialog', { name: 'Cronograma completo de la tarjeta' })
   const row = page.getByTestId('credit-cycle-row-cycle-1')
   await expect(row.getByText('Estado adjunto')).toBeVisible()
+  await expect(row.getByRole('button', { name: 'Eliminar ciclo 10/2026' })).toHaveCount(0)
   await row.getByRole('button', { name: 'Abrir estado de cuenta de 10/2026' }).click()
   await expect.poll(() => page.evaluate(() => (window as unknown as { __openedStatement: string | null }).__openedStatement))
     .toBe('https://example.test/signed-statement')
@@ -383,6 +399,146 @@ test('edit card opens and replaces a saved billing-cycle statement through its r
     .toMatchObject({ endpoint:'/api/credits/card-1/billing-cycles/cycle-1/statement', name:'estado-reemplazo.pdf' })
   await expect(schedule).toBeVisible()
 })
+
+test('edit card adds a new billing period without blocking or replacing an attached existing cycle', async ({ page }) => {
+  await mountRealCreditModals(page, 'card', 'edit', undefined, 'credits/card-1/cycles/cycle-1/statement.pdf', false, '2026-11-15T12:00:00.000Z')
+  await page.getByRole('button', { name: 'Revisar ciclos' }).click()
+  const schedule = page.getByRole('dialog', { name: 'Cronograma completo de la tarjeta' })
+  await expect(page.getByTestId('credit-cycle-row-cycle-1').getByText('Estado adjunto')).toBeVisible()
+  await schedule.getByRole('button', { name: 'Agregar ciclo' }).click()
+  await expect(page.locator('[data-testid^="credit-cycle-row-"]')).toHaveCount(2)
+  await page.getByRole('button', { name: 'Listo' }).click()
+  await expect(schedule).toBeHidden()
+
+  await page.getByRole('button', { name: 'Guardar cambios' }).click()
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __creditRequests: Array<{path:string;method:string;body?:unknown}> }).__creditRequests
+    .some(request => request.path === '/api/credits/card-1/billing-cycles' && request.method === 'PUT'))).toBe(true)
+
+  const savedSchedule = await page.evaluate(() => (window as unknown as { __creditRequests: Array<{path:string;method:string;body?:{cycles?:Array<Record<string,unknown>>}}> }).__creditRequests
+    .find(request => request.path === '/api/credits/card-1/billing-cycles' && request.method === 'PUT')?.body?.cycles)
+  expect(savedSchedule).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: 'cycle-1', billing_month: 10, billing_year: 2026, consumption_from: '2026-10-01', consumption_to: '2026-10-31' }),
+    expect.objectContaining({ billing_month: 11, billing_year: 2026, consumption_from: '2026-11-15', consumption_to: '2026-11-15' }),
+  ]))
+  const newlyAddedCycle = savedSchedule?.find(cycle => cycle.billing_month === 11)
+  expect(newlyAddedCycle).toBeDefined()
+  expect(newlyAddedCycle).not.toHaveProperty('id')
+  expect(savedSchedule).toHaveLength(2)
+  await expect(page.getByText('blocked')).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __creditSaved: string[] | null }).__creditSaved))
+    .toEqual(['Tarjeta de prueba', undefined, 'card-1'])
+})
+
+test('edit card adds a new billing period when no prior statement is attached', async ({ page }) => {
+  await mountRealCreditModals(page, 'card', 'edit', undefined, null, false, '2026-11-15T12:00:00.000Z')
+  await page.getByRole('button', { name: 'Revisar ciclos' }).click()
+  const schedule = page.getByRole('dialog', { name: 'Cronograma completo de la tarjeta' })
+  await schedule.getByRole('button', { name: 'Agregar ciclo' }).click()
+  await page.getByRole('button', { name: 'Listo' }).click()
+  await expect(schedule).toBeHidden()
+  await page.getByRole('button', { name: 'Guardar cambios' }).click()
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __creditRequests: Array<{path:string;method:string}> }).__creditRequests
+    .some(request => request.path === '/api/credits/card-1/billing-cycles' && request.method === 'PUT'))).toBe(true)
+  await expect(page.getByText('blocked')).toHaveCount(0)
+})
+
+test('a statement selected for a new edit-mode cycle uploads only after the cycle receives its persisted server id', async ({ page }) => {
+  await mountRealCreditModals(page, 'card', 'edit', undefined, null, false, '2026-11-15T12:00:00.000Z')
+  await page.getByRole('button', { name: 'Revisar ciclos' }).click()
+  const schedule = page.getByRole('dialog', { name: 'Cronograma completo de la tarjeta' })
+  await schedule.getByRole('button', { name: 'Agregar ciclo' }).click()
+  const newCycleRow = page.locator('[data-testid^="credit-cycle-row-"]').nth(1)
+  const newCycleId = (await newCycleRow.getAttribute('data-testid'))?.replace('credit-cycle-row-', '')
+  expect(newCycleId).toBeTruthy()
+  await newCycleRow.getByTestId(`billing-cycle-statement-upload-${newCycleId}`).setInputFiles({
+    name: 'nuevo-periodo.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.from('synthetic new-cycle statement'),
+  })
+  await expect(newCycleRow.getByText('Pendiente')).toBeVisible()
+  await page.getByRole('button', { name: 'Listo' }).click()
+  await page.getByRole('button', { name: 'Guardar cambios' }).click()
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __attachmentCalls: Array<{endpoint:string;name:string}> }).__attachmentCalls.at(-1)))
+    .toMatchObject({ endpoint: '/api/credits/card-1/billing-cycles/persisted-cycle-1/statement', name: 'nuevo-periodo.pdf' })
+  const savedBody = await page.evaluate(() => (window as unknown as { __creditRequests: Array<{path:string;method:string;body?:{cycles?:Array<Record<string,unknown>>}}> }).__creditRequests
+    .find(request => request.path === '/api/credits/card-1/billing-cycles' && request.method === 'PUT')?.body)
+  expect(JSON.stringify(savedBody)).not.toContain('statement_file')
+})
+
+for (const mode of ['create', 'edit'] as const) {
+  for (const width of [390, 834, 1440]) {
+    test(`${mode} card form stays compact and keeps actions accessible at ${width}px`, async ({ page }, testInfo) => {
+      const height = width < 500 ? 760 : 900
+      await mountRealCreditModals(page, 'card', mode, { width, height })
+      const wrapper = page.locator('.ft-v3-workbench-wrapper').first()
+      const dialog = page.getByTestId('parent-workbench')
+      const geometry = await wrapper.evaluate(element => {
+        const wrapperRect = element.getBoundingClientRect()
+        const dialogRect = element.querySelector<HTMLElement>('[role="dialog"]')!.getBoundingClientRect()
+        const form = element.querySelector<HTMLElement>('[data-testid="credit-card-form"]')!
+        const mainGrid = form.querySelector<HTMLElement>('.grid.min-h-0.flex-1')!
+        const initialValuesGrid = form.querySelector<HTMLElement>('.grid.gap-3')!
+        const columnCount = (node: HTMLElement) => getComputedStyle(node).gridTemplateColumns.split(' ').filter(Boolean).length
+        return {
+          width: wrapperRect.width,
+          dialogWidth: dialogRect.width,
+          viewport: window.innerWidth,
+          documentWidth: document.documentElement.scrollWidth,
+          mainFormColumns: columnCount(mainGrid),
+          initialValuesColumns: columnCount(initialValuesGrid),
+        }
+      })
+      const expectedWidth = Math.min(580, width - (width < 768 ? 16 : 24))
+      expect(geometry.width).toBeCloseTo(expectedWidth, 0)
+      expect(geometry.dialogWidth).toBeLessThanOrEqual(geometry.width + 1)
+      expect(geometry.documentWidth).toBeLessThanOrEqual(width)
+      expect(geometry.mainFormColumns).toBe(1)
+      expect(geometry.initialValuesColumns).toBe(1)
+      await expect(page.getByTestId('credit-card-form')).toBeVisible()
+      await expect(page.getByRole('button', { name: mode === 'create' ? 'Crear tarjeta' : 'Guardar cambios', exact: true })).toBeVisible()
+      await expect(dialog.getByRole('button', { name: 'Cancelar' })).toBeVisible()
+      if (width === 390 || width === 1440) {
+        await page.screenshot({ path: testInfo.outputPath(`credit-card-form-${mode}-${width}.png`), fullPage: true })
+      }
+    })
+  }
+}
+
+for (const width of [390, 834, 1440]) {
+  test(`billing-cycle movement table fills the available body at ${width}px and keeps its own scroll area`, async ({ page }, testInfo) => {
+  await mountRealCreditModals(page, 'card', 'edit', { width, height: width < 500 ? 850 : 900 }, null, false, '2026-10-15T12:00:00.000Z', 30)
+  await page.getByRole('button', { name: 'Revisar ciclos' }).click()
+  await page.getByRole('button', { name: /Ver movimientos de/ }).click()
+  const movementDialog = page.getByRole('dialog', { name: /Movimientos de/ })
+  await expect(movementDialog.locator('tbody tr')).toHaveCount(30)
+  const geometry = await movementDialog.evaluate(element => {
+    const body = element.querySelector<HTMLElement>('[data-record-modal-body]')!
+    const content = body.firstElementChild as HTMLElement
+    const summary = content.firstElementChild as HTMLElement
+    const card = content.lastElementChild as HTMLElement
+    const table = card.querySelector('table')!
+    const viewport = table.parentElement as HTMLElement
+    const footer = element.lastElementChild as HTMLElement
+    const rect = (node: HTMLElement) => {
+      const box = node.getBoundingClientRect()
+      return { top: box.top, bottom: box.bottom, height: box.height }
+    }
+    return { body: { ...rect(body), scrollHeight: body.scrollHeight, clientHeight: body.clientHeight }, summary: rect(summary), card: rect(card), viewport: rect(viewport), footer: rect(footer), maxHeight: getComputedStyle(viewport).maxHeight, scrollHeight: viewport.scrollHeight, clientHeight: viewport.clientHeight }
+  })
+  expect(geometry.maxHeight).not.toBe('360px')
+  expect(geometry.viewport.height).toBeGreaterThan(width < 500 ? 250 : 360)
+  expect(geometry.scrollHeight).toBeGreaterThan(geometry.clientHeight)
+  expect(geometry.card.bottom).toBeLessThanOrEqual(geometry.body.bottom + 1)
+  expect(geometry.body.bottom).toBeLessThanOrEqual(geometry.footer.top + 1)
+  expect(geometry.body.scrollHeight).toBeLessThanOrEqual(geometry.body.clientHeight + 1)
+  await expect(movementDialog.getByRole('button', { name: 'Todos' })).toBeVisible()
+  await expect(movementDialog.getByPlaceholder('Buscar movimiento')).toBeVisible()
+  await expect(movementDialog.getByRole('button', { name: 'Cerrar', exact: true })).toBeVisible()
+  if (width === 390 || width === 1440) {
+    await page.screenshot({ path: testInfo.outputPath(`credit-card-movement-table-${width}.png`), fullPage: true })
+  }
+  })
+}
 
 for (const width of [390, 834, 1440, 1710]) {
   for (const cycleCount of [1, 6, 12]) {

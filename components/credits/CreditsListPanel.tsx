@@ -650,12 +650,12 @@ export function CreditsListPanel({ onCreate }: { onCreate: () => void }) {
         title={editIsCard ? 'Editar tarjeta de crédito' : editIsLoanFinancial ? 'Editar préstamo bancario' : 'Editar crédito'}
         subtitle={editIsCard ? 'Ajusta los datos permitidos de la tarjeta.' : editIsLoanFinancial ? 'Actualiza el préstamo y cronograma si sus cuotas aún no tienen pagos.' : 'Actualiza la referencia sin modificar el cronograma existente.'}
         size={editIsLoanFinancial ? 'xl' : undefined}
-        widthClassName={editIsCard || editIsLoanFinancial ? 'w-[calc(100vw-32px)] max-w-[1120px]' : 'w-[calc(100vw-32px)] max-w-[720px]'}
+        widthClassName={editIsCard ? 'w-full max-w-[580px]' : editIsLoanFinancial ? 'w-[calc(100vw-32px)] max-w-[1120px]' : 'w-[calc(100vw-32px)] max-w-[720px]'}
         focusTrapActive={!isNestedEditModalOpen}
         preserveFocusOnResume
-        bodyClassName={editIsLoanFinancial ? 'credits-modal-body !overflow-hidden py-4' : undefined}
+        bodyClassName={editIsCard || editIsLoanFinancial ? 'credits-modal-body !overflow-hidden py-4' : undefined}
         presentation="workbench"
-        overlayClassName={editIsCard || editIsLoanFinancial ? workbenchStyles.creditFormOverlay : undefined}
+        overlayClassName={editIsCard ? workbenchStyles.creditCardFormOverlay : editIsLoanFinancial ? workbenchStyles.creditFormOverlay : undefined}
         motionSource="pointer"
         testId="credits-edit-modal"
       >

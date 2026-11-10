@@ -468,7 +468,7 @@ export function CreditCardScheduleEditor({
               </div>
               <div className={styles.cycleCell} role="cell">
                 <span className={styles.cellLabel}>Acciones</span>
-                <CycleActions cycle={cycle} periodLabel={periodLabel} disabled={disabled} canDelete={cycles.length > 1 && Boolean(cycle.can_delete)} onView={openMovementModal} onDelete={onRemoveCycle} />
+              <CycleActions cycle={cycle} periodLabel={periodLabel} disabled={disabled} canDelete={cycles.length > 1 && Boolean(cycle.can_delete) && !Boolean(cycle.statement_url?.trim())} onView={openMovementModal} onDelete={onRemoveCycle} />
               </div>
             </article>
           )
@@ -500,6 +500,7 @@ export function CreditCardScheduleEditor({
         subtitle="Consumos y pagos vinculados a esta tarjeta dentro del rango de facturación."
         widthClassName="w-[calc(100vw-32px)] max-w-[1040px]"
         overlayClassName="z-[142]"
+        bodyClassName="!overflow-hidden py-4"
         presentation="workbench"
         workbenchKind="schedule"
         motionSource="pointer"
@@ -519,8 +520,8 @@ export function CreditCardScheduleEditor({
           />
         )}
       >
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+        <div className="flex h-full min-h-0 flex-col gap-4" data-testid="credit-cycle-movement-content">
+          <div className="grid shrink-0 grid-cols-2 gap-2 md:grid-cols-4">
             {[
               ['Inicial', `S/ ${formatNumber(movementSummary?.initial_pen ?? 0)}`, `USD ${formatNumber(movementSummary?.initial_usd ?? 0)}`],
               ['Consumos', `S/ ${formatNumber(movementSummary?.consumption_pen ?? 0)}`, `USD ${formatNumber(movementSummary?.consumption_usd ?? 0)}`],
@@ -537,8 +538,8 @@ export function CreditCardScheduleEditor({
             ))}
           </div>
 
-          <div className="overflow-hidden rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)]">
-            <div className="flex flex-col gap-2 border-b border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[var(--ft-form-radius)] border border-[var(--ft-form-border)]" data-testid="credit-cycle-movement-table">
+            <div className="flex shrink-0 flex-col gap-2 border-b border-[var(--ft-form-border)] bg-[var(--ft-surface-muted)] px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-wrap gap-1.5">
                 {([
                   ['ALL', 'Todos'],
@@ -566,7 +567,7 @@ export function CreditCardScheduleEditor({
                 placeholder="Buscar movimiento"
               />
             </div>
-            <div className="max-h-[360px] overflow-auto">
+            <div className="min-h-0 flex-1 overflow-auto" data-testid="credit-cycle-movement-scroll">
               <table className="w-full min-w-[720px] text-[12px]">
                 <thead className={`sticky top-0 z-[1] ${tableHeaderStyles.creditsTableHead}`}>
                   <tr>
