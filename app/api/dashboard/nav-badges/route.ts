@@ -8,7 +8,7 @@ export async function GET() {
   if (!userId) return apiUnauthorized()
 
   try {
-    const badges = await getNavBadgesForUser(userId)
+    const badges = await getNavBadgesForUser(userId, supabase)
     return apiOk(badges)
   } catch (error) {
     return apiError({

@@ -99,6 +99,7 @@ export default async function DashboardLayout({
   const shellProps = {
     user: {
       ...profile,
+      id: user.id,
       name: profile.name ?? metadataName ?? fallbackName,
     },
     exchangeRate,
