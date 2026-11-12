@@ -13,10 +13,9 @@
 // =============================================================================
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import useSWR from 'swr'
 import { usePathname, useRouter }   from 'next/navigation'
 import { createClient }             from '@/lib/supabase.client'
-import { fetchWithTimeout }         from '@/lib/client/fetch-with-timeout'
+import { useNavBadges }              from '@/lib/hooks/useNavBadges'
 import { LayoutProvider, useLayout } from '@/lib/hooks/useLayout'
 import { workspaceFlipOffset } from '@/lib/hooks/layout-state'
 import { useV3RouteReveal } from '@/lib/ui/use-v3-route-reveal'
@@ -27,13 +26,13 @@ import { ProductUpdatesBanner }    from './ProductUpdatesBanner'
 import { ReleaseAnnouncementGate } from './ReleaseAnnouncementGate'
 import { Topbar }                   from './Topbar'
 import { QuickActionsFAB }          from './QuickActionsFAB'
+import { NavBadgesErrorNotice }     from './NavBadgesErrorNotice'
 import transactionStyles from '@/components/tables/TransactionsRound07.module.css'
 
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
 
-const NAV_BADGES_FETCH_TIMEOUT_MS = 5_000
-
 interface ShellUser {
+  id:      string
   email:   string
   name?:   string | null
   avatar?: string | null
@@ -78,30 +77,12 @@ function InnerShell({ user, navBadges = {}, children }: Omit<AppShellProps, 'exc
     openMobileDrawer,
     closeMobileDrawer,
   } = useLayout()
-  const { data: liveNavBadges, error: navBadgesError } = useSWR<Partial<Record<string, number>>>(
-    '/api/dashboard/nav-badges',
-    async (url: string) => {
-      const response = await fetchWithTimeout(url, {
-        cache: 'no-store',
-        timeoutMs: NAV_BADGES_FETCH_TIMEOUT_MS,
-        timeoutMessage: 'No se pudo actualizar el estado del menu.',
-      })
-      const payload = await response.json().catch(() => null)
-      if (!response.ok || !payload?.ok) {
-        throw new Error('No se pudo cargar el estado del menu')
-      }
-      return payload.data as Partial<Record<string, number>>
-    },
-    {
-      fallbackData: navBadges,
-      revalidateOnFocus: false,
-      shouldRetryOnError: false,
-      dedupingInterval: 30_000,
-      refreshInterval: 60_000,
-    },
-  )
-
-  const resolvedNavBadges = liveNavBadges ?? navBadges
+  const {
+    data: resolvedNavBadges,
+    error: navBadgesError,
+    isValidating: navBadgesValidating,
+    retry: retryNavBadges,
+  } = useNavBadges(navBadges, user.id)
 
   useEffect(() => {
     closeMobileDrawer()
@@ -239,9 +220,7 @@ function InnerShell({ user, navBadges = {}, children }: Omit<AppShellProps, 'exc
           >
             <ProductUpdatesBanner />
             {navBadgesError ? (
-              <p role="status" className="mx-4 mt-3 rounded-lg border border-[var(--ft-warning-soft)] bg-[var(--ft-warning-soft)] px-3 py-2 text-xs text-[var(--ft-warning)] md:mx-6 xl:mx-8">
-                No se pudieron verificar los indicadores de navegación. Intenta recargar la página.
-              </p>
+              <NavBadgesErrorNotice isRetrying={navBadgesValidating} onRetry={retryNavBadges} />
             ) : null}
             {children}
           </div>
