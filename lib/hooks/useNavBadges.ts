@@ -48,6 +48,6 @@ export function useNavBadges(initialData: NavBadgeCounts | undefined, userId: st
     data: data ?? initialData ?? {},
     error,
     isValidating,
-    retry: () => mutate(),
+    retry: () => mutate().catch(() => undefined),
   }
 }
